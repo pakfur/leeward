@@ -1,0 +1,395 @@
+{
+	"auto_complete":
+	{
+		"selected_items":
+		[
+			[
+				"out",
+				"output_path"
+			],
+			[
+				"inp",
+				"input_path"
+			],
+			[
+				"total",
+				"total_frames"
+			]
+		]
+	},
+	"buffers":
+	[
+		{
+			"contents": "",
+			"settings":
+			{
+				"buffer_size": 0,
+				"line_ending": "Unix"
+			}
+		}
+	],
+	"build_system": "",
+	"build_system_choices":
+	[
+	],
+	"build_varint": "",
+	"command_palette":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+			[
+				"json",
+				"Pretty JSON: Format JSON"
+			],
+			[
+				"install",
+				"Package Control: Install Package"
+			],
+			[
+				"packa",
+				"Install Package Control"
+			],
+			[
+				"space",
+				"Trim Trailing White Space"
+			],
+			[
+				"wrap",
+				"Word Wrap: Toggle"
+			]
+		],
+		"width": 0.0
+	},
+	"console":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"distraction_free":
+	{
+		"menu_visible": true,
+		"show_minimap": false,
+		"show_open_files": false,
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
+	},
+	"expanded_folders":
+	[
+		"/Users/jk/gws/Leeward"
+	],
+	"file_history":
+	[
+		"/Users/jk/ai/runpod.txt",
+		"/Users/jk/gws/metascan/metascan/core/media_upscaler.py",
+		"/Users/jk/gws/metascan/data/queue/queue.json",
+		"/Users/jk/gws/metascan/metascan/core/media.py",
+		"/Users/jk/gws/metascan/metascan/core/database_sqlite.py",
+		"/Users/jk/gws/metascan/config copy.json",
+		"/Users/jk/gws/metascan/.gitignore",
+		"/Users/jk/gws/metascan/metascan/core/database.py",
+		"/Users/jk/gws/metascan/metascan/ui/path_filter_tree.py",
+		"/Users/jk/gws/metascan/config.json",
+		"/Users/jk/gws/metascan/metascan/utils/app_paths.py",
+		"/Users/jk/gws/metascan/metascan/ui/main_window.py",
+		"/Users/jk/gws/metascan/metascan/core/upscale_queue_process.py",
+		"/Users/jk/gws/metascan/metascan/core/upscale_queue.py",
+		"/Users/jk/gws/metascan/metascan/ui/metadata_panel.py",
+		"/Users/jk/gws/metascan/assets/screenshot.png",
+		"/Users/jk/gws/metascan/README.md",
+		"/Users/jk/gws/metascan/metascan/ui/upscale_dialog.py",
+		"/Users/jk/gws/metascan/metascan/core/video_refiner.py",
+		"/Users/jk/gws/metascan/metascan/extractors/enhanced_comfyui.py",
+		"/Volumes/Backup/linked/video_staging/s3.fish",
+		"/Volumes/Backup/linked/video_staging/s3_video_sync.fish",
+		"/Users/jk/gws/metascan/metascan/extractors/base.py",
+		"/Users/jk/gws/metascan/metascan/ui/media_viewer.py",
+		"/Users/jk/gws/metascan/metascan/ui/filters_panel.py",
+		"/Users/jk/gws/metascan/metascan/ui/thumbnail_view.py",
+		"/Users/jk/gws/metascan/metascan/ui/virtual_thumbnail_view.py",
+		"/Users/jk/gws/metascan/metascan/extractors/comfyui.py",
+		"/Users/jk/gws/metascan/metascan/extractors/comfyui_video.py",
+		"/Users/jk/gws/metascan/metascan/extractors/fooocus.py",
+		"/Users/jk/gws/metascan/metascan/extractors/swarmui.py",
+		"/Users/jk/gws/metascan/metascan/core/watcher.py",
+		"/Users/jk/gws/metascan/BUILD_INSTRUCTIONS.md",
+		"/Users/jk/gws/metascan/CLAUDE.md",
+		"/Users/jk/gws/metascan/metascan/core/prompt_tokenizer.py",
+		"/Users/jk/gws/metascan/metascan/core/scanner.py",
+		"/Users/jk/ai/sdxl prompts",
+		"/Users/jk/gws/metascan/metascan/cache/thumbnail.py",
+		"/Users/jk/gws/metascan/venv/lib/python3.12/site-packages/PyQt6/QtWidgets.pyi",
+		"/Users/jk/gws/metascan/metascan/ui/__init__.py",
+		"/Users/jk/gws/metascan/activate_venv.fish",
+		"/Users/jk/gws/metascan/requirements-dev.txt",
+		"/Users/jk/Documents/Mixtiles Prints",
+		"/Users/jk/ai/Claude Code",
+		"/Users/jk/training/image_refiner/image_refiner.py",
+		"/Users/jk/training/image_tagging/app.js",
+		"/Users/jk/training/image_tagging/image_tagger_gui.py",
+		"/Users/jk/gws/DatasetTag/src/DatasetTag/MainWindow.axaml.cs",
+		"/Users/jk/ai/WAN Character Lora traing"
+	],
+	"find":
+	{
+		"height": 24.0
+	},
+	"find_in_files":
+	{
+		"height": 98.0,
+		"where_history":
+		[
+			"*.py",
+			"",
+			"./venv",
+			""
+		]
+	},
+	"find_state":
+	{
+		"case_sensitive": true,
+		"find_history":
+		[
+			"strok",
+			">",
+			"prompt",
+			"claude",
+			"Refresh Metadata",
+			"successfully",
+			"successfully refr",
+			"Toolbar",
+			"SCAN",
+			"Scan",
+			"Upscaling:",
+			"D",
+			"\"DEBUG:",
+			"DEBUG",
+			"ProcessUpscaleQueue",
+			"ProcessUpscaleQueue.add_task",
+			"CANCELLED",
+			"UpscaleStatus",
+			"_animate_spinner",
+			"Hidden",
+			"upscaling_widget.setVisible",
+			"upscaling_widget",
+			"spinner",
+			"_show_upscaling_indicator",
+			"_create_upscaling_indicator",
+			"Scan",
+			"\"Tile",
+			"\"Tile ",
+			"Tile ",
+			"_x2",
+			"metadata_file",
+			"_import_metadata",
+			"preserve",
+			"scroll_step",
+			"verticalScrollBar",
+			"singleStep",
+			"scroll",
+			"mouse",
+			"scroll",
+			"orgasm",
+			"insta",
+			"2076035",
+			"2073605",
+			"str0king_it",
+			"fixed",
+			"2.2",
+			"masturbation",
+			"handjob",
+			"hand",
+			"orgasm",
+			"fixed",
+			"cumshot",
+			"dream",
+			"fixed",
+			"wan cumshot",
+			"Orgasm",
+			"fingering",
+			"kissing",
+			"1694292",
+			"select_button",
+			"select...",
+			"\"Metadata\"",
+			"Metadata",
+			"filters",
+			"icon",
+			"28,",
+			"28,28",
+			"Gallery",
+			"Select...",
+			"scan",
+			"facial",
+			"Facial Cumshot",
+			"locker",
+			"bedroom",
+			"360",
+			"Current panel sizes after move",
+			"+++",
+			"ThumbnailCache",
+			"thumbnail_size",
+			"update_filters",
+			"filter_data",
+			"filter_sections",
+			"\"tag\"",
+			"tag",
+			"\"tag\"",
+			"lora",
+			"refresh_filters",
+			"sort_order",
+			"set_sort_order",
+			"is_expanded",
+			"hand in",
+			"fingers",
+			"rps_MLCI8EW3HYVRX83GXOBCQJOVDALSWC1WZ7HYUL2T1qw3tg",
+			"apply_all_filters",
+			"filters_changed",
+			"selection_changed",
+			"on_checkbox_changed",
+			"apply_stylesheet",
+			"available_themes",
+			"thumbnail_size"
+		],
+		"highlight": true,
+		"in_selection": false,
+		"preserve_case": false,
+		"regex": false,
+		"replace_history":
+		[
+		],
+		"reverse": false,
+		"scrollbar_highlights": true,
+		"show_context": true,
+		"use_buffer2": true,
+		"use_gitignore": false,
+		"whole_word": false,
+		"wrap": true
+	},
+	"groups":
+	[
+		{
+			"sheets":
+			[
+				{
+					"buffer": 0,
+					"selected": true,
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 0,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								0,
+								0
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Text/Plain text.tmLanguage"
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 0,
+					"stack_multiselect": false,
+					"type": "text"
+				}
+			]
+		}
+	],
+	"incremental_find":
+	{
+		"height": 24.0
+	},
+	"input":
+	{
+		"height": 36.0
+	},
+	"layout":
+	{
+		"cells":
+		[
+			[
+				0,
+				0,
+				1,
+				1
+			]
+		],
+		"cols":
+		[
+			0.0,
+			1.0
+		],
+		"rows":
+		[
+			0.0,
+			1.0
+		]
+	},
+	"menu_visible": true,
+	"output.find_results":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"pinned_build_system": "",
+	"project": "leeward.sublime-project",
+	"replace":
+	{
+		"height": 44.0
+	},
+	"save_all_on_build": true,
+	"select_file":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_project":
+	{
+		"height": 501.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 380.0
+	},
+	"select_symbol":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"selected_group": 0,
+	"settings":
+	{
+	},
+	"show_minimap": true,
+	"show_open_files": false,
+	"show_tabs": true,
+	"side_bar_visible": true,
+	"side_bar_width": 252.0,
+	"status_bar_visible": true,
+	"template_settings":
+	{
+	}
+}
