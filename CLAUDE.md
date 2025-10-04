@@ -76,12 +76,12 @@ var internal_variable = 0
 
 # Built-in callbacks
 func _ready():
-    pass
+	pass
 
 func _process(delta):
-    pass
+	pass
 
 # Custom methods
 func custom_method():
-    pass
+	pass
 ```

@@ -53,8 +53,7 @@
  2. ++ PLANNING PHASE (Player Interaction Required)
    2.1 For each ship under the players command, allow the user to select a ship and show a UI where the player can plot actions for this turn.
    2.2 Plot actions permit the player to update none, some or all of the following item: (All optional)
-     2.2.1 Game calculate movement points (MP) (below) 
-     2.2.2: Move ship, using MP. A ship may perform one of three possible actions with each MP. Move forward 1 hex, turn left (port) one hex facing, turn right (starboard) one hex facing. Plot all ship movement steps. Include moving forward and turning. Detailed moving and turning rules are below.
+     2.2.1 plot ship movement, include tacking, wearing, beating upwind, sailing downwind etc
      2.2.2 optional anchoring of ship if allowed
      2.2.3 Plan any towing 
      2.2.4 Allocate casting the lead to measure speed
@@ -63,7 +62,7 @@
      2.2.7 Plan crew reorganization, including reallocating sailors, allocating between sails and gunnery
      2.2.8 Perform repairs, rigging, spars, hull, above and below the waterline. 
      2.2.9 Allocate crew firefighting, reallocating crew to fight any fires
-     2.2.10 Gunnery and Marine fire, select targets, select which guns to fire
+     2.2.10 Gunnery and Marine fire, select targets, select which guns to fire, ammunition type, hull or rigging
      2.2.11 send messsages between ships (using flags)
    2.3 Some plotted actions may take multiple turns to complete, and require allocated crew to complete
    2.4 Player submits all plotted actions
@@ -117,51 +116,82 @@
 11. Player ends the turn. Next turn begins
 
 
-### Movement Allowance Calculation
-Calculate Movement Allowence Points on the Movement Allowance Table. 
-Spend 1 Movement Allowance (MA) for 1 Movement Point (MP).
+### Movement Allowance (MA) Calculation
+The calculated movement allowance (MA) depends on five factors: 
+1. Speed Type: 3 types - L (Ship of the Line class), F (Frigate class), or C (Corvette class), each with 1 of 3 modifiers F (Fast), S (Slow), VS (Very Slow).
+2. Wind Speed: 0 to 4.
+3. Wind Facing: 4 types - L (luffing), C (close hauled), B (broad reach) and R (running before the wind).
+4. Sail State: 4 levels - PS (plain sail), MS (Manuerving Sail), FS (fighting sail), NS (sails furled or dismasted)
+5. Rigging Damage: Reflects damage. Range from 4 (no damage) to 0 (full damage, unusable)
 
-Base Values in the table vary by ship type, rating, speed
+---
+#### Movement Allowance Tables (MA) Sail State / Wind Facing
+(partial table, complete table has 9 * 3 * 4 * 3 * 4 = 1728 rows including all combinations of all 5 factors)
+MA = 0-4, a dash (-) means that the Sail State is not available due to the Rigging Available value.
 
-Movement Allowance Table
+| Facing | Speed Type | Wind Speed  | Rigging Quality   | Sail State | MA  |
+| ------ | ---------- | ----------- | ----------------- | ---------- | --- |
+|   C    | L/F        | 1           | 4                 | PS         |  4  |
+|   B    | L/F        | 1           | 4                 | PS         |  7  |
+|   R    | L/F        | 1           | 4                 | PS         |  6  |
+|   C    | L/F        | 1           | 4                 | MS         |  2  |
+|   B    | L/F        | 1           | 4                 | MS         |  5  |
+|   R    | L/F        | 1           | 4                 | MS         |  4  |
+|   C    | L/F        | 1           | 4                 | FS         |  1  |
+|   B    | L/F        | 1           | 4                 | FS         |  3  |
+|   R    | L/F        | 1           | 4                 | FS         |  2  |
+|   C    | L/F        | 1           | 3                 | PS         |  -  |
+|   B    | L/F        | 1           | 3                 | PS         |  -  |
+|   R    | L/F        | 1           | 3                 | PS         |  -  |
+|   C    | L/F        | 1           | 3                 | MS         |  1  |
+|   B    | L/F        | 1           | 3                 | MS         |  3  |
+|   R    | L/F        | 1           | 3                 | MS         |  2  |
+|   C    | L/F        | 1           | 3                 | FS         |  0  |
+|   B    | L/F        | 1           | 3                 | FS         |  2  |
+|   R    | L/F        | 1           | 3                 | FS         |  1  |
+|   C    | L/F        | 1           | 2                 | PS         |  -  |
+|   B    | L/F        | 1           | 2                 | PS         |  -  |
+|   R    | L/F        | 1           | 2                 | PS         |  -  |
+|   C    | L/F        | 1           | 2                 | MS         |  -  |
+|   B    | L/F        | 1           | 2                 | MS         |  -  |
+|   R    | L/F        | 1           | 2                 | MS         |  -  |
+|   C    | L/F        | 1           | 2                 | FS         |  0  |
+|   B    | L/F        | 1           | 2                 | FS         |  1  |
+|   R    | L/F        | 1           | 2                 | FS         |  1  |
+|   C    | L/F        | 1           | 1                 | PS         |  -  |
+|   B    | L/F        | 1           | 1                 | PS         |  -  |
+|   R    | L/F        | 1           | 1                 | PS         |  -  |
+|   C    | L/F        | 1           | 1                 | MS         |  -  |
+|   B    | L/F        | 1           | 1                 | MS         |  -  |
+|   R    | L/F        | 1           | 1                 | MS         |  -  |
+|   C    | L/F        | 1           | 1                 | FS         |  0  |
+|   B    | L/F        | 1           | 1                 | FS         |  0  |
+|   R    | L/F        | 1           | 1                 | FS         |  0  |
 
-| Wind Facing |     FS     |    MS     |    PS    |
-| :---------- |  :-------: | :------:  | -------: |
-|   L         |     ##     |    ##     |    ##    |
-|   C         |     ##     |    ##     |    ##    |
-|   B         |     ##     |    ##     |    ##    |
-|   R         |     ##     |    ##     |    ##    |
 
-Sail State:
-FS = Fighting Sails
-MS = Manuerving Sails
-PS = Plain Sails
+This diagram shows the relative wind facing value based on wind direction:
+                                 L
+Wind Direction:  |             ------
+                 v          C /       \ C
+                             /         \
+                             \         /
+                            B \       / B
+                               ------
+                                 R
+*Wind facing diagram*
 
-Wind Facing
-L = luffing
-C = close hauled
-B = broad reach
-R = running before the wind
-
-Factors which also affect Movement Allowance:
-- Ruder Destroyed
-- Ships wheel destroyed
-- Rigging Damage
-- Wind Speed
-- Crew Quality
-- Ship Speed (3.4)
-- Sail State (3.10)
-- Sail Quality
-
-EXAMPLE: A fast frigate (ship speed=F) which is close-hauled (wind facing = C) at maneuvering sail (Sail = MS) in a moderate breeze (Wind SPeed = 3) and has 4 rigging sections remaining has a Movement Allowance of 4. Ignoring no deceleration or acceleration, the frigate could spend from O to 4 MP's in that game-turn. It could not expend more than 4 MP's even if it turns to Wind Facing B (where it would normally have an Movement Allowence of 7).
+EXAMPLE: A fast frigate (ship speed=F/F) which is close-hauled (wind facing = C) at maneuvering sail (Sail = MS) in a moderate breeze (Wind SPeed = 3) and has 4 rigging sections remaining has a Movement Allowance of 4. Ignoring no deceleration or acceleration, the frigate could spend from O to 4 MP's in that game-turn. It could not expend more than 4 MP's even if it turns to Wind Facing B (where it would normally have an Movement Allowence of 7).
 
 ## Movement Rules
 
-### Basic Movement
-- Calculate Movement Allowance (MA)
-- Spend MA to make a movement
+1. Calculate Movement Allowance (MA). This is the theoritical maximum movement allowed
+2. Plot Actions spending MA until MA = 0, or movement restrictions are exceeded
 
-Action Table
+Actions: 'F#' - move forward number of hexes, 'P' - pivot left 60 degrees to port, 'S' - pivot right 60 degrees to starboard 
+
+EXAMPLE: A fast frigate (ship speed=F/F) which is close-hauled (wind facing = C) at maneuvering sail (Sail = MS) in a moderate breeze (Wind SPeed = 3) and has 4 rigging sections remaining has a Movement Allowance of 4. The player chooses to move 2 hexes forward, pivot to starboard and then continue forward 1 hex: The plotted course is 'F2 S F1'
+
+*Action Table*
 
 |   Action                    |  MA Cost                         |
 | :-------------------------- | -------------------------------: |
@@ -172,88 +202,89 @@ Action Table
 |   Pivot 1 face to port.     |  0 (if MA is 0, 1 time per turn) |
 
 
-Exceptions: 
+#### Movement Forward Rules:
 
-- The number of allowed pivots per turn is determined by the ships rating (3.2). See Turning below
+A ship may move forward the same number of hexes as the previous turn, accelerate faster, or decelerate. 
+
+If accelerating: The number of hexes a ship can move forward is determined by the calculated MA, the ships acceleration and the number of hexes the ship moved forward the previous turn.
+
+If decelerating: The number of hexes a ship can move forward is determined by the ships deceleration and the number of hexes the ship moved forward the previous turn. 
+
+If the ship is accelerating:
+  The number of hexes a ship may move forward in a single turn is calculated as: hexes = MIN(MA, ship acceleration value + hexes moved forward last turn)
+If the ship is decelerating:
+  The number of hexes a ship may move forward in a single turn is calculated as: hexes = MAX(MA, ABS(ship deceleration value - hexes moved forward last turn))
+If the ship is maintaing the same speed:
+  The number of hexes a ship may move forward in a single turn is calculated as: hexes = MAX(MA, ABS(ship deceleration value - hexes moved forward last turn))
+
+
+#### Pivot Rules:
+
+Pivoting facing L (luffing): A vessel that turns and faces L immediately ends its movement.
+
+Ships have a level of maneuverability ranging from “A” (not very maneuverable) to “D” (very maneuverable).
+
+A ship can make a maximum of 2 pivots per turn. After turning, a ship must move straight ahead a certain number of hexes before it can turn again. this number will depend on the ship's maneuverability, its speed, and whether the turn is made in the same direction as the previous turn. A ship can never make two turns consecutive. Exception: see tacking rules.
+
+Vessels poivot by pivoting their bow, meaning the stern moves and the bow remains in
+the hex where it was. 
+    Exception: Anchoring with turnbuckles at the stern.
+
+
+
+**Tacking Rules**
+
+A ship that pivots its heading to L (luffing) may make an additional turn in the same direction on the same turn only, this maanuever is TACKING. Two consecutive pivots in the same direction may ONLY happen if the first pivot heading is L.  The two pivots are recorded during the PLANNING PHASE. The success or failure is determined during the MOVEMENT phase. The TACKING table is consulted during the MOVEMENT RESOLUTION phase to determine if the TACK was successful.
+
+**TACKING Table**
+Ships Manuever Rating (A-D) vs Wind Speed (1-4). The chance to sucessfully tack, cross reference the ships Manueverablity Rating vs current Wind Speed.
+
+|                       | Wind Speed |     |     |     |
+| Ships Manuever Rating | 1          | 2   | 3   | 4   |
+| --------------------- | ---------- | --- | --- | --- |
+|  A                    |  20%       | 40% | 60% | 50% |
+|  B                    |  30%       | 50% | 70% | 60% |
+|  C                    |  50%       | 70% | 80% | 70% |
+|  D                    |  70%       | 80% | 90% | 80% |
+
+If a ship is unsuccessful with the TACKING check, then the ship is immobilized and further movement is not possible this turn. The ship is facing L and immobilized. COMBAT RESOLUTION and MAINTENANCE phases may continue as normal. 
+
+Also: 
+
+- The number of allowed pivots per turn is determined by the ships rating (3.2). See Turning rules for details
 - Each pivot to port or starboard will recalculate the maximum Movement Allowence allowed in that wind direction. The spent action points are subtracted from the new Movement Allowence. If the remaining movement allowence is <= 0 then the MA is set to 0.
 - If MA = 0, player may pivot 1 time per turn to port or starboard
 - If player luffs (pivots into wind facing L) forward direction stops for the turn. (exception: Fast Tack, see Fast Tack below)
 - If a player is close hauled (WF = C) and as its first movement pivots to broad reach (WF = B) and has at least 1 movement allowence left, then the player gets 1 additional movement allowance
 
 
-- **Turning Rules:** 
-
-Turning Table
-|   Ship Class                |  Speed       |
-| :-------------------------- | -----------: |
-|   Move Forward 1 hex        |  1                               |
-
-
-  1. General Rules:
-  1.1 A ships manuverability depends on wether the ship is pivot the _same_ direction or _opposite_ direction compared to the last time it pivoted. 
-  1.2 All previous moves are recorded as they play a role in determining future movement options. Recorded moves are _not_ reset at the beginning of a turn.
-  1.2 Example movement record: F = move 1 hex forward, P = pivot 1 hex face to port, F = pivot one hex face to starboard. "PFFFPF" (turn to port, move 3 hexes forward, turn to port, move 1 hex forward)
-
-  2. Turning in the same direction:
-  2.1 There must be 0-3 "F" movements in the movement record between two turns in the same direction. 
-
-
-
-pseudo code
-```python
-
-from Move import move
-from Board import board
-
-
-class Ship:
-  def __init__(self, rating: Int):
-    self.rating = rating
-    self.previous_turn = None
-    self.forward_hex_moves_since_last_turn = 0
-
-
-  def turn(self, move, direction) -> int:
-
-    match move.direction:
-      case "forward":
-        if movement_allowed(move.direction):
-
-
-```
-
-
-
-- **Speed:** [Base movement + modifiers]
-- **Turning:** [Turning radius/restrictions]
-- **Wind Effects:**
-  - Sailing with wind
-  - Sailing against wind
-  - Tacking mechanics
-
-### Special Maneuvers
-- [ ] Full sail
-- [ ] Emergency turn
-- [ ] Ram
-- [ ] Boarding preparation
-
 ## Combat System
+Gunnery is planned during the PLANNING PHASE
+Combat is resolved during the COMBAT PHASE
+
+
 
 ### Engagement Rules
 - **Range Bands:**
-  - Long range: [effects]
-  - Medium range: [effects]
-  - Close range: [effects]
+  - Long range: [15 hexes]
+  - Medium range: [9 hexes]
+  - Close range: [3 hexes]
+  - Marine (small arms) range: [3 hexes]
   - Boarding range: [requirements]
 
 ### Cannon Combat
-- **Firing Arcs:** [Port/Starboard/Bow/Stern]
+- **Firing Arcs:** [each ship has 4 batterys: Port/Starboard/Bow/Stern, ships may optionally have Marine (small arms) fire]
+- **Line Of Sight**: 
+  - Each battery (Port/Starboard/Bow/Stern) has an independent LOS calculation. 
+  - A battery must have unobstructed LOS within a 60 degree arc to the target ship
+  - A ship can have 2 targets. Each battery can target a different ship
+  - Marine fire can target any ship in range.
 - **Ammunition Types:**
   - Round shot: [damage/effects]
   - Chain shot: [damage/effects]
   - Grape shot: [damage/effects]
 
-### Damage System
+### Damage System [TODO]
 - **Hull Points:** [How calculated]
 - **Critical Hits:**
   - Mast damage
@@ -262,7 +293,7 @@ class Ship:
   - Fire
   - Magazine explosion
 
-### Boarding Combat
+### Boarding Combat [TODO]
 1. **Initiation Requirements**
 2. **Crew Combat Resolution**
 3. **Capture Conditions**
@@ -270,34 +301,47 @@ class Ship:
 ## Ship Statistics
 
 ### Core Attributes
-- **Hull:** [Health/armor]
-- **Speed:** [Maximum movement]
-- **Maneuverability:** [Turn rate]
-- **Firepower:** [Number of guns]
-- **Crew:** [Size and quality]
+- **Nationality:** [Ship nationality]
+- **Rating:** [Number of guns, size] 100,98,80,74,64,50,44,40,38,36,32,28,24,14
+- **Class:** [Rating class] 1, 2, 3, 4
+- **Manuverability:** [Ship manuverability] a,b,c,d
+- **Type:** [Ship type] SOL3 (Ship of the Line (3 decks)), SOL (ship of the line (2 decks)), 2D (2 deck ship), Rz (Razee), HF (Heavy Frigate), Frigate (Frigate), Corvette (Corvette class)
+- **Draft:** [Ship draft] Draft, in feet
+- **Freeboard:** [Freeboard] Height, in feet, of the height of the lower deck guns above the waterline
+- **Rigging:** [Ships rigging] a ship has between 1-4 Rigging sections, one per mast + bowsprit
+  - Rigging:Damage: [Damage to Rigging]
+  - Rigging:Sail Quality: [Sail quality] 1-3
+- **Hull Critical Hit Bonus:** [Ship Hull Critical Damage Modifier] from -4 to +2 (the value that is added to critical hit checks)
+- **Hull Health:** [Ship hull hit points] A ship has 3 to 4 hull sections. Each section has a hit point value (from 0 - 10) that represents the max damage that hull section can take
+- **Hull Damage Taken:** [Ship hull damage taken] One damage-taken per Hull health entry. Records the current number of hit points remaining for the hull section
+- **Crew:** [Crew number and composition depends on ship class and type/ Each crew member is tracked independently. Not every ship has every role]
+  - Role: Admiral, Commodore, Post Captain, Commander, Master, Lieutenant, Surgeon, Boatswain, Carpenter, Gunner, Midshipman, Chaplain, Quartermaster, Master at Arms, Sailmaker, Seamen (Landsman), Seamen (Ordinary Seaman), Seamen (Able Seaman), Seamen (Topmen), Marine, Sergeant 
+  - Status: Healthy, Injured, Sick, Dead
+  - Assigned: Current assigned task
+  - Station: Current assigned station
+- **Guns:** [Includes canon, carronades, swivel guns]
+  - Type: Canon, Carronade, Swivel Gun
+  - Canon Ball: Weight (in pounds) 1/2, 3/4, 1, 4, 8, 12, 18, 32, 42
+  - Side: Port, Starboard, Bow, Stern
+  - Deck: Gun Deck, Lower Deck, Main Deck
 
-### Ship Classes
-| Class | Hull | Speed | Guns | Crew | Special |
-|-------|------|-------|------|------|---------|
-| Sloop | | | | | |
-| Frigate | | | | | |
-| Ship of the Line | | | | | |
+
 
 ## Resources and Economy
 
-### Resources
+### Resources [TODO]
 - **Gold:** [Uses]
 - **Supplies:** [Uses]
 - **Ammunition:** [Types and limits]
 - **Crew morale:** [Effects]
 
-### Port Actions
+### Port Actions [TODO]
 - [ ] Repair ship
 - [ ] Recruit crew
 - [ ] Buy supplies
 - [ ] Upgrade ship
 
-## Weather and Environmental Effects
+## Weather and Environmental Effects [TODO]
 
 ### Wind
 - **Wind Direction:** [How it changes]
@@ -336,6 +380,7 @@ class Ship:
 
 ### Simultaneous vs Sequential
 [Turn order system]
+Simultaneous, turn based
 
 ### Balance Mechanisms
 [Fleet points, handicaps, etc.]

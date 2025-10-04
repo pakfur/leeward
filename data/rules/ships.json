@@ -1,0 +1,86 @@
+{
+  "frigate_38": {
+	"name": "38-gun Frigate",
+	"nationality": "British",
+	"rating": 38,
+	"class": 4,
+	"maneuverability": "B",
+	"speed_type": "F/F",
+	"type": "Frigate",
+	"draft": 12.5,
+	"freeboard": 8,
+	"rigging_sections": 4,
+	"rigging_quality": 4,
+	"sail_quality": 3,
+	"hull_sections": 3,
+	"hull_max_hp": [8, 8, 8],
+	"hull_critical_modifier": 0,
+	"acceleration": 1,
+	"deceleration": 2,
+	"crew_count": 280,
+	"guns": {
+	  "long_guns": {
+		"main_deck_port": {"count": 19, "size": 18},
+		"main_deck_starboard": {"count": 19, "size": 18}
+	  },
+	  "bow_chasers": {"count": 2, "size": 9},
+	  "stern_chasers": {"count": 2, "size": 9}
+	}
+  },
+  "corvette_24": {
+	"name": "24-gun Corvette",
+	"nationality": "British",
+	"rating": 24,
+	"class": 5,
+	"maneuverability": "C",
+	"speed_type": "C/F",
+	"type": "Corvette",
+	"draft": 10,
+	"freeboard": 6,
+	"rigging_sections": 3,
+	"rigging_quality": 4,
+	"sail_quality": 3,
+	"hull_sections": 3,
+	"hull_max_hp": [6, 6, 6],
+	"hull_critical_modifier": 0,
+	"acceleration": 2,
+	"deceleration": 1,
+	"crew_count": 180,
+	"guns": {
+	  "long_guns": {
+		"main_deck_port": {"count": 12, "size": 9},
+		"main_deck_starboard": {"count": 12, "size": 9}
+	  }
+	}
+  },
+  "ship_of_line_74": {
+	"name": "74-gun Ship of the Line",
+	"nationality": "British",
+	"rating": 74,
+	"class": 3,
+	"maneuverability": "A",
+	"speed_type": "L/F",
+	"type": "SOL",
+	"draft": 18,
+	"freeboard": 12,
+	"rigging_sections": 4,
+	"rigging_quality": 4,
+	"sail_quality": 3,
+	"hull_sections": 4,
+	"hull_max_hp": [10, 10, 10, 10],
+	"hull_critical_modifier": -1,
+	"acceleration": 1,
+	"deceleration": 3,
+	"crew_count": 640,
+	"guns": {
+	  "long_guns": {
+		"lower_deck_port": {"count": 14, "size": 32},
+		"lower_deck_starboard": {"count": 14, "size": 32},
+		"main_deck_port": {"count": 14, "size": 18},
+		"main_deck_starboard": {"count": 14, "size": 18},
+		"gun_deck_port": {"count": 14, "size": 12},
+		"gun_deck_starboard": {"count": 14, "size": 12}
+	  }
+	}
+  }
+}

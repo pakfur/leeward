@@ -1,0 +1,265 @@
+[gd_scene load_steps=10 format=3 uid="uid://c7vk3p2xmxfq8"]
+
+[ext_resource type="Script" uid="uid://t6fop8pw7x2s" path="res://scripts/core/game_controller.gd" id="1_controller"]
+[ext_resource type="Script" uid="uid://drpxitgfk6sd3" path="res://scripts/core/hex_map.gd" id="2_hex_map"]
+[ext_resource type="Script" uid="uid://bnfe26l2snu6l" path="res://scripts/core/isometric_camera.gd" id="3_camera"]
+[ext_resource type="Script" uid="uid://d37g8iye25xou" path="res://scripts/ui/wind_compass.gd" id="4_compass"]
+[ext_resource type="Script" uid="uid://bivr0wfft2of0" path="res://scripts/ui/game_info_panel.gd" id="5_info"]
+[ext_resource type="Script" uid="uid://s0ckjki5xttb" path="res://scripts/ui/ship_status_panel.gd" id="6_status"]
+[ext_resource type="Script" uid="uid://d4gdl7csfejl7" path="res://scripts/ui/planning_panel.gd" id="7_planning"]
+
+[sub_resource type="Environment" id="env"]
+background_mode = 1
+background_color = Color(0.53, 0.66, 0.8, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.8, 0.8, 0.8, 1)
+
+[sub_resource type="Theme" id="theme"]
+
+[node name="GameController" type="Node"]
+script = ExtResource("1_controller")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.707, -0.5, 0.5, 0, 0.707, 0.707, -0.707, -0.5, 0.5, 0, 10, 0)
+light_energy = 0.8
+shadow_enabled = true
+
+[node name="HexMap" type="Node3D" parent="."]
+script = ExtResource("2_hex_map")
+
+[node name="Ships" type="Node3D" parent="."]
+
+[node name="Camera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 25, 0)
+script = ExtResource("3_camera")
+
+[node name="UI" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme = SubResource("theme")
+
+[node name="WindCompass" type="Control" parent="UI"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -140.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = 140.0
+grow_horizontal = 0
+script = ExtResource("4_compass")
+
+[node name="GameInfoPanel" type="PanelContainer" parent="UI"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -120.0
+offset_right = 320.0
+offset_bottom = -20.0
+grow_vertical = 0
+script = ExtResource("5_info")
+
+[node name="VBox" type="VBoxContainer" parent="UI/GameInfoPanel"]
+layout_mode = 2
+
+[node name="TurnLabel" type="Label" parent="UI/GameInfoPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Turn: 1"
+
+[node name="PhaseLabel" type="Label" parent="UI/GameInfoPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Phase: SETUP"
+
+[node name="WindSpeedLabel" type="Label" parent="UI/GameInfoPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Wind: Moderate"
+
+[node name="ShipStatusPanel" type="PanelContainer" parent="UI"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -420.0
+offset_top = -520.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 0
+grow_vertical = 0
+script = ExtResource("6_status")
+
+[node name="VBox" type="VBoxContainer" parent="UI/ShipStatusPanel"]
+layout_mode = 2
+
+[node name="Header" type="HBoxContainer" parent="UI/ShipStatusPanel/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="UI/ShipStatusPanel/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Ship Status"
+horizontal_alignment = 1
+
+[node name="CloseButton" type="Button" parent="UI/ShipStatusPanel/VBox/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "X"
+
+[node name="HSeparator" type="HSeparator" parent="UI/ShipStatusPanel/VBox"]
+layout_mode = 2
+
+[node name="ShipNameLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Ship Name"
+
+[node name="ShipTypeLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Type"
+
+[node name="HSeparator2" type="HSeparator" parent="UI/ShipStatusPanel/VBox"]
+layout_mode = 2
+
+[node name="PositionLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Position: (0, 0)"
+
+[node name="FacingLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Facing: E (0)"
+
+[node name="SpeedLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Speed: 0"
+
+[node name="SailStateLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Sail: Maneuvering Sail"
+
+[node name="HSeparator3" type="HSeparator" parent="UI/ShipStatusPanel/VBox"]
+layout_mode = 2
+
+[node name="HullLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Hull: 8/8, 8/8, 8/8"
+
+[node name="CrewLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Crew: 280 (Trained)"
+
+[node name="MoraleLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Morale: Good (4)"
+
+[node name="RiggingLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Rigging: 4/4"
+
+[node name="MALabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Movement Allowance: 4"
+
+[node name="PlanningPanel" type="PanelContainer" parent="UI"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -200.0
+offset_right = 300.0
+offset_bottom = 200.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("7_planning")
+
+[node name="VBox" type="VBoxContainer" parent="UI/PlanningPanel"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="UI/PlanningPanel/VBox"]
+layout_mode = 2
+text = "Planning Phase"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="UI/PlanningPanel/VBox"]
+layout_mode = 2
+
+[node name="ShipSelectorLabel" type="Label" parent="UI/PlanningPanel/VBox"]
+layout_mode = 2
+text = "Select Ship:"
+
+[node name="ShipSelector" type="OptionButton" parent="UI/PlanningPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HSeparator2" type="HSeparator" parent="UI/PlanningPanel/VBox"]
+layout_mode = 2
+
+[node name="InstructionsLabel" type="Label" parent="UI/PlanningPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Movement Allowance: 4
+Commands: F# (forward), P (port), S (starboard)
+Example: F2 S F1"
+autowrap_mode = 3
+
+[node name="MovementLabel" type="Label" parent="UI/PlanningPanel/VBox"]
+layout_mode = 2
+text = "Movement Commands:"
+
+[node name="MovementInput" type="LineEdit" parent="UI/PlanningPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "e.g. F2 S F1"
+
+[node name="SailStateLabel" type="Label" parent="UI/PlanningPanel/VBox"]
+layout_mode = 2
+text = "Sail State:"
+
+[node name="SailStateSelector" type="OptionButton" parent="UI/PlanningPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HSeparator3" type="HSeparator" parent="UI/PlanningPanel/VBox"]
+layout_mode = 2
+
+[node name="ButtonRow" type="HBoxContainer" parent="UI/PlanningPanel/VBox"]
+layout_mode = 2
+
+[node name="ClearButton" type="Button" parent="UI/PlanningPanel/VBox/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Clear"
+
+[node name="SubmitButton" type="Button" parent="UI/PlanningPanel/VBox/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Submit Plan"

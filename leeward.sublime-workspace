@@ -21,6 +21,19 @@
 	[
 		{
 			"contents": "",
+			"redo_stack":
+			[
+				[
+					1,
+					1,
+					"insert",
+					{
+						"characters": "z"
+					},
+					"AQAAAAAAAAAAAAAAAAAAAAAAAAABAAAAeg",
+					"AQAAAAAAAAABAAAAAQAAAAAAAAABAAAAAAAAAAAAAAAAAPC/"
+				]
+			],
 			"settings":
 			{
 				"buffer_size": 0,
@@ -80,13 +93,16 @@
 	},
 	"expanded_folders":
 	[
-		"/Users/jk/gws/Leeward"
+		"/Users/jk/gws/Leeward",
+		"/Users/jk/gws/Leeward/docs"
 	],
 	"file_history":
 	[
-		"/Users/jk/ai/runpod.txt",
-		"/Users/jk/gws/metascan/metascan/core/media_upscaler.py",
 		"/Users/jk/gws/metascan/data/queue/queue.json",
+		"/Users/jk/gws/Leeward/docs/02-game-rules.md",
+		"/Users/jk/ai/runpod.txt",
+		"/Users/jk/gws/Leeward/docs/01-overview-and-design.md",
+		"/Users/jk/gws/metascan/metascan/core/media_upscaler.py",
 		"/Users/jk/gws/metascan/metascan/core/media.py",
 		"/Users/jk/gws/metascan/metascan/core/database_sqlite.py",
 		"/Users/jk/gws/metascan/config copy.json",
@@ -136,7 +152,7 @@
 	],
 	"find":
 	{
-		"height": 24.0
+		"height": 38.0
 	},
 	"find_in_files":
 	{
@@ -154,6 +170,7 @@
 		"case_sensitive": true,
 		"find_history":
 		[
+			"maneuver",
 			"strok",
 			">",
 			"prompt",
@@ -294,6 +311,7 @@
 						],
 						"settings":
 						{
+							"auto_name": "",
 							"syntax": "Packages/Text/Plain text.tmLanguage"
 						},
 						"translation.x": 0.0,
@@ -367,6 +385,10 @@
 		"last_filter": "",
 		"selected_items":
 		[
+			[
+				"",
+				"~/gws/metascan.sublime-project"
+			]
 		],
 		"width": 380.0
 	},

@@ -1,0 +1,188 @@
+extends Node
+## GameController - Main game logic controller
+
+@onready var hex_map: Node3D = $HexMap
+@onready var camera: Camera3D = $Camera
+@onready var ships_container: Node3D = $Ships
+@onready var ui: Control = $UI
+@onready var planning_panel = $UI/PlanningPanel
+@onready var ship_status_panel = $UI/ShipStatusPanel
+
+var ships: Array[Ship] = []
+var player_0_ships: Array[Ship] = []
+var player_1_ships: Array[Ship] = []
+var selected_ship: Ship = null
+
+func _ready() -> void:
+	print("GameController ready")
+
+	# Load data
+	DataManager.load_movement_allowance_table()
+	DataManager.load_ship_definitions()
+
+	# Load and start scenario
+	var scenario = DataManager.load_scenario("test_basic")
+	_setup_scenario(scenario)
+
+	# Connect signals
+	GameState.phase_changed.connect(_on_phase_changed)
+	if planning_panel:
+		planning_panel.plan_submitted.connect(_on_player_plan_submitted)
+
+	# Start the game
+	GameState.start_new_game(scenario)
+
+func _setup_scenario(scenario: Dictionary) -> void:
+	"""Setup the game from scenario data"""
+	print("Setting up scenario: %s" % scenario.get("name", "Unknown"))
+
+	# Setup hex map texture if specified
+	if scenario.has("map_texture") and hex_map:
+		var texture_path = scenario.map_texture
+		if ResourceLoader.exists(texture_path):
+			var texture = load(texture_path) as Texture2D
+			hex_map.set_water_texture(texture)
+
+	# Spawn ships
+	if scenario.has("ships"):
+		for ship_data in scenario.ships:
+			_spawn_ship(ship_data)
+
+func _spawn_ship(ship_data: Dictionary) -> Ship:
+	"""Create a ship from scenario data"""
+	var ship_type = ship_data.get("ship_type", "")
+	var ship_def = DataManager.get_ship_definition(ship_type)
+
+	if ship_def.is_empty():
+		push_error("Ship definition not found: %s" % ship_type)
+		return null
+
+	# Instantiate ship
+	var ship = preload("res://scenes/ship.tscn").instantiate() if ResourceLoader.exists("res://scenes/ship.tscn") else Ship.new()
+	ships_container.add_child(ship)
+
+	# Initialize ship
+	ship.initialize(ship_data, ship_def)
+
+	# Position ship on hex grid
+	if hex_map:
+		ship.set_hex_position(ship.hex_position, hex_map.get_hex_grid())
+		ship.set_facing(ship.facing)
+
+	# Track ship
+	ships.append(ship)
+	var player_id = ship_data.get("player_id", 0)
+	if player_id == 0:
+		player_0_ships.append(ship)
+	else:
+		player_1_ships.append(ship)
+
+	# Connect selection signal
+	ship.selected.connect(func(): _select_ship(ship))
+
+	print("Spawned ship: %s for player %d" % [ship.ship_name, player_id])
+	return ship
+
+func _unhandled_input(event: InputEvent) -> void:
+	# Handle ship selection via mouse click (only if not handled by UI)
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_handle_ship_selection(event.position)
+		get_viewport().set_input_as_handled()
+
+func _handle_ship_selection(screen_pos: Vector2) -> void:
+	"""Raycast to select ship"""
+	if not camera:
+		return
+
+	var from = camera.project_ray_origin(screen_pos)
+	var to = from + camera.project_ray_normal(screen_pos) * 1000.0
+
+	var space_state = hex_map.get_world_3d().direct_space_state
+	var query = PhysicsRayQueryParameters3D.create(from, to)
+	var result = space_state.intersect_ray(query)
+
+	if result.is_empty():
+		# Click on empty space - deselect
+		if selected_ship:
+			selected_ship.set_selected(false)
+			selected_ship = null
+			if ship_status_panel:
+				ship_status_panel.visible = false
+		return
+
+	# Check if we hit a ship
+	var collider = result.collider
+	var ship = _find_ship_from_collider(collider)
+
+	if ship:
+		_select_ship(ship)
+
+func _find_ship_from_collider(collider: Node) -> Ship:
+	"""Find the ship that owns this collider"""
+	var node = collider
+	while node:
+		if node is Ship:
+			return node
+		node = node.get_parent()
+	return null
+
+func _select_ship(ship: Ship) -> void:
+	"""Select a ship and show its status"""
+	if selected_ship:
+		selected_ship.set_selected(false)
+
+	selected_ship = ship
+	ship.set_selected(true)
+
+	if ship_status_panel:
+		ship_status_panel.show_ship_status(ship)
+
+func _on_phase_changed(phase: GameState.GamePhase) -> void:
+	"""Handle phase transitions"""
+	print("Phase changed to: %s" % GameState.get_phase_name())
+
+	match phase:
+		GameState.GamePhase.PLANNING:
+			_enter_planning_phase()
+		GameState.GamePhase.MOVEMENT_RESOLUTION:
+			_resolve_movement()
+		GameState.GamePhase.POST_COMBAT:
+			_enter_post_combat_phase()
+
+func _enter_planning_phase() -> void:
+	"""Enter planning phase - show planning UI for player ships"""
+	print("Entering planning phase for player 0")
+
+	if planning_panel and not player_0_ships.is_empty():
+		planning_panel.show_for_planning(player_0_ships)
+
+	# TODO: AI plans for player 1
+
+func _on_player_plan_submitted() -> void:
+	"""Player has submitted their plan"""
+	print("Player submitted plan")
+	GameState.player_submit_plan(0)
+
+	# TODO: Wait for AI or submit AI plan immediately
+	GameState.player_submit_plan(1)
+
+func _resolve_movement() -> void:
+	"""Resolve movement for all ships (stub for now)"""
+	print("Resolving movement...")
+
+	# TODO: Implement actual movement resolution
+	for ship in ships:
+		var movement = ship.plotted_actions.get("movement", [])
+		if not movement.is_empty():
+			print("  Ship %s movement: %s" % [ship.ship_name, movement])
+
+	# For now, just advance phase
+	await get_tree().create_timer(1.0).timeout
+
+func _enter_post_combat_phase() -> void:
+	"""Enter post-combat phase - player can manually advance"""
+	print("Post-combat phase - waiting for player to end turn")
+	# TODO: Add UI button to end turn
+	# For now, auto-advance after delay
+	await get_tree().create_timer(2.0).timeout
+	GameState.advance_phase()
