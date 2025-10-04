@@ -1,7 +1,8 @@
-[gd_scene load_steps=10 format=3 uid="uid://c7vk3p2xmxfq8"]
+[gd_scene load_steps=11 format=3 uid="uid://c7vk3p2xmxfq8"]
 
 [ext_resource type="Script" uid="uid://t6fop8pw7x2s" path="res://scripts/core/game_controller.gd" id="1_controller"]
 [ext_resource type="Script" uid="uid://drpxitgfk6sd3" path="res://scripts/core/hex_map.gd" id="2_hex_map"]
+[ext_resource type="Material" uid="uid://bj6tedpmn6a0v" path="res://assets/materials/ocean_water.tres" id="2_ocean_material"]
 [ext_resource type="Script" uid="uid://bnfe26l2snu6l" path="res://scripts/core/isometric_camera.gd" id="3_camera"]
 [ext_resource type="Script" uid="uid://d37g8iye25xou" path="res://scripts/ui/wind_compass.gd" id="4_compass"]
 [ext_resource type="Script" uid="uid://bivr0wfft2of0" path="res://scripts/ui/game_info_panel.gd" id="5_info"]
@@ -29,6 +30,9 @@ shadow_enabled = true
 
 [node name="HexMap" type="Node3D" parent="."]
 script = ExtResource("2_hex_map")
+
+[node name="WaterPlane" type="MeshInstance3D" parent="HexMap"]
+material_override = ExtResource("2_ocean_material")
 
 [node name="Ships" type="Node3D" parent="."]
 

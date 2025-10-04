@@ -228,11 +228,15 @@ WaveResult wave(vec2 pos, float time) {
 // Varying variables to pass data from vertex to fragment shader
 varying float height;
 varying vec3 world_position;
+varying vec3 original_world_position;  // Position before wave displacement
 varying mat3 tbn_matrix;
 varying mat4 inv_mvp;
 
 // Vertex shader function
 void vertex() {
+    // Store original world position BEFORE wave displacement (for static hex grid)
+    original_world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+
     // Calculate time based on the global TIME variable and time_factor
     float time = TIME / time_factor;
     // Calculate wave displacement and normals
@@ -246,7 +250,7 @@ void vertex() {
     vec3 n = normalize((MODELVIEW_MATRIX * vec4(waveResult.normal, 0.0)).xyz);
     vec3 t = normalize((MODELVIEW_MATRIX * vec4(waveResult.tangent.xyz, 0.0)).xyz);
     vec3 b = normalize((MODELVIEW_MATRIX * vec4((cross(waveResult.normal, waveResult.tangent.xyz)), 0.0)).xyz);
-    // Calculate world position of the vertex
+    // Calculate world position of the vertex AFTER displacement (for water effects)
     world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
     // Create TBN matrix for normal mapping
     tbn_matrix = mat3(t, b, n);
@@ -446,10 +450,10 @@ void fragment() {
 
     final_color = mix(final_color, vec3(1.0), foam_blend_factor);
 
-    // Add hex grid lines
+    // Add hex grid lines (using original position so grid stays static)
     vec3 color_with_grid = final_color + depth_color_adj;
     if (show_hex_grid) {
-        float edge_dist = hex_edge_distance(world_position.xz, hex_size);
+        float edge_dist = hex_edge_distance(original_world_position.xz, hex_size);
         float grid_line = smoothstep(hex_grid_width, hex_grid_width * 0.5, edge_dist);
         color_with_grid = mix(color_with_grid, hex_grid_color, grid_line * 0.8);
     }

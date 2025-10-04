@@ -1,0 +1,55 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3 uid="uid://bj6tedpmn6a0v"]
+
+[ext_resource type="Shader" uid="uid://cypqqn62hyci1" path="res://assets/shaders/ocean_water.gdshader" id="1_shader"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_shader")
+shader_parameter/wave_1 = Vector4(0.3, 6, 0.2, 0.6)
+shader_parameter/wave_2 = Vector4(-0.26, -0.19, 0.01, 0.47)
+shader_parameter/wave_3 = Vector4(-14.67, 8.63, 0.1, 0.38)
+shader_parameter/wave_4 = Vector4(-0.42, -1.63, 0.1, 0.28)
+shader_parameter/wave_5 = Vector4(1.66, 0.07, 0.15, 1.81)
+shader_parameter/wave_6 = Vector4(1.2, 1.14, 0.01, 0.33)
+shader_parameter/wave_7 = Vector4(-1.6, 7.3, 0.11, 0.73)
+shader_parameter/wave_8 = Vector4(-0.42, -1.63, 0.15, 1.52)
+shader_parameter/time_factor = 2.5
+shader_parameter/noise_zoom = 2.0
+shader_parameter/noise_amp = 0.05
+shader_parameter/base_water_color = Color(0.4, 0.6, 0.8, 1)
+shader_parameter/fresnel_water_color = Color(0.5, 0.7, 0.9, 1)
+shader_parameter/deep_water_color = Color(0.2, 0.4, 0.6, 1)
+shader_parameter/shallow_water_color = Color(0.4, 0.6, 0.8, 1)
+shader_parameter/beers_law = 0.5
+shader_parameter/depth_offset = -1.2
+shader_parameter/near = 7.0
+shader_parameter/far = 10000.0
+shader_parameter/edge_texture_scale = 3.5
+shader_parameter/edge_texture_offset = 1.0
+shader_parameter/edge_texture_speed = 0.1
+shader_parameter/show_hex_grid = true
+shader_parameter/hex_grid_color = Color(1, 1, 1, 1)
+shader_parameter/hex_grid_width = 0.02
+shader_parameter/hex_size = 1.0
+shader_parameter/edge_foam_intensity = 2.0
+shader_parameter/edge_fade_start = -3.0
+shader_parameter/edge_fade_end = 6.6
+shader_parameter/peak_height_threshold = 1.0
+shader_parameter/peak_color = Vector3(1, 1, 1)
+shader_parameter/peak_intensity = 1.0
+shader_parameter/foam_intensity = 1.0
+shader_parameter/foam_scale = 1.0
+shader_parameter/metallic = 0.6
+shader_parameter/roughness = 0.045
+shader_parameter/uv_scale_text_a = 0.1
+shader_parameter/uv_speed_text_a = Vector2(0.42, 0.3)
+shader_parameter/uv_scale_text_b = 0.6
+shader_parameter/uv_speed_text_b = Vector2(0.15, 0.1)
+shader_parameter/normal_strength = 1.0
+shader_parameter/uv_sampler_scale = 0.3
+shader_parameter/blend_factor = 0.28
+shader_parameter/perturbation_strength = 1.0
+shader_parameter/perturbation_time = 0.3
+shader_parameter/caustics_intensity = 15.0
+shader_parameter/num_caustic_layers = 16.0
+shader_parameter/caustic_distortion_strength = 0.001
