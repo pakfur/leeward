@@ -1,0 +1,149 @@
+[gd_scene load_steps=4 format=3 uid="uid://cy2njmhqau0hv"]
+
+[ext_resource type="Script" uid="uid://odx2yku8bq87" path="res://scripts/ui/scenario_selection.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://873uoieshum3" path="res://assets/ui/splash/scenarioimport.svg" id="2_background"]
+
+[sub_resource type="StyleBoxFlat" id="panel_style"]
+bg_color = Color(0.1, 0.15, 0.2, 0.9)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.4, 0.6, 0.7, 0.9)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[node name="ScenarioSelection" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("2_background")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MainPanel" type="PanelContainer" parent="CenterContainer"]
+custom_minimum_size = Vector2(800, 600)
+layout_mode = 2
+
+[node name="StyleBox" type="Panel" parent="CenterContainer/MainPanel"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="MarginContainer" type="MarginContainer" parent="CenterContainer/MainPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 30
+theme_override_constants/margin_top = 30
+theme_override_constants/margin_right = 30
+theme_override_constants/margin_bottom = 30
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer/MainPanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="Title" type="Label" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.95, 1, 1)
+theme_override_font_sizes/font_size = 32
+text = "Select Scenario"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ContentHBox" type="HBoxContainer" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 20
+
+[node name="LeftPanel" type="VBoxContainer" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer/ContentHBox"]
+custom_minimum_size = Vector2(350, 0)
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ScenarioLabel" type="Label" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer/ContentHBox/LeftPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "Available Scenarios:"
+
+[node name="ScenarioList" type="ItemList" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer/ContentHBox/LeftPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 16
+
+[node name="RightPanel" type="VBoxContainer" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer/ContentHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="DescriptionLabel" type="Label" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer/ContentHBox/RightPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "Description:"
+
+[node name="DescriptionPanel" type="PanelContainer" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer/ContentHBox/RightPanel"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MarginContainer" type="MarginContainer" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer/ContentHBox/RightPanel/DescriptionPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 15
+theme_override_constants/margin_top = 15
+theme_override_constants/margin_right = 15
+theme_override_constants/margin_bottom = 15
+
+[node name="DescriptionLabel" type="Label" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer/ContentHBox/RightPanel/DescriptionPanel/MarginContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.8, 0.9, 1)
+text = "Select a scenario to see its description"
+autowrap_mode = 3
+
+[node name="HSeparator2" type="HSeparator" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ButtonRow" type="HBoxContainer" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="BackButton" type="Button" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer/ButtonRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 50)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "Back"
+
+[node name="Spacer" type="Control" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer/ButtonRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="StartButton" type="Button" parent="CenterContainer/MainPanel/MarginContainer/VBoxContainer/ButtonRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 50)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "Start"

@@ -23,6 +23,7 @@ var current_phase: GamePhase = GamePhase.SETUP
 var current_turn: int = 0
 var players_ready: Array[bool] = [false, false]
 var active_scenario: Dictionary = {}
+var selected_scenario: String = ""  # Scenario name selected from menu
 
 # Environment state
 var wind_direction: int = 0  # 0-5 representing hex faces

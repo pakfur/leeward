@@ -1,0 +1,102 @@
+[gd_scene load_steps=4 format=3 uid="uid://di62puw8xwjgo"]
+
+[ext_resource type="Script" uid="uid://bxxhgygp4d1mt" path="res://scripts/ui/splash_screen.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://c6p11g8e1nvig" path="res://assets/ui/splash/splashscreen.svg" id="2_background"]
+
+[sub_resource type="StyleBoxFlat" id="panel_style"]
+bg_color = Color(0.1, 0.15, 0.2, 0.85)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.4, 0.6, 0.7, 0.9)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[node name="SplashScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("2_background")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MenuPanel" type="PanelContainer" parent="CenterContainer"]
+custom_minimum_size = Vector2(400, 300)
+layout_mode = 2
+
+[node name="StyleBox" type="Panel" parent="CenterContainer/MenuPanel"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("panel_style")
+
+[node name="MarginContainer" type="MarginContainer" parent="CenterContainer/MenuPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 40
+theme_override_constants/margin_top = 40
+theme_override_constants/margin_right = 40
+theme_override_constants/margin_bottom = 40
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer/MenuPanel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="Title" type="Label" parent="CenterContainer/MenuPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.95, 1, 1)
+theme_override_font_sizes/font_size = 36
+text = "LEEWARD"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="CenterContainer/MenuPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.8, 0.9, 1)
+theme_override_font_sizes/font_size = 18
+text = "Age of Sail Naval Combat"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="CenterContainer/MenuPanel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 20)
+layout_mode = 2
+
+[node name="PlayButton" type="Button" parent="CenterContainer/MenuPanel/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Play"
+
+[node name="QuitButton" type="Button" parent="CenterContainer/MenuPanel/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Quit"
+
+[node name="QuitDialog" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "Quit Game"
+initial_position = 2
+size = Vector2i(300, 100)
+dialog_text = "Are you sure you want to quit?"

@@ -20,8 +20,12 @@ func _ready() -> void:
 	DataManager.load_movement_allowance_table()
 	DataManager.load_ship_definitions()
 
-	# Load and start scenario
-	var scenario = DataManager.load_scenario("test_basic")
+	# Load scenario from GameState (set by menu selection)
+	var scenario_name = GameState.selected_scenario
+	if scenario_name.is_empty():
+		scenario_name = "test_basic"  # Fallback for direct testing
+
+	var scenario = DataManager.load_scenario(scenario_name)
 	_setup_scenario(scenario)
 
 	# Connect signals
@@ -36,8 +40,22 @@ func _setup_scenario(scenario: Dictionary) -> void:
 	"""Setup the game from scenario data"""
 	print("Setting up scenario: %s" % scenario.get("name", "Unknown"))
 
-	# Setup hex map texture if specified
-	if scenario.has("map_texture") and hex_map:
+	# Setup map settings
+	if scenario.has("map") and hex_map:
+		var map_config = scenario.map
+
+		# Setup hex map texture if specified
+		if map_config.has("map_texture"):
+			var texture_path = map_config.map_texture
+			if ResourceLoader.exists(texture_path):
+				var texture = load(texture_path) as Texture2D
+				hex_map.set_water_texture(texture)
+
+		# Setup hex grid visibility
+		if map_config.has("show_hex"):
+			hex_map.set_hex_grid_visible(map_config.show_hex)
+	# Legacy support for old format
+	elif scenario.has("map_texture") and hex_map:
 		var texture_path = scenario.map_texture
 		if ResourceLoader.exists(texture_path):
 			var texture = load(texture_path) as Texture2D
@@ -84,6 +102,13 @@ func _spawn_ship(ship_data: Dictionary) -> Ship:
 	return ship
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Handle keyboard shortcuts
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_C:
+			_center_camera_on_all_ships()
+			get_viewport().set_input_as_handled()
+			return
+
 	# Handle ship selection via mouse click (only if not handled by UI)
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		_handle_ship_selection(event.position)
@@ -136,6 +161,20 @@ func _select_ship(ship: Ship) -> void:
 
 	if ship_status_panel:
 		ship_status_panel.show_ship_status(ship)
+
+func _center_camera_on_all_ships() -> void:
+	"""Center camera on all ships with appropriate zoom"""
+	if ships.is_empty():
+		return
+
+	# Gather all ship positions
+	var ship_positions: Array[Vector3] = []
+	for ship in ships:
+		ship_positions.append(ship.global_position)
+
+	# Call camera method to center on ships
+	if camera and camera.has_method("center_on_ships"):
+		camera.center_on_ships(ship_positions)
 
 func _on_phase_changed(phase: GameState.GamePhase) -> void:
 	"""Handle phase transitions"""

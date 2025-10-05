@@ -6,31 +6,34 @@
   "wind_speed_change": "steady",
   "wind_direction_change": "none",
   "sea_state": 1,
-  "map_texture": "res://assets/textures/water_default.png",
+  "map": {
+	"map_texture": "res://assets/textures/water_default.png",
+	"show_hex": true
+  },
   "ships": [
-    {
-      "id": "player_ship",
-      "player_id": 0,
-      "ship_type": "frigate_38",
-      "position": {
-        "q": -8,
-        "r": 0
-      },
-      "facing": 0,
-      "sail_state": "MS",
-      "current_speed": 0
-    },
-    {
-      "id": "enemy_ship",
-      "player_id": 1,
-      "ship_type": "corvette_24",
-      "position": {
-        "q": 8,
-        "r": 0
-      },
-      "facing": 3,
-      "sail_state": "MS",
-      "current_speed": 0
-    }
+	{
+	  "id": "player_ship",
+	  "player_id": 0,
+	  "ship_type": "frigate_38",
+	  "position": {
+		"q": -8,
+		"r": 0
+	  },
+	  "facing": 0,
+	  "sail_state": "MS",
+	  "current_speed": 0
+	},
+	{
+	  "id": "enemy_ship",
+	  "player_id": 1,
+	  "ship_type": "corvette_24",
+	  "position": {
+		"q": 8,
+		"r": 0
+	  },
+	  "facing": 3,
+	  "sail_state": "MS",
+	  "current_speed": 0
+	}
   ]
 }

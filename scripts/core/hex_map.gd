@@ -302,3 +302,11 @@ func hide_grid_overlay() -> void:
 	"""Hide the hex grid overlay"""
 	if grid_overlay:
 		grid_overlay.visible = false
+
+func set_hex_grid_visible(visible: bool) -> void:
+	"""Set hex grid visibility (shader-based grid that responds to waves)"""
+	# Only use shader hex grid, not the mesh overlay
+	# The shader grid is part of the water and responds to waves
+	if ocean_material:
+		ocean_material.set_shader_parameter("show_hex_grid", visible)
+		print("Hex grid (shader) visibility set to: %s" % visible)

@@ -144,3 +144,17 @@ func get_wind_facing(ship_facing: int, wind_direction: int) -> String:
 			return "R"
 		_:
 			return "L"
+
+## Get world position for edge between two hexes (for 2-hex ships)
+## facing: direction the ship is pointing (0-5)
+## q, r: the hex coordinates (for 2-hex ships, this is the "rear" hex)
+func axial_to_edge_world(q: int, r: int, facing: int) -> Vector3:
+	# Get the neighboring hex in the facing direction
+	var neighbor = get_neighbor(q, r, facing)
+
+	# Calculate center positions of both hexes
+	var pos1 = axial_to_world(q, r)
+	var pos2 = axial_to_world(neighbor.x, neighbor.y)
+
+	# Edge position is midpoint between the two hex centers
+	return (pos1 + pos2) / 2.0

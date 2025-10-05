@@ -26,6 +26,12 @@ func _ready() -> void:
 	print("Camera initialized at position: %s, looking at: %s" % [position, camera_target])
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Keyboard shortcuts
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_C:
+			# Center camera hotkey - handled by GameController
+			pass  # Don't mark as handled, let GameController handle it
+
 	# Mouse wheel zoom
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -119,6 +125,47 @@ func set_target(target: Vector3) -> void:
 	camera_target = target
 	_update_camera_transform()
 
+func center_on_ships(ship_positions: Array[Vector3]) -> void:
+	"""Center camera on all ships with appropriate zoom to see them all"""
+	if ship_positions.is_empty():
+		return
+
+	# Calculate bounding box
+	var min_pos = ship_positions[0]
+	var max_pos = ship_positions[0]
+
+	for pos in ship_positions:
+		min_pos.x = min(min_pos.x, pos.x)
+		min_pos.z = min(min_pos.z, pos.z)
+		max_pos.x = max(max_pos.x, pos.x)
+		max_pos.z = max(max_pos.z, pos.z)
+
+	# Calculate center of bounding box
+	var center = (min_pos + max_pos) / 2.0
+	center.y = 0.0  # Keep target at water level
+
+	# Calculate size of bounding box
+	var size_x = max_pos.x - min_pos.x
+	var size_z = max_pos.z - min_pos.z
+	var max_size = max(size_x, size_z)
+
+	# Calculate required distance to fit all ships
+	# At 85 degrees, we're almost looking straight down
+	# Distance calculation: use diagonal size with padding
+	var padding_factor = 2.0  # Extra padding for comfortable view
+	var required_distance = max(max_size * padding_factor, min_zoom)
+
+	# Clamp to zoom limits
+	required_distance = clamp(required_distance, min_zoom, max_zoom)
+
+	# Set camera parameters
+	camera_target = center
+	camera_distance = required_distance
+	isometric_angle = 85.0  # Reset to 85 degrees
+
+	_update_camera_transform()
+	print("Centered camera on %d ships at distance %f" % [ship_positions.size(), camera_distance])
+
 func _update_camera_transform() -> void:
 	# Calculate camera position using spherical coordinates
 	var rad_angle = deg_to_rad(isometric_angle)
@@ -132,10 +179,15 @@ func _update_camera_transform() -> void:
 
 	position = camera_target + offset
 
-	# When looking straight down, use a different up vector to avoid colinearity
-	var up_vector = Vector3.UP
-	if isometric_angle > 89.0:
-		# Use camera's forward direction offset as up vector
+	# Smoothly transition up vector when approaching vertical
+	# This prevents the flip at 90 degrees
+	var up_vector: Vector3
+	if isometric_angle < 85.0:
+		# Normal up vector for most angles
+		up_vector = Vector3.UP
+	else:
+		# Near vertical - use tangent vector along the rotation circle
+		# This points in the direction the camera would move if rotation_y increased
 		up_vector = Vector3(cos(rad_rotation), 0, sin(rad_rotation))
 
 	look_at(camera_target, up_vector)
