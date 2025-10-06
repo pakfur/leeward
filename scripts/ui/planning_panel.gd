@@ -1,5 +1,5 @@
 extends PanelContainer
-## PlanningPanel - UI for plotting ship actions during planning phase
+## PlanningPanel - UI for plotting ship actions during planning phase (uses command pattern)
 
 signal plan_submitted()
 
@@ -10,8 +10,8 @@ signal plan_submitted()
 @onready var clear_button: Button = %ClearButton
 @onready var instructions_label: Label = %InstructionsLabel
 
-var available_ships: Array[Ship] = []
-var current_ship: Ship = null
+var available_ships: Array[ShipState] = []
+var current_ship_id: String = ""
 
 func _ready() -> void:
 	visible = false
@@ -37,8 +37,8 @@ func _setup_sail_state_selector() -> void:
 	sail_state_selector.add_item("No Sail (NS)", 3)
 	sail_state_selector.selected = 1  # Default to MS
 
-func show_for_planning(ships: Array[Ship]) -> void:
-	"""Show the planning panel for the given ships"""
+func show_for_planning_with_states(ships: Array[ShipState]) -> void:
+	"""Show the planning panel for the given ships (using ShipState)"""
 	available_ships = ships
 	visible = true
 	_populate_ship_selector()
@@ -50,8 +50,8 @@ func _populate_ship_selector() -> void:
 
 	ship_selector.clear()
 	for i in range(available_ships.size()):
-		var ship = available_ships[i]
-		ship_selector.add_item(ship.ship_name, i)
+		var ship_state = available_ships[i]
+		ship_selector.add_item(ship_state.ship_name, i)
 
 	if available_ships.size() > 0:
 		ship_selector.selected = 0
@@ -59,10 +59,11 @@ func _populate_ship_selector() -> void:
 
 func _on_ship_selected(index: int) -> void:
 	if index >= 0 and index < available_ships.size():
-		current_ship = available_ships[index]
+		current_ship_id = available_ships[index].ship_id
 		_update_display()
 
 func _update_display() -> void:
+	var current_ship = GameState.get_ship(current_ship_id)
 	if not current_ship:
 		return
 
@@ -82,67 +83,57 @@ func _update_display() -> void:
 		sail_state_selector.selected = sail_map.get(current_ship.sail_state, 1)
 
 func _on_submit_pressed() -> void:
-	"""Submit the plan for the current ship"""
+	"""Submit planned actions as commands"""
+	var current_ship = GameState.get_ship(current_ship_id)
 	if not current_ship:
 		return
 
-	# Parse movement input
-	var movement_text = movement_input.text.strip_edges().to_upper()
-	var movement_commands = movement_text.split(" ", false)
+	# Parse movement commands
+	var movement_text = movement_input.text if movement_input else ""
+	var movement_commands = _parse_movement_input(movement_text)
 
-	# Validate movement commands
-	if not _validate_movement(movement_commands):
-		push_warning("Invalid movement commands")
-		return
+	# Create and execute MoveCommand
+	var move_command = MoveCommand.new()
+	move_command.player_id = current_ship.player_id
+	move_command.turn_number = GameState.current_turn
+	move_command.ship_id = current_ship_id
+	move_command.movement_commands = movement_commands
 
-	# Store the plot
-	current_ship.plotted_actions.movement = movement_commands
-
-	# Store sail state change if different
-	var sail_codes = ["FS", "MS", "PS", "NS"]
-	var new_sail_state = sail_codes[sail_state_selector.selected]
-	if new_sail_state != current_ship.sail_state:
-		current_ship.plotted_actions.sail_change = new_sail_state
-
-	print("Plan submitted for %s: %s" % [current_ship.ship_name, movement_commands])
-
-	# Move to next ship or finish
-	var current_index = available_ships.find(current_ship)
-	if current_index < available_ships.size() - 1:
-		ship_selector.selected = current_index + 1
-		_on_ship_selected(current_index + 1)
+	if move_command.execute():
+		print("PlanningPanel: Move command executed for %s" % current_ship.ship_name)
 	else:
-		# All ships planned
-		visible = false
-		plan_submitted.emit()
+		print("PlanningPanel: Move command failed for %s" % current_ship.ship_name)
+
+	# Emit plan submitted signal
+	plan_submitted.emit()
+
+func _parse_movement_input(text: String) -> Array[String]:
+	"""Parse movement input string into command array"""
+	var commands: Array[String] = []
+	var parts = text.split(" ", false)  # Split by space, skip empty
+
+	for part in parts:
+		var cmd = part.strip_edges().to_upper()
+		if not cmd.is_empty():
+			commands.append(cmd)
+
+	return commands
 
 func _on_clear_pressed() -> void:
-	"""Clear the current plot"""
+	"""Clear current ship's plotted actions"""
+	var current_ship = GameState.get_ship(current_ship_id)
+	if not current_ship:
+		return
+
+	current_ship.clear_plot()
+
 	if movement_input:
 		movement_input.text = ""
-	if current_ship:
-		current_ship.clear_plot()
 
-func _validate_movement(commands: Array) -> bool:
-	"""Validate movement commands"""
-	if commands.is_empty():
-		return true  # Empty is valid (no movement)
-
-	for cmd in commands:
-		var cmd_str = str(cmd)
-		if cmd_str.begins_with("F"):
-			var num_str = cmd_str.substr(1)
-			if not num_str.is_valid_int():
-				return false
-			var num = num_str.to_int()
-			if num < 1 or num > 10:
-				return false
-		elif cmd_str == "P" or cmd_str == "S":
-			continue
-		else:
-			return false
-
-	return true
+	if sail_state_selector:
+		sail_state_selector.selected = 1  # Reset to MS
 
 func _on_phase_changed(phase: GameState.GamePhase) -> void:
-	visible = (phase == GameState.GamePhase.PLANNING)
+	"""Hide panel when not in planning phase"""
+	if phase != GameState.GamePhase.PLANNING:
+		visible = false

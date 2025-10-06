@@ -25,6 +25,10 @@ var players_ready: Array[bool] = [false, false]
 var active_scenario: Dictionary = {}
 var selected_scenario: String = ""  # Scenario name selected from menu
 
+# Ship state (authoritative)
+var ships: Dictionary = {}  # ship_id -> ShipState
+var ships_by_player: Dictionary = {0: [], 1: []}  # player_id -> Array[ship_id]
+
 # Environment state
 var wind_direction: int = 0  # 0-5 representing hex faces
 var wind_speed: int = 2  # 0-5
@@ -165,3 +169,56 @@ func _start_new_turn() -> void:
 
 func get_phase_name() -> String:
 	return GamePhase.keys()[current_phase]
+
+## Ship Management Functions
+
+func add_ship(ship_state: ShipState) -> void:
+	"""Add a ship to game state"""
+	ships[ship_state.ship_id] = ship_state
+
+	# Track by player
+	if not ships_by_player.has(ship_state.player_id):
+		ships_by_player[ship_state.player_id] = []
+	ships_by_player[ship_state.player_id].append(ship_state.ship_id)
+
+	print("GameState: Added ship %s (player %d)" % [ship_state.ship_id, ship_state.player_id])
+
+func remove_ship(ship_id: String) -> void:
+	"""Remove a ship from game state"""
+	if not ships.has(ship_id):
+		return
+
+	var ship_state = ships[ship_id]
+	var player_id = ship_state.player_id
+
+	ships.erase(ship_id)
+
+	if ships_by_player.has(player_id):
+		ships_by_player[player_id].erase(ship_id)
+
+	print("GameState: Removed ship %s" % ship_id)
+
+func get_ship(ship_id: String) -> ShipState:
+	"""Get ship state by ID"""
+	return ships.get(ship_id)
+
+func get_player_ships(player_id: int) -> Array[ShipState]:
+	"""Get all ships for a player"""
+	var result: Array[ShipState] = []
+	if ships_by_player.has(player_id):
+		for ship_id in ships_by_player[player_id]:
+			if ships.has(ship_id):
+				result.append(ships[ship_id])
+	return result
+
+func get_all_ships() -> Array[ShipState]:
+	"""Get all ships in game"""
+	var result: Array[ShipState] = []
+	for ship_state in ships.values():
+		result.append(ship_state)
+	return result
+
+func clear_ships() -> void:
+	"""Clear all ships (for new game)"""
+	ships.clear()
+	ships_by_player.clear()

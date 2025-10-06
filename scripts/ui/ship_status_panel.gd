@@ -14,24 +14,24 @@ extends PanelContainer
 @onready var ma_label: Label = %MALabel
 @onready var close_button: Button = %CloseButton
 
-var current_ship: Ship = null
+var current_ship_state: ShipState = null
 
 func _ready() -> void:
 	visible = false
 	if close_button:
 		close_button.pressed.connect(_on_close_pressed)
 
-func show_ship_status(ship: Ship) -> void:
-	"""Display status for a specific ship"""
-	current_ship = ship
+func show_ship_status_from_state(ship_state: ShipState) -> void:
+	"""Display status for a specific ship (from ShipState)"""
+	current_ship_state = ship_state
 	visible = true
 	_update_display()
 
 func _update_display() -> void:
-	if not current_ship:
+	if not current_ship_state:
 		return
 
-	var status = current_ship.get_status_summary()
+	var status = current_ship_state.get_status_summary()
 
 	if ship_name_label:
 		ship_name_label.text = status.name
@@ -76,4 +76,4 @@ func _update_display() -> void:
 
 func _on_close_pressed() -> void:
 	visible = false
-	current_ship = null
+	current_ship_state = null

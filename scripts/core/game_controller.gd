@@ -1,5 +1,5 @@
 extends Node
-## GameController - Main game logic controller
+## GameController - Main game logic controller (manages views, state is in GameState)
 
 @onready var hex_map: Node3D = $HexMap
 @onready var camera: Camera3D = $Camera
@@ -8,10 +8,9 @@ extends Node
 @onready var planning_panel = $UI/PlanningPanel
 @onready var ship_status_panel = $UI/ShipStatusPanel
 
-var ships: Array[Ship] = []
-var player_0_ships: Array[Ship] = []
-var player_1_ships: Array[Ship] = []
-var selected_ship: Ship = null
+# Views (presentation layer)
+var ship_views: Dictionary = {}  # ship_id -> ShipView
+var selected_ship_id: String = ""
 
 func _ready() -> void:
 	print("GameController ready")
@@ -19,6 +18,9 @@ func _ready() -> void:
 	# Load data
 	DataManager.load_movement_allowance_table()
 	DataManager.load_ship_definitions()
+
+	# Clear previous game state
+	GameState.clear_ships()
 
 	# Load scenario from GameState (set by menu selection)
 	var scenario_name = GameState.selected_scenario
@@ -61,45 +63,43 @@ func _setup_scenario(scenario: Dictionary) -> void:
 			var texture = load(texture_path) as Texture2D
 			hex_map.set_water_texture(texture)
 
-	# Spawn ships
+	# Spawn ships (create both state and view)
 	if scenario.has("ships"):
 		for ship_data in scenario.ships:
 			_spawn_ship(ship_data)
 
-func _spawn_ship(ship_data: Dictionary) -> Ship:
-	"""Create a ship from scenario data"""
+func _spawn_ship(ship_data: Dictionary) -> void:
+	"""Create a ship (state + view) from scenario data"""
 	var ship_type = ship_data.get("ship_type", "")
 	var ship_def = DataManager.get_ship_definition(ship_type)
 
 	if ship_def.is_empty():
 		push_error("Ship definition not found: %s" % ship_type)
-		return null
+		return
 
-	# Instantiate ship
-	var ship = preload("res://scenes/ship.tscn").instantiate() if ResourceLoader.exists("res://scenes/ship.tscn") else Ship.new()
-	ships_container.add_child(ship)
+	# Create ship state (data only)
+	var ship_state = ShipState.new()
+	ship_state.initialize_from_scenario(ship_data, ship_def)
 
-	# Initialize ship
-	ship.initialize(ship_data, ship_def)
+	# Add state to GameState
+	GameState.add_ship(ship_state)
 
-	# Position ship on hex grid
+	# Create ship view (presentation only)
+	var ship_view = ShipView.new()
+	ship_view.name = "ShipView_" + ship_state.ship_id
+	ships_container.add_child(ship_view)
+
+	# Initialize view from state
 	if hex_map:
-		ship.set_hex_position(ship.hex_position, hex_map.get_hex_grid())
-		ship.set_facing(ship.facing)
+		ship_view.initialize(ship_state, hex_map.get_hex_grid())
 
-	# Track ship
-	ships.append(ship)
-	var player_id = ship_data.get("player_id", 0)
-	if player_id == 0:
-		player_0_ships.append(ship)
-	else:
-		player_1_ships.append(ship)
+	# Track view
+	ship_views[ship_state.ship_id] = ship_view
 
 	# Connect selection signal
-	ship.selected.connect(func(): _select_ship(ship))
+	ship_view.selected.connect(func(): _select_ship(ship_state.ship_id))
 
-	print("Spawned ship: %s for player %d" % [ship.ship_name, player_id])
-	return ship
+	print("Spawned ship: %s for player %d" % [ship_state.ship_name, ship_state.player_id])
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Handle keyboard shortcuts
@@ -128,49 +128,58 @@ func _handle_ship_selection(screen_pos: Vector2) -> void:
 
 	if result.is_empty():
 		# Click on empty space - deselect
-		if selected_ship:
-			selected_ship.set_selected(false)
-			selected_ship = null
+		if not selected_ship_id.is_empty():
+			var view = ship_views.get(selected_ship_id)
+			if view:
+				view.set_selected(false)
+			selected_ship_id = ""
 			if ship_status_panel:
 				ship_status_panel.visible = false
 		return
 
 	# Check if we hit a ship
 	var collider = result.collider
-	var ship = _find_ship_from_collider(collider)
+	var ship_view = _find_ship_view_from_collider(collider)
 
-	if ship:
-		_select_ship(ship)
+	if ship_view:
+		_select_ship(ship_view.state_id)
 
-func _find_ship_from_collider(collider: Node) -> Ship:
-	"""Find the ship that owns this collider"""
+func _find_ship_view_from_collider(collider: Node) -> ShipView:
+	"""Find the ship view that owns this collider"""
 	var node = collider
 	while node:
-		if node is Ship:
+		if node is ShipView:
 			return node
 		node = node.get_parent()
 	return null
 
-func _select_ship(ship: Ship) -> void:
+func _select_ship(ship_id: String) -> void:
 	"""Select a ship and show its status"""
-	if selected_ship:
-		selected_ship.set_selected(false)
+	# Deselect previous
+	if not selected_ship_id.is_empty() and ship_views.has(selected_ship_id):
+		ship_views[selected_ship_id].set_selected(false)
 
-	selected_ship = ship
-	ship.set_selected(true)
+	# Select new
+	selected_ship_id = ship_id
+	if ship_views.has(ship_id):
+		ship_views[ship_id].set_selected(true)
 
+	# Update status panel
 	if ship_status_panel:
-		ship_status_panel.show_ship_status(ship)
+		var ship_state = GameState.get_ship(ship_id)
+		if ship_state:
+			ship_status_panel.show_ship_status_from_state(ship_state)
 
 func _center_camera_on_all_ships() -> void:
 	"""Center camera on all ships with appropriate zoom"""
-	if ships.is_empty():
+	var all_ships = GameState.get_all_ships()
+	if all_ships.is_empty():
 		return
 
-	# Gather all ship positions
+	# Gather all ship positions from views
 	var ship_positions: Array[Vector3] = []
-	for ship in ships:
-		ship_positions.append(ship.global_position)
+	for ship_view in ship_views.values():
+		ship_positions.append(ship_view.global_position)
 
 	# Call camera method to center on ships
 	if camera and camera.has_method("center_on_ships"):
@@ -192,8 +201,9 @@ func _enter_planning_phase() -> void:
 	"""Enter planning phase - show planning UI for player ships"""
 	print("Entering planning phase for player 0")
 
+	var player_0_ships = GameState.get_player_ships(0)
 	if planning_panel and not player_0_ships.is_empty():
-		planning_panel.show_for_planning(player_0_ships)
+		planning_panel.show_for_planning_with_states(player_0_ships)
 
 	# TODO: AI plans for player 1
 
@@ -206,14 +216,17 @@ func _on_player_plan_submitted() -> void:
 	GameState.player_submit_plan(1)
 
 func _resolve_movement() -> void:
-	"""Resolve movement for all ships (stub for now)"""
+	"""Resolve movement for all ships (deterministic)"""
 	print("Resolving movement...")
 
 	# TODO: Implement actual movement resolution
-	for ship in ships:
-		var movement = ship.plotted_actions.get("movement", [])
+	for ship_state in GameState.get_all_ships():
+		var movement = ship_state.plotted_actions.get("movement", [])
 		if not movement.is_empty():
-			print("  Ship %s movement: %s" % [ship.ship_name, movement])
+			print("  Ship %s movement: %s" % [ship_state.ship_name, movement])
+
+	# Sync all views to state after resolution
+	_sync_all_views()
 
 	# For now, just advance phase
 	await get_tree().create_timer(1.0).timeout
@@ -225,3 +238,11 @@ func _enter_post_combat_phase() -> void:
 	# For now, auto-advance after delay
 	await get_tree().create_timer(2.0).timeout
 	GameState.advance_phase()
+
+func _sync_all_views() -> void:
+	"""Sync all ship views to their current state"""
+	for ship_id in ship_views.keys():
+		var ship_view = ship_views[ship_id]
+		var ship_state = GameState.get_ship(ship_id)
+		if ship_state and ship_view and hex_map:
+			ship_view.sync_to_state(ship_state, hex_map.get_hex_grid())
