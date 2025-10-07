@@ -25,14 +25,18 @@ var players_ready: Array[bool] = [false, false]
 var active_scenario: Dictionary = {}
 var selected_scenario: String = ""  # Scenario name selected from menu
 
-# Ship state (authoritative)
+# State objects (authoritative)
+var environment: EnvironmentState = null  # Environmental conditions
 var ships: Dictionary = {}  # ship_id -> ShipState
 var ships_by_player: Dictionary = {0: [], 1: []}  # player_id -> Array[ship_id]
 
-# Environment state
-var wind_direction: int = 0  # 0-5 representing hex faces
-var wind_speed: int = 2  # 0-5
-var sea_state: int = 1  # 0-3
+# Legacy accessors for backward compatibility
+var wind_direction: int:
+	get: return environment.wind_direction if environment else 0
+var wind_speed: int:
+	get: return environment.wind_speed if environment else 2
+var sea_state: int:
+	get: return environment.sea_state if environment else 1
 
 func _ready() -> void:
 	print("GameState initialized")
@@ -43,15 +47,17 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	current_turn = 1
 	current_phase = GamePhase.ENVIRONMENT
 
-	# Initialize wind from scenario
-	if scenario_data.has("wind_direction"):
-		wind_direction = scenario_data.wind_direction
-	if scenario_data.has("wind_speed"):
-		wind_speed = scenario_data.wind_speed
-	if scenario_data.has("sea_state"):
-		sea_state = scenario_data.sea_state
+	# Initialize environment from scenario
+	environment = EnvironmentState.new()
+	environment.initialize_from_scenario(scenario_data)
 
-	print("Game started - Turn: %d, Wind Dir: %d, Wind Speed: %d" % [current_turn, wind_direction, wind_speed])
+	print("Game started - Turn: %d, Wind: %s (%d), Speed: %s (%d)" % [
+		current_turn,
+		environment.get_wind_direction_name(),
+		environment.wind_direction,
+		environment.get_wind_speed_name(),
+		environment.wind_speed
+	])
 	advance_phase()
 
 func advance_phase() -> void:
@@ -84,7 +90,20 @@ func _enter_environment_phase() -> void:
 	current_phase = GamePhase.ENVIRONMENT
 	phase_changed.emit(current_phase)
 	print("Phase: ENVIRONMENT")
-	# TODO: Update wind direction/speed, perform sail checks
+
+	# Update environment (deterministic based on turn number)
+	if environment:
+		environment.tick_environment(current_turn)
+		print("Environment: Wind %s (%d), Speed %s (%d), Sea %s (%d)" % [
+			environment.get_wind_direction_name(),
+			environment.wind_direction,
+			environment.get_wind_speed_name(),
+			environment.wind_speed,
+			environment.get_sea_state_name(),
+			environment.sea_state
+		])
+
+	# TODO: Perform sail checks based on new wind conditions
 	advance_phase()
 
 func _enter_planning_phase() -> void:
@@ -222,3 +241,41 @@ func clear_ships() -> void:
 	"""Clear all ships (for new game)"""
 	ships.clear()
 	ships_by_player.clear()
+
+## State Serialization (for save/load and multiplayer)
+
+func serialize_full_state() -> Dictionary:
+	"""Serialize entire game state for network transmission or save/load"""
+	var ship_states = []
+	for ship_id in ships.keys():
+		ship_states.append(ships[ship_id].serialize())
+
+	return {
+		"turn": current_turn,
+		"phase": current_phase,
+		"environment": environment.serialize() if environment else {},
+		"ships": ship_states
+	}
+
+func deserialize_full_state(data: Dictionary) -> void:
+	"""Load full game state from network or save file"""
+	current_turn = data.get("turn", 1)
+	current_phase = data.get("phase", GamePhase.SETUP)
+
+	# Load environment
+	if data.has("environment"):
+		environment = EnvironmentState.deserialize(data.environment)
+	else:
+		environment = EnvironmentState.new()
+
+	# Load ships
+	clear_ships()
+	for ship_data in data.get("ships", []):
+		var ship_state = ShipState.deserialize(ship_data)
+		add_ship(ship_state)
+
+	print("GameState: Loaded state for turn %d, phase %s, %d ships" % [
+		current_turn,
+		get_phase_name(),
+		ships.size()
+	])
