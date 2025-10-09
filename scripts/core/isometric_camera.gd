@@ -32,6 +32,35 @@ func _unhandled_input(event: InputEvent) -> void:
 			# Center camera hotkey - handled by GameController
 			pass  # Don't mark as handled, let GameController handle it
 
+	# macOS trackpad gestures
+	# Two-finger pinch for zooming
+	if event is InputEventMagnifyGesture:
+		var magnify_event = event as InputEventMagnifyGesture
+		# factor > 1.0 means zoom in (pinch out), < 1.0 means zoom out (pinch in)
+		if magnify_event.factor > 1.0:
+			# Zoom in by the magnitude of the gesture
+			var zoom_amount = (magnify_event.factor - 1.0) * 2.0  # Scale the gesture
+			camera_distance = clamp(camera_distance - zoom_amount * camera_distance * 0.1, min_zoom, max_zoom)
+		else:
+			# Zoom out
+			var zoom_amount = (1.0 - magnify_event.factor) * 2.0
+			camera_distance = clamp(camera_distance + zoom_amount * camera_distance * 0.1, min_zoom, max_zoom)
+		_update_camera_transform()
+		get_viewport().set_input_as_handled()
+
+	# Two-finger pan/scroll for camera panning (or rotation with shift)
+	if event is InputEventPanGesture:
+		var pan_event = event as InputEventPanGesture
+		# Convert trackpad pan delta to camera movement
+		var pan_delta = Vector2(pan_event.delta.x, pan_event.delta.y) * 20.0  # Scale for responsiveness
+
+		# If shift is held, rotate camera instead of panning
+		if pan_event.shift_pressed:
+			rotate_camera(pan_delta)
+		else:
+			pan_camera(pan_delta)
+		get_viewport().set_input_as_handled()
+
 	# Mouse wheel zoom
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
