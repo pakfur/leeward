@@ -1,9 +1,13 @@
 extends Node
-## GameState - Manages the overall game state, turn flow, and phase management
+## GameState - Manages the overall game state
+## This is now a data container. Authority is managed by server controllers.
+## On server: Full read/write access via controllers
+## On client: Read-only, updated via network sync
 
 signal phase_changed(new_phase: GamePhase)
 signal turn_changed(turn_number: int)
 signal player_ready(player_id: int)
+signal state_synced()  # Emitted when state is synced from server
 
 enum GamePhase {
 	SETUP,
@@ -25,7 +29,14 @@ var players_ready: Array[bool] = [false, false]
 var active_scenario: Dictionary = {}
 var selected_scenario: String = ""  # Scenario name selected from menu
 
-# State objects (authoritative)
+# Server-side controllers (only active on server)
+var is_server: bool = true  # Set by network manager
+var phase_controller: TurnPhaseController = null
+var ship_controller: ShipStateController = null
+var command_validator: CommandValidator = null
+var network_sync: NetworkSync = null
+
+# State objects (authoritative on server, read-only on client)
 var environment: EnvironmentState = null  # Environmental conditions
 var ships: Dictionary = {}  # ship_id -> ShipState
 var ships_by_player: Dictionary = {0: [], 1: []}  # player_id -> Array[ship_id]
@@ -39,154 +50,91 @@ var sea_state: int:
 	get: return environment.sea_state if environment else 1
 
 func _ready() -> void:
-	print("GameState initialized")
+	print("GameState initialized (server: %s)" % is_server)
+
+	# Initialize server controllers if this is the server
+	if is_server:
+		_initialize_server_controllers()
+
+func _initialize_server_controllers() -> void:
+	"""Initialize server-side controllers - SERVER ONLY"""
+	phase_controller = TurnPhaseController.new(self)
+	ship_controller = ShipStateController.new(self)
+	command_validator = CommandValidator.new(self, ship_controller, phase_controller)
+	network_sync = NetworkSync.new(self)
+	network_sync.is_server = is_server
+
+	# Connect signals
+	phase_controller.phase_changed.connect(_on_server_phase_changed)
+	phase_controller.turn_changed.connect(_on_server_turn_changed)
+
+	# Connect state change signals to trigger sync
+	if is_server:
+		phase_changed.connect(_on_state_changed_broadcast)
+		turn_changed.connect(_on_state_changed_broadcast)
+		if ship_controller:
+			ship_controller.ship_state_changed.connect(_on_state_changed_broadcast)
+
+	print("Server controllers initialized")
 
 func start_new_game(scenario_data: Dictionary) -> void:
-	"""Initialize a new game with scenario data"""
+	"""Initialize a new game with scenario data - SERVER ONLY"""
+	if not is_server:
+		push_error("GameState: Cannot start game on client")
+		return
+
 	active_scenario = scenario_data
-	current_turn = 1
-	current_phase = GamePhase.ENVIRONMENT
 
 	# Initialize environment from scenario
 	environment = EnvironmentState.new()
 	environment.initialize_from_scenario(scenario_data)
 
-	print("Game started - Turn: %d, Wind: %s (%d), Speed: %s (%d)" % [
-		current_turn,
+	print("Game started - Turn: 1, Wind: %s (%d), Speed: %s (%d)" % [
 		environment.get_wind_direction_name(),
 		environment.wind_direction,
 		environment.get_wind_speed_name(),
 		environment.wind_speed
 	])
-	advance_phase()
 
-func advance_phase() -> void:
-	"""Progress to the next game phase"""
-	match current_phase:
-		GamePhase.SETUP:
-			_enter_environment_phase()
-		GamePhase.ENVIRONMENT:
-			_enter_planning_phase()
-		GamePhase.PLANNING:
-			_enter_movement_resolution_phase()
-		GamePhase.MOVEMENT_RESOLUTION:
-			_enter_combat_resolution_phase()
-		GamePhase.COMBAT_RESOLUTION:
-			_enter_drift_calculation_phase()
-		GamePhase.DRIFT_CALCULATION:
-			_enter_status_adjustment_phase()
-		GamePhase.STATUS_ADJUSTMENT:
-			_enter_morale_check_phase()
-		GamePhase.MORALE_CHECK:
-			_enter_message_delivery_phase()
-		GamePhase.MESSAGE_DELIVERY:
-			_enter_post_combat_phase()
-		GamePhase.POST_COMBAT:
-			_enter_end_turn_phase()
-		GamePhase.END_TURN:
-			_start_new_turn()
+	# Start the game via phase controller
+	if phase_controller:
+		phase_controller.start_new_game()
 
-func _enter_environment_phase() -> void:
-	current_phase = GamePhase.ENVIRONMENT
+func _on_server_phase_changed(new_phase: int) -> void:
+	"""Handle phase change from server controller"""
+	current_phase = new_phase
 	phase_changed.emit(current_phase)
-	print("Phase: ENVIRONMENT")
 
-	# Update environment (deterministic based on turn number)
-	if environment:
-		environment.tick_environment(current_turn)
-		print("Environment: Wind %s (%d), Speed %s (%d), Sea %s (%d)" % [
-			environment.get_wind_direction_name(),
-			environment.wind_direction,
-			environment.get_wind_speed_name(),
-			environment.wind_speed,
-			environment.get_sea_state_name(),
-			environment.sea_state
-		])
-
-	# TODO: Perform sail checks based on new wind conditions
-	advance_phase()
-
-func _enter_planning_phase() -> void:
-	current_phase = GamePhase.PLANNING
-	phase_changed.emit(current_phase)
-	players_ready = [false, false]
-	print("Phase: PLANNING - Players plot their actions")
-	# Players will call player_submit_plan() when ready
-
-func player_submit_plan(player_id: int) -> void:
-	"""Called when a player submits their planned actions"""
-	players_ready[player_id] = true
-	player_ready.emit(player_id)
-	print("Player %d submitted plan" % player_id)
-
-	# Check if all players are ready
-	if players_ready.all(func(is_ready): return is_ready):
-		print("All players ready, advancing phase")
-		advance_phase()
-
-func _enter_movement_resolution_phase() -> void:
-	current_phase = GamePhase.MOVEMENT_RESOLUTION
-	phase_changed.emit(current_phase)
-	print("Phase: MOVEMENT_RESOLUTION")
-	# TODO: Resolve movement, collisions, ramming
-	advance_phase()
-
-func _enter_combat_resolution_phase() -> void:
-	current_phase = GamePhase.COMBAT_RESOLUTION
-	phase_changed.emit(current_phase)
-	print("Phase: COMBAT_RESOLUTION")
-	# TODO: Resolve gunnery, marine fire, boarding
-	advance_phase()
-
-func _enter_drift_calculation_phase() -> void:
-	current_phase = GamePhase.DRIFT_CALCULATION
-	phase_changed.emit(current_phase)
-	print("Phase: DRIFT_CALCULATION")
-	# TODO: Resolve drifting/fouling
-	advance_phase()
-
-func _enter_status_adjustment_phase() -> void:
-	current_phase = GamePhase.STATUS_ADJUSTMENT
-	phase_changed.emit(current_phase)
-	print("Phase: STATUS_ADJUSTMENT")
-	# TODO: Resolve explosions, sinking, repairs, crew reorg, anchors
-	advance_phase()
-
-func _enter_morale_check_phase() -> void:
-	current_phase = GamePhase.MORALE_CHECK
-	phase_changed.emit(current_phase)
-	print("Phase: MORALE_CHECK")
-	# TODO: Update crew morale
-	advance_phase()
-
-func _enter_message_delivery_phase() -> void:
-	current_phase = GamePhase.MESSAGE_DELIVERY
-	phase_changed.emit(current_phase)
-	print("Phase: MESSAGE_DELIVERY")
-	# TODO: Deliver flag messages
-	advance_phase()
-
-func _enter_post_combat_phase() -> void:
-	current_phase = GamePhase.POST_COMBAT
-	phase_changed.emit(current_phase)
-	print("Phase: POST_COMBAT - Player interaction required")
-	# TODO: Allow grappling/ungrappling, unfouling, fire fighting
-	# Player will manually advance when done
-
-func _enter_end_turn_phase() -> void:
-	current_phase = GamePhase.END_TURN
-	phase_changed.emit(current_phase)
-	print("Phase: END_TURN")
-	# TODO: Check victory/defeat conditions
-
-func _start_new_turn() -> void:
-	current_turn += 1
+func _on_server_turn_changed(turn_number: int) -> void:
+	"""Handle turn change from server controller"""
+	current_turn = turn_number
 	turn_changed.emit(current_turn)
-	print("=== Turn %d ===" % current_turn)
-	current_phase = GamePhase.ENVIRONMENT
-	advance_phase()
+
+func _on_state_changed_broadcast(_arg = null) -> void:
+	"""Broadcast state changes to clients when state changes"""
+	if is_server and network_sync:
+		# Note: This gets called frequently. In production, you might want to
+		# debounce this or use delta syncing for efficiency
+		pass  # network_sync.broadcast_state() called automatically via timer
+
+## DEPRECATED - Use phase_controller.advance_phase() on server instead
+func advance_phase() -> void:
+	"""DEPRECATED: Use phase_controller.advance_phase() instead"""
+	if is_server and phase_controller:
+		phase_controller.advance_phase()
+	else:
+		push_error("GameState.advance_phase() is deprecated. Use phase_controller on server.")
+
+## DEPRECATED - Use phase_controller.player_submit_plan() on server instead
+func player_submit_plan(player_id: int) -> void:
+	"""DEPRECATED: Use phase_controller.player_submit_plan() instead"""
+	if is_server and phase_controller:
+		phase_controller.player_submit_plan(player_id)
+	else:
+		push_error("GameState.player_submit_plan() is deprecated. Use phase_controller on server.")
 
 func get_phase_name() -> String:
+	"""Get human-readable phase name"""
 	return GamePhase.keys()[current_phase]
 
 ## Ship Management Functions
@@ -279,3 +227,81 @@ func deserialize_full_state(data: Dictionary) -> void:
 		get_phase_name(),
 		ships.size()
 	])
+
+## State Synchronization (for multiplayer)
+
+func sync_from_server(state_data: Dictionary) -> void:
+	"""Apply full state update from server - CLIENT ONLY"""
+	if is_server:
+		push_error("GameState: Cannot sync from server on server")
+		return
+
+	# Update phase state
+	current_turn = state_data.get("turn", 1)
+	current_phase = state_data.get("phase", GamePhase.SETUP)
+	players_ready = state_data.get("players_ready", [false, false])
+
+	# Update environment
+	if state_data.has("environment"):
+		if environment:
+			# Update existing environment
+			var env_data = state_data.environment
+			environment.wind_direction = env_data.get("wind_direction", 0)
+			environment.wind_speed = env_data.get("wind_speed", 2)
+			environment.wind_speed_change = env_data.get("wind_speed_change", "steady")
+			environment.wind_direction_change = env_data.get("wind_direction_change", "none")
+			environment.sea_state = env_data.get("sea_state", 1)
+			environment.visibility = env_data.get("visibility", "clear")
+			environment.time_of_day = env_data.get("time_of_day", "day")
+			environment.precipitation = env_data.get("precipitation", "none")
+		else:
+			environment = EnvironmentState.deserialize(state_data.environment)
+
+	# Update ships
+	var ship_ids_to_remove = []
+	for ship_id in ships.keys():
+		var found = false
+		for ship_data in state_data.get("ships", []):
+			if ship_data.get("ship_id") == ship_id:
+				found = true
+				break
+		if not found:
+			ship_ids_to_remove.append(ship_id)
+
+	# Remove ships that no longer exist
+	for ship_id in ship_ids_to_remove:
+		remove_ship(ship_id)
+
+	# Update or add ships
+	for ship_data in state_data.get("ships", []):
+		var ship_id = ship_data.get("ship_id")
+		if ships.has(ship_id):
+			# Update existing ship
+			_update_ship_from_data(ships[ship_id], ship_data)
+		else:
+			# Add new ship
+			var ship_state = ShipState.deserialize(ship_data)
+			add_ship(ship_state)
+
+	# Emit sync signal
+	state_synced.emit()
+	print("[Client] State synced from server: Turn %d, Phase %s, %d ships" % [
+		current_turn,
+		get_phase_name(),
+		ships.size()
+	])
+
+func _update_ship_from_data(ship: ShipState, data: Dictionary) -> void:
+	"""Update ship state from serialized data"""
+	var pos = data.get("position", {"q": ship.hex_position.x, "r": ship.hex_position.y})
+	ship.hex_position = Vector2i(pos.q, pos.r)
+	ship.facing = data.get("facing", ship.facing)
+	ship.current_speed = data.get("current_speed", ship.current_speed)
+	ship.last_speed = data.get("last_speed", ship.last_speed)
+	ship.sail_state = data.get("sail_state", ship.sail_state)
+	ship.rigging_quality = data.get("rigging_quality", ship.rigging_quality)
+	ship.rigging_damage = data.get("rigging_damage", ship.rigging_damage)
+	ship.hull_current_hp = data.get("hull_current_hp", ship.hull_current_hp)
+	ship.crew_count = data.get("crew_count", ship.crew_count)
+	ship.crew_morale = data.get("crew_morale", ship.crew_morale)
+	ship.plotted_actions = data.get("plotted_actions", ship.plotted_actions)

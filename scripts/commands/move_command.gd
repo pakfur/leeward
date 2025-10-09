@@ -6,37 +6,43 @@ extends GameCommand
 @export var movement_commands: Array[String] = []  # ["F2", "S", "F1"]
 
 func validate() -> bool:
-	"""Validate if this move command is legal"""
-	# Check if ship exists
+	"""DEPRECATED: Use CommandValidator on server instead"""
+	push_warning("MoveCommand.validate() is deprecated. Use server-side CommandValidator.")
+
+	# Basic validation for backward compatibility
 	var ship_state = GameState.get_ship(ship_id)
 	if not ship_state:
 		push_error("MoveCommand: Ship %s not found" % ship_id)
 		return false
 
-	# Check if ship belongs to player
 	if ship_state.player_id != player_id:
 		push_error("MoveCommand: Ship %s does not belong to player %d" % [ship_id, player_id])
 		return false
 
-	# Check if it's the planning phase
-	if GameState.current_phase != GameState.GamePhase.PLANNING:
-		push_error("MoveCommand: Can only plot movement during PLANNING phase")
-		return false
-
-	# TODO: Add movement allowance validation
-	# var ma = ship_state.get_movement_allowance()
-	# Check if movement_commands are within allowance
-
 	return true
 
 func execute() -> bool:
-	"""Execute the move command - store plotted movement"""
+	"""Execute the move command via server authority"""
+	# If this is the server, use command validator
+	if GameState.is_server and GameState.command_validator:
+		var result = GameState.command_validator.execute_command(self)
+		return result.get("success", false)
+
+	# If this is a client, commands should be sent to server
+	# For now, we'll push a warning and fail
+	push_warning("MoveCommand.execute() called on client - should send to server instead")
+	return false
+
+func execute_local_for_testing() -> bool:
+	"""Direct execution for single-player testing (bypasses server validation)"""
 	if not validate():
 		return false
 
 	var ship_state = GameState.get_ship(ship_id)
-	ship_state.plotted_actions["movement"] = movement_commands
+	if not ship_state:
+		return false
 
+	ship_state.plotted_actions["movement"] = movement_commands
 	print("MoveCommand: Ship %s plotted movement: %s" % [ship_id, movement_commands])
 	return true
 

@@ -210,20 +210,31 @@ func _enter_planning_phase() -> void:
 func _on_player_plan_submitted() -> void:
 	"""Player has submitted their plan"""
 	print("Player submitted plan")
-	GameState.player_submit_plan(0)
 
-	# TODO: Wait for AI or submit AI plan immediately
-	GameState.player_submit_plan(1)
+	# Submit plan to server (via phase controller if server, or via network if client)
+	if GameState.is_server and GameState.phase_controller:
+		GameState.phase_controller.player_submit_plan(0)
+
+		# TODO: Wait for AI or submit AI plan immediately
+		GameState.phase_controller.player_submit_plan(1)
+	else:
+		# TODO: Send plan submission to server via network
+		push_warning("Client plan submission not yet implemented - needs network layer")
 
 func _resolve_movement() -> void:
-	"""Resolve movement for all ships (deterministic)"""
-	print("Resolving movement...")
+	"""Resolve movement for all ships - SERVER ONLY"""
+	if not GameState.is_server:
+		# Clients wait for server to sync state
+		print("[Client] Waiting for movement resolution from server")
+		_sync_all_views()
+		await get_tree().create_timer(1.0).timeout
+		return
 
-	# TODO: Implement actual movement resolution
-	for ship_state in GameState.get_all_ships():
-		var movement = ship_state.plotted_actions.get("movement", [])
-		if not movement.is_empty():
-			print("  Ship %s movement: %s" % [ship_state.ship_name, movement])
+	print("[Server] Resolving movement...")
+
+	# Use ship controller to resolve movement
+	if GameState.ship_controller:
+		GameState.ship_controller.resolve_all_movement()
 
 	# Sync all views to state after resolution
 	_sync_all_views()
@@ -231,13 +242,22 @@ func _resolve_movement() -> void:
 	# For now, just advance phase
 	await get_tree().create_timer(1.0).timeout
 
+	# Advance to next phase
+	if GameState.phase_controller:
+		GameState.phase_controller.advance_phase()
+
 func _enter_post_combat_phase() -> void:
 	"""Enter post-combat phase - player can manually advance"""
 	print("Post-combat phase - waiting for player to end turn")
 	# TODO: Add UI button to end turn
 	# For now, auto-advance after delay
 	await get_tree().create_timer(2.0).timeout
-	GameState.advance_phase()
+
+	if GameState.is_server and GameState.phase_controller:
+		GameState.phase_controller.advance_phase()
+	else:
+		# TODO: Send advance phase request to server
+		push_warning("Client phase advance not yet implemented - needs network layer")
 
 func _sync_all_views() -> void:
 	"""Sync all ship views to their current state"""

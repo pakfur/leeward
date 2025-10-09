@@ -92,14 +92,25 @@ func _on_submit_pressed() -> void:
 	var movement_text = movement_input.text if movement_input else ""
 	var movement_commands = _parse_movement_input(movement_text)
 
-	# Create and execute MoveCommand
+	# Create MoveCommand
 	var move_command = MoveCommand.new()
 	move_command.player_id = current_ship.player_id
 	move_command.turn_number = GameState.current_turn
 	move_command.ship_id = current_ship_id
 	move_command.movement_commands = movement_commands
 
-	if move_command.execute():
+	# Execute via server authority
+	var success = false
+	if GameState.is_server:
+		# Server: Execute via command validator
+		success = move_command.execute()
+	else:
+		# Client: TODO - Send to server via network
+		# For now, we'll use local execution for testing
+		push_warning("PlanningPanel: Client mode - should send command to server")
+		success = move_command.execute_local_for_testing()
+
+	if success:
 		print("PlanningPanel: Move command executed for %s" % current_ship.ship_name)
 	else:
 		print("PlanningPanel: Move command failed for %s" % current_ship.ship_name)
