@@ -10,7 +10,7 @@
 ### Screen Layout
 ```
 ┌─────────────────────────────────────┐
-│ Top Bar (Resources, Turn, Menu)     │
+│ Top Bar (Environment, Turn, Menu)   │
 ├──────┬──────────────────────┬───────┤
 │      │                      │       │
 │ Left │   Game Board View    │ Right │
@@ -22,12 +22,24 @@
 ```
 
 ## Main Game HUD
+### Wind Direction (HEX)
+
+```    N
+	 _____
+NW /       \ NE
+SW \       / SE
+	 -----
+	   S
+```
 
 ### Top Bar
-- **Resources Display**
-  - Gold: [Icon + Number]
-  - Supplies: [Icon + Number]
-  - Ammunition: [Icon + Number]
+- **Environment Display**
+  - Compass: [8 point Compass indicator, dynamic]
+  - Wind Direction: [Arrow Icon + Direction (N,NE, SE,NW, SW)]
+  - Wind Speed Variability: [Steady, Variable]
+  - Wind Conditions: [Oceanic, Costal]
+  - Wind Speed: [Very Light, Light, Fresh, Heavy	]
+  - Sea State: [] 
 - **Turn Information**
   - Current turn number
   - Active phase indicator

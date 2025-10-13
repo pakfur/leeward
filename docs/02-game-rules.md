@@ -53,17 +53,17 @@
  2. ++ PLANNING PHASE (Player Interaction Required)
    2.1 For each ship under the players command, allow the user to select a ship and show a UI where the player can plot actions for this turn.
    2.2 Plot actions permit the player to update none, some or all of the following item: (All optional)
-     2.2.1 plot ship movement, include tacking, wearing, beating upwind, sailing downwind etc
-     2.2.2 optional anchoring of ship if allowed
-     2.2.3 Plan any towing 
-     2.2.4 Allocate casting the lead to measure speed
-     2.2.5 Set sail state, including reefing, taking out reefs, striking sails on deck, updating sail plan for light winds, heavy winds, storms
-     2.2.6 Plan boarding party preparatlon
-     2.2.7 Plan crew reorganization, including reallocating sailors, allocating between sails and gunnery
-     2.2.8 Perform repairs, rigging, spars, hull, above and below the waterline. 
-     2.2.9 Allocate crew firefighting, reallocating crew to fight any fires
-     2.2.10 Gunnery and Marine fire, select targets, select which guns to fire, ammunition type, hull or rigging
-     2.2.11 send messsages between ships (using flags)
+	 2.2.1 plot ship movement, include tacking, wearing, beating upwind, sailing downwind etc
+	 2.2.2 optional anchoring of ship if allowed
+	 2.2.3 Plan any towing 
+	 2.2.4 Allocate casting the lead to measure speed
+	 2.2.5 Set sail state, including reefing, taking out reefs, striking sails on deck, updating sail plan for light winds, heavy winds, storms
+	 2.2.6 Plan boarding party preparatlon
+	 2.2.7 Plan crew reorganization, including reallocating sailors, allocating between sails and gunnery
+	 2.2.8 Perform repairs, rigging, spars, hull, above and below the waterline. 
+	 2.2.9 Allocate crew firefighting, reallocating crew to fight any fires
+	 2.2.10 Gunnery and Marine fire, select targets, select which guns to fire, ammunition type, hull or rigging
+	 2.2.11 send messsages between ships (using flags)
    2.3 Some plotted actions may take multiple turns to complete, and require allocated crew to complete
    2.4 Player submits all plotted actions
    2.5 Player sends and messages (using constrained "flags" system)
@@ -228,7 +228,7 @@ A ship can make a maximum of 2 pivots per turn. After turning, a ship must move 
 
 Vessels poivot by pivoting their bow, meaning the stern moves and the bow remains in
 the hex where it was. 
-    Exception: Anchoring with turnbuckles at the stern.
+	Exception: Anchoring with turnbuckles at the stern.
 
 
 

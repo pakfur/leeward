@@ -34,9 +34,9 @@ Leeward/
 │   ├── audio/
 │   └── fonts/
 └── data/
-    ├── ships.json
-    ├── weapons.json
-    └── scenarios.json
+	├── ships.json
+	├── weapons.json
+	└── scenarios.json
 ```
 
 ## Core Systems
@@ -110,12 +110,12 @@ var ai_component: ShipAI
 ### Damage Calculation
 ```gdscript
 func calculate_damage(attacker: Ship, target: Ship, weapon: Weapon) -> int:
-    # Base damage
-    # Range modifier
-    # Angle modifier
-    # Critical hit chance
-    # Armor reduction
-    return final_damage
+	# Base damage
+	# Range modifier
+	# Angle modifier
+	# Critical hit chance
+	# Armor reduction
+	return final_damage
 ```
 
 ### Combat Resolution
@@ -164,15 +164,15 @@ extends Resource
 ### Save Data Structure
 ```gdscript
 var save_data = {
-    "version": "1.0",
-    "timestamp": OS.get_unix_time(),
-    "game_state": {
-        "turn": current_turn,
-        "phase": current_phase
-    },
-    "ships": [],
-    "resources": {},
-    "progression": {}
+	"version": "1.0",
+	"timestamp": OS.get_unix_time(),
+	"game_state": {
+		"turn": current_turn,
+		"phase": current_phase
+	},
+	"ships": [],
+	"resources": {},
+	"progression": {}
 }
 ```
 
@@ -227,10 +227,10 @@ class_name DataManager
 extends Node
 
 func load_ship_data(path: String) -> Array:
-    # Load and parse JSON
-    # Validate schema
-    # Create resources
-    return ships
+	# Load and parse JSON
+	# Validate schema
+	# Create resources
+	return ships
 ```
 
 ## Audio System
@@ -279,8 +279,8 @@ GameBoard
 ├── Ships
 ├── Effects
 └── UI
-    ├── HUD
-    └── Dialogs
+	├── HUD
+	└── Dialogs
 ```
 
 ### Scene Transitions
@@ -333,16 +333,16 @@ GameBoard
 ### Logging System
 ```gdscript
 enum LogLevel {
-    DEBUG,
-    INFO,
-    WARNING,
-    ERROR
+	DEBUG,
+	INFO,
+	WARNING,
+	ERROR
 }
 
 func log_message(level: LogLevel, message: String):
-    # Timestamp
-    # Format
-    # Output to console/file
+	# Timestamp
+	# Format
+	# Output to console/file
 ```
 
 ## Dependencies

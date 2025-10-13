@@ -5,6 +5,7 @@
   "wind_speed": 2,
   "wind_speed_change": "steady",
   "wind_direction_change": "none",
+  "region": "oceanic",
   "sea_state": 1,
   "map": {
 	"map_texture": "res://assets/textures/water_default.png",

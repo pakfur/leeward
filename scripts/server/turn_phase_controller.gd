@@ -79,7 +79,7 @@ func _enter_environment_phase() -> void:
 	phase_changed.emit(current_phase)
 	print("[Server] Phase: ENVIRONMENT")
 
-	# Update environment (deterministic based on turn number)
+	# Update environment
 	if game_state.environment:
 		game_state.environment.tick_environment(current_turn)
 		print("[Server] Environment: Wind %s (%d), Speed %s (%d), Sea %s (%d)" % [

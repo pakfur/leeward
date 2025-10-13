@@ -5,8 +5,11 @@ extends Resource
 
 # Wind
 @export var wind_direction: int = 0  # 0-5 representing hex faces (0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE)
+@export var original_wind_direction: int = 0 # tracks the initial wind pseed for reverting
 @export var wind_speed: int = 2  # 0-5 (0=calm, 1=light, 2=moderate, 3=fresh, 4=strong, 5=gale)
-@export var wind_speed_change: String = "steady"  # "steady", "increasing", "decreasing"
+@export var original_wind_speed: int = 2  # tracks the initial wind speed for reverting
+@export var wind_speed_change: String = "steady"  # "steady", "gusty"
+@export var region: String = "oceanic" # "oceanic", "coastal"
 @export var wind_direction_change: String = "none"  # "none", "veering", "backing"
 
 # Sea State
@@ -19,35 +22,75 @@ extends Resource
 # Weather change patterns (optional, for more complex scenarios)
 @export var precipitation: String = "none"  # "none", "rain", "snow", "storm"
 
-func tick_environment(turn_number: int) -> void:
+func tick_environment(turn_number: int, rng: RandomNumberGenerator) -> void:
 	"""Update environment for new turn (deterministic based on turn number)"""
-	_update_wind(turn_number)
+	_update_wind(turn_number, rng)
 	_update_sea_state(turn_number)
 	_update_weather(turn_number)
 
-func _update_wind(turn_number: int) -> void:
+func _update_wind(turn_number: int, rng: RandomNumberGenerator) -> void:
 	"""Update wind direction and speed based on change patterns"""
 	# Wind direction changes
-	match wind_direction_change:
-		"veering":  # Clockwise rotation
-			if turn_number % 3 == 0:  # Change every 3 turns
-				wind_direction = (wind_direction + 1) % 6
-				print("Wind veering to direction %d" % wind_direction)
-		"backing":  # Counter-clockwise rotation
-			if turn_number % 3 == 0:
-				wind_direction = (wind_direction - 1 + 6) % 6
-				print("Wind backing to direction %d" % wind_direction)
+	var temp_wind_direction = wind_direction
+	var wind_dir_roll = rng.randi_range(1, 10) + rng.randi_range(1, 10) # 2d10
+	match region:
+		"oceanic":  
+			if wind_dir_roll < 4:
+				# veer clockwise or counter-clockwise
+				var wind_veer_roll = rng.randi_range(1, 10)
+				if wind_veer_roll < 6:
+					wind_direction = (wind_direction - 1 + 6) % 6 
+				else:
+					wind_direction = (wind_direction + 1 + 6) % 6 
+			else:
+				if wind_dir_roll > 17:
+					# revert the wind direction towards original wind_direction
+					if wind_direction > original_wind_direction:
+						wind_direction = (wind_direction - 1 + 6) % 6 
+					else:
+						if wind_direction < original_wind_direction:
+							wind_direction = (wind_direction + 1 + 6) % 6 
+					
+		"coastal":  
+			if wind_dir_roll > 5 && wind_dir_roll < 8:
+				var wind_veer_roll = rng.randi_range(1, 10)
+				if wind_veer_roll < 6:
+					wind_direction = (wind_direction - 1 + 6) % 6 
+				else:
+					wind_direction = (wind_direction + 1 + 6) % 6 
+			else:
+				if wind_dir_roll > 17:
+					# revert the wind direction towards original wind_direction
+					if wind_direction > original_wind_direction:
+						wind_direction = (wind_direction - 1 + 6) % 6 
+					else:
+						if wind_direction < original_wind_direction:
+							wind_direction = (wind_direction + 1 + 6) % 6 
+	if wind_direction != temp_wind_direction:
+		print("Wind direction changed to %d" % wind_direction)
+		
 
 	# Wind speed changes
-	match wind_speed_change:
-		"increasing":
-			if turn_number % 5 == 0 and wind_speed < 5:
-				wind_speed += 1
-				print("Wind speed increasing to %d" % wind_speed)
-		"decreasing":
-			if turn_number % 5 == 0 and wind_speed > 0:
-				wind_speed -= 1
-				print("Wind speed decreasing to %d" % wind_speed)
+	var temp_wind_speed = wind_speed
+	var wind_speed_roll = rng.randi_range(1, 10) + rng.randi_range(1, 10) # 2d10
+	var changes_threshold = 4 if wind_speed_change == "steady" else 6
+		
+	if wind_speed_roll < changes_threshold:
+		var changes = rng.randi_range(1,10)
+		if changes < 5:
+			wind_speed += 1
+		else:
+			wind_speed -= 1
+	elif wind_speed_roll > 17:
+		# revert back towards original wind speed
+		if wind_speed > original_wind_speed:
+			wind_speed -= 1
+		if wind_speed < original_wind_speed:
+			wind_speed += 1
+			
+	wind_speed = clampi(wind_speed, 0, 4)
+	if temp_wind_speed != wind_speed:
+		print("Wind speed changed to %d" % wind_speed)
 
 func _update_sea_state(turn_number: int) -> void:
 	"""Update sea state based on wind speed and other factors"""
@@ -94,6 +137,7 @@ func serialize() -> Dictionary:
 		"wind_speed": wind_speed,
 		"wind_speed_change": wind_speed_change,
 		"wind_direction_change": wind_direction_change,
+		"region": region,
 		"sea_state": sea_state,
 		"visibility": visibility,
 		"time_of_day": time_of_day,
@@ -105,7 +149,9 @@ static func deserialize(data: Dictionary) -> EnvironmentState:
 	var state = EnvironmentState.new()
 
 	state.wind_direction = data.get("wind_direction", 0)
+	state.original_wind_direction = state.wind_direction
 	state.wind_speed = data.get("wind_speed", 2)
+	state.original_wind_speed - state.wind_speed
 	state.wind_speed_change = data.get("wind_speed_change", "steady")
 	state.wind_direction_change = data.get("wind_direction_change", "none")
 	state.sea_state = data.get("sea_state", 1)
@@ -118,15 +164,19 @@ static func deserialize(data: Dictionary) -> EnvironmentState:
 func initialize_from_scenario(scenario_data: Dictionary) -> void:
 	"""Initialize environment from scenario data"""
 	wind_direction = scenario_data.get("wind_direction", 0)
+	original_wind_direction = wind_direction
 	wind_speed = scenario_data.get("wind_speed", 2)
+	original_wind_speed = wind_speed
 	wind_speed_change = scenario_data.get("wind_speed_change", "steady")
+	region = scenario_data.get("region", "oceanic")
 	wind_direction_change = scenario_data.get("wind_direction_change", "none")
 	sea_state = scenario_data.get("sea_state", 1)
 	visibility = scenario_data.get("visibility", "clear")
 	time_of_day = scenario_data.get("time_of_day", "day")
 	precipitation = scenario_data.get("precipitation", "none")
 
-	print("EnvironmentState initialized: Wind %s (%d), Speed %s (%d), Sea %s (%d)" % [
+	print("EnvironmentState initialized: Environment %s, Wind %s (%d), Speed %s (%d), Sea %s (%d)" % [
+		region,
 		get_wind_direction_name(), wind_direction,
 		get_wind_speed_name(), wind_speed,
 		get_sea_state_name(), sea_state
