@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://bpu2nupk12n3p"]
+
+[ext_resource type="Script" uid="uid://du06vuff8x8j2" path="res://scripts/util/generate_compass_assets.gd" id="1"]
+
+[node name="CompassAssetGenerator" type="Node"]
+script = ExtResource("1")

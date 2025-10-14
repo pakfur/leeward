@@ -1,67 +1,97 @@
 extends Control
-## WindCompass - Displays wind direction as a compass widget
+## WindCompass - Asset-based compass with camera-relative rotation
+## Displays north needle and wind direction indicator that rotate to compensate for camera orientation
 
 @export var compass_size: Vector2 = Vector2(120, 120)
-@export var wind_arrow_color: Color = Color(0.9, 0.9, 0.3)
-@export var compass_bg_color: Color = Color(0.2, 0.15, 0.1, 0.8)
+@export var camera: Camera3D  # Reference to the isometric camera
 
-var wind_direction: int = 0  # 0-5
+# Child node references (set up in scene)
+@onready var compass_base: TextureRect = $CompassBase
+@onready var north_needle: TextureRect = $NorthNeedle
+@onready var wind_icon: TextureRect = $WindIcon
+
+var wind_direction: int = 0  # 0-5 hex direction (0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE)
+var camera_rotation_y: float = 0.0  # Cached camera rotation
 
 func _ready() -> void:
 	custom_minimum_size = compass_size
+
+	# Connect to GameState for wind updates
 	GameState.phase_changed.connect(_on_phase_changed)
 	_update_wind_direction()
 
-func _draw() -> void:
-	var center = size / 2.0
-	var radius = min(size.x, size.y) / 2.0 - 10.0
+	# Find camera if not assigned
+	if not camera:
+		_find_camera()
 
-	# Draw compass background
-	draw_circle(center, radius, compass_bg_color)
+	# Set initial pivot points for proper rotation
+	if compass_base:
+		compass_base.pivot_offset = compass_base.size / 2.0
+	if north_needle:
+		north_needle.pivot_offset = north_needle.size / 2.0
+	if wind_icon:
+		wind_icon.pivot_offset = wind_icon.size / 2.0
 
-	# Draw compass ring
-	draw_arc(center, radius, 0, TAU, 32, Color(0.6, 0.5, 0.4), 2.0)
+func _process(_delta: float) -> void:
+	"""Update compass rotations every frame to track camera"""
+	if camera:
+		_update_camera_rotation()
+		_update_compass_rotations()
 
-	# Draw cardinal directions (simplified hex directions)
-	var direction_labels = ["E", "SE", "SW", "W", "NW", "NE"]
-	for i in range(6):
-		var angle = deg_to_rad(-i * 60.0 + 90.0)  # Start from east, go clockwise
-		var label_pos = center + Vector2(cos(angle), -sin(angle)) * (radius * 0.7)
-		draw_string(ThemeDB.fallback_font, label_pos - Vector2(8, -4), direction_labels[i],
-					HORIZONTAL_ALIGNMENT_CENTER, -1, 12, Color.WHITE)
+func _find_camera() -> void:
+	"""Auto-find the camera in the scene if not assigned"""
+	var viewport = get_viewport()
+	if viewport:
+		camera = viewport.get_camera_3d()
+		if camera:
+			print("WindCompass: Auto-found camera: %s" % camera.name)
+		else:
+			push_warning("WindCompass: No camera found in viewport")
 
-	# Draw wind direction arrow
-	_draw_wind_arrow(center, radius * 0.5)
+func _update_camera_rotation() -> void:
+	"""Get current camera rotation from IsometricCamera"""
+	# Access the camera_rotation_y property
+	if camera.has_method("get") or "camera_rotation_y" in camera:
+		camera_rotation_y = camera.get("camera_rotation_y")
 
-	# Draw center dot
-	draw_circle(center, 4, Color.WHITE)
+func _update_compass_rotations() -> void:
+	"""Update needle and wind icon rotations based on camera orientation"""
 
-func _draw_wind_arrow(center: Vector2, length: float) -> void:
-	"""Draw an arrow showing wind direction"""
-	var angle = deg_to_rad(-wind_direction * 60.0 + 90.0)  # Convert hex facing to angle
-	var direction = Vector2(cos(angle), -sin(angle))
+	# North needle: rotate to compensate for camera rotation
+	# So it always points north regardless of camera angle
+	if north_needle:
+		north_needle.rotation = deg_to_rad(-camera_rotation_y)
 
-	# Arrow shaft
-	var arrow_end = center + direction * length
-	draw_line(center, arrow_end, wind_arrow_color, 3.0)
+	# Wind icon: show wind direction relative to north, compensated for camera
+	if wind_icon:
+		# Convert hex direction to world angle (0=E is 0°, goes clockwise)
+		var wind_angle_world = wind_direction * 60.0
 
-	# Arrow head
-	var head_size = 12.0
-	var perpendicular = Vector2(-direction.y, direction.x)
-	var head_left = arrow_end - direction * head_size + perpendicular * head_size * 0.5
-	var head_right = arrow_end - direction * head_size - perpendicular * head_size * 0.5
+		# Adjust for coordinate system (hex 0=E is at 0°, but we want N as reference)
+		# In hex system: 0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE
+		# We want to display relative to North, so rotate by 90° and compensate camera
+		wind_angle_world = wind_angle_world - 90.0  # Convert E-based to N-based
 
-	var points = PackedVector2Array([arrow_end, head_left, head_right])
-	draw_colored_polygon(points, wind_arrow_color)
+		# Compensate for camera rotation
+		var wind_angle_screen = wind_angle_world - camera_rotation_y
+
+		wind_icon.rotation = deg_to_rad(wind_angle_screen)
 
 func set_wind_direction(direction: int) -> void:
-	"""Update the displayed wind direction (0-5)"""
+	"""Update the displayed wind direction (0-5 hex direction)"""
 	wind_direction = direction % 6
-	queue_redraw()
+	_update_compass_rotations()
 
 func _update_wind_direction() -> void:
-	"""Update from GameState"""
+	"""Update from GameState (server-authoritative)"""
 	set_wind_direction(GameState.wind_direction)
+	print("WindCompass: Wind direction updated to %d (%s)" % [wind_direction, _get_direction_name()])
+
+func _get_direction_name() -> String:
+	"""Get human-readable wind direction for debugging"""
+	var directions = ["E", "SE", "SW", "W", "NW", "NE"]
+	return directions[wind_direction]
 
 func _on_phase_changed(_phase) -> void:
+	"""Handle game phase changes (wind may change per turn)"""
 	_update_wind_direction()

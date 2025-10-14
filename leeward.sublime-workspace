@@ -31,7 +31,7 @@
 						"characters": "z"
 					},
 					"AQAAAAAAAAAAAAAAAAAAAAAAAAABAAAAeg",
-					"AQAAAAAAAAABAAAAAQAAAAAAAAABAAAAAAAAAAAAAAAAAPC/"
+					"AgAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAEAAAABAAAAAAAAAAEAAAAAAAAAAAAAAAAA8L8"
 				]
 			],
 			"settings":
@@ -39,6 +39,49 @@
 				"buffer_size": 0,
 				"line_ending": "Unix"
 			}
+		},
+		{
+			"contents": "# Leeward - UI/UX Design Documentation\n\n## UI Overview\n\n### Visual Hierarchy\n1. **Primary:** Game board and ships\n2. **Secondary:** Action panels and controls\n3. **Tertiary:** Resources and status information\n\n### Screen Layout\n```\n┌─────────────────────────────────────┐\n│ Top Bar (Environment, Turn, Menu)   │\n├──────┬──────────────────────┬───────┤\n│      │                      │       │\n│ Left │   Game Board View    │ Right │\n│Panel │   (Ships & Water)    │ Panel │\n│      │                      │       │\n├──────┴──────────────────────┴───────┤\n│ Bottom Panel (Actions/Ship Details) │\n└─────────────────────────────────────┘\n```\n\n## Main Game HUD\n### Wind Direction (HEX)\n\n```    N\n\t   _____\nNW /       \\ NE\nSW \\       / SE\n\t   -----\n\t   S\n```\n\n### Top Bar\n- **Environment Display**\n  - Compass: [8 point Compass indicator, dynamic]\n  - Wind Direction: [Arrow Icon + Direction (N,NE, SE,NW, SW)]\n  - Wind Speed Variability: [Steady, Variable]\n  - Wind Conditions: [Oceanic, Costal]\n  - Wind Speed: [Very Light, Light, Fresh, Heavy\t]\n  - Sea State: [] \n- **Turn Information**\n  - Current turn number\n  - Active phase indicator\n  - Wind direction/strength\n- **Menu Buttons**\n  - Settings\n  - Save/Load\n  - Help\n  - Exit\n\n### Left Panel (Fleet Overview)\n- Ship list with health bars\n- Quick ship selection\n- Formation controls\n- Fleet morale indicator\n\n### Right Panel (Context Sensitive)\n- **During Planning:** Available actions\n- **During Combat:** Weapon controls\n- **Enemy Selected:** Enemy ship details\n- **Port View:** Port services\n\n### Bottom Panel\n- **Ship Details Tab**\n  - Hull integrity\n  - Crew status\n  - Speed indicator\n  - Ammunition count\n- **Action Queue Tab**\n  - Planned movements\n  - Queued actions\n- **Combat Log Tab**\n  - Recent events\n  - Damage reports\n\n## Game Board Interface\n\n### Ship Representation\n- Ship model/sprite\n- Health indicator\n- Movement range overlay\n- Firing arc indicators\n- Status effect icons\n\n### Board Overlays\n- **Movement Grid:** Shows possible moves\n- **Firing Ranges:** Red/yellow/green zones\n- **Wind Indicator:** Animated arrows\n- **Fog of War:** Visibility limits\n\n### Selection and Highlighting\n- Selected ship: Bright outline\n- Targeted enemy: Red outline\n- Allied ships: Blue markers\n- Neutral/terrain: Gray\n\n## Control Schemes\n\n### Mouse Controls\n- **Left Click:** Select/confirm\n- **Right Click:** Cancel/deselect\n- **Middle Mouse:** Pan camera\n- **Scroll Wheel:** Zoom in/out\n- **Hover:** Show tooltips\n\n### Keyboard Shortcuts\n| Key | Action |\n|-----|--------|\n| Space | End turn |\n| Tab | Cycle ships |\n| Q/E | Rotate camera |\n| W/A/S/D | Pan camera |\n| 1-9 | Quick actions |\n| Esc | Menu/Cancel |\n\n### Touch Controls (if applicable)\n- Tap: Select\n- Double tap: Confirm\n- Pinch: Zoom\n- Drag: Pan/Move\n\n## Menu Systems\n\n### Main Menu\n- New Game\n- Continue\n- Load Game\n- Settings\n- Credits\n- Exit\n\n### In-Game Menu\n- Resume\n- Save Game\n- Load Game\n- Settings\n- Surrender\n- Main Menu\n\n### Settings Menu\n- **Graphics**\n  - Resolution\n  - Quality presets\n  - Effects toggles\n- **Audio**\n  - Master volume\n  - Music volume\n  - SFX volume\n- **Gameplay**\n  - Difficulty\n  - Turn timer\n  - UI scale\n- **Controls**\n  - Key bindings\n  - Mouse sensitivity\n\n## Ship Management Interface\n\n### Ship Detail Screen\n- 3D ship preview\n- Component health display\n- Crew distribution\n- Upgrade slots\n- Statistics comparison\n\n### Upgrade Interface\n- Available upgrades grid\n- Cost and requirements\n- Before/after stats\n- Confirm/cancel buttons\n\n## Combat Interface\n\n### Targeting System\n- Arc of fire visualization\n- Hit probability display\n- Estimated damage\n- Ammunition selector\n\n### Damage Feedback\n- Floating damage numbers\n- Screen shake on hits\n- Particle effects\n- Sound feedback\n\n### Boarding Interface\n- Crew strength bars\n- Action selection\n- Outcome probability\n- Retreat option\n\n## Port/Harbor Interface\n\n### Port Menu\n- Repair dock\n- Shipyard\n- Tavern (crew)\n- Market\n- Admiralty\n\n### Trading Interface\n- Item grid\n- Buy/sell prices\n- Cargo capacity\n- Transaction summary\n\n## Feedback Systems\n\n### Visual Feedback\n- Button hover states\n- Click animations\n- Transition effects\n- Loading indicators\n\n### Audio Feedback\n- UI click sounds\n- Hover sounds\n- Confirmation chimes\n- Error buzzes\n\n### Haptic Feedback (if applicable)\n- Action confirmation\n- Damage received\n- Critical events\n\n## Accessibility Features\n\n### Visual Accessibility\n- Colorblind modes\n- UI scaling options\n- High contrast mode\n- Text size adjustment\n\n### Audio Accessibility\n- Subtitles\n- Visual sound indicators\n- Screen reader support\n\n### Control Accessibility\n- Remappable controls\n- Hold-to-press options\n- Reduced motion mode\n\n## UI Flow Diagrams\n\n### Turn Flow\n```\nSelect Ship → Choose Action → Confirm → Execute → Next Ship\n```\n\n### Combat Flow\n```\nEnter Combat → Select Weapon → Choose Target → Roll Dice → Apply Damage\n```\n\n## Responsive Design\n\n### Different Resolutions\n- Minimum: 1280x720\n- Standard: 1920x1080\n- 4K: 3840x2160\n\n### Aspect Ratios\n- 16:9 (standard)\n- 16:10 support\n- 21:9 ultrawide support\n\n## Onboarding and Tutorials\n\n### First Time User Experience\n1. Animated intro\n2. Basic controls tutorial\n3. First battle guidance\n4. UI element introduction\n5. Advanced tactics hints\n\n### Help System\n- Contextual tooltips\n- Tutorial replay\n- Rules reference\n- Strategy guide\n\n## Polish and Juice\n\n### Animations\n- Ship movement smoothing\n- Wave effects\n- Sail billowing\n- Explosion effects\n\n### Transitions\n- Scene transitions\n- Menu animations\n- Camera movements\n\n### Particle Effects\n- Water splashes\n- Cannon smoke\n- Wood splinters\n- Fire effects\n",
+			"file": "docs/04-ui-ux-design.md",
+			"file_size": 5959,
+			"file_write_time": 134047496799440208,
+			"settings":
+			{
+				"buffer_size": 5595,
+				"encoding": "UTF-8",
+				"line_ending": "Unix"
+			},
+			"undo_stack":
+			[
+				[
+					1,
+					1,
+					"revert",
+					null,
+					"AgAAAAAAAAAAAAAAAAAAAAAAAAAyFgAAIyBMZWV3YXJkIC0gVUkvVVggRGVzaWduIERvY3VtZW50YXRpb24KCiMjIFVJIE92ZXJ2aWV3CgojIyMgVmlzdWFsIEhpZXJhcmNoeQoxLiAqKlByaW1hcnk6KiogR2FtZSBib2FyZCBhbmQgc2hpcHMKMi4gKipTZWNvbmRhcnk6KiogQWN0aW9uIHBhbmVscyBhbmQgY29udHJvbHMKMy4gKipUZXJ0aWFyeToqKiBSZXNvdXJjZXMgYW5kIHN0YXR1cyBpbmZvcm1hdGlvbgoKIyMjIFNjcmVlbiBMYXlvdXQKYGBgCuKUjOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUkArilIIgVG9wIEJhciAoUmVzb3VyY2VzLCBUdXJuLCBNZW51KSAgICAg4pSCCuKUnOKUgOKUgOKUgOKUgOKUgOKUgOKUrOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUrOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUpArilIIgICAgICDilIIgICAgICAgICAgICAgICAgICAgICAg4pSCICAgICAgIOKUggrilIIgTGVmdCDilIIgICBHYW1lIEJvYXJkIFZpZXcgICAg4pSCIFJpZ2h0IOKUggrilIJQYW5lbCDilIIgICAoU2hpcHMgJiBXYXRlcikgICAg4pSCIFBhbmVsIOKUggrilIIgICAgICDilIIgICAgICAgICAgICAgICAgICAgICAg4pSCICAgICAgIOKUggrilJzilIDilIDilIDilIDilIDilIDilLTilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilLTilIDilIDilIDilIDilIDilIDilIDilKQK4pSCIEJvdHRvbSBQYW5lbCAoQWN0aW9ucy9TaGlwIERldGFpbHMpIOKUggrilJTilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilJgKYGBgCgojIyBNYWluIEdhbWUgSFVECgojIyMgVG9wIEJhcgotICoqUmVzb3VyY2VzIERpc3BsYXkqKgogIC0gR29sZDogW0ljb24gKyBOdW1iZXJdCiAgLSBTdXBwbGllczogW0ljb24gKyBOdW1iZXJdCiAgLSBBbW11bml0aW9uOiBbSWNvbiArIE51bWJlcl0KLSAqKlR1cm4gSW5mb3JtYXRpb24qKgogIC0gQ3VycmVudCB0dXJuIG51bWJlcgogIC0gQWN0aXZlIHBoYXNlIGluZGljYXRvcgogIC0gV2luZCBkaXJlY3Rpb24vc3RyZW5ndGgKLSAqKk1lbnUgQnV0dG9ucyoqCiAgLSBTZXR0aW5ncwogIC0gU2F2ZS9Mb2FkCiAgLSBIZWxwCiAgLSBFeGl0CgojIyMgTGVmdCBQYW5lbCAoRmxlZXQgT3ZlcnZpZXcpCi0gU2hpcCBsaXN0IHdpdGggaGVhbHRoIGJhcnMKLSBRdWljayBzaGlwIHNlbGVjdGlvbgotIEZvcm1hdGlvbiBjb250cm9scwotIEZsZWV0IG1vcmFsZSBpbmRpY2F0b3IKCiMjIyBSaWdodCBQYW5lbCAoQ29udGV4dCBTZW5zaXRpdmUpCi0gKipEdXJpbmcgUGxhbm5pbmc6KiogQXZhaWxhYmxlIGFjdGlvbnMKLSAqKkR1cmluZyBDb21iYXQ6KiogV2VhcG9uIGNvbnRyb2xzCi0gKipFbmVteSBTZWxlY3RlZDoqKiBFbmVteSBzaGlwIGRldGFpbHMKLSAqKlBvcnQgVmlldzoqKiBQb3J0IHNlcnZpY2VzCgojIyMgQm90dG9tIFBhbmVsCi0gKipTaGlwIERldGFpbHMgVGFiKioKICAtIEh1bGwgaW50ZWdyaXR5CiAgLSBDcmV3IHN0YXR1cwogIC0gU3BlZWQgaW5kaWNhdG9yCiAgLSBBbW11bml0aW9uIGNvdW50Ci0gKipBY3Rpb24gUXVldWUgVGFiKioKICAtIFBsYW5uZWQgbW92ZW1lbnRzCiAgLSBRdWV1ZWQgYWN0aW9ucwotICoqQ29tYmF0IExvZyBUYWIqKgogIC0gUmVjZW50IGV2ZW50cwogIC0gRGFtYWdlIHJlcG9ydHMKCiMjIEdhbWUgQm9hcmQgSW50ZXJmYWNlCgojIyMgU2hpcCBSZXByZXNlbnRhdGlvbgotIFNoaXAgbW9kZWwvc3ByaXRlCi0gSGVhbHRoIGluZGljYXRvcgotIE1vdmVtZW50IHJhbmdlIG92ZXJsYXkKLSBGaXJpbmcgYXJjIGluZGljYXRvcnMKLSBTdGF0dXMgZWZmZWN0IGljb25zCgojIyMgQm9hcmQgT3ZlcmxheXMKLSAqKk1vdmVtZW50IEdyaWQ6KiogU2hvd3MgcG9zc2libGUgbW92ZXMKLSAqKkZpcmluZyBSYW5nZXM6KiogUmVkL3llbGxvdy9ncmVlbiB6b25lcwotICoqV2luZCBJbmRpY2F0b3I6KiogQW5pbWF0ZWQgYXJyb3dzCi0gKipGb2cgb2YgV2FyOioqIFZpc2liaWxpdHkgbGltaXRzCgojIyMgU2VsZWN0aW9uIGFuZCBIaWdobGlnaHRpbmcKLSBTZWxlY3RlZCBzaGlwOiBCcmlnaHQgb3V0bGluZQotIFRhcmdldGVkIGVuZW15OiBSZWQgb3V0bGluZQotIEFsbGllZCBzaGlwczogQmx1ZSBtYXJrZXJzCi0gTmV1dHJhbC90ZXJyYWluOiBHcmF5CgojIyBDb250cm9sIFNjaGVtZXMKCiMjIyBNb3VzZSBDb250cm9scwotICoqTGVmdCBDbGljazoqKiBTZWxlY3QvY29uZmlybQotICoqUmlnaHQgQ2xpY2s6KiogQ2FuY2VsL2Rlc2VsZWN0Ci0gKipNaWRkbGUgTW91c2U6KiogUGFuIGNhbWVyYQotICoqU2Nyb2xsIFdoZWVsOioqIFpvb20gaW4vb3V0Ci0gKipIb3ZlcjoqKiBTaG93IHRvb2x0aXBzCgojIyMgS2V5Ym9hcmQgU2hvcnRjdXRzCnwgS2V5IHwgQWN0aW9uIHwKfC0tLS0tfC0tLS0tLS0tfAp8IFNwYWNlIHwgRW5kIHR1cm4gfAp8IFRhYiB8IEN5Y2xlIHNoaXBzIHwKfCBRL0UgfCBSb3RhdGUgY2FtZXJhIHwKfCBXL0EvUy9EIHwgUGFuIGNhbWVyYSB8CnwgMS05IHwgUXVpY2sgYWN0aW9ucyB8CnwgRXNjIHwgTWVudS9DYW5jZWwgfAoKIyMjIFRvdWNoIENvbnRyb2xzIChpZiBhcHBsaWNhYmxlKQotIFRhcDogU2VsZWN0Ci0gRG91YmxlIHRhcDogQ29uZmlybQotIFBpbmNoOiBab29tCi0gRHJhZzogUGFuL01vdmUKCiMjIE1lbnUgU3lzdGVtcwoKIyMjIE1haW4gTWVudQotIE5ldyBHYW1lCi0gQ29udGludWUKLSBMb2FkIEdhbWUKLSBTZXR0aW5ncwotIENyZWRpdHMKLSBFeGl0CgojIyMgSW4tR2FtZSBNZW51Ci0gUmVzdW1lCi0gU2F2ZSBHYW1lCi0gTG9hZCBHYW1lCi0gU2V0dGluZ3MKLSBTdXJyZW5kZXIKLSBNYWluIE1lbnUKCiMjIyBTZXR0aW5ncyBNZW51Ci0gKipHcmFwaGljcyoqCiAgLSBSZXNvbHV0aW9uCiAgLSBRdWFsaXR5IHByZXNldHMKICAtIEVmZmVjdHMgdG9nZ2xlcwotICoqQXVkaW8qKgogIC0gTWFzdGVyIHZvbHVtZQogIC0gTXVzaWMgdm9sdW1lCiAgLSBTRlggdm9sdW1lCi0gKipHYW1lcGxheSoqCiAgLSBEaWZmaWN1bHR5CiAgLSBUdXJuIHRpbWVyCiAgLSBVSSBzY2FsZQotICoqQ29udHJvbHMqKgogIC0gS2V5IGJpbmRpbmdzCiAgLSBNb3VzZSBzZW5zaXRpdml0eQoKIyMgU2hpcCBNYW5hZ2VtZW50IEludGVyZmFjZQoKIyMjIFNoaXAgRGV0YWlsIFNjcmVlbgotIDNEIHNoaXAgcHJldmlldwotIENvbXBvbmVudCBoZWFsdGggZGlzcGxheQotIENyZXcgZGlzdHJpYnV0aW9uCi0gVXBncmFkZSBzbG90cwotIFN0YXRpc3RpY3MgY29tcGFyaXNvbgoKIyMjIFVwZ3JhZGUgSW50ZXJmYWNlCi0gQXZhaWxhYmxlIHVwZ3JhZGVzIGdyaWQKLSBDb3N0IGFuZCByZXF1aXJlbWVudHMKLSBCZWZvcmUvYWZ0ZXIgc3RhdHMKLSBDb25maXJtL2NhbmNlbCBidXR0b25zCgojIyBDb21iYXQgSW50ZXJmYWNlCgojIyMgVGFyZ2V0aW5nIFN5c3RlbQotIEFyYyBvZiBmaXJlIHZpc3VhbGl6YXRpb24KLSBIaXQgcHJvYmFiaWxpdHkgZGlzcGxheQotIEVzdGltYXRlZCBkYW1hZ2UKLSBBbW11bml0aW9uIHNlbGVjdG9yCgojIyMgRGFtYWdlIEZlZWRiYWNrCi0gRmxvYXRpbmcgZGFtYWdlIG51bWJlcnMKLSBTY3JlZW4gc2hha2Ugb24gaGl0cwotIFBhcnRpY2xlIGVmZmVjdHMKLSBTb3VuZCBmZWVkYmFjawoKIyMjIEJvYXJkaW5nIEludGVyZmFjZQotIENyZXcgc3RyZW5ndGggYmFycwotIEFjdGlvbiBzZWxlY3Rpb24KLSBPdXRjb21lIHByb2JhYmlsaXR5Ci0gUmV0cmVhdCBvcHRpb24KCiMjIFBvcnQvSGFyYm9yIEludGVyZmFjZQoKIyMjIFBvcnQgTWVudQotIFJlcGFpciBkb2NrCi0gU2hpcHlhcmQKLSBUYXZlcm4gKGNyZXcpCi0gTWFya2V0Ci0gQWRtaXJhbHR5CgojIyMgVHJhZGluZyBJbnRlcmZhY2UKLSBJdGVtIGdyaWQKLSBCdXkvc2VsbCBwcmljZXMKLSBDYXJnbyBjYXBhY2l0eQotIFRyYW5zYWN0aW9uIHN1bW1hcnkKCiMjIEZlZWRiYWNrIFN5c3RlbXMKCiMjIyBWaXN1YWwgRmVlZGJhY2sKLSBCdXR0b24gaG92ZXIgc3RhdGVzCi0gQ2xpY2sgYW5pbWF0aW9ucwotIFRyYW5zaXRpb24gZWZmZWN0cwotIExvYWRpbmcgaW5kaWNhdG9ycwoKIyMjIEF1ZGlvIEZlZWRiYWNrCi0gVUkgY2xpY2sgc291bmRzCi0gSG92ZXIgc291bmRzCi0gQ29uZmlybWF0aW9uIGNoaW1lcwotIEVycm9yIGJ1enplcwoKIyMjIEhhcHRpYyBGZWVkYmFjayAoaWYgYXBwbGljYWJsZSkKLSBBY3Rpb24gY29uZmlybWF0aW9uCi0gRGFtYWdlIHJlY2VpdmVkCi0gQ3JpdGljYWwgZXZlbnRzCgojIyBBY2Nlc3NpYmlsaXR5IEZlYXR1cmVzCgojIyMgVmlzdWFsIEFjY2Vzc2liaWxpdHkKLSBDb2xvcmJsaW5kIG1vZGVzCi0gVUkgc2NhbGluZyBvcHRpb25zCi0gSGlnaCBjb250cmFzdCBtb2RlCi0gVGV4dCBzaXplIGFkanVzdG1lbnQKCiMjIyBBdWRpbyBBY2Nlc3NpYmlsaXR5Ci0gU3VidGl0bGVzCi0gVmlzdWFsIHNvdW5kIGluZGljYXRvcnMKLSBTY3JlZW4gcmVhZGVyIHN1cHBvcnQKCiMjIyBDb250cm9sIEFjY2Vzc2liaWxpdHkKLSBSZW1hcHBhYmxlIGNvbnRyb2xzCi0gSG9sZC10by1wcmVzcyBvcHRpb25zCi0gUmVkdWNlZCBtb3Rpb24gbW9kZQoKIyMgVUkgRmxvdyBEaWFncmFtcwoKIyMjIFR1cm4gRmxvdwpgYGAKU2VsZWN0IFNoaXAg4oaSIENob29zZSBBY3Rpb24g4oaSIENvbmZpcm0g4oaSIEV4ZWN1dGUg4oaSIE5leHQgU2hpcApgYGAKCiMjIyBDb21iYXQgRmxvdwpgYGAKRW50ZXIgQ29tYmF0IOKGkiBTZWxlY3QgV2VhcG9uIOKGkiBDaG9vc2UgVGFyZ2V0IOKGkiBSb2xsIERpY2Ug4oaSIEFwcGx5IERhbWFnZQpgYGAKCiMjIFJlc3BvbnNpdmUgRGVzaWduCgojIyMgRGlmZmVyZW50IFJlc29sdXRpb25zCi0gTWluaW11bTogMTI4MHg3MjAKLSBTdGFuZGFyZDogMTkyMHgxMDgwCi0gNEs6IDM4NDB4MjE2MAoKIyMjIEFzcGVjdCBSYXRpb3MKLSAxNjo5IChzdGFuZGFyZCkKLSAxNjoxMCBzdXBwb3J0Ci0gMjE6OSB1bHRyYXdpZGUgc3VwcG9ydAoKIyMgT25ib2FyZGluZyBhbmQgVHV0b3JpYWxzCgojIyMgRmlyc3QgVGltZSBVc2VyIEV4cGVyaWVuY2UKMS4gQW5pbWF0ZWQgaW50cm8KMi4gQmFzaWMgY29udHJvbHMgdHV0b3JpYWwKMy4gRmlyc3QgYmF0dGxlIGd1aWRhbmNlCjQuIFVJIGVsZW1lbnQgaW50cm9kdWN0aW9uCjUuIEFkdmFuY2VkIHRhY3RpY3MgaGludHMKCiMjIyBIZWxwIFN5c3RlbQotIENvbnRleHR1YWwgdG9vbHRpcHMKLSBUdXRvcmlhbCByZXBsYXkKLSBSdWxlcyByZWZlcmVuY2UKLSBTdHJhdGVneSBndWlkZQoKIyMgUG9saXNoIGFuZCBKdWljZQoKIyMjIEFuaW1hdGlvbnMKLSBTaGlwIG1vdmVtZW50IHNtb290aGluZwotIFdhdmUgZWZmZWN0cwotIFNhaWwgYmlsbG93aW5nCi0gRXhwbG9zaW9uIGVmZmVjdHMKCiMjIyBUcmFuc2l0aW9ucwotIFNjZW5lIHRyYW5zaXRpb25zCi0gTWVudSBhbmltYXRpb25zCi0gQ2FtZXJhIG1vdmVtZW50cwoKIyMjIFBhcnRpY2xlIEVmZmVjdHMKLSBXYXRlciBzcGxhc2hlcwotIENhbm5vbiBzbW9rZQotIFdvb2Qgc3BsaW50ZXJzCi0gRmlyZSBlZmZlY3RzAAAAAAAAAADXFQAAAAAAAAAAAAA",
+					"AQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					4,
+					1,
+					"insert",
+					{
+						"characters": "  "
+					},
+					"AgAAALMCAAAAAAAAtAIAAAAAAAAAAAAAtAIAAAAAAAC1AgAAAAAAAAAAAAA",
+					"AQAAAAAAAAABAAAAswIAAAAAAACzAgAAAAAAAAAAAAAAAPC/"
+				],
+				[
+					7,
+					1,
+					"insert",
+					{
+						"characters": "  "
+					},
+					"AgAAAN0CAAAAAAAA3gIAAAAAAAAAAAAA3gIAAAAAAADfAgAAAAAAAAAAAAA",
+					"AQAAAAAAAAABAAAA3QIAAAAAAADdAgAAAAAAAAAAAAAAAPC/"
+				]
+			]
 		}
 	],
 	"build_system": "",
@@ -93,11 +136,15 @@
 	},
 	"expanded_folders":
 	[
-		"/Users/jk/gws/Leeward",
-		"/Users/jk/gws/Leeward/docs"
+		"/Users/jkline/gws/pakfur/leeward",
+		"/Users/jkline/gws/pakfur/leeward/docs",
+		"/Users/jkline/gws/pakfur/leeward/scripts",
+		"/Users/jkline/gws/pakfur/leeward/scripts/state"
 	],
 	"file_history":
 	[
+		"/Users/jkline/gws/pakfur/leeward/docs/rigging_critical_hits.jpeg.import",
+		"/Users/jkline/gws/pakfur/leeward/scripts/state/environment_state.gd",
 		"/Users/jk/gws/metascan/data/queue/queue.json",
 		"/Users/jk/gws/Leeward/docs/02-game-rules.md",
 		"/Users/jk/ai/runpod.txt",
@@ -152,7 +199,7 @@
 	],
 	"find":
 	{
-		"height": 38.0
+		"height": 34.0
 	},
 	"find_in_files":
 	{
@@ -294,7 +341,6 @@
 			[
 				{
 					"buffer": 0,
-					"selected": true,
 					"semi_transient": false,
 					"settings":
 					{
@@ -318,16 +364,56 @@
 						"translation.y": 0.0,
 						"zoom_level": 1.0
 					},
-					"stack_index": 0,
+					"stack_index": 2,
 					"stack_multiselect": false,
 					"type": "text"
+				},
+				{
+					"buffer": 1,
+					"file": "docs/04-ui-ux-design.md",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 5595,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								735,
+								735
+							]
+						],
+						"settings":
+						{
+							"mde.match_heading_hashes": false,
+							"syntax": "Packages/Markdown/Markdown.sublime-syntax",
+							"tab_size": 2,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 1,
+					"stack_multiselect": false,
+					"type": "text"
+				},
+				{
+					"file": "docs/combat_tables_1.jpeg",
+					"selected": true,
+					"semi_transient": true,
+					"stack_index": 0,
+					"stack_multiselect": false,
+					"type": "image"
 				}
 			]
 		}
 	],
 	"incremental_find":
 	{
-		"height": 24.0
+		"height": 34.0
 	},
 	"input":
 	{
@@ -367,7 +453,7 @@
 	"project": "leeward.sublime-project",
 	"replace":
 	{
-		"height": 44.0
+		"height": 64.0
 	},
 	"save_all_on_build": true,
 	"select_file":

@@ -7,6 +7,7 @@ extends Node
 @onready var ui: Control = $UI
 @onready var planning_panel = $UI/PlanningPanel
 @onready var ship_status_panel = $UI/ShipStatusPanel
+@onready var developer_ui: Window = $DeveloperUI
 
 # Views (presentation layer)
 var ship_views: Dictionary = {}  # ship_id -> ShipView
@@ -34,6 +35,12 @@ func _ready() -> void:
 	GameState.phase_changed.connect(_on_phase_changed)
 	if planning_panel:
 		planning_panel.plan_submitted.connect(_on_player_plan_submitted)
+
+	# Set hex_map reference for environment controller (for water shader updates)
+	if GameState.environment_controller and hex_map:
+		GameState.environment_controller.set_hex_map(hex_map)
+		# Trigger initial shader update
+		GameState.environment_controller.force_update()
 
 	# Start the game
 	GameState.start_new_game(scenario)
@@ -106,6 +113,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_C:
 			_center_camera_on_all_ships()
+			get_viewport().set_input_as_handled()
+			return
+		elif event.keycode == KEY_F12:
+			_toggle_developer_ui()
 			get_viewport().set_input_as_handled()
 			return
 
@@ -266,3 +277,11 @@ func _sync_all_views() -> void:
 		var ship_state = GameState.get_ship(ship_id)
 		if ship_state and ship_view and hex_map:
 			ship_view.sync_to_state(ship_state, hex_map.get_hex_grid())
+
+func _toggle_developer_ui() -> void:
+	"""Toggle the developer UI window with F12"""
+	if developer_ui:
+		developer_ui.visible = not developer_ui.visible
+		if developer_ui.visible:
+			developer_ui.refresh_all()
+			print("Developer UI opened (F12 to close)")

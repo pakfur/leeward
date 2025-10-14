@@ -33,6 +33,7 @@ var selected_scenario: String = ""  # Scenario name selected from menu
 var is_server: bool = true  # Set by network manager
 var phase_controller: TurnPhaseController = null
 var ship_controller: ShipStateController = null
+var environment_controller: EnvironmentController = null
 var command_validator: CommandValidator = null
 var network_sync: NetworkSync = null
 
@@ -60,6 +61,7 @@ func _initialize_server_controllers() -> void:
 	"""Initialize server-side controllers - SERVER ONLY"""
 	phase_controller = TurnPhaseController.new(self)
 	ship_controller = ShipStateController.new(self)
+	environment_controller = EnvironmentController.new(self)
 	command_validator = CommandValidator.new(self, ship_controller, phase_controller)
 	network_sync = NetworkSync.new(self)
 	network_sync.is_server = is_server

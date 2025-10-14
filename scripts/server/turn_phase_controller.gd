@@ -79,9 +79,15 @@ func _enter_environment_phase() -> void:
 	phase_changed.emit(current_phase)
 	print("[Server] Phase: ENVIRONMENT")
 
-	# Update environment
+	# Update environment (using controller for RNG management and shader updates)
 	if game_state.environment:
-		game_state.environment.tick_environment(current_turn)
+		if game_state.environment_controller:
+			# Use controller which manages RNG and updates shader
+			game_state.environment_controller.tick_environment(game_state.environment, current_turn)
+		else:
+			# Fallback to direct update (no RNG, no shader)
+			game_state.environment.tick_environment(current_turn)
+
 		print("[Server] Environment: Wind %s (%d), Speed %s (%d), Sea %s (%d)" % [
 			game_state.environment.get_wind_direction_name(),
 			game_state.environment.wind_direction,

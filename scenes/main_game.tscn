@@ -1,13 +1,14 @@
-[gd_scene load_steps=11 format=3 uid="uid://c7vk3p2xmxfq8"]
+[gd_scene load_steps=12 format=3 uid="uid://c7vk3p2xmxfq8"]
 
 [ext_resource type="Script" uid="uid://t6fop8pw7x2s" path="res://scripts/core/game_controller.gd" id="1_controller"]
 [ext_resource type="Script" uid="uid://drpxitgfk6sd3" path="res://scripts/core/hex_map.gd" id="2_hex_map"]
 [ext_resource type="Material" uid="uid://bj6tedpmn6a0v" path="res://assets/materials/ocean_water.tres" id="2_ocean_material"]
 [ext_resource type="Script" uid="uid://bnfe26l2snu6l" path="res://scripts/core/isometric_camera.gd" id="3_camera"]
-[ext_resource type="Script" uid="uid://d37g8iye25xou" path="res://scripts/ui/wind_compass.gd" id="4_compass"]
+[ext_resource type="PackedScene" uid="uid://wind_compass_scene" path="res://scenes/ui/wind_compass.tscn" id="4_compass"]
 [ext_resource type="Script" uid="uid://bivr0wfft2of0" path="res://scripts/ui/game_info_panel.gd" id="5_info"]
 [ext_resource type="Script" uid="uid://s0ckjki5xttb" path="res://scripts/ui/ship_status_panel.gd" id="6_status"]
 [ext_resource type="Script" uid="uid://d4gdl7csfejl7" path="res://scripts/ui/planning_panel.gd" id="7_planning"]
+[ext_resource type="PackedScene" uid="uid://developer_ui_scene" path="res://scenes/ui/developer_ui.tscn" id="8_dev_ui"]
 
 [sub_resource type="Environment" id="env"]
 background_mode = 1
@@ -50,7 +51,7 @@ grow_vertical = 2
 mouse_filter = 2
 theme = SubResource("theme")
 
-[node name="WindCompass" type="Control" parent="UI"]
+[node name="WindCompass" parent="UI" instance=ExtResource("4_compass")]
 layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
@@ -60,7 +61,7 @@ offset_top = 20.0
 offset_right = -20.0
 offset_bottom = 140.0
 grow_horizontal = 0
-script = ExtResource("4_compass")
+camera = NodePath("../../Camera")
 
 [node name="GameInfoPanel" type="PanelContainer" parent="UI"]
 layout_mode = 1
@@ -267,3 +268,6 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Submit Plan"
+
+[node name="DeveloperUI" parent="." instance=ExtResource("8_dev_ui")]
+visible = false

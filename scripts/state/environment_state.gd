@@ -25,8 +25,8 @@ extends Resource
 func tick_environment(turn_number: int, rng: RandomNumberGenerator) -> void:
 	"""Update environment for new turn (deterministic based on turn number)"""
 	_update_wind(turn_number, rng)
-	_update_sea_state(turn_number)
-	_update_weather(turn_number)
+	_update_sea_state(turn_number, rng)
+	_update_weather(turn_number, rng)
 
 func _update_wind(turn_number: int, rng: RandomNumberGenerator) -> void:
 	"""Update wind direction and speed based on change patterns"""
@@ -92,7 +92,7 @@ func _update_wind(turn_number: int, rng: RandomNumberGenerator) -> void:
 	if temp_wind_speed != wind_speed:
 		print("Wind speed changed to %d" % wind_speed)
 
-func _update_sea_state(turn_number: int) -> void:
+func _update_sea_state(turn_number: int, rng: RandomNumberGenerator) -> void:
 	"""Update sea state based on wind speed and other factors"""
 	# Sea state generally follows wind speed with some lag
 	# Simplified: sea_state tends toward wind_speed / 2
@@ -109,7 +109,7 @@ func _update_sea_state(turn_number: int) -> void:
 			sea_state = maxi(sea_state - 1, 0)
 			print("Sea state calming to %d" % sea_state)
 
-func _update_weather(turn_number: int) -> void:
+func _update_weather(turn_number: int, rng: RandomNumberGenerator) -> void:
 	"""Update weather conditions (visibility, precipitation, etc)"""
 	# TODO: Implement weather patterns
 	# For now, weather is static based on scenario
@@ -151,7 +151,7 @@ static func deserialize(data: Dictionary) -> EnvironmentState:
 	state.wind_direction = data.get("wind_direction", 0)
 	state.original_wind_direction = state.wind_direction
 	state.wind_speed = data.get("wind_speed", 2)
-	state.original_wind_speed - state.wind_speed
+	state.original_wind_speed = state.wind_speed
 	state.wind_speed_change = data.get("wind_speed_change", "steady")
 	state.wind_direction_change = data.get("wind_direction_change", "none")
 	state.sea_state = data.get("sea_state", 1)
