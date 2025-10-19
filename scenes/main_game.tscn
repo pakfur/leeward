@@ -4,7 +4,7 @@
 [ext_resource type="Script" uid="uid://drpxitgfk6sd3" path="res://scripts/core/hex_map.gd" id="2_hex_map"]
 [ext_resource type="Material" uid="uid://bj6tedpmn6a0v" path="res://assets/materials/ocean_water.tres" id="2_ocean_material"]
 [ext_resource type="Script" uid="uid://bnfe26l2snu6l" path="res://scripts/core/isometric_camera.gd" id="3_camera"]
-[ext_resource type="PackedScene" uid="uid://wind_compass_scene" path="res://scenes/ui/wind_compass.tscn" id="4_compass"]
+[ext_resource type="PackedScene" uid="uid://minimap_scene" path="res://scenes/ui/minimap.tscn" id="4_minimap"]
 [ext_resource type="Script" uid="uid://bivr0wfft2of0" path="res://scripts/ui/game_info_panel.gd" id="5_info"]
 [ext_resource type="Script" uid="uid://s0ckjki5xttb" path="res://scripts/ui/ship_status_panel.gd" id="6_status"]
 [ext_resource type="Script" uid="uid://d4gdl7csfejl7" path="res://scripts/ui/planning_panel.gd" id="7_planning"]
@@ -51,17 +51,8 @@ grow_vertical = 2
 mouse_filter = 2
 theme = SubResource("theme")
 
-[node name="WindCompass" parent="UI" instance=ExtResource("4_compass")]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -140.0
-offset_top = 20.0
-offset_right = -20.0
-offset_bottom = 140.0
-grow_horizontal = 0
-camera = NodePath("../../Camera")
+[node name="MiniMap" parent="UI" instance=ExtResource("4_minimap")]
+z_index = 10
 
 [node name="GameInfoPanel" type="PanelContainer" parent="UI"]
 layout_mode = 1
@@ -271,3 +262,4 @@ text = "Submit Plan"
 
 [node name="DeveloperUI" parent="." instance=ExtResource("8_dev_ui")]
 visible = false
+z_index = 100
