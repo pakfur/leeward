@@ -48,7 +48,7 @@ func _ready() -> void:
 	# Set z-index below DevUI
 	z_index = 10
 
-	print("MiniMap initialized: size=%s, bounds=%s" % [size, map_bounds])
+	print("MiniMap initialized: size=%s, bounds=%s, camera=%s" % [size, map_bounds, camera != null])
 
 func _find_camera() -> void:
 	"""Auto-find the camera in the scene"""
@@ -120,9 +120,6 @@ func _get_camera_frustum_corners() -> Array[Vector3]:
 
 	var corners: Array[Vector3] = []
 
-	# Get camera frustum planes
-	var frustum = camera.get_frustum()
-
 	# For a top-down-ish camera, we need the 4 corners where view rays intersect y=0 plane
 	# We'll raycast from camera through the 4 screen corners
 	var viewport_size = get_viewport().get_visible_rect().size
@@ -133,6 +130,9 @@ func _get_camera_frustum_corners() -> Array[Vector3]:
 		Vector2(0, viewport_size.y)  # Bottom-left
 	]
 
+	var intersection_count = 0
+	var fallback_count = 0
+
 	for screen_pos in screen_corners:
 		var ray_origin = camera.project_ray_origin(screen_pos)
 		var ray_dir = camera.project_ray_normal(screen_pos)
@@ -141,6 +141,18 @@ func _get_camera_frustum_corners() -> Array[Vector3]:
 		var intersection = _ray_intersect_plane(ray_origin, ray_dir, Vector3(0, 1, 0), 0.0)
 		if intersection:
 			corners.append(intersection)
+			intersection_count += 1
+		else:
+			# If ray doesn't intersect (nearly parallel to ground), use a fallback
+			# Project the ray far out and use that point
+			var fallback_point = ray_origin + ray_dir * 1000.0
+			fallback_point.y = 0.0  # Force to ground plane
+			corners.append(fallback_point)
+			fallback_count += 1
+
+	# Debug log (only on first frame or when count changes)
+	#if Engine.get_process_frames() % 60 == 0:  # Log once per second at 60fps
+		#print("MiniMap frustum: %d intersections, %d fallbacks, corners=%d" % [intersection_count, fallback_count, corners.size()])
 
 	return corners
 

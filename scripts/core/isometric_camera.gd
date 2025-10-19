@@ -208,15 +208,23 @@ func _update_camera_transform() -> void:
 
 	position = camera_target + offset
 
-	# Smoothly transition up vector when approaching vertical
-	# This prevents the flip at 90 degrees
-	var up_vector: Vector3
-	if isometric_angle < 85.0:
-		# Normal up vector for most angles
-		up_vector = Vector3.UP
-	else:
-		# Near vertical - use tangent vector along the rotation circle
-		# This points in the direction the camera would move if rotation_y increased
-		up_vector = Vector3(cos(rad_rotation), 0, sin(rad_rotation))
+	# Manually construct camera basis to avoid gimbal lock at 90 degrees
+	# This ensures consistent orientation at all angles
 
-	look_at(camera_target, up_vector)
+	# Forward vector: from camera to target (look direction)
+	var forward = (camera_target - position).normalized()
+
+	# Right vector: perpendicular to forward, on the horizontal rotation circle
+	# This is tangent to the circle at the current rotation_y position
+	var right = Vector3(-sin(rad_rotation), 0, cos(rad_rotation)).normalized()
+
+	# Up vector: perpendicular to both forward and right
+	# Cross product order matters: forward × right gives up vector pointing "up" on screen
+	var up = forward.cross(right).normalized()
+
+	# Construct the basis (right, up, -forward for Godot's coordinate system)
+	# Note: Godot cameras look along -Z, so we use -forward for the Z axis
+	var basis = Basis(right, up, -forward)
+
+	# Apply the basis to the camera
+	transform.basis = basis
