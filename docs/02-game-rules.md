@@ -23,7 +23,6 @@
   1.2 Wind direction change: enum: [Oceanic, Costal, None] Used to determine what wind direction change is possible during an encounter
   1.2 Wind Speed at start: [0 (still), 1 (low), 2 (light winds), 3 (average), 4 (strong), 5 (tempest)]
   1.3 Wind Speed Change: [variable, steady]
-2. Sea State [0-3]
 3. For each ship in the battle set the ship initial setup
   3.1 Sail State per ship: [Furl/D (all sails furled, or ship entirely dismasted), FS (fighting sail), MS (maneuvering sail), or PS (plain sail)]
   3.2 Rating: [rating (First, Second, Third, Fourth, Fifth, Sixth, Unrated), number of long guns) 

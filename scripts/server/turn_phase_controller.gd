@@ -38,10 +38,10 @@ func start_new_game() -> void:
 		return
 
 	current_turn = 1
-	current_phase = GamePhase.ENVIRONMENT
+	current_phase = GamePhase.SETUP  # Start in SETUP so advance_phase() enters ENVIRONMENT
 
 	print("[Server] Game started - Turn: %d" % current_turn)
-	advance_phase()
+	advance_phase()  # This will transition SETUP -> ENVIRONMENT
 
 func advance_phase() -> void:
 	"""Progress to the next game phase - SERVER ONLY"""
@@ -199,8 +199,8 @@ func _start_new_turn() -> void:
 	current_turn += 1
 	turn_changed.emit(current_turn)
 	print("[Server] === Turn %d ===" % current_turn)
-	current_phase = GamePhase.ENVIRONMENT
-	advance_phase()
+	# Directly enter environment phase (we're already inside advance_phase() call chain)
+	_enter_environment_phase()
 
 func get_phase_name() -> String:
 	"""Get human-readable phase name"""

@@ -42,6 +42,10 @@ var environment: EnvironmentState = null  # Environmental conditions
 var ships: Dictionary = {}  # ship_id -> ShipState
 var ships_by_player: Dictionary = {0: [], 1: []}  # player_id -> Array[ship_id]
 
+# State history tracking (indexed by turn number)
+var environment_history: Array[EnvironmentState] = []  # Historical environment states
+var ship_history: Dictionary = {}  # ship_id -> Array[ShipState] for historical ship states
+
 # Legacy accessors for backward compatibility
 var wind_direction: int:
 	get: return environment.wind_direction if environment else 0
@@ -52,7 +56,6 @@ var sea_state: int:
 
 func _ready() -> void:
 	print("GameState initialized (server: %s)" % is_server)
-
 	# Initialize server controllers if this is the server
 	if is_server:
 		_initialize_server_controllers()
@@ -87,6 +90,9 @@ func start_new_game(scenario_data: Dictionary) -> void:
 
 	active_scenario = scenario_data
 
+	# Clear any existing state history
+	clear_state_history()
+
 	# Initialize environment from scenario
 	environment = EnvironmentState.new()
 	environment.initialize_from_scenario(scenario_data)
@@ -104,11 +110,19 @@ func start_new_game(scenario_data: Dictionary) -> void:
 
 func _on_server_phase_changed(new_phase: int) -> void:
 	"""Handle phase change from server controller"""
-	current_phase = new_phase
+	current_phase = new_phase as GamePhase
 	phase_changed.emit(current_phase)
 
 func _on_server_turn_changed(turn_number: int) -> void:
 	"""Handle turn change from server controller"""
+	# Save snapshots of previous turn's state before updating to new turn
+	# This happens when advancing from turn N to turn N+1
+	if turn_number > 1:  # Don't save for turn 1 (no previous state to save)
+		var previous_turn = turn_number - 1
+		save_environment_snapshot(previous_turn)
+		save_all_ships_snapshot(previous_turn)
+		print("GameState: Saved state snapshots for turn %d" % previous_turn)
+
 	current_turn = turn_number
 	turn_changed.emit(current_turn)
 
@@ -118,22 +132,6 @@ func _on_state_changed_broadcast(_arg = null) -> void:
 		# Note: This gets called frequently. In production, you might want to
 		# debounce this or use delta syncing for efficiency
 		pass  # network_sync.broadcast_state() called automatically via timer
-
-## DEPRECATED - Use phase_controller.advance_phase() on server instead
-func advance_phase() -> void:
-	"""DEPRECATED: Use phase_controller.advance_phase() instead"""
-	if is_server and phase_controller:
-		phase_controller.advance_phase()
-	else:
-		push_error("GameState.advance_phase() is deprecated. Use phase_controller on server.")
-
-## DEPRECATED - Use phase_controller.player_submit_plan() on server instead
-func player_submit_plan(player_id: int) -> void:
-	"""DEPRECATED: Use phase_controller.player_submit_plan() instead"""
-	if is_server and phase_controller:
-		phase_controller.player_submit_plan(player_id)
-	else:
-		push_error("GameState.player_submit_plan() is deprecated. Use phase_controller on server.")
 
 func get_phase_name() -> String:
 	"""Get human-readable phase name"""
@@ -192,6 +190,85 @@ func clear_ships() -> void:
 	ships.clear()
 	ships_by_player.clear()
 
+## State History Management
+
+func save_environment_snapshot(turn_number: int) -> void:
+	"""Save a snapshot of the current environment state for the given turn"""
+	if not environment:
+		push_warning("GameState: Cannot save environment snapshot - environment is null")
+		return
+
+	# Create deep copy of current environment state
+	var snapshot = environment.duplicate(true)
+
+	# Ensure array has space for this turn
+	while environment_history.size() <= turn_number:
+		environment_history.append(null)
+
+	environment_history[turn_number] = snapshot
+	print("GameState: Saved environment snapshot for turn %d" % turn_number)
+
+func get_environment_at_turn(turn_number: int) -> EnvironmentState:
+	"""Get environment state from a specific turn (returns null if not found)"""
+	if turn_number >= 0 and turn_number < environment_history.size():
+		return environment_history[turn_number]
+	return null
+
+func get_previous_environment(turns_ago: int = 1) -> EnvironmentState:
+	"""Get environment from N turns ago relative to current turn"""
+	var target_turn = current_turn - turns_ago
+	return get_environment_at_turn(target_turn)
+
+func save_ship_snapshot(ship_id: String, turn_number: int) -> void:
+	"""Save a snapshot of a specific ship's state for the given turn"""
+	if not ships.has(ship_id):
+		push_warning("GameState: Cannot save ship snapshot - ship %s not found" % ship_id)
+		return
+
+	var ship = ships[ship_id]
+
+	# Create deep copy of ship state
+	var snapshot = ship.duplicate(true)
+
+	# Initialize ship history array if needed
+	if not ship_history.has(ship_id):
+		ship_history[ship_id] = []
+
+	var history = ship_history[ship_id]
+
+	# Ensure array has space for this turn
+	while history.size() <= turn_number:
+		history.append(null)
+
+	history[turn_number] = snapshot
+	print("GameState: Saved ship %s snapshot for turn %d" % [ship_id, turn_number])
+
+func save_all_ships_snapshot(turn_number: int) -> void:
+	"""Save snapshots of all ships for the given turn"""
+	for ship_id in ships.keys():
+		save_ship_snapshot(ship_id, turn_number)
+
+func get_ship_at_turn(ship_id: String, turn_number: int) -> ShipState:
+	"""Get a ship's state from a specific turn (returns null if not found)"""
+	if not ship_history.has(ship_id):
+		return null
+
+	var history = ship_history[ship_id]
+	if turn_number >= 0 and turn_number < history.size():
+		return history[turn_number]
+	return null
+
+func get_previous_ship_state(ship_id: String, turns_ago: int = 1) -> ShipState:
+	"""Get a ship's state from N turns ago relative to current turn"""
+	var target_turn = current_turn - turns_ago
+	return get_ship_at_turn(ship_id, target_turn)
+
+func clear_state_history() -> void:
+	"""Clear all historical state data (for new game)"""
+	environment_history.clear()
+	ship_history.clear()
+	print("GameState: Cleared all state history")
+
 ## State Serialization (for save/load and multiplayer)
 
 func serialize_full_state() -> Dictionary:
@@ -200,17 +277,38 @@ func serialize_full_state() -> Dictionary:
 	for ship_id in ships.keys():
 		ship_states.append(ships[ship_id].serialize())
 
+	# Serialize environment history
+	var env_history = []
+	for env_state in environment_history:
+		if env_state:
+			env_history.append(env_state.serialize())
+		else:
+			env_history.append(null)
+
+	# Serialize ship history
+	var ships_history = {}
+	for ship_id in ship_history.keys():
+		var history_array = []
+		for ship_state in ship_history[ship_id]:
+			if ship_state:
+				history_array.append(ship_state.serialize())
+			else:
+				history_array.append(null)
+		ships_history[ship_id] = history_array
+
 	return {
 		"turn": current_turn,
 		"phase": current_phase,
 		"environment": environment.serialize() if environment else {},
-		"ships": ship_states
+		"ships": ship_states,
+		"environment_history": env_history,
+		"ship_history": ships_history
 	}
 
 func deserialize_full_state(data: Dictionary) -> void:
 	"""Load full game state from network or save file"""
 	current_turn = data.get("turn", 1)
-	current_phase = data.get("phase", GamePhase.SETUP)
+	current_phase = data.get("phase", GamePhase.SETUP) as GamePhase
 
 	# Load environment
 	if data.has("environment"):
@@ -224,10 +322,32 @@ func deserialize_full_state(data: Dictionary) -> void:
 		var ship_state = ShipState.deserialize(ship_data)
 		add_ship(ship_state)
 
-	print("GameState: Loaded state for turn %d, phase %s, %d ships" % [
+	# Load environment history
+	environment_history.clear()
+	if data.has("environment_history"):
+		for env_data in data.environment_history:
+			if env_data:
+				environment_history.append(EnvironmentState.deserialize(env_data))
+			else:
+				environment_history.append(null)
+
+	# Load ship history
+	ship_history.clear()
+	if data.has("ship_history"):
+		for ship_id in data.ship_history.keys():
+			var history_array: Array[ShipState] = []
+			for ship_data in data.ship_history[ship_id]:
+				if ship_data:
+					history_array.append(ShipState.deserialize(ship_data))
+				else:
+					history_array.append(null)
+			ship_history[ship_id] = history_array
+
+	print("GameState: Loaded state for turn %d, phase %s, %d ships, %d turns of history" % [
 		current_turn,
 		get_phase_name(),
-		ships.size()
+		ships.size(),
+		environment_history.size()
 	])
 
 ## State Synchronization (for multiplayer)
@@ -240,7 +360,7 @@ func sync_from_server(state_data: Dictionary) -> void:
 
 	# Update phase state
 	current_turn = state_data.get("turn", 1)
-	current_phase = state_data.get("phase", GamePhase.SETUP)
+	current_phase = state_data.get("phase", GamePhase.SETUP) as GamePhase
 	players_ready = state_data.get("players_ready", [false, false])
 
 	# Update environment

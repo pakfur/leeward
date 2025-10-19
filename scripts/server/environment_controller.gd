@@ -23,6 +23,7 @@ const HEX_DIRECTIONS = {
 func _init(state: Node = null, map: Node3D = null) -> void:
 	game_state = state if state else GameState
 	hex_map = map
+	rng = RandomNumberGenerator.new()
 
 func _ready():
 	if is_server:
@@ -51,11 +52,14 @@ func tick_environment(env_state: EnvironmentState, turn_number: int) -> void:
 	if not is_server:
 		return
 
-	# Generate random values
-	var weather_roll = rng.randi_range(1, 6)
+	# Get environment history from game state
+	var history: Array[EnvironmentState] = []
+	if game_state:
+		history = game_state.environment_history
 
 	# Pass results to the Resource's deterministic methods
-	env_state.tick_environment(turn_number, rng)
+	# Include history array (passed by reference, no performance cost)
+	env_state.tick_environment(turn_number, rng, history)
 
 	# After environment state is updated, update the shader
 	update_water_shader()
