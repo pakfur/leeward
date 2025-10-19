@@ -1,0 +1,43 @@
+[gd_scene load_steps=2 format=3 uid="uid://context_panel_scene"]
+
+[ext_resource type="Script" path="res://scripts/ui/context_panel.gd" id="1_context"]
+
+[node name="ContextPanel" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_context")
+
+[node name="PanelContainer" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_right = 384.0
+offset_bottom = 1080.0
+
+[node name="VBox" type="VBoxContainer" parent="PanelContainer"]
+layout_mode = 2
+
+[node name="TitleBar" type="HBoxContainer" parent="PanelContainer/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 40)
+
+[node name="TitleLabel" type="Label" parent="PanelContainer/VBox/TitleBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = ""
+vertical_alignment = 1
+
+[node name="ToggleButton" type="Button" parent="PanelContainer/VBox/TitleBar"]
+custom_minimum_size = Vector2(40, 0)
+layout_mode = 2
+text = "<<"
+
+[node name="ContentContainer" type="MarginContainer" parent="PanelContainer/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10

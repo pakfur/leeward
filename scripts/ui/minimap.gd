@@ -88,7 +88,7 @@ func _load_scenario_config() -> void:
 func _create_placeholder_texture() -> void:
 	"""Create a simple blue placeholder texture"""
 	var img = Image.create(512, 512, false, Image.FORMAT_RGB8)
-	img.fill(Color(0.1, 0.3, 0.6))  # Ocean blue
+	img.fill(Color(0.476, 0.669, 0.968, 1.0))  # Ocean blue
 	background.texture = ImageTexture.create_from_image(img)
 
 func _update_minimap_transform() -> void:
@@ -130,8 +130,8 @@ func _get_camera_frustum_corners() -> Array[Vector3]:
 		Vector2(0, viewport_size.y)  # Bottom-left
 	]
 
-	var intersection_count = 0
-	var fallback_count = 0
+	#var _intersection_count = 0
+	#var _fallback_count = 0
 
 	for screen_pos in screen_corners:
 		var ray_origin = camera.project_ray_origin(screen_pos)
@@ -141,14 +141,14 @@ func _get_camera_frustum_corners() -> Array[Vector3]:
 		var intersection = _ray_intersect_plane(ray_origin, ray_dir, Vector3(0, 1, 0), 0.0)
 		if intersection:
 			corners.append(intersection)
-			intersection_count += 1
+			#_intersection_count += 1
 		else:
 			# If ray doesn't intersect (nearly parallel to ground), use a fallback
 			# Project the ray far out and use that point
 			var fallback_point = ray_origin + ray_dir * 1000.0
 			fallback_point.y = 0.0  # Force to ground plane
 			corners.append(fallback_point)
-			fallback_count += 1
+			#_fallback_count += 1
 
 	# Debug log (only on first frame or when count changes)
 	#if Engine.get_process_frames() % 60 == 0:  # Log once per second at 60fps
@@ -226,7 +226,7 @@ func _create_ship_icon(ship_id: String) -> void:
 
 	# Color modulate by player
 	if ship.player_id == 0:
-		icon.modulate = Color(0.3, 0.3, 1.0)  # Blue for player 0
+		icon.modulate = Color(0.183, 0.927, 0.479, 1.0)  # Blue for player 0
 	else:
 		icon.modulate = Color(1.0, 0.3, 0.3)  # Red for player 1
 

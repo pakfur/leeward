@@ -5,7 +5,7 @@
 [ext_resource type="Material" uid="uid://bj6tedpmn6a0v" path="res://assets/materials/ocean_water.tres" id="2_ocean_material"]
 [ext_resource type="Script" uid="uid://bnfe26l2snu6l" path="res://scripts/core/isometric_camera.gd" id="3_camera"]
 [ext_resource type="PackedScene" uid="uid://minimap_scene" path="res://scenes/ui/minimap.tscn" id="4_minimap"]
-[ext_resource type="Script" uid="uid://bivr0wfft2of0" path="res://scripts/ui/game_info_panel.gd" id="5_info"]
+[ext_resource type="PackedScene" uid="uid://context_panel_scene" path="res://scenes/ui/context_panel.tscn" id="5_context"]
 [ext_resource type="Script" uid="uid://s0ckjki5xttb" path="res://scripts/ui/ship_status_panel.gd" id="6_status"]
 [ext_resource type="Script" uid="uid://d4gdl7csfejl7" path="res://scripts/ui/planning_panel.gd" id="7_planning"]
 [ext_resource type="PackedScene" uid="uid://developer_ui_scene" path="res://scenes/ui/developer_ui.tscn" id="8_dev_ui"]
@@ -51,38 +51,11 @@ grow_vertical = 2
 mouse_filter = 2
 theme = SubResource("theme")
 
+[node name="ContextPanel" parent="UI" instance=ExtResource("5_context")]
+z_index = 50
+
 [node name="MiniMap" parent="UI" instance=ExtResource("4_minimap")]
 z_index = 10
-
-[node name="GameInfoPanel" type="PanelContainer" parent="UI"]
-layout_mode = 1
-anchors_preset = 2
-anchor_top = 1.0
-anchor_bottom = 1.0
-offset_left = 20.0
-offset_top = -120.0
-offset_right = 320.0
-offset_bottom = -20.0
-grow_vertical = 0
-script = ExtResource("5_info")
-
-[node name="VBox" type="VBoxContainer" parent="UI/GameInfoPanel"]
-layout_mode = 2
-
-[node name="TurnLabel" type="Label" parent="UI/GameInfoPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Turn: 1"
-
-[node name="PhaseLabel" type="Label" parent="UI/GameInfoPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Phase: SETUP"
-
-[node name="WindSpeedLabel" type="Label" parent="UI/GameInfoPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Wind: Moderate"
 
 [node name="ShipStatusPanel" type="PanelContainer" parent="UI"]
 layout_mode = 1
