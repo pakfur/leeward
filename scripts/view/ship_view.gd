@@ -185,8 +185,8 @@ func _create_selection_indicator() -> void:
 func set_selected(is_selected: bool) -> void:
 	"""Show/hide selection indicator"""
 	selection_indicator.visible = is_selected
-	if is_selected:
-		selected.emit()
+	# Note: Don't emit signal here - this is for programmatic selection updates
+	# The 'selected' signal should only be emitted by user interaction (3D clicks)
 
 func _update_wave_position() -> void:
 	"""Update ship position and rotation based on wave motion (visual only)"""

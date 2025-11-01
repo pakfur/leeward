@@ -23,7 +23,7 @@ Server                                  Client
 ├── CommandValidator                   │
 ├── NetworkSync                        ├── NetworkSync
 └── State broadcast →                  → State sync
-                                       └── Command submission →
+									   └── Command submission →
 ```
 
 ## New Files Created
@@ -79,9 +79,9 @@ GameState.ship_controller.resolve_all_movement()
 # Server only
 var result = GameState.command_validator.execute_command(move_command)
 if result.success:
-    print("Command executed")
+	print("Command executed")
 else:
-    print("Command failed: %s" % result.error)
+	print("Command failed: %s" % result.error)
 ```
 
 ### 4. `/scripts/server/network_sync.gd`
@@ -130,7 +130,7 @@ GameState.advance_phase()
 
 # New code (server)
 if GameState.is_server and GameState.phase_controller:
-    GameState.phase_controller.advance_phase()
+	GameState.phase_controller.advance_phase()
 ```
 
 ### `/scripts/core/game_controller.gd`
@@ -163,10 +163,10 @@ cmd.execute()
 # New code (server-aware)
 var cmd = MoveCommand.new()
 if GameState.is_server:
-    cmd.execute()  # Uses CommandValidator internally
+	cmd.execute()  # Uses CommandValidator internally
 else:
-    # Send to server via network (not yet implemented)
-    GameState.network_sync.send_command_to_server(cmd)
+	# Send to server via network (not yet implemented)
+	GameState.network_sync.send_command_to_server(cmd)
 ```
 
 ### `/scripts/ui/planning_panel.gd`

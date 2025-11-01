@@ -10,12 +10,15 @@ extends Camera3D
 @export var min_rotation_angle: float = 25.0  # minimum angle from horizontal
 @export var max_rotation_angle: float = 90.0  # maximum angle (top-down)
 @export var rotation_speed: float = 0.2
+@export var focus_zoom_distance: float = 15.0  # Distance when focusing on a single ship
+@export var focus_animation_duration: float = 0.5  # Duration of focus animation in seconds
 
 var camera_distance: float = 25.0
 var camera_target: Vector3 = Vector3.ZERO
 var camera_rotation_y: float = 45.0  # horizontal rotation around target
 var is_panning: bool = false
 var is_rotating: bool = false
+var is_tweening: bool = false  # Flag to enable continuous updates during camera tweens
 var last_mouse_pos: Vector2 = Vector2.ZERO
 var mouse_down_pos: Vector2 = Vector2.ZERO
 var drag_threshold: float = 5.0  # pixels before considering it a drag
@@ -24,6 +27,11 @@ func _ready() -> void:
 	camera_distance = initial_distance
 	_update_camera_transform()
 	print("Camera initialized at position: %s, looking at: %s" % [position, camera_target])
+
+func _process(_delta: float) -> void:
+	"""Update camera transform continuously during tweening"""
+	if is_tweening:
+		_update_camera_transform()
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Keyboard shortcuts
@@ -194,6 +202,62 @@ func center_on_ships(ship_positions: Array[Vector3]) -> void:
 
 	_update_camera_transform()
 	print("Centered camera on %d ships at distance %f" % [ship_positions.size(), camera_distance])
+
+func focus_on_ship(world_pos: Vector3, ship_facing: int, zoom_distance: float = -1.0) -> void:
+	"""
+	Focus camera on a specific ship with smooth animation.
+	Ship will appear facing "up" on screen.
+
+	Args:
+		world_pos: Ship's world position
+		ship_facing: Ship's facing direction (0-5, hex directions)
+		zoom_distance: Optional override for focus distance (uses focus_zoom_distance if -1)
+	"""
+	# Use default focus distance if not specified
+	var target_distance = focus_zoom_distance if zoom_distance < 0 else zoom_distance
+	target_distance = clamp(target_distance, min_zoom, max_zoom)
+
+	# Calculate camera rotation so ship faces "up" on screen
+	# Ship model rotation is: -facing * 60 + 90
+	# Camera should be positioned behind the ship, so add 180 degrees
+	var target_rotation = -ship_facing * 60.0 + 270.0
+
+	# Normalize rotation to 0-360 range
+	while target_rotation < 0:
+		target_rotation += 360.0
+	while target_rotation >= 360.0:
+		target_rotation -= 360.0
+
+	# Target position at water level
+	var target_pos = world_pos
+	target_pos.y = 0.0
+
+	# Target isometric angle (straight down view)
+	var target_angle = 85.0
+
+	# Enable continuous transform updates during tween
+	is_tweening = true
+
+	# Animate with tween
+	var tween = create_tween()
+	tween.set_parallel(true)
+	tween.set_ease(Tween.EASE_IN_OUT)
+	tween.set_trans(Tween.TRANS_CUBIC)
+
+	# Tween all camera parameters
+	tween.tween_property(self, "camera_target", target_pos, focus_animation_duration)
+	tween.tween_property(self, "camera_distance", target_distance, focus_animation_duration)
+	tween.tween_property(self, "camera_rotation_y", target_rotation, focus_animation_duration)
+	tween.tween_property(self, "isometric_angle", target_angle, focus_animation_duration)
+
+	# Disable tweening flag when animation completes
+	tween.finished.connect(func():
+		is_tweening = false
+		_update_camera_transform()  # Final update
+	)
+
+	print("Focusing camera on ship at %s (facing: %d, rotation: %.1f°, distance: %.1f)" %
+		[world_pos, ship_facing, target_rotation, target_distance])
 
 func _update_camera_transform() -> void:
 	# Calculate camera position using spherical coordinates

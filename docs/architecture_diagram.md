@@ -29,72 +29,72 @@
 │   Player     │
 │   Input      │
 └──────┬───────┘
-       │
-       ▼
+	   │
+	   ▼
 ┌──────────────┐
 │ MoveCommand  │ ────┐
 └──────────────┘     │
-                     │
-       ┌─────────────▼─────────────┐
-       │   CommandValidator        │
-       │  • validate_command()     │
-       │  • check turn, player,    │
-       │    phase, MA              │
-       └────────────┬──────────────┘
-                    │ Valid?
-                    ▼
-       ┌────────────────────────────┐
-       │  ShipStateController       │
-       │  • set_plotted_movement()  │
-       │  • Updates ShipState       │
-       └────────────┬───────────────┘
-                    │
-                    ▼
-       ┌────────────────────────────┐
-       │  TurnPhaseController       │
-       │  • advance_phase()         │
-       │  • tick_environment()      │
-       │  • resolve_movement()      │
-       └────────────┬───────────────┘
-                    │
-                    ▼
-       ┌────────────────────────────┐
-       │    NetworkSync             │
-       │  • broadcast_state()       │
-       │  • Sends to all clients    │
-       └────────────────────────────┘
+					 │
+	   ┌─────────────▼─────────────┐
+	   │   CommandValidator        │
+	   │  • validate_command()     │
+	   │  • check turn, player,    │
+	   │    phase, MA              │
+	   └────────────┬──────────────┘
+					│ Valid?
+					▼
+	   ┌────────────────────────────┐
+	   │  ShipStateController       │
+	   │  • set_plotted_movement()  │
+	   │  • Updates ShipState       │
+	   └────────────┬───────────────┘
+					│
+					▼
+	   ┌────────────────────────────┐
+	   │  TurnPhaseController       │
+	   │  • advance_phase()         │
+	   │  • tick_environment()      │
+	   │  • resolve_movement()      │
+	   └────────────┬───────────────┘
+					│
+					▼
+	   ┌────────────────────────────┐
+	   │    NetworkSync             │
+	   │  • broadcast_state()       │
+	   │  • Sends to all clients    │
+	   └────────────────────────────┘
 ```
 
 ## Client-Side Flow
 
 ```
-       ┌────────────────────────────┐
-       │    NetworkSync             │
-       │  • receive_state_update()  │
-       │  • Receives from server    │
-       └────────────┬───────────────┘
-                    │
-                    ▼
-       ┌────────────────────────────┐
-       │      GameState             │
-       │  • sync_from_server()      │
-       │  • Update local state      │
-       │  • Emit state_synced       │
-       └────────────┬───────────────┘
-                    │
-                    ▼
-       ┌────────────────────────────┐
-       │   GameController           │
-       │  • _sync_all_views()       │
-       └────────────┬───────────────┘
-                    │
-                    ▼
-       ┌────────────────────────────┐
-       │     ShipView (Visual)      │
-       │  • sync_to_state()         │
-       │  • Update 3D position      │
-       │  • Update rotation         │
-       └────────────────────────────┘
+	   ┌────────────────────────────┐
+	   │    NetworkSync             │
+	   │  • receive_state_update()  │
+	   │  • Receives from server    │
+	   └────────────┬───────────────┘
+					│
+					▼
+	   ┌────────────────────────────┐
+	   │      GameState             │
+	   │  • sync_from_server()      │
+	   │  • Update local state      │
+	   │  • Emit state_synced       │
+	   └────────────┬───────────────┘
+					│
+					▼
+	   ┌────────────────────────────┐
+	   │   GameController           │
+	   │  • _sync_all_views()       │
+	   └────────────┬───────────────┘
+					│
+					▼
+	   ┌────────────────────────────┐
+	   │     ShipView (Visual)      │
+	   │  • sync_to_state()         │
+	   │  • Update 3D position      │
+	   │  • Update rotation         │
+	   └────────────────────────────┘
 ```
 
 ## Data Flow: Command Submission
@@ -102,81 +102,81 @@
 ### Server Mode (Single-player or Server)
 ```
 UI (PlanningPanel)
-    │
-    ▼
+	│
+	▼
 MoveCommand.execute()
-    │
-    ▼
+	│
+	▼
 CommandValidator.execute_command()
-    │
-    ├─→ validate_command()
-    │   ├─ Check turn number
-    │   ├─ Check player ownership
-    │   ├─ Check phase (PLANNING only)
-    │   └─ Validate movement allowance
-    │
-    ▼ (if valid)
+	│
+	├─→ validate_command()
+	│   ├─ Check turn number
+	│   ├─ Check player ownership
+	│   ├─ Check phase (PLANNING only)
+	│   └─ Validate movement allowance
+	│
+	▼ (if valid)
 ShipStateController.set_plotted_movement()
-    │
-    ▼
+	│
+	▼
 ShipState.plotted_actions["movement"] = commands
-    │
-    ▼
+	│
+	▼
 ship_state_changed signal → NetworkSync broadcasts
 ```
 
 ### Client Mode (Future multiplayer)
 ```
 UI (PlanningPanel)
-    │
-    ▼
+	│
+	▼
 MoveCommand created
-    │
-    ▼
+	│
+	▼
 NetworkSync.send_command_to_server()
-    │
-    ▼
+	│
+	▼
 [Network Transport Layer]
-    │
-    ▼
+	│
+	▼
 Server receives via NetworkSync.receive_command()
-    │
-    └─→ (Same as server flow above)
+	│
+	└─→ (Same as server flow above)
 ```
 
 ## Phase Lifecycle
 
 ```
 TurnPhaseController (Server)
-    │
-    ├─→ SETUP
-    │   └─→ Initialize game state
-    │
-    ├─→ ENVIRONMENT
-    │   ├─→ environment.tick_environment(turn)
-    │   ├─→ Update wind, sea state
-    │   └─→ Auto-advance
-    │
-    ├─→ PLANNING
-    │   ├─→ Players submit commands
-    │   ├─→ Wait for all players_ready
-    │   └─→ Advance when all ready
-    │
-    ├─→ MOVEMENT_RESOLUTION
-    │   ├─→ ship_controller.resolve_all_movement()
-    │   └─→ Apply plotted movements
-    │
-    ├─→ COMBAT_RESOLUTION (TODO)
-    ├─→ DRIFT_CALCULATION (TODO)
-    ├─→ STATUS_ADJUSTMENT (TODO)
-    ├─→ MORALE_CHECK (TODO)
-    ├─→ MESSAGE_DELIVERY (TODO)
-    │
-    ├─→ POST_COMBAT
-    │   └─→ Manual advance or timeout
-    │
-    └─→ END_TURN
-        └─→ Loop back to ENVIRONMENT (next turn)
+	│
+	├─→ SETUP
+	│   └─→ Initialize game state
+	│
+	├─→ ENVIRONMENT
+	│   ├─→ environment.tick_environment(turn)
+	│   ├─→ Update wind, sea state
+	│   └─→ Auto-advance
+	│
+	├─→ PLANNING
+	│   ├─→ Players submit commands
+	│   ├─→ Wait for all players_ready
+	│   └─→ Advance when all ready
+	│
+	├─→ MOVEMENT_RESOLUTION
+	│   ├─→ ship_controller.resolve_all_movement()
+	│   └─→ Apply plotted movements
+	│
+	├─→ COMBAT_RESOLUTION (TODO)
+	├─→ DRIFT_CALCULATION (TODO)
+	├─→ STATUS_ADJUSTMENT (TODO)
+	├─→ MORALE_CHECK (TODO)
+	├─→ MESSAGE_DELIVERY (TODO)
+	│
+	├─→ POST_COMBAT
+	│   └─→ Manual advance or timeout
+	│
+	└─→ END_TURN
+		└─→ Loop back to ENVIRONMENT (next turn)
 ```
 
 ## File Organization
@@ -209,8 +209,8 @@ scripts/
 │   └── hex_grid.gd
 │
 └── ui/
-    ├── planning_panel.gd      # Player input
-    └── ship_status_panel.gd  # Ship info display
+	├── planning_panel.gd      # Player input
+	└── ship_status_panel.gd  # Ship info display
 ```
 
 ## Key Principles

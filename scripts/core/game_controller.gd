@@ -5,13 +5,21 @@ extends Node
 @onready var camera: Camera3D = $Camera
 @onready var ships_container: Node3D = $Ships
 @onready var ui: Control = $UI
+@onready var context_panel = $UI/ContextPanel
 @onready var planning_panel = $UI/PlanningPanel
 @onready var ship_status_panel = $UI/ShipStatusPanel
 @onready var developer_ui: Window = $DeveloperUI
 
+# Planning phase UI
+const PlanningPhaseUI = preload("res://scenes/ui/planning_phase_ui.tscn")
+var current_planning_ui: Control = null
+
 # Views (presentation layer)
 var ship_views: Dictionary = {}  # ship_id -> ShipView
 var selected_ship_id: String = ""
+
+# Planning phase state (client-side)
+var selected_actions: Dictionary = {}  # ship_id -> {action_type -> bool}
 
 func _ready() -> void:
 	print("GameController ready")
@@ -212,11 +220,67 @@ func _enter_planning_phase() -> void:
 	"""Enter planning phase - show planning UI for player ships"""
 	print("Entering planning phase for player 0")
 
+	# Get player ships
 	var player_0_ships = GameState.get_player_ships(0)
-	if planning_panel and not player_0_ships.is_empty():
-		planning_panel.show_for_planning_with_states(player_0_ships)
+	if player_0_ships.is_empty():
+		print("No ships for player 0")
+		return
+
+	# Create planning UI
+	if not current_planning_ui:
+		current_planning_ui = PlanningPhaseUI.instantiate()
+
+		# Connect signals
+		current_planning_ui.ship_selected.connect(_on_planning_ship_selected)
+		current_planning_ui.action_toggled.connect(_on_planning_action_toggled)
+
+	# Load into context panel (must be done before setup to ensure @onready nodes are available)
+	if context_panel:
+		context_panel.set_context_title("Planning Phase")
+		context_panel.set_context_content(current_planning_ui)
+
+	# Setup with player ships (after adding to tree so @onready nodes are initialized)
+	current_planning_ui.setup_for_player(player_0_ships)
+
+	# Hide old planning panel (will be deprecated)
+	if planning_panel:
+		planning_panel.visible = false
 
 	# TODO: AI plans for player 1
+
+func _on_planning_ship_selected(ship_id: String) -> void:
+	"""Handle ship selection from planning UI - focus camera and highlight ship"""
+	print("Planning UI: Ship selected - %s" % ship_id)
+
+	# Get ship state and view
+	var ship_state = GameState.get_ship(ship_id)
+	var ship_view = ship_views.get(ship_id)
+
+	if not ship_state or not ship_view:
+		print("Warning: Ship not found: %s" % ship_id)
+		return
+
+	# Focus camera on ship with smooth animation
+	if camera and camera.has_method("focus_on_ship"):
+		camera.focus_on_ship(ship_view.global_position, ship_state.facing)
+
+	# Select ship on map (highlight)
+	_select_ship(ship_id)
+
+func _on_planning_action_toggled(ship_id: String, action_type: String, active: bool) -> void:
+	"""Handle action button toggle from planning UI"""
+	print("Planning UI: Action '%s' toggled to %s for ship %s" % [action_type, active, ship_id])
+
+	# Store action state locally
+	if not selected_actions.has(ship_id):
+		selected_actions[ship_id] = {}
+	selected_actions[ship_id][action_type] = active
+
+	# TODO: In next iteration, send command to server
+	# if GameState.is_server:
+	#     # Execute command via CommandValidator
+	# else:
+	#     # Send to server via network
 
 func _on_player_plan_submitted() -> void:
 	"""Player has submitted their plan"""
