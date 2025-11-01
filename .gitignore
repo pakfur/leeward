@@ -38,6 +38,7 @@ Thumbs.db
 *.swp
 *.swo
 *~
+*.sublime-workspace
 
 # Build outputs
 builds/
