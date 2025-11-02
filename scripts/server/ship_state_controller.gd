@@ -56,8 +56,7 @@ func set_ship_speed(ship_id: String, speed: int) -> bool:
 		push_error("[Server] Ship not found: %s" % ship_id)
 		return false
 
-	ship.last_speed = ship.current_speed
-	ship.current_speed = speed
+	ship.speed = speed
 	ship_state_changed.emit(ship_id)
 	return true
 

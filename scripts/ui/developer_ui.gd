@@ -190,8 +190,7 @@ func _on_ship_selected(index: int) -> void:
 
 	# Add editable fields
 	_add_ship_field(ship_fields_container, ship, "facing", 0, 5, "int")
-	_add_ship_field(ship_fields_container, ship, "current_speed", 0, 10, "int")
-	_add_ship_field(ship_fields_container, ship, "last_speed", 0, 10, "int")
+	_add_ship_field(ship_fields_container, ship, "speed", 0, 10, "int")
 	_add_ship_field(ship_fields_container, ship, "sail_state", ["FS", "MS", "PS", "NS"], null, "string")
 
 ## Field Creation

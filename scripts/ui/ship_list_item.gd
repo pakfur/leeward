@@ -70,7 +70,7 @@ func _update_display() -> void:
 
 	# Speed
 	if speed_label:
-		speed_label.text = "Spd: %d" % ship_state.current_speed
+		speed_label.text = "Spd: %d" % ship_state.speed
 
 	# Stats line: "Hull: 8/8/8 Crew: 200/4 Sails: MS/4"
 	if stats_label:

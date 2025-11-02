@@ -19,8 +19,7 @@ var definition: Dictionary = {}
 # Position and movement
 var hex_position: Vector2i = Vector2i.ZERO
 var facing: int = 0  # 0-5, hex direction
-var current_speed: int = 0  # hexes per turn
-var last_speed: int = 0
+var speed: int = 0  # hexes per turn
 
 # Sail and rigging state
 var sail_state: String = "MS"  # FS, MS, PS, NS
@@ -77,7 +76,7 @@ func initialize(data: Dictionary, ship_def: Dictionary) -> void:
 	hex_position = Vector2i(data.get("position", {}).get("q", 0), data.get("position", {}).get("r", 0))
 	facing = data.get("facing", 0)
 	sail_state = data.get("sail_state", "MS")
-	current_speed = data.get("current_speed", 0)
+	speed = data.get("speed", 0)
 
 	# Initialize from definition
 	rigging_quality = ship_def.get("rigging_quality", 4)
@@ -308,7 +307,7 @@ func get_status_summary() -> Dictionary:
 		"size": _get_ship_size(),
 		"position": hex_position,
 		"facing": facing,
-		"speed": current_speed,
+		"speed": speed,
 		"sail_state": sail_state,
 		"hull_hp": hull_current_hp,
 		"hull_max": hull_max_hp,

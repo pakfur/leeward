@@ -183,7 +183,7 @@ func _create_default_scenario() -> Dictionary:
 				"position": {"q": 5, "r": 15},
 				"facing": 0,
 				"sail_state": "MS",
-				"current_speed": 0
+				"speed": 0
 			},
 			{
 				"id": "enemy_ship",
@@ -192,7 +192,7 @@ func _create_default_scenario() -> Dictionary:
 				"position": {"q": 20, "r": 15},
 				"facing": 3,
 				"sail_state": "MS",
-				"current_speed": 0
+				"speed": 0
 			}
 		]
 	}

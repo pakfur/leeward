@@ -15,8 +15,9 @@ extends Resource
 # Position and movement (hex-based, deterministic)
 @export var hex_position: Vector2i = Vector2i.ZERO
 @export var facing: int = 0  # 0-5, hex direction
-@export var current_speed: int = 0  # hexes per turn
-@export var last_speed: int = 0
+@export var speed: int = 0  # hexes per turn
+@export var movement_points: int = 0 # current turns movement points
+@export var acceleration: int = 0 # current ships acceleration, negative value indicates deceleration
 
 # Sail and rigging state
 @export var sail_state: String = "MS"  # FS, MS, PS, NS
@@ -83,7 +84,7 @@ func get_status_summary() -> Dictionary:
 		"size": get_ship_size(),
 		"position": hex_position,
 		"facing": facing,
-		"speed": current_speed,
+		"speed": speed,
 		"sail_state": sail_state,
 		"hull_hp": hull_current_hp,
 		"hull_max": hull_max_hp,
@@ -104,8 +105,8 @@ func serialize() -> Dictionary:
 		"definition": definition,
 		"position": {"q": hex_position.x, "r": hex_position.y},
 		"facing": facing,
-		"current_speed": current_speed,
-		"last_speed": last_speed,
+		"speed": speed,
+		"movement_points": movement_points,
 		"sail_state": sail_state,
 		"rigging_quality": rigging_quality,
 		"rigging_damage": rigging_damage,
@@ -131,8 +132,8 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.hex_position = Vector2i(pos.q, pos.r)
 
 	state.facing = data.get("facing", 0)
-	state.current_speed = data.get("current_speed", 0)
-	state.last_speed = data.get("last_speed", 0)
+	state.speed = data.get("speed", 0)
+	state.movement_points = data.get("movement_points", 0)
 	state.sail_state = data.get("sail_state", "MS")
 	state.rigging_quality = data.get("rigging_quality", 4)
 	state.rigging_damage = data.get("rigging_damage", [0, 0, 0, 0])
@@ -163,7 +164,7 @@ func initialize_from_scenario(data: Dictionary, ship_def: Dictionary) -> void:
 	hex_position = Vector2i(data.get("position", {}).get("q", 0), data.get("position", {}).get("r", 0))
 	facing = data.get("facing", 0)
 	sail_state = data.get("sail_state", "MS")
-	current_speed = data.get("current_speed", 0)
+	speed = data.get("speed", 0)
 
 	# Initialize from definition
 	rigging_quality = ship_def.get("rigging_quality", 4)

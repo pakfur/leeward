@@ -4,11 +4,11 @@
 [ext_resource type="Script" uid="uid://drpxitgfk6sd3" path="res://scripts/core/hex_map.gd" id="2_hex_map"]
 [ext_resource type="Material" uid="uid://bj6tedpmn6a0v" path="res://assets/materials/ocean_water.tres" id="2_ocean_material"]
 [ext_resource type="Script" uid="uid://bnfe26l2snu6l" path="res://scripts/core/isometric_camera.gd" id="3_camera"]
-[ext_resource type="PackedScene" uid="uid://minimap_scene" path="res://scenes/ui/minimap.tscn" id="4_minimap"]
-[ext_resource type="PackedScene" uid="uid://context_panel_scene" path="res://scenes/ui/context_panel.tscn" id="5_context"]
+[ext_resource type="PackedScene" path="res://scenes/ui/minimap.tscn" id="4_minimap"]
+[ext_resource type="PackedScene" path="res://scenes/ui/context_panel.tscn" id="5_context"]
 [ext_resource type="Script" uid="uid://s0ckjki5xttb" path="res://scripts/ui/ship_status_panel.gd" id="6_status"]
 [ext_resource type="Script" uid="uid://d4gdl7csfejl7" path="res://scripts/ui/planning_panel.gd" id="7_planning"]
-[ext_resource type="PackedScene" uid="uid://developer_ui_scene" path="res://scenes/ui/developer_ui.tscn" id="8_dev_ui"]
+[ext_resource type="PackedScene" path="res://scenes/ui/developer_ui.tscn" id="8_dev_ui"]
 
 [sub_resource type="Environment" id="env"]
 background_mode = 1
@@ -53,9 +53,11 @@ theme = SubResource("theme")
 
 [node name="ContextPanel" parent="UI" instance=ExtResource("5_context")]
 z_index = 50
+layout_mode = 1
 
 [node name="MiniMap" parent="UI" instance=ExtResource("4_minimap")]
 z_index = 10
+layout_mode = 0
 
 [node name="ShipStatusPanel" type="PanelContainer" parent="UI"]
 layout_mode = 1
@@ -234,5 +236,3 @@ size_flags_horizontal = 3
 text = "Submit Plan"
 
 [node name="DeveloperUI" parent="." instance=ExtResource("8_dev_ui")]
-visible = false
-z_index = 100
