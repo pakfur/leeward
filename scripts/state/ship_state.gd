@@ -21,7 +21,7 @@ extends Resource
 
 # Sail and rigging state
 @export var sail_state: String = "MS"  # FS, MS, PS, NS
-@export var rigging_quality: int = 4  # 0-4
+@export var rigging_quality: int = 4  # 1-4
 @export var rigging_damage: Array[int] = [0, 0, 0, 0]  # damage per section
 
 # Hull state
