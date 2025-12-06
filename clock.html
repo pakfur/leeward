@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analog Clock</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: white;
+            font-family: 'Arial', sans-serif;
+        }
+
+        .clock {
+            position: relative;
+            width: min(90vmin, 400px);
+            height: min(90vmin, 400px);
+            border-radius: 50%;
+            background: white;
+            border: 8px solid #333;
+            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.2),
+                        inset 0 0 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .clock::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 15px;
+            height: 15px;
+            background: #333;
+            border-radius: 50%;
+            z-index: 10;
+        }
+
+        .number {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            font-size: clamp(16px, 4vmin, 24px);
+            font-weight: bold;
+            color: #333;
+        }
+
+        .number span {
+            display: inline-block;
+            position: absolute;
+            left: 50%;
+            transform-origin: center;
+        }
+
+        .tick {
+            position: absolute;
+            width: 2px;
+            height: 8px;
+            background: #999;
+            left: 50%;
+            transform-origin: center bottom;
+        }
+
+        .tick.major {
+            height: 15px;
+            width: 3px;
+            background: #666;
+        }
+
+        .hand {
+            position: absolute;
+            bottom: 50%;
+            left: 50%;
+            transform-origin: center bottom;
+            border-radius: 10px;
+            transform: translateX(-50%);
+        }
+
+        .hour {
+            width: 6px;
+            height: 25%;
+            background: #333;
+            z-index: 3;
+        }
+
+        .minute {
+            width: 4px;
+            height: 35%;
+            background: #555;
+            z-index: 4;
+        }
+
+        .second {
+            width: 2px;
+            height: 40%;
+            background: #e74c3c;
+            z-index: 5;
+            animation: tick 60s steps(60) infinite;
+        }
+
+        @keyframes tick {
+            from {
+                transform: translateX(-50%) rotate(0deg);
+            }
+            to {
+                transform: translateX(-50%) rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="clock">
+        <!-- Clock numbers -->
+        <div class="number" style="transform: rotate(30deg)"><span style="transform: rotate(-30deg) translateY(-140px)">1</span></div>
+        <div class="number" style="transform: rotate(60deg)"><span style="transform: rotate(-60deg) translateY(-140px)">2</span></div>
+        <div class="number" style="transform: rotate(90deg)"><span style="transform: rotate(-90deg) translateY(-140px)">3</span></div>
+        <div class="number" style="transform: rotate(120deg)"><span style="transform: rotate(-120deg) translateY(-140px)">4</span></div>
+        <div class="number" style="transform: rotate(150deg)"><span style="transform: rotate(-150deg) translateY(-140px)">5</span></div>
+        <div class="number" style="transform: rotate(180deg)"><span style="transform: rotate(-180deg) translateY(-140px)">6</span></div>
+        <div class="number" style="transform: rotate(210deg)"><span style="transform: rotate(-210deg) translateY(-140px)">7</span></div>
+        <div class="number" style="transform: rotate(240deg)"><span style="transform: rotate(-240deg) translateY(-140px)">8</span></div>
+        <div class="number" style="transform: rotate(270deg)"><span style="transform: rotate(-270deg) translateY(-140px)">9</span></div>
+        <div class="number" style="transform: rotate(300deg)"><span style="transform: rotate(-300deg) translateY(-140px)">10</span></div>
+        <div class="number" style="transform: rotate(330deg)"><span style="transform: rotate(-330deg) translateY(-140px)">11</span></div>
+        <div class="number" style="transform: rotate(0deg)"><span style="transform: rotate(0deg) translateY(-140px)">12</span></div>
+
+        <!-- Tick marks -->
+        <script>
+            for (let i = 0; i < 60; i++) {
+                const tick = document.createElement('div');
+                tick.className = i % 5 === 0 ? 'tick major' : 'tick';
+                tick.style.transform = `translateX(-50%) rotate(${i * 6}deg)`;
+                tick.style.top = '0';
+                document.querySelector('.clock').appendChild(tick);
+            }
+        </script>
+
+        <!-- Clock hands -->
+        <div class="hand hour" id="hour"></div>
+        <div class="hand minute" id="minute"></div>
+        <div class="hand second" id="second"></div>
+    </div>
+
+    <script>
+        function setTime() {
+            const now = new Date();
+            const hours = now.getHours() % 12;
+            const minutes = now.getMinutes();
+            const seconds = now.getSeconds();
+
+            const hourDeg = (hours * 30) + (minutes * 0.5);
+            const minuteDeg = minutes * 6;
+            const secondDeg = seconds * 6;
+
+            document.getElementById('hour').style.transform = `translateX(-50%) rotate(${hourDeg}deg)`;
+            document.getElementById('minute').style.transform = `translateX(-50%) rotate(${minuteDeg}deg)`;
+
+            // Set initial position for second hand
+            const secondHand = document.getElementById('second');
+            secondHand.style.transform = `translateX(-50%) rotate(${secondDeg}deg)`;
+
+            // Restart animation
+            secondHand.style.animation = 'none';
+            setTimeout(() => {
+                secondHand.style.animation = 'tick 60s steps(60) infinite';
+                secondHand.style.animationDelay = `-${seconds}s`;
+            }, 10);
+        }
+
+        setTime();
+        setInterval(() => {
+            const now = new Date();
+            const hours = now.getHours() % 12;
+            const minutes = now.getMinutes();
+
+            const hourDeg = (hours * 30) + (minutes * 0.5);
+            const minuteDeg = minutes * 6;
+
+            document.getElementById('hour').style.transform = `translateX(-50%) rotate(${hourDeg}deg)`;
+            document.getElementById('minute').style.transform = `translateX(-50%) rotate(${minuteDeg}deg)`;
+        }, 1000);
+    </script>
+</body>
+</html>

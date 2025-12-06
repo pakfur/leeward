@@ -98,7 +98,7 @@ func get_movement_allowance(speed_type: String, wind_speed: int, wind_facing: St
 			entry.rigging_quality == rigging_quality):
 			return entry.ma if entry.has("ma") else 0
 
-	push_warning("No MA found for: %s/%d/%s/%s/%d" % [speed_type, wind_speed, wind_facing, sail_state, rigging_quality])
+	push_warning("No MA found for: speed_type: %s | wind_speed: %d | wind_facing: %s| sail_state: %s| rigging: %d" % [speed_type, wind_speed, wind_facing, sail_state, rigging_quality])
 	return 0
 
 func get_ship_definition(ship_id: String) -> Dictionary:

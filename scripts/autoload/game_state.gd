@@ -36,6 +36,7 @@ var ship_controller: ShipStateController = null
 var environment_controller: EnvironmentController = null
 var command_validator: CommandValidator = null
 var network_sync: NetworkSync = null
+var movement_plotting_controller: MovementPlottingController = null
 
 # State objects (authoritative on server, read-only on client)
 var environment: EnvironmentState = null  # Environmental conditions
@@ -68,10 +69,17 @@ func _initialize_server_controllers() -> void:
 	command_validator = CommandValidator.new(self, ship_controller, phase_controller)
 	network_sync = NetworkSync.new(self)
 	network_sync.is_server = is_server
+	movement_plotting_controller = MovementPlottingController.new(self)
+
+	# Add movement plotting controller to scene tree (it needs _process for timeouts)
+	add_child(movement_plotting_controller)
 
 	# Connect signals
 	phase_controller.phase_changed.connect(_on_server_phase_changed)
 	phase_controller.turn_changed.connect(_on_server_turn_changed)
+
+	# Connect movement plotting signals
+	movement_plotting_controller.session_submitted.connect(_on_movement_submitted)
 
 	# Connect state change signals to trigger sync
 	if is_server:
@@ -132,6 +140,15 @@ func _on_state_changed_broadcast(_arg = null) -> void:
 		# Note: This gets called frequently. In production, you might want to
 		# debounce this or use delta syncing for efficiency
 		pass  # network_sync.broadcast_state() called automatically via timer
+
+
+func _on_movement_submitted(session_id: String, ship_id: String, final_path: Array) -> void:
+	"""Handle movement submission from plotting controller
+	final_path is Array[MovementTypes.PlotStep]"""
+	print("GameState: Movement submitted for ship %s (%d hexes)" % [ship_id, final_path.size()])
+	# The movement is already applied to ship_state.plotted_actions by the controller
+	# Additional handling (e.g., checking if all ships have submitted) can go here
+
 
 func get_phase_name() -> String:
 	"""Get human-readable phase name"""
