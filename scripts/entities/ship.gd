@@ -2,9 +2,11 @@ class_name Ship
 extends Node3D
 ## Ship - Represents a naval ship in the game
 
+@warning_ignore("shadowed_global_identifier")
 const WaveCalculator = preload("res://scripts/core/wave_calculator.gd")
 
 signal selected()
+@warning_ignore("unused_signal")
 signal status_changed()
 
 # Ship identification
@@ -60,6 +62,7 @@ func _ready() -> void:
 	wave_calculator = WaveCalculator.new()
 	_create_selection_indicator()
 
+@warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
 	# Always update wave position if wave calculator exists
 	if wave_calculator != null:
@@ -264,59 +267,6 @@ func set_selected(is_selected: bool) -> void:
 	selection_indicator.visible = is_selected
 	if is_selected:
 		selected.emit()
-
-func plot_movement(commands: Array) -> void:
-	"""Store planned movement for this turn"""
-	plotted_actions.movement = commands
-	print("Ship %s plotted movement: %s" % [ship_id, commands])
-
-func clear_plot() -> void:
-	"""Clear all plotted actions"""
-	plotted_actions = {
-		"movement": [],
-		"sail_change": "",
-		"crew_assignments": {},
-		"gunnery": [],
-		"boarding": false,
-		"repairs": []
-	}
-
-func get_movement_allowance() -> int:
-	"""Calculate current movement allowance"""
-	# Get wind facing from GameState
-	var wind_dir = GameState.wind_direction
-	var wind_facing = HexGrid.new().get_wind_facing(facing, wind_dir)
-
-	# Look up MA from data
-	var speed_type = definition.get("speed_type", "F/F")
-	var ma = DataManager.get_movement_allowance(
-		speed_type,
-		GameState.wind_speed,
-		wind_facing,
-		sail_state,
-		rigging_quality
-	)
-
-	return ma
-
-func get_status_summary() -> Dictionary:
-	"""Get a summary of ship status for UI display"""
-	return {
-		"name": ship_name,
-		"type": definition.get("name", ship_type),
-		"size": _get_ship_size(),
-		"position": hex_position,
-		"facing": facing,
-		"speed": speed,
-		"sail_state": sail_state,
-		"hull_hp": hull_current_hp,
-		"hull_max": hull_max_hp,
-		"crew": crew_count,
-		"crew_quality": crew_quality,
-		"morale": crew_morale,
-		"rigging": rigging_quality,
-		"movement_allowance": get_movement_allowance()
-	}
 
 func get_ship_size() -> int:
 	"""Public accessor for ship size"""

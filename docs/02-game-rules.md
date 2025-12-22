@@ -128,44 +128,7 @@ The calculated movement allowance (MA) depends on five factors:
 (partial table, complete table has 9 * 3 * 4 * 3 * 4 = 1728 rows including all combinations of all 5 factors)
 MA = 0-4, a dash (-) means that the Sail State is not available due to the Rigging Available value.
 
-| Facing | Speed Type | Wind Speed  | Rigging Quality   | Sail State | MA  |
-| ------ | ---------- | ----------- | ----------------- | ---------- | --- |
-|   C    | L/F        | 1           | 4                 | PS         |  4  |
-|   B    | L/F        | 1           | 4                 | PS         |  7  |
-|   R    | L/F        | 1           | 4                 | PS         |  6  |
-|   C    | L/F        | 1           | 4                 | MS         |  2  |
-|   B    | L/F        | 1           | 4                 | MS         |  5  |
-|   R    | L/F        | 1           | 4                 | MS         |  4  |
-|   C    | L/F        | 1           | 4                 | FS         |  1  |
-|   B    | L/F        | 1           | 4                 | FS         |  3  |
-|   R    | L/F        | 1           | 4                 | FS         |  2  |
-|   C    | L/F        | 1           | 3                 | PS         |  -  |
-|   B    | L/F        | 1           | 3                 | PS         |  -  |
-|   R    | L/F        | 1           | 3                 | PS         |  -  |
-|   C    | L/F        | 1           | 3                 | MS         |  1  |
-|   B    | L/F        | 1           | 3                 | MS         |  3  |
-|   R    | L/F        | 1           | 3                 | MS         |  2  |
-|   C    | L/F        | 1           | 3                 | FS         |  0  |
-|   B    | L/F        | 1           | 3                 | FS         |  2  |
-|   R    | L/F        | 1           | 3                 | FS         |  1  |
-|   C    | L/F        | 1           | 2                 | PS         |  -  |
-|   B    | L/F        | 1           | 2                 | PS         |  -  |
-|   R    | L/F        | 1           | 2                 | PS         |  -  |
-|   C    | L/F        | 1           | 2                 | MS         |  -  |
-|   B    | L/F        | 1           | 2                 | MS         |  -  |
-|   R    | L/F        | 1           | 2                 | MS         |  -  |
-|   C    | L/F        | 1           | 2                 | FS         |  0  |
-|   B    | L/F        | 1           | 2                 | FS         |  1  |
-|   R    | L/F        | 1           | 2                 | FS         |  1  |
-|   C    | L/F        | 1           | 1                 | PS         |  -  |
-|   B    | L/F        | 1           | 1                 | PS         |  -  |
-|   R    | L/F        | 1           | 1                 | PS         |  -  |
-|   C    | L/F        | 1           | 1                 | MS         |  -  |
-|   B    | L/F        | 1           | 1                 | MS         |  -  |
-|   R    | L/F        | 1           | 1                 | MS         |  -  |
-|   C    | L/F        | 1           | 1                 | FS         |  0  |
-|   B    | L/F        | 1           | 1                 | FS         |  0  |
-|   R    | L/F        | 1           | 1                 | FS         |  0  |
+
 
 
 This diagram shows the relative wind facing value based on wind direction:
@@ -203,7 +166,7 @@ EXAMPLE: A fast frigate (ship speed=F/F) which is close-hauled (wind facing = C)
 
 #### Movement Forward Rules:
 
-A ship may move forward the same number of hexes as the previous turn, accelerate faster, or decelerate. 
+A ship that does not change direction, may move forward the same number of hexes as the previous turn, accelerate faster, or decelerate. 
 
 If accelerating: The number of hexes a ship can move forward is determined by the calculated MA, the ships acceleration and the number of hexes the ship moved forward the previous turn.
 
