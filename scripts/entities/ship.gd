@@ -29,7 +29,7 @@ var rigging_quality: int = 4  # 0-4
 var rigging_damage: Array[int] = [0, 0, 0, 0]  # damage per section
 
 # Hull state
-var hull_max_hp: Array[int] = [8, 8, 8]
+var hull_original_hp: Array[int] = [8, 8, 8]
 var hull_current_hp: Array[int] = [8, 8, 8]
 
 # Crew
@@ -84,15 +84,15 @@ func initialize(data: Dictionary, ship_def: Dictionary) -> void:
 	# Initialize from definition
 	rigging_quality = ship_def.get("rigging_quality", 4)
 
-	# Convert hull_max_hp from untyped array
-	var hp_data = ship_def.get("hull_max_hp", [8, 8, 8])
-	hull_max_hp.clear()
+	# Convert hull_original_hp from untyped array
+	var hp_data = ship_def.get("hull_original_hp", [8, 8, 8])
+	hull_original_hp.clear()
 	for hp in hp_data:
-		hull_max_hp.append(int(hp))
+		hull_original_hp.append(int(hp))
 
 	# Copy to current HP
 	hull_current_hp.clear()
-	for hp in hull_max_hp:
+	for hp in hull_original_hp:
 		hull_current_hp.append(hp)
 
 	crew_count = ship_def.get("crew_count", 200)

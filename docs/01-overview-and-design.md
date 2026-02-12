@@ -97,7 +97,7 @@ Represents gameplay during tactical naval combat
 	- all opposing ships have struck their colors, sank, or been destroyed, burnt or fled
 
 - [ ] Secondary objectives
-    - NA
+	- NA
 
 - [ ] Fail states
 	- all players ships have struck, sank, been destroyed, burt or fled

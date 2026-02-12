@@ -9,8 +9,8 @@ extends Resource
 @export var ship_name: String = "Unknown Ship"
 
 # Ship definition (from data files)
-@export var ship_type: String = ""
-@export var definition: Dictionary = {}
+@export var ship_type: String = "" # from ships.json (ie "frigate_38")
+var definition: ShipDefinition = null  # loaded from ships.json
 
 # Position and movement (hex-based, deterministic)
 @export var hex_position: Vector2i = Vector2i.ZERO
@@ -21,15 +21,12 @@ extends Resource
 
 # Sail and rigging state
 @export var sail_state: String = "MS"  # FS, MS, PS, NS
-@export var rigging_quality: int = 4  # 1-4
-@export var rigging_damage: Array[int] = [0, 0, 0, 0]  # damage per section
+@export var rigging_current_hp: Array[int] = [0, 0, 0, 0]  # damage per section
 
 # Hull state
-@export var hull_max_hp: Array[int] = [8, 8, 8]
-@export var hull_current_hp: Array[int] = [8, 8, 8]
+@export var hull_current_hp: Array[int] = [0, 0, 0, 0]
 
 # Crew
-@export var crew_count: int = 0
 @export var crew_quality: String = "Trained"
 @export var crew_morale: int = 4  # 2-5
 
@@ -45,12 +42,10 @@ var plotted_actions: Dictionary = {
 
 func _init() -> void:
 	# Initialize arrays properly
-	if rigging_damage.is_empty():
-		rigging_damage = [0, 0, 0, 0]
-	if hull_max_hp.is_empty():
-		hull_max_hp = [8, 8, 8]
+	if rigging_current_hp.is_empty():
+		rigging_current_hp = [0, 0, 0, 0]
 	if hull_current_hp.is_empty():
-		hull_current_hp = [8, 8, 8]
+		hull_current_hp = [0, 0, 0, 0]
 
 func get_ship_size() -> int:
 	"""Determine ship size in hexes based on type"""
@@ -65,7 +60,9 @@ func get_movement_allowance() -> int:
 	var hex_grid = HexGrid.new()
 	var wind_facing = hex_grid.get_wind_facing(facing, wind_dir)
 
-	var speed_type = definition.get("speed_type", "F/F")
+	var speed_type = definition.speed_type if definition else "F/F"
+	# Calculate rigging quality from current HP (1-4 based on average HP percentage)
+	var rigging_quality = get_rigging_quality()
 	var ma = DataManager.get_movement_allowance(
 		speed_type,
 		GameState.wind_speed,
@@ -76,22 +73,52 @@ func get_movement_allowance() -> int:
 
 	return ma
 
+func get_rigging_quality() -> int:
+	"""Calculate rigging quality (1-4) based on current HP compared to definition max"""
+	if definition == null:
+		return 4  # Default to best quality if no definition
+
+	var max_hp_array = definition.rigging_hp
+	var total_max = 0
+	var total_current = 0
+
+	for i in range(4):
+		total_max += max_hp_array[i] if i < max_hp_array.size() else 0
+		total_current += rigging_current_hp[i]
+
+	if total_max == 0:
+		return 4
+
+	var hp_percentage = float(total_current) / float(total_max)
+
+	# Convert percentage to quality (1-4)
+	if hp_percentage >= 0.85:
+		return 4
+	elif hp_percentage >= 0.60:
+		return 3
+	elif hp_percentage >= 0.35:
+		return 2
+	else:
+		return 1
+
 func get_status_summary() -> Dictionary:
 	"""Get a summary of ship status for UI display"""
+	var hull_max = definition.hull_hp if definition else [0, 0, 0, 0]
+	var ship_def_name = definition.name if definition else ship_type
 	return {
 		"name": ship_name,
-		"type": definition.get("name", ship_type),
+		"type": ship_def_name,
 		"size": get_ship_size(),
 		"position": hex_position,
 		"facing": facing,
 		"speed": speed,
 		"sail_state": sail_state,
 		"hull_hp": hull_current_hp,
-		"hull_max": hull_max_hp,
-		"crew": crew_count,
+		"hull_max": hull_max,
 		"crew_quality": crew_quality,
 		"morale": crew_morale,
-		"rigging": rigging_quality,
+		"rigging": get_rigging_quality(),
+		"rigging_hp": rigging_current_hp,
 		"movement_allowance": get_movement_allowance()
 	}
 
@@ -102,17 +129,14 @@ func serialize() -> Dictionary:
 		"player_id": player_id,
 		"ship_name": ship_name,
 		"ship_type": ship_type,
-		"definition": definition,
 		"position": {"q": hex_position.x, "r": hex_position.y},
 		"facing": facing,
 		"speed": speed,
 		"movement_points": movement_points,
+		"acceleration": acceleration,
 		"sail_state": sail_state,
-		"rigging_quality": rigging_quality,
-		"rigging_damage": rigging_damage,
-		"hull_max_hp": hull_max_hp,
+		"rigging_current_hp": rigging_current_hp,
 		"hull_current_hp": hull_current_hp,
-		"crew_count": crew_count,
 		"crew_quality": crew_quality,
 		"crew_morale": crew_morale,
 		"plotted_actions": plotted_actions
@@ -126,7 +150,11 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.player_id = data.get("player_id", 0)
 	state.ship_name = data.get("ship_name", "Unknown")
 	state.ship_type = data.get("ship_type", "")
-	state.definition = data.get("definition", {})
+
+	# Look up ShipDefinition from DataManager using ship_type
+	state.definition = DataManager.get_ship_definition(state.ship_type)
+	if state.definition == null:
+		push_error("Failed to find ShipDefinition for ship_type '%s' during deserialization" % state.ship_type)
 
 	var pos = data.get("position", {"q": 0, "r": 0})
 	state.hex_position = Vector2i(pos.q, pos.r)
@@ -134,12 +162,21 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.facing = data.get("facing", 0)
 	state.speed = data.get("speed", 0)
 	state.movement_points = data.get("movement_points", 0)
+	state.acceleration = data.get("acceleration", 0)
 	state.sail_state = data.get("sail_state", "MS")
-	state.rigging_quality = data.get("rigging_quality", 4)
-	state.rigging_damage = data.get("rigging_damage", [0, 0, 0, 0])
-	state.hull_max_hp = data.get("hull_max_hp", [8, 8, 8])
-	state.hull_current_hp = data.get("hull_current_hp", [8, 8, 8])
-	state.crew_count = data.get("crew_count", 0)
+
+	# Load rigging HP
+	var rigging_hp_data = data.get("rigging_current_hp", [0, 0, 0, 0])
+	state.rigging_current_hp.clear()
+	for hp in rigging_hp_data:
+		state.rigging_current_hp.append(int(hp))
+
+	# Load hull HP
+	var hull_hp_data = data.get("hull_current_hp", [0, 0, 0, 0])
+	state.hull_current_hp.clear()
+	for hp in hull_hp_data:
+		state.hull_current_hp.append(int(hp))
+
 	state.crew_quality = data.get("crew_quality", "Trained")
 	state.crew_morale = data.get("crew_morale", 4)
 	state.plotted_actions = data.get("plotted_actions", {
@@ -153,36 +190,54 @@ static func deserialize(data: Dictionary) -> ShipState:
 
 	return state
 
-func initialize_from_scenario(data: Dictionary, ship_def: Dictionary) -> void:
-	"""Initialize the ship state from scenario data"""
+func initialize_from_scenario(data: Dictionary, ship_def: ShipDefinition) -> void:
+	"""Initialize the ship state from scenario data with a ShipDefinition"""
+	# Basic identification
 	ship_id = data.get("id", "ship_" + str(randi()))
 	player_id = data.get("player_id", 0)
 	ship_type = data.get("ship_type", "")
 	definition = ship_def
+	ship_name = data.get("ship_name", ship_def.name if ship_def else "Unknown")
 
-	ship_name = ship_def.get("name", "Unknown")
+	# Position and movement
 	hex_position = Vector2i(data.get("position", {}).get("q", 0), data.get("position", {}).get("r", 0))
 	facing = data.get("facing", 0)
+	speed = data.get("speed", data.get("current_speed", 0))  # Support both "speed" and legacy "current_speed"
+	movement_points = data.get("movement_points", 0)
+	acceleration = data.get("acceleration", 0)
+
+	# Sail state
 	sail_state = data.get("sail_state", "MS")
-	speed = data.get("speed", 0)
 
-	# Initialize from definition
-	rigging_quality = ship_def.get("rigging_quality", 4)
+	# Rigging HP - from scenario or copy from definition
+	var rigging_hp_scenario = data.get("rigging_current_hp", null)
+	rigging_current_hp.clear()
+	if rigging_hp_scenario != null:
+		for hp in rigging_hp_scenario:
+			rigging_current_hp.append(int(hp))
+	elif ship_def:
+		for hp in ship_def.rigging_hp:
+			rigging_current_hp.append(hp)
+	else:
+		rigging_current_hp = [0, 0, 0, 0]
 
-	# Convert hull_max_hp from untyped array
-	var hp_data = ship_def.get("hull_max_hp", [8, 8, 8])
-	hull_max_hp.clear()
-	for hp in hp_data:
-		hull_max_hp.append(int(hp))
-
-	# Copy to current HP
+	# Hull HP - from scenario or copy from definition
+	var hull_hp_scenario = data.get("hull_current_hp", null)
 	hull_current_hp.clear()
-	for hp in hull_max_hp:
-		hull_current_hp.append(hp)
+	if hull_hp_scenario != null:
+		for hp in hull_hp_scenario:
+			hull_current_hp.append(int(hp))
+	elif ship_def:
+		for hp in ship_def.hull_hp:
+			hull_current_hp.append(hp)
+	else:
+		hull_current_hp = [0, 0, 0, 0]
 
-	crew_count = ship_def.get("crew_count", 200)
+	# Crew
+	crew_quality = data.get("crew_quality", "Trained")
+	crew_morale = data.get("crew_morale", 4)
 
-	print("ShipState initialized: %s (%s) at %s facing %d" % [ship_name, ship_type, hex_position, facing])
+	print("ShipState initialized: %s (%s) at %s facing %d, speed %d" % [ship_name, ship_type, hex_position, facing, speed])
 
 func clear_plot() -> void:
 	"""Clear all plotted actions"""

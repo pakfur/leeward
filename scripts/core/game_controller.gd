@@ -88,7 +88,7 @@ func _spawn_ship(ship_data: Dictionary) -> void:
 	var ship_type = ship_data.get("ship_type", "")
 	var ship_def = DataManager.get_ship_definition(ship_type)
 
-	if ship_def.is_empty():
+	if ship_def == null:
 		push_error("Ship definition not found: %s" % ship_type)
 		return
 

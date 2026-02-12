@@ -26,8 +26,12 @@
 		"r": 0
 	  },
 	  "facing": 0,
+	  "speed": 0,
+	  "movement_points": 0,
+	  "acceleration": 0,
 	  "sail_state": "MS",
-	  "current_speed": 0
+	  "crew_quality": "Trained",
+	  "crew_morale": 4
 	},
 	{
 	  "id": "enemy_ship",
@@ -38,8 +42,12 @@
 		"r": 0
 	  },
 	  "facing": 3,
+	  "speed": 0,
+	  "movement_points": 0,
+	  "acceleration": 0,
 	  "sail_state": "MS",
-	  "current_speed": 0
+	  "crew_quality": "Trained",
+	  "crew_morale": 4
 	}
   ]
 }

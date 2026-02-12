@@ -9,13 +9,27 @@ Leeward is a Godot 4.4 naval sailing game (Age of Sail) using the Forward Plus r
 ## Commands
 
 ```bash
-godot --editor                    # Open in Godot Editor
-godot                             # Run project (starts at main.tscn → splash screen)
-godot res://scenes/main_game.tscn # Run directly into gameplay
-godot --verbose                   # Run with verbose output
+make help                         # Show all available targets
+make run                          # Run project (starts at main.tscn → splash screen)
+make play                         # Run directly into gameplay (skip menus)
+make editor                       # Open in Godot Editor
+make import                       # Rebuild Godot import cache
+make clean                        # Remove .godot cache (forces full reimport)
 ```
 
-No automated test framework. Manual testing via scenarios and the Developer UI (F12 in-game).
+### Testing
+
+Uses [GUT](https://github.com/bitwes/Gut) v9.5.0 (`addons/gut/`). Tests live in `test/unit/` and extend `GutTest`.
+
+```bash
+make test                         # Run all tests (headless)
+make test-verbose                 # Run all tests with detailed output
+make test-file F=test/unit/test_data_manager_ships.gd  # Run a single test file
+```
+
+Test naming: files prefixed `test_`, methods prefixed `test_`. Use `before_all()` / `before_each()` for setup.
+
+Manual testing also available via scenarios and the Developer UI (F12 in-game).
 
 ## Project Structure
 
@@ -39,7 +53,9 @@ data/
   scenarios/      # Scenario definitions (test_basic.json)
 docs/             # Design docs, game rules, architecture diagrams
 assets/           # Models, textures, shaders, UI art
-addons/           # godot_mcp (MCP server addon), test addon
+test/
+  unit/            # GUT unit tests (test_*.gd)
+addons/           # godot_mcp (MCP server addon), GUT testing framework
 ```
 
 ## Architecture
@@ -75,7 +91,7 @@ Session-based async system in `MovementPlottingController`/`MovementPlottingSess
 
 5-level nested lookup: `speed_type → wind_facing → wind_speed → rigging_quality → sail_state → MA`
 
-- Speed types: `L/F`, `L/S`, `L/VS`, `F/F`, `F/S`, `F/VS`, `C-F`, `C/S`, `C/VS`
+- Speed types: `L/F`, `L/S`, `L/VS`, `F/F`, `F/S`, `F/VS`, `C/F`, `C/S`, `C/VS`
 - Wind facings: `C` (close-hauled), `B` (broad reach), `R` (reach), `L` (luffing — always returns 0)
 - Wind speed: `1`–`4` (string keys)
 - Rigging quality: `1`–`4` (calculated from HP percentage)

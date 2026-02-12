@@ -3,7 +3,7 @@ extends Node
 
 # Cached data
 var movement_allowance_table: Dictionary = {}
-var ship_definitions: Dictionary = {}
+var ship_definitions: Dictionary = {}  # Dictionary[String, ShipDefinition]
 var scenarios: Dictionary = {}
 
 func _ready() -> void:
@@ -39,7 +39,7 @@ func load_movement_allowance_table(file_path: String = "res://data/rules/movemen
 		return false
 
 func load_ship_definitions(file_path: String = "res://data/rules/ships.json") -> bool:
-	"""Load ship definitions from JSON"""
+	"""Load ship definitions from JSON and convert to ShipDefinition instances"""
 	if not FileAccess.file_exists(file_path):
 		push_warning("Ship definitions not found at: %s" % file_path)
 		_create_default_ships()
@@ -58,7 +58,17 @@ func load_ship_definitions(file_path: String = "res://data/rules/ships.json") ->
 		push_error("Failed to parse ship definitions JSON")
 		return false
 
-	ship_definitions = json.data
+	# Convert JSON dictionary to Dictionary[String, ShipDefinition]
+	ship_definitions.clear()
+	var raw_data = json.data
+	if raw_data is Dictionary:
+		for ship_id in raw_data.keys():
+			var ship_data = raw_data[ship_id]
+			if ship_data is Dictionary:
+				ship_definitions[ship_id] = ShipDefinition.from_dict(ship_data)
+			else:
+				push_warning("Invalid ship data for '%s'" % ship_id)
+
 	print("Loaded %d ship definitions" % ship_definitions.size())
 	return true
 
@@ -99,8 +109,8 @@ func get_movement_allowance(speed_type: String, wind_speed: int, wind_facing: St
 	assert(
 		speed_type == "L/F" or speed_type == "L/S" or speed_type == "L/VS" or
 		speed_type == "F/F" or speed_type == "F/S" or speed_type == "F/VS" or
-		speed_type == "C-F" or speed_type == "C/S" or speed_type == "C/VS",
-		"Invalid speed_type '%s'. Valid values: L/F, L/S, L/VS, F/F, F/S, F/VS, C-F, C/S, C/VS" % speed_type
+		speed_type == "C/F" or speed_type == "C/S" or speed_type == "C/VS",
+		"Invalid speed_type '%s'. Valid values: L/F, L/S, L/VS, F/F, F/S, F/VS, C/F, C/S, C/VS" % speed_type
 	)
 
 	assert(
@@ -123,6 +133,10 @@ func get_movement_allowance(speed_type: String, wind_speed: int, wind_facing: St
 		sail_state_upper == "FS" or sail_state_upper == "MS" or sail_state_upper == "PS" or sail_state_upper == "NS",
 		"Invalid sail_state '%s'. Valid values: FS (Fighting Sail), MS (Maneuvering Sail), PS (Plain Sail), NS (No Sail)" % sail_state
 	)
+	
+	# Wind facing of "L" (Luff, or into the wind) returns a MA of 0
+	if wind_facing == "L":
+		return 0
 
 	# Navigate the nested dictionary structure
 	# Level 1: speed_type
@@ -170,20 +184,20 @@ func get_movement_allowance(speed_type: String, wind_speed: int, wind_facing: St
 	# Level 5: sail_state (convert to lowercase to match JSON format)
 	var sail_state_key = sail_state.to_lower()
 	if not sail_state_dict.has(sail_state_key):
-		push_error("Movement allowance table missing sail_state '%s' for speed_type '%s', wind_facing '%s', wind_speed %s, rigging_quality %s" % [sail_state_key, speed_type, wind_facing, wind_speed_key, rigging_key])
+		# MA table does not have define all possible sail states. Missing sail states are assumed to be 0
 		return 0
 
 	# Return the movement allowance value
 	var ma = sail_state_dict[sail_state_key]
 	return int(ma) if ma != null else 0
 
-func get_ship_definition(ship_id: String) -> Dictionary:
+func get_ship_definition(ship_id: String) -> ShipDefinition:
 	"""Get a ship definition by ID"""
 	if ship_definitions.has(ship_id):
 		return ship_definitions[ship_id]
 
 	push_warning("Ship definition not found: %s" % ship_id)
-	return {}
+	return null
 
 func _create_default_movement_table() -> void:
 	"""Create a small default movement table for testing (nested format)"""
@@ -267,46 +281,42 @@ func _create_default_movement_table() -> void:
 
 func _create_default_ships() -> void:
 	"""Create default ship definitions for testing"""
-	ship_definitions = {
-		"frigate_38": {
-			"name": "38-gun Frigate",
-			"nationality": "British",
-			"rating": 38,
-			"class": 4,
-			"maneuverability": "B",
-			"speed_type": "F/F",
-			"type": "Frigate",
-			"draft": 12.5,
-			"freeboard": 8,
-			"rigging_sections": 4,
-			"rigging_quality": 4,
-			"sail_quality": 3,
-			"hull_sections": 3,
-			"hull_max_hp": [8, 8, 8],
-			"acceleration": 1,
-			"deceleration": 2,
-			"crew_count": 280
-		},
-		"corvette_24": {
-			"name": "24-gun Corvette",
-			"nationality": "British",
-			"rating": 24,
-			"class": 5,
-			"maneuverability": "C",
-			"speed_type": "C/F",
-			"type": "Corvette",
-			"draft": 10,
-			"freeboard": 6,
-			"rigging_sections": 3,
-			"rigging_quality": 4,
-			"sail_quality": 3,
-			"hull_sections": 3,
-			"hull_max_hp": [6, 6, 6],
-			"acceleration": 2,
-			"deceleration": 1,
-			"crew_count": 180
-		}
-	}
+	ship_definitions.clear()
+
+	# Create frigate_38
+	var frigate = ShipDefinition.new()
+	frigate.name = "38-gun Frigate"
+	frigate.nationality = "British"
+	frigate.rating = 38
+	frigate.ship_class = 4
+	frigate.maneuverability = "B"
+	frigate.speed_type = "F/F"
+	frigate.type = "Frigate"
+	frigate.draft = 12
+	frigate.freeboard = 8
+	frigate.rigging_hp = [5, 5, 6, 6]
+	frigate.hull_hp = [5, 5, 5, 6]
+	frigate.crew_count = [3, 3, 3, 3]
+	frigate.marine_count = 2
+	ship_definitions["frigate_38"] = frigate
+
+	# Create corvette_24
+	var corvette = ShipDefinition.new()
+	corvette.name = "24-gun Corvette"
+	corvette.nationality = "British"
+	corvette.rating = 24
+	corvette.ship_class = 5
+	corvette.maneuverability = "C"
+	corvette.speed_type = "C/F"
+	corvette.type = "Corvette"
+	corvette.draft = 10
+	corvette.freeboard = 6
+	corvette.rigging_hp = [3, 4, 4, 4]
+	corvette.hull_hp = [3, 4, 4, 4]
+	corvette.crew_count = [2, 2, 2, 2]
+	corvette.marine_count = 2
+	ship_definitions["corvette_24"] = corvette
+
 	print("Created default ship definitions: %d ships" % ship_definitions.size())
 
 func _create_default_scenario() -> Dictionary:

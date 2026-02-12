@@ -105,12 +105,13 @@ func apply_rigging_damage(ship_id: String, section: int, damage: int) -> bool:
 
 func _recalculate_rigging_quality(ship: ShipState) -> void:
 	"""Recalculate rigging quality based on damage"""
-	var total_damage = 0
+	var intact_sails = 0
 	for damage in ship.rigging_damage:
-		total_damage += damage
+		if damage > 0:
+			intact_sails += 1
 
-	# Simple quality calculation (can be refined)
-	ship.rigging_quality = max(0, 4 - (total_damage / 4))
+	# The number of sails with > 0 damage
+	ship.rigging_quality = intact_sails
 
 ## Hull Damage
 
