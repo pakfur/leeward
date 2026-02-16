@@ -138,7 +138,7 @@ func _create_hex_mesh(radius: float) -> ArrayMesh:
 	for i in range(6):
 		indices.append(0)           # Center
 		indices.append(i + 1)       # Current vertex
-		indices.append((i % 6) + 1 if i == 5 else i + 2)  # Next vertex (wrap around)
+		indices.append(1 if i == 5 else i + 2)  # Next vertex (wrap around)
 
 	var arrays = []
 	arrays.resize(Mesh.ARRAY_MAX)
