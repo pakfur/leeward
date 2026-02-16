@@ -1,4 +1,4 @@
-# Leeward - Game Rules and Mechanics
+
 
 ## Board and Setup
 

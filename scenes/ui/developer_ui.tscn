@@ -109,6 +109,19 @@ text = "Reset to Initial State"
 [node name="HSeparator2" type="HSeparator" parent="MainContainer/TabContainer/Controls"]
 layout_mode = 2
 
+[node name="DebugOverlaysHeader" type="Label" parent="MainContainer/TabContainer/Controls"]
+layout_mode = 2
+text = "Debug Overlays"
+horizontal_alignment = 1
+
+[node name="HexCoordsCheckbox" type="CheckBox" parent="MainContainer/TabContainer/Controls"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "View Hex Coordinates"
+
+[node name="HSeparator3" type="HSeparator" parent="MainContainer/TabContainer/Controls"]
+layout_mode = 2
+
 [node name="ConsoleHeader" type="Label" parent="MainContainer/TabContainer/Controls"]
 layout_mode = 2
 text = "Console Output"

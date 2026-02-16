@@ -21,6 +21,15 @@ var selected_ship_id: String = ""
 # Planning phase state (client-side)
 var selected_actions: Dictionary = {}  # ship_id -> {action_type -> bool}
 
+# Movement plotting
+var movement_client: MovementPlottingClient = null
+var hex_overlay: Node3D = null  # HexOverlay instance
+var submitted_paths: Dictionary = {}  # ship_id -> Array[PlotStep]
+
+# Debug hex coordinate display
+var hex_coord_label: Label = null
+var hex_coords_enabled: bool = false
+
 func _ready() -> void:
 	print("GameController ready")
 
@@ -50,11 +59,79 @@ func _ready() -> void:
 		# Trigger initial shader update
 		GameState.environment_controller.force_update()
 
+	# Initialize hex overlay
+	_setup_hex_overlay()
+
+	# Initialize movement plotting client
+	if GameState.movement_plotting_controller:
+		movement_client = MovementPlottingClient.new(GameState.movement_plotting_controller)
+		_connect_movement_signals()
+
+	# Setup debug hex coordinate label
+	_setup_hex_coord_label()
+	if developer_ui:
+		developer_ui.hex_coords_toggled.connect(_on_hex_coords_toggled)
+
 	# Start the game
 	GameState.start_new_game(scenario)
 
+func _setup_hex_overlay() -> void:
+	var overlay_script = load("res://scripts/view/hex_overlay.gd")
+	hex_overlay = Node3D.new()
+	hex_overlay.set_script(overlay_script)
+	hex_overlay.name = "HexOverlay"
+	add_child(hex_overlay)
+
+func _setup_hex_coord_label() -> void:
+	hex_coord_label = Label.new()
+	hex_coord_label.name = "HexCoordLabel"
+	hex_coord_label.visible = false
+	hex_coord_label.add_theme_font_size_override("font_size", 14)
+	hex_coord_label.add_theme_color_override("font_color", Color(1.0, 1.0, 0.6))
+	hex_coord_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	hex_coord_label.add_theme_constant_override("shadow_offset_x", 1)
+	hex_coord_label.add_theme_constant_override("shadow_offset_y", 1)
+	hex_coord_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if ui:
+		ui.add_child(hex_coord_label)
+
+func _on_hex_coords_toggled(enabled: bool) -> void:
+	hex_coords_enabled = enabled
+	if hex_coord_label:
+		hex_coord_label.visible = enabled
+
+func _process(_delta: float) -> void:
+	if not hex_coords_enabled or not hex_coord_label or not camera or not hex_map:
+		return
+
+	var mouse_pos = get_viewport().get_mouse_position()
+	var origin = camera.project_ray_origin(mouse_pos)
+	var direction = camera.project_ray_normal(mouse_pos)
+
+	if abs(direction.y) < 0.001:
+		hex_coord_label.visible = false
+		return
+
+	var t = -origin.y / direction.y
+	if t < 0:
+		hex_coord_label.visible = false
+		return
+
+	var world_pos = origin + direction * t
+	var hex = hex_map.get_hex_grid().world_to_axial(world_pos)
+	hex_coord_label.text = "[q:%d, r:%d]" % [hex.x, hex.y]
+	hex_coord_label.visible = true
+	hex_coord_label.position = mouse_pos + Vector2(16, -8)
+
+func _connect_movement_signals() -> void:
+	movement_client.plotting_started.connect(_on_plotting_started)
+	movement_client.hex_selected.connect(_on_hex_selected)
+	movement_client.undo_complete.connect(_on_undo_complete)
+	movement_client.plotting_cancelled.connect(_on_plotting_cancelled)
+	movement_client.movement_submitted.connect(_on_movement_submitted)
+	movement_client.plotting_error.connect(_on_plotting_error)
+
 func _setup_scenario(scenario: Dictionary) -> void:
-	"""Setup the game from scenario data"""
 	print("Setting up scenario: %s" % scenario.get("name", "Unknown"))
 
 	# Setup map settings
@@ -84,7 +161,6 @@ func _setup_scenario(scenario: Dictionary) -> void:
 			_spawn_ship(ship_data)
 
 func _spawn_ship(ship_data: Dictionary) -> void:
-	"""Create a ship (state + view) from scenario data"""
 	var ship_type = ship_data.get("ship_type", "")
 	var ship_def = DataManager.get_ship_definition(ship_type)
 
@@ -128,13 +204,39 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 
-	# Handle ship selection via mouse click (only if not handled by UI)
+	# Handle mouse click
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		# If plotting, try hex selection first
+		if movement_client and movement_client.is_plotting():
+			var hex = _get_hex_from_screen_pos(event.position)
+			if hex != Vector2i(-99, -99):
+				movement_client.select_hex(hex)
+				get_viewport().set_input_as_handled()
+				return
+
+		# Fall through to ship selection
 		_handle_ship_selection(event.position)
 		get_viewport().set_input_as_handled()
 
+func _get_hex_from_screen_pos(screen_pos: Vector2) -> Vector2i:
+	if not camera or not hex_overlay or not hex_map:
+		return Vector2i(-99, -99)
+
+	var origin = camera.project_ray_origin(screen_pos)
+	var direction = camera.project_ray_normal(screen_pos)
+
+	# Intersect with Y=0 plane
+	if abs(direction.y) < 0.001:
+		return Vector2i(-99, -99)
+
+	var t = -origin.y / direction.y
+	if t < 0:
+		return Vector2i(-99, -99)
+
+	var world_pos = origin + direction * t
+	return hex_overlay.get_valid_hex_at_world_pos(world_pos, hex_map.get_hex_grid())
+
 func _handle_ship_selection(screen_pos: Vector2) -> void:
-	"""Raycast to select ship"""
 	if not camera:
 		return
 
@@ -164,7 +266,6 @@ func _handle_ship_selection(screen_pos: Vector2) -> void:
 		_select_ship(ship_view.state_id)
 
 func _find_ship_view_from_collider(collider: Node) -> ShipView:
-	"""Find the ship view that owns this collider"""
 	var node = collider
 	while node:
 		if node is ShipView:
@@ -173,7 +274,6 @@ func _find_ship_view_from_collider(collider: Node) -> ShipView:
 	return null
 
 func _select_ship(ship_id: String) -> void:
-	"""Select a ship and show its status"""
 	# Deselect previous
 	if not selected_ship_id.is_empty() and ship_views.has(selected_ship_id):
 		ship_views[selected_ship_id].set_selected(false)
@@ -190,7 +290,6 @@ func _select_ship(ship_id: String) -> void:
 			ship_status_panel.show_ship_status_from_state(ship_state)
 
 func _center_camera_on_all_ships() -> void:
-	"""Center camera on all ships with appropriate zoom"""
 	var all_ships = GameState.get_all_ships()
 	if all_ships.is_empty():
 		return
@@ -205,7 +304,6 @@ func _center_camera_on_all_ships() -> void:
 		camera.center_on_ships(ship_positions)
 
 func _on_phase_changed(phase: GameState.GamePhase) -> void:
-	"""Handle phase transitions"""
 	print("Phase changed to: %s" % GameState.get_phase_name())
 
 	match phase:
@@ -217,8 +315,12 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 			_enter_post_combat_phase()
 
 func _enter_planning_phase() -> void:
-	"""Enter planning phase - show planning UI for player ships"""
 	print("Entering planning phase for player 0")
+
+	# Clear any leftover overlays from previous turn
+	if hex_overlay:
+		hex_overlay.clear_everything()
+	submitted_paths.clear()
 
 	# Get player ships
 	var player_0_ships = GameState.get_player_ships(0)
@@ -233,6 +335,10 @@ func _enter_planning_phase() -> void:
 		# Connect signals
 		current_planning_ui.ship_selected.connect(_on_planning_ship_selected)
 		current_planning_ui.action_toggled.connect(_on_planning_action_toggled)
+		current_planning_ui.undo_pressed.connect(_on_plotting_undo_pressed)
+		current_planning_ui.undo_all_pressed.connect(_on_plotting_undo_all_pressed)
+		current_planning_ui.submit_pressed.connect(_on_plotting_submit_pressed)
+		current_planning_ui.cancel_pressed.connect(_on_plotting_cancel_pressed)
 
 	# Load into context panel (must be done before setup to ensure @onready nodes are available)
 	if context_panel:
@@ -249,7 +355,6 @@ func _enter_planning_phase() -> void:
 	# TODO: AI plans for player 1
 
 func _on_planning_ship_selected(ship_id: String) -> void:
-	"""Handle ship selection from planning UI - focus camera and highlight ship"""
 	print("Planning UI: Ship selected - %s" % ship_id)
 
 	# Get ship state and view
@@ -268,7 +373,6 @@ func _on_planning_ship_selected(ship_id: String) -> void:
 	_select_ship(ship_id)
 
 func _on_planning_action_toggled(ship_id: String, action_type: String, active: bool) -> void:
-	"""Handle action button toggle from planning UI"""
 	print("Planning UI: Action '%s' toggled to %s for ship %s" % [action_type, active, ship_id])
 
 	# Store action state locally
@@ -276,15 +380,22 @@ func _on_planning_action_toggled(ship_id: String, action_type: String, active: b
 		selected_actions[ship_id] = {}
 	selected_actions[ship_id][action_type] = active
 
-	# TODO: In next iteration, send command to server
-	# if GameState.is_server:
-	#     # Execute command via CommandValidator
-	# else:
-	#     # Send to server via network
+	# Handle movement action
+	if action_type == "movement" and movement_client:
+		if active:
+			var ship_state = GameState.get_ship(ship_id)
+			if ship_state:
+				movement_client.start_plotting(ship_state.player_id, ship_id)
+		else:
+			if movement_client.is_plotting_ship(ship_id):
+				movement_client.cancel()
 
 func _on_player_plan_submitted() -> void:
-	"""Player has submitted their plan"""
 	print("Player submitted plan")
+
+	# Cancel any active plotting session
+	if movement_client and movement_client.is_plotting():
+		movement_client.cancel()
 
 	# Submit plan to server (via phase controller if server, or via network if client)
 	if GameState.is_server and GameState.phase_controller:
@@ -296,10 +407,92 @@ func _on_player_plan_submitted() -> void:
 		# TODO: Send plan submission to server via network
 		push_warning("Client plan submission not yet implemented - needs network layer")
 
+# ============================================================================
+# Movement Plotting UI Callbacks
+# ============================================================================
+
+func _on_plotting_undo_pressed() -> void:
+	if movement_client:
+		movement_client.undo()
+
+func _on_plotting_undo_all_pressed() -> void:
+	if movement_client:
+		movement_client.undo_all()
+
+func _on_plotting_submit_pressed() -> void:
+	if movement_client:
+		movement_client.submit()
+
+func _on_plotting_cancel_pressed() -> void:
+	if movement_client:
+		var ship_id = movement_client.get_active_ship_id()
+		movement_client.cancel()
+		# Deactivate the movement toggle button
+		if current_planning_ui and not ship_id.is_empty():
+			current_planning_ui.deactivate_movement_button(ship_id)
+
+# ============================================================================
+# Movement Plotting Response Handlers
+# ============================================================================
+
+func _on_plotting_started(ship_id: String, valid_hexes: Array, remaining_ma_val: int) -> void:
+	print("Plotting started for ship %s" % ship_id)
+	if hex_overlay and hex_map:
+		hex_overlay.show_valid_hexes(valid_hexes, hex_map.get_hex_grid())
+
+	if current_planning_ui:
+		var ship_state = GameState.get_ship(ship_id)
+		var total_ma = ship_state.get_movement_allowance() if ship_state else remaining_ma_val
+		current_planning_ui.show_plotting_controls(ship_id, remaining_ma_val, total_ma)
+
+func _on_hex_selected(plotted_path: Array, valid_hexes: Array, can_submit_val: bool, remaining_ma_val: int) -> void:
+	if hex_overlay and hex_map:
+		hex_overlay.show_valid_hexes(valid_hexes, hex_map.get_hex_grid())
+		hex_overlay.show_plotted_path(plotted_path, hex_map.get_hex_grid())
+
+	if current_planning_ui:
+		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
+
+func _on_undo_complete(plotted_path: Array, valid_hexes: Array, can_submit_val: bool, remaining_ma_val: int) -> void:
+	if hex_overlay and hex_map:
+		hex_overlay.show_valid_hexes(valid_hexes, hex_map.get_hex_grid())
+		hex_overlay.show_plotted_path(plotted_path, hex_map.get_hex_grid())
+
+	if current_planning_ui:
+		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
+
+func _on_plotting_cancelled(ship_id: String) -> void:
+	print("Plotting cancelled for ship %s" % ship_id)
+	if hex_overlay:
+		hex_overlay.clear_all()
+
+	if current_planning_ui:
+		current_planning_ui.hide_plotting_controls()
+
+func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
+	print("Movement submitted for ship %s: %d steps" % [ship_id, final_path.size()])
+
+	# Store submitted path
+	submitted_paths[ship_id] = final_path
+
+	if hex_overlay and hex_map:
+		hex_overlay.clear_valid_hexes()
+		hex_overlay.clear_plotted_path()
+		hex_overlay.show_submitted_path(ship_id, final_path, hex_map.get_hex_grid())
+
+	if current_planning_ui:
+		current_planning_ui.hide_plotting_controls()
+		current_planning_ui.deactivate_movement_button(ship_id)
+
+func _on_plotting_error(error_code: String, message: String) -> void:
+	print("Plotting error: %s - %s" % [error_code, message])
+
+# ============================================================================
+# Phase Resolution
+# ============================================================================
+
 func _resolve_movement() -> void:
-	"""Resolve movement for all ships - SERVER ONLY"""
 	if not GameState.is_server:
-		# Clients wait for server to sync state
 		print("[Client] Waiting for movement resolution from server")
 		_sync_all_views()
 		await get_tree().create_timer(1.0).timeout
@@ -322,7 +515,6 @@ func _resolve_movement() -> void:
 		GameState.phase_controller.advance_phase()
 
 func _enter_post_combat_phase() -> void:
-	"""Enter post-combat phase - player can manually advance"""
 	print("Post-combat phase - waiting for player to end turn")
 	# TODO: Add UI button to end turn
 	# For now, auto-advance after delay
@@ -331,11 +523,9 @@ func _enter_post_combat_phase() -> void:
 	if GameState.is_server and GameState.phase_controller:
 		GameState.phase_controller.advance_phase()
 	else:
-		# TODO: Send advance phase request to server
 		push_warning("Client phase advance not yet implemented - needs network layer")
 
 func _sync_all_views() -> void:
-	"""Sync all ship views to their current state"""
 	for ship_id in ship_views.keys():
 		var ship_view = ship_views[ship_id]
 		var ship_state = GameState.get_ship(ship_id)
@@ -343,7 +533,6 @@ func _sync_all_views() -> void:
 			ship_view.sync_to_state(ship_state, hex_map.get_hex_grid())
 
 func _toggle_developer_ui() -> void:
-	"""Toggle the developer UI window with F12"""
 	if developer_ui:
 		developer_ui.visible = not developer_ui.visible
 		if developer_ui.visible:

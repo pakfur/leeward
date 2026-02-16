@@ -134,11 +134,11 @@ func get_wind_facing(ship_facing: int, wind_direction: int) -> String:
 	var relative_angle = (ship_facing - wind_direction + 6) % 6
 
 	match relative_angle:
-		0:  # Directly into wind
+		0:  # "Luff", directly into wind
 			return "L"
-		1, 5:  # 60 degrees off wind
+		1, 5:  # "Close Hauled", 60 degrees into the wind
 			return "C"
-		2, 4:  # 120 degrees off wind
+		2, 4:  # "Broad Reach", 120 degrees with the wind
 			return "B"
 		3:  # Running before wind
 			return "R"

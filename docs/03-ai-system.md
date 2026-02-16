@@ -30,9 +30,9 @@ Turn Start
 │   ├── Defensive
 │   └── Objective-focused
 └── Execute Actions
-    ├── Movement
-    ├── Combat
-    └── Special Actions
+	├── Movement
+	├── Combat
+	└── Special Actions
 ```
 
 ### State Evaluation

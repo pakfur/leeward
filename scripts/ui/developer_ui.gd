@@ -8,6 +8,10 @@ extends Window
 @onready var controls_tab: VBoxContainer = %Controls
 @onready var trace_tab: VBoxContainer = %Trace
 
+@onready var hex_coords_checkbox: CheckBox = %HexCoordsCheckbox
+
+signal hex_coords_toggled(enabled: bool)
+
 @onready var turn_label: Label = %TurnLabel
 @onready var phase_label: Label = %PhaseLabel
 @onready var advance_phase_btn: Button = %AdvancePhaseButton
@@ -58,6 +62,7 @@ func _ready() -> void:
 	advance_turn_btn.pressed.connect(_on_advance_turn_pressed)
 	reset_btn.pressed.connect(_on_reset_pressed)
 	collapse_btn.pressed.connect(_toggle_collapsed)
+	hex_coords_checkbox.toggled.connect(_on_hex_coords_toggled)
 
 	# Build UI
 	_build_environment_tab()
@@ -371,6 +376,10 @@ func _on_turn_changed(_turn) -> void:
 	"""Handle turn changes"""
 	_update_turn_phase_display()
 	_log("Turn advanced to: %d" % game_state.current_turn)
+
+func _on_hex_coords_toggled(enabled: bool) -> void:
+	hex_coords_toggled.emit(enabled)
+	_log("Hex coordinates display: %s" % ("ON" if enabled else "OFF"))
 
 func _on_advance_phase_pressed() -> void:
 	"""Advance to next phase"""

@@ -10,6 +10,8 @@ var _traces: Dictionary = {}
 # Ordered list of categories (insertion order)
 var _categories: Array[String] = []
 
+const MOVEMENT_PLOTTING_CATEGORY = "MovementPlotting"
+
 
 func trace_log(trace_category: String, message: String, context: Variant = null) -> void:
 	"""Add a trace message under the given category"""

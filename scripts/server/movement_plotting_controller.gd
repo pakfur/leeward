@@ -47,15 +47,18 @@ func _process(_delta: float) -> void:
 func handle_start_plotting(player_id: int, ship_id: String, request_id: String) -> MovementTypes.PlottingResponse:
 	# Validate request
 	if ship_id.is_empty():
+		Trace.trace_log(Trace.MOVEMENT_PLOTTING_CATEGORY, "INVALID_REQUEST - ship_id is required")
 		return MovementTypes.PlottingErrorResponse.create(request_id, "INVALID_REQUEST", "ship_id is required")
 
 	# Check if ship exists
 	var ship_state = game_state.get_ship(ship_id)
 	if not ship_state:
+		Trace.trace_log(Trace.MOVEMENT_PLOTTING_CATEGORY, "SHIP_NOT_FOUND - Ship %s not found" % ship_id)
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_NOT_FOUND", "Ship %s not found" % ship_id)
 
 	# Check if player owns this ship
 	if ship_state.player_id != player_id:
+		Trace.trace_log(Trace.MOVEMENT_PLOTTING_CATEGORY, "SHIP_NOT_FOUND - Player %d does not own ship %s" % [player_id, ship_id])
 		return MovementTypes.PlottingErrorResponse.create(request_id, "UNAUTHORIZED", "Player %d does not own ship %s" % [player_id, ship_id])
 
 	# Check if ship already has an active session
@@ -63,6 +66,7 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 		var existing_session_id = ship_sessions[ship_id]
 		var existing_session = sessions.get(existing_session_id)
 		if existing_session and existing_session.is_active():
+			Trace.trace_log(Trace.MOVEMENT_PLOTTING_CATEGORY, "SHIP_NOT_FOUND - Player %d does not own ship %s" % [player_id, ship_id])
 			return MovementTypes.PlottingErrorResponse.create(request_id, "PIECE_UNAVAILABLE", "Ship %s already has an active plotting session" % ship_id)
 		else:
 			# Clean up stale reference
@@ -105,11 +109,13 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 	response.origin_hex = session.origin_hex
 	response.valid_next_hexes = session.valid_next_hexes
 	response.can_submit = session.can_submit
+	response.remaining_ma = valid_moves.remaining_ma
 
 	session.cache_response(request_id, response)
 	session_started.emit(session.session_id, ship_id)
 
 	print("[MovementPlotting] Session started: %s for ship %s" % [session.session_id, ship_id])
+	Trace.trace_log("MovementPlotting", "START_PLOTTING: Session Started", response.to_dict())
 	return response
 
 
@@ -175,6 +181,7 @@ func handle_select_hex(session_id: String, expected_version: int, selected_hex: 
 	response.plotted_path = session.get_path_copy()
 	response.valid_next_hexes = session.valid_next_hexes
 	response.can_submit = session.can_submit
+	response.remaining_ma = new_valid_moves.remaining_ma
 
 	session.cache_response(request_id, response)
 	session_updated.emit(session_id, session.version)
@@ -182,6 +189,7 @@ func handle_select_hex(session_id: String, expected_version: int, selected_hex: 
 	print("[MovementPlotting] Hex selected: session %s, version %d, hex (%d, %d)" % [
 		session_id, session.version, selected_hex.x, selected_hex.y
 	])
+	Trace.trace_log("MovementPlotting", "SELECT_HEX: Add a Hex [selected_hex: %s]" % [selected_hex], response.to_dict())
 	return response
 
 
@@ -255,11 +263,13 @@ func handle_undo(session_id: String, expected_version: int, revert_to_version: i
 	response.plotted_path = session.get_path_copy()
 	response.valid_next_hexes = session.valid_next_hexes
 	response.can_submit = session.can_submit
+	response.remaining_ma = new_valid_moves.remaining_ma
 
 	session.cache_response(request_id, response)
 	session_updated.emit(session_id, session.version)
 
 	print("[MovementPlotting] Undo: session %s, reverted to version %d" % [session_id, session.version])
+	Trace.trace_log("MovementPlotting", "UNDO: Revert [revert_to_version: %d]" % [revert_to_version], response.to_dict())
 	return response
 
 
@@ -281,7 +291,7 @@ func handle_cancel_plotting(session_id: String, request_id: String) -> MovementT
 	else:
 		# Already gone - that's fine, return success
 		print("[MovementPlotting] Cancel requested for unknown/expired session: %s" % session_id)
-
+	Trace.trace_log("MovementPlotting", "CANCEL_PLOTTING: Cancel", response.to_dict())
 	return response
 
 
@@ -348,6 +358,7 @@ func handle_submit_movement(session_id: String, expected_version: int, request_i
 	print("[MovementPlotting] Movement submitted: session %s, ship %s, %d hexes" % [
 		session_id, session.ship_id, final_path.size()
 	])
+	Trace.trace_log("MovementPlotting", "SUBMIT_MOVEMENT: Finalize", response.to_dict())
 	return response
 
 

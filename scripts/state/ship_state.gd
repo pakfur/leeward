@@ -71,6 +71,7 @@ func get_movement_allowance() -> int:
 		rigging_quality
 	)
 
+	print("[get_movement_allowance] MA: %d | wind: %s | facing: %s | speed: %s | sail: %s" % [ma, wind_dir, wind_facing, GameState.wind_speed, sail_state])
 	return ma
 
 func get_rigging_quality() -> int:

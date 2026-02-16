@@ -42,24 +42,29 @@ class MoveMetadata extends RefCounted:
 
 ## A single valid hex move, relative to the previous move/facing
 class ValidMove extends RefCounted:
+	var hex: Vector2i = Vector2i.ZERO
 	var move: MoveType = MoveType.NONE
 	var metadata: MoveMetadata = null
 
-	func _init(p_move: MoveType = MoveType.NONE, p_metadata: MoveMetadata = null) -> void:
+	func _init(p_hex: Vector2i = Vector2i.ZERO, p_move: MoveType = MoveType.NONE, p_metadata: MoveMetadata = null) -> void:
+		hex = p_hex
 		move = p_move
 		metadata = p_metadata if p_metadata else MoveMetadata.new()
 
 	func to_dict() -> Dictionary:
 		return {
+			"hex": {"q": hex.x, "r": hex.y},
 			"move": move,
 			"metadata": metadata.to_dict() if metadata else {}
 		}
 
 	static func from_dict(data: Dictionary) -> ValidMove:
+		var hex_data = data.get("hex", {})
+		var p_hex = Vector2i(hex_data.get("q", 0), hex_data.get("r", 0))
 		var move_data = data.get("move", {})
 		var move_enum = MoveType.get(move_data)
 		var meta = MoveMetadata.from_dict(data.get("metadata", {}))
-		return ValidMove.new(move_enum, meta)
+		return ValidMove.new(p_hex, move_enum, meta)
 
 
 ## Result from MovementValidator.calculate_valid_moves()
@@ -71,8 +76,15 @@ class ValidMovesResult extends RefCounted:
 	func _init() -> void:
 		valid_hexes = []
 
-	func add_option(move: MoveType, metadata: MoveMetadata) -> void:
-		valid_hexes.append(ValidMove.new(move, metadata))
+	func add_option(hex: Vector2i, move: MoveType, metadata: MoveMetadata) -> void:
+		valid_hexes.append(ValidMove.new(hex, move, metadata))
+		
+	func to_dict() -> Dictionary:
+		return {
+			"valid_hexes": valid_hexes,
+			"can_submit": can_submit,
+			"remaining_ma": remaining_ma
+		}
 
 
 ## Result from MovementValidator.validate_hex_selection()
@@ -168,6 +180,7 @@ class PlottingStartedResponse extends PlottingResponse:
 	var origin_hex: Vector2i = Vector2i.ZERO
 	var valid_next_hexes: Array[ValidMove] = []
 	var can_submit: bool = true
+	var remaining_ma: int = 0
 
 	func _init() -> void:
 		type = "PLOTTING_STARTED"
@@ -185,7 +198,8 @@ class PlottingStartedResponse extends PlottingResponse:
 			"ship_id": ship_id,
 			"origin_hex": {"q": origin_hex.x, "r": origin_hex.y},
 			"valid_next_hexes": hexes_array,
-			"can_submit": can_submit
+			"can_submit": can_submit,
+			"remaining_ma": remaining_ma
 		})
 		return base
 
@@ -197,6 +211,7 @@ class HexSelectedResponse extends PlottingResponse:
 	var plotted_path: Array[PlotStep] = []
 	var valid_next_hexes: Array[ValidMove] = []
 	var can_submit: bool = true
+	var remaining_ma: int = 0
 
 	func _init() -> void:
 		type = "HEX_SELECTED"
@@ -218,7 +233,8 @@ class HexSelectedResponse extends PlottingResponse:
 			"session_version": session_version,
 			"plotted_path": path_array,
 			"valid_next_hexes": hexes_array,
-			"can_submit": can_submit
+			"can_submit": can_submit,
+			"remaining_ma": remaining_ma
 		})
 		return base
 
@@ -230,6 +246,7 @@ class UndoCompleteResponse extends PlottingResponse:
 	var plotted_path: Array[PlotStep] = []
 	var valid_next_hexes: Array[ValidMove] = []
 	var can_submit: bool = true
+	var remaining_ma: int = 0
 
 	func _init() -> void:
 		type = "UNDO_COMPLETE"
@@ -251,7 +268,8 @@ class UndoCompleteResponse extends PlottingResponse:
 			"session_version": session_version,
 			"plotted_path": path_array,
 			"valid_next_hexes": hexes_array,
-			"can_submit": can_submit
+			"can_submit": can_submit,
+			"remaining_ma": remaining_ma
 		})
 		return base
 

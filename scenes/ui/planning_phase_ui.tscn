@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://c8waw0x1y203a"]
 
-[ext_resource type="Script" path="res://scripts/ui/planning_phase_ui.gd" id="1_planning_ui"]
+[ext_resource type="Script" uid="uid://f48kk3tvtba0" path="res://scripts/ui/planning_phase_ui.gd" id="1_planning_ui"]
 
 [node name="PlanningPhaseUI" type="Control"]
 layout_mode = 3
@@ -45,11 +45,69 @@ theme_override_constants/separation = 6
 [node name="HSeparator2" type="HSeparator" parent="VBoxContainer"]
 layout_mode = 2
 
+[node name="PlottingControls" type="VBoxContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="PlottingHeader" type="Label" parent="VBoxContainer/PlottingControls"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "Movement Plotting"
+horizontal_alignment = 1
+
+[node name="MALabel" type="Label" parent="VBoxContainer/PlottingControls"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Movement: 0/0 remaining"
+horizontal_alignment = 1
+
+[node name="PathLabel" type="Label" parent="VBoxContainer/PlottingControls"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+text = "Path: (none)"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="ButtonRow" type="HBoxContainer" parent="VBoxContainer/PlottingControls"]
+layout_mode = 2
+theme_override_constants/separation = 4
+alignment = 1
+
+[node name="UndoButton" type="Button" parent="VBoxContainer/PlottingControls/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Undo"
+
+[node name="UndoAllButton" type="Button" parent="VBoxContainer/PlottingControls/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Undo All"
+
+[node name="SubmitButton" type="Button" parent="VBoxContainer/PlottingControls/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Submit"
+
+[node name="CancelButton" type="Button" parent="VBoxContainer/PlottingControls/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Cancel"
+
+[node name="HSeparator3" type="HSeparator" parent="VBoxContainer"]
+layout_mode = 2
+
 [node name="InstructionsLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
-text = "Select ship and choose actions.
-Movement plotting in next iteration."
+text = "Select ship and click Movement to plot course."
 horizontal_alignment = 1
 autowrap_mode = 2

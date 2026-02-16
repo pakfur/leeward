@@ -30,7 +30,7 @@ var can_submit: bool = true
 
 # Timing
 var created_at: float = 0.0  # Unix timestamp
-var timeout_ms: int = 300000  # 5 minutes default, configurable
+var timeout_ms: int = 86_400_000  # 300_000 (5) minutes default, configurable
 var last_activity_at: float = 0.0
 
 # Idempotency tracking
