@@ -62,7 +62,7 @@ func _update_display() -> void:
 		hull_label.text = hull_text
 
 	if crew_label:
-		crew_label.text = "Crew: %d (%s)" % [status.crew, status.crew_quality]
+		crew_label.text = "Crew: %d (%s)" % [status.morale, status.crew_quality]
 
 	if morale_label:
 		var morale_names = ["", "", "Low", "Fair", "Good", "High"]

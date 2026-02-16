@@ -38,8 +38,8 @@ func _ready() -> void:
 	# Start expanded
 	is_expanded = true
 	current_width = expanded_width
-	size.x = current_width
-	panel_container.size.x = current_width
+	set_deferred("size:x", current_width)
+	panel_container.set_deferred("size:x", current_width)
 
 	print("ContextPanel initialized: expanded_width=%f, collapsed_width=%f" % [expanded_width, collapsed_width])
 
@@ -61,7 +61,7 @@ func _update_panel_size() -> void:
 	expanded_width = screen_size.x * panel_width_percent
 
 	# Set full height for the control
-	size.y = screen_size.y
+	set_deferred("size:y", screen_size.y)
 	custom_minimum_size.y = screen_size.y
 
 	# Position at left edge

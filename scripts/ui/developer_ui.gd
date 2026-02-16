@@ -13,6 +13,7 @@ extends Window
 @onready var advance_phase_btn: Button = %AdvancePhaseButton
 @onready var advance_turn_btn: Button = %AdvanceTurnButton
 @onready var reset_btn: Button = %ResetButton
+@onready var collapse_btn: Button = %CollapseButton
 
 var ship_selector: OptionButton = null
 var ship_fields_container: VBoxContainer = null
@@ -21,6 +22,8 @@ var ship_fields_container: VBoxContainer = null
 
 var game_state: Node = null
 var initial_scenario: Dictionary = {}  # For reset functionality
+var collapsed := false
+var expanded_size := Vector2i(500, 700)
 
 # Field tracking for dynamic updates
 var environment_fields: Dictionary = {}  # field_name -> Control
@@ -54,6 +57,7 @@ func _ready() -> void:
 	advance_phase_btn.pressed.connect(_on_advance_phase_pressed)
 	advance_turn_btn.pressed.connect(_on_advance_turn_pressed)
 	reset_btn.pressed.connect(_on_reset_pressed)
+	collapse_btn.pressed.connect(_toggle_collapsed)
 
 	# Build UI
 	_build_environment_tab()
@@ -72,6 +76,11 @@ func _ready() -> void:
 	_log("Developer UI initialized. Press F12 to toggle.")
 
 func _input(event: InputEvent) -> void:
+	# F12 toggles visibility even when this window has focus
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F12:
+		visible = false
+		return
+
 	# Handle window dragging
 	if event is InputEventMouseButton:
 		var mb = event as InputEventMouseButton
@@ -88,6 +97,27 @@ func _input(event: InputEvent) -> void:
 func _is_in_title_bar(pos: Vector2) -> bool:
 	"""Check if position is in window title bar (top 30 pixels)"""
 	return pos.y < 30
+
+func _toggle_collapsed() -> void:
+	collapsed = not collapsed
+	if collapsed:
+		expanded_size = size
+		# Hide all Header children after TitleRow
+		var header = $MainContainer/Header
+		for i in range(1, header.get_child_count()):
+			header.get_child(i).visible = false
+		tab_container.visible = false
+		size = Vector2i(size.x, 60)
+		collapse_btn.text = "▶"
+		collapse_btn.tooltip_text = "Expand"
+	else:
+		var header = $MainContainer/Header
+		for i in range(1, header.get_child_count()):
+			header.get_child(i).visible = true
+		tab_container.visible = true
+		size = expanded_size
+		collapse_btn.text = "▼"
+		collapse_btn.tooltip_text = "Collapse"
 
 ## Tab Building
 

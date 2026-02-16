@@ -79,8 +79,8 @@ func _update_display() -> void:
 			ship_state.hull_current_hp[1],
 			ship_state.hull_current_hp[2]
 		]
-		var crew_str = "%d/%d" % [ship_state.crew_count, ship_state.crew_morale]
-		var sails_str = "%s/%d" % [ship_state.sail_state, ship_state.rigging_quality]
+		var crew_str = "%s/%d" % [ship_state.crew_quality, ship_state.crew_morale]
+		var sails_str = "%s/%s" % [ship_state.sail_state, ship_state.rigging_current_hp]
 
 		stats_label.text = "Hull: %s  Crew: %s  Sails: %s" % [hull_str, crew_str, sails_str]
 
