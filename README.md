@@ -18,7 +18,7 @@ This phase establishes the foundational systems for the game:
 - **Isometric Camera** - Mouse wheel zoom and middle-click pan (`scripts/core/isometric_camera.gd`)
 
 #### Ship System
-- **Ship Entity** - Placeholder 3D models with full ship stats (`scripts/entities/ship.gd`)
+- **Ship System** - Ship identity and type data (`scripts/state/ship.gd`) with mutable game state (`scripts/state/ship_state.gd`)
 - **Ship Selection** - Click to select and view detailed status
 - Ship attributes: position, facing, speed, sail state, hull, crew, rigging
 

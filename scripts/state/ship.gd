@@ -1,9 +1,16 @@
-class_name ShipDefinition
+class_name Ship
 extends RefCounted
-## ShipDefinition - Strongly-typed ship definition data from ships.json
-## This class represents the static definition of a ship type (e.g., "frigate_38")
+## Ship - Immutable ship data combining type-level definition and instance-specific identity
+## Type-level data comes from ships.json, instance-specific data from scenario placement
 
-# Basic ship information
+# Instance-specific identity (immutable after creation)
+var ship_id: String = ""
+var player_id: int = 0
+var ship_name: String = ""
+var ship_type: String = ""
+var crew_quality: String = "Trained"
+
+# Basic ship information (from type definition)
 var name: String = ""
 var nationality: String = ""
 var rating: int = 0
@@ -28,48 +35,73 @@ var marine_count: int = 0
 # Armament - stored as Dictionary for flexibility
 var guns: Dictionary = {}
 
-static func from_dict(data: Dictionary) -> ShipDefinition:
-	"""Create a ShipDefinition from a Dictionary (parsed from JSON)"""
-	var def = ShipDefinition.new()
+static func from_dict(data: Dictionary) -> Ship:
+	"""Create a Ship from a Dictionary (parsed from JSON)"""
+	var ship = Ship.new()
+
+	# Instance-specific fields (optional, only present when serialized from game state)
+	ship.ship_id = data.get("ship_id", "")
+	ship.player_id = data.get("player_id", 0)
+	ship.ship_name = data.get("ship_name", "")
+	ship.ship_type = data.get("ship_type", "")
+	ship.crew_quality = data.get("crew_quality", "Trained")
 
 	# Basic information
-	def.name = data.get("name", "Unknown Ship")
-	def.nationality = data.get("nationality", "Unknown")
-	def.rating = data.get("rating", 0)
-	def.ship_class = data.get("class", 0)
-	def.maneuverability = data.get("maneuverability", "")
-	def.speed_type = data.get("speed_type", "F/F")
-	def.type = data.get("type", "")
-	def.speed = data.get("speed", "")
+	ship.name = data.get("name", "Unknown Ship")
+	ship.nationality = data.get("nationality", "Unknown")
+	ship.rating = data.get("rating", 0)
+	ship.ship_class = data.get("class", 0)
+	ship.maneuverability = data.get("maneuverability", "")
+	ship.speed_type = data.get("speed_type", "F/F")
+	ship.type = data.get("type", "")
+	ship.speed = data.get("speed", "")
 
 	# Physical characteristics
-	def.draft = data.get("draft", 0)
-	def.freeboard = data.get("freeboard", 0)
+	ship.draft = data.get("draft", 0)
+	ship.freeboard = data.get("freeboard", 0)
 
 	# Hit points - convert from untyped arrays
 	var rigging_data = data.get("rigging_hp", [0, 0, 0, 0])
 	for i in range(min(4, rigging_data.size())):
-		def.rigging_hp[i] = int(rigging_data[i])
+		ship.rigging_hp[i] = int(rigging_data[i])
 
 	var hull_data = data.get("hull_hp", [0, 0, 0, 0])
 	for i in range(min(4, hull_data.size())):
-		def.hull_hp[i] = int(hull_data[i])
+		ship.hull_hp[i] = int(hull_data[i])
 
 	# Crew
 	var crew_data = data.get("crew_count", [0, 0, 0, 0])
 	for i in range(min(4, crew_data.size())):
-		def.crew_count[i] = int(crew_data[i])
+		ship.crew_count[i] = int(crew_data[i])
 
-	def.marine_count = data.get("marine_count", 0)
+	ship.marine_count = data.get("marine_count", 0)
 
 	# Guns - store as-is (complex nested structure)
-	def.guns = data.get("guns", {})
+	ship.guns = data.get("guns", {})
 
-	return def
+	return ship
+
+static func initialize_from_scenario(data: Dictionary, type_def: Dictionary) -> Ship:
+	"""Create a Ship from scenario placement data + parsed type definition dictionary"""
+	var ship = Ship.from_dict(type_def)
+
+	# Override with instance-specific identity from scenario
+	ship.ship_id = data.get("id", "ship_" + str(randi()))
+	ship.player_id = data.get("player_id", 0)
+	ship.ship_type = data.get("ship_type", "")
+	ship.ship_name = data.get("ship_name", ship.name)
+	ship.crew_quality = data.get("crew_quality", "Trained")
+
+	return ship
 
 func to_dict() -> Dictionary:
-	"""Convert this ShipDefinition back to a Dictionary"""
+	"""Convert this Ship back to a Dictionary"""
 	return {
+		"ship_id": ship_id,
+		"player_id": player_id,
+		"ship_name": ship_name,
+		"ship_type": ship_type,
+		"crew_quality": crew_quality,
 		"name": name,
 		"nationality": nationality,
 		"rating": rating,

@@ -304,9 +304,8 @@ When adding new features, follow this pattern:
 
 ## Related Files Reference
 
-- State classes: `scripts/state/ship_state.gd`, `scripts/state/environment_state.gd`
+- State classes: `scripts/state/ship.gd` (immutable), `scripts/state/ship_state.gd` (mutable), `scripts/state/environment_state.gd`
 - View classes: `scripts/view/ship_view.gd`
-- Legacy ship entity: `scripts/entities/ship.gd` (may be deprecated)
 - Command base: `scripts/commands/game_command.gd`
 
 ## Questions & Support

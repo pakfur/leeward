@@ -3,7 +3,7 @@ extends Node
 
 # Cached data
 var movement_allowance_table: Dictionary = {}
-var ship_definitions: Dictionary = {}  # Dictionary[String, ShipDefinition]
+var ship_definitions: Dictionary = {}  # Dictionary[String, Ship]
 var scenarios: Dictionary = {}
 
 func _ready() -> void:
@@ -39,7 +39,7 @@ func load_movement_allowance_table(file_path: String = "res://data/rules/movemen
 		return false
 
 func load_ship_definitions(file_path: String = "res://data/rules/ships.json") -> bool:
-	"""Load ship definitions from JSON and convert to ShipDefinition instances"""
+	"""Load ship definitions from JSON and convert to Ship instances"""
 	if not FileAccess.file_exists(file_path):
 		push_warning("Ship definitions not found at: %s" % file_path)
 		_create_default_ships()
@@ -58,14 +58,14 @@ func load_ship_definitions(file_path: String = "res://data/rules/ships.json") ->
 		push_error("Failed to parse ship definitions JSON")
 		return false
 
-	# Convert JSON dictionary to Dictionary[String, ShipDefinition]
+	# Convert JSON dictionary to Dictionary[String, Ship]
 	ship_definitions.clear()
 	var raw_data = json.data
 	if raw_data is Dictionary:
 		for ship_id in raw_data.keys():
 			var ship_data = raw_data[ship_id]
 			if ship_data is Dictionary:
-				ship_definitions[ship_id] = ShipDefinition.from_dict(ship_data)
+				ship_definitions[ship_id] = Ship.from_dict(ship_data)
 			else:
 				push_warning("Invalid ship data for '%s'" % ship_id)
 
@@ -191,7 +191,7 @@ func get_movement_allowance(speed_type: String, wind_speed: int, wind_facing: St
 	var ma = sail_state_dict[sail_state_key]
 	return int(ma) if ma != null else 0
 
-func get_ship_definition(ship_id: String) -> ShipDefinition:
+func get_ship_definition(ship_id: String) -> Ship:
 	"""Get a ship definition by ID"""
 	if ship_definitions.has(ship_id):
 		return ship_definitions[ship_id]
@@ -284,7 +284,7 @@ func _create_default_ships() -> void:
 	ship_definitions.clear()
 
 	# Create frigate_38
-	var frigate = ShipDefinition.new()
+	var frigate = Ship.new()
 	frigate.name = "38-gun Frigate"
 	frigate.nationality = "British"
 	frigate.rating = 38
@@ -301,7 +301,7 @@ func _create_default_ships() -> void:
 	ship_definitions["frigate_38"] = frigate
 
 	# Create corvette_24
-	var corvette = ShipDefinition.new()
+	var corvette = Ship.new()
 	corvette.name = "24-gun Corvette"
 	corvette.nationality = "British"
 	corvette.rating = 24

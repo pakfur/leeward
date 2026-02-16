@@ -37,17 +37,15 @@ Manual testing also available via scenarios and the Developer UI (F12 in-game).
 scripts/
   autoload/       # Singletons: GameState, DataManager
   core/           # Game controller, hex grid, hex map, camera, wave calc
-  state/          # Pure data objects: ShipState, ShipDefinition, EnvironmentState
+  state/          # Pure data objects: Ship (immutable), ShipState (mutable), EnvironmentState
   server/         # Server-authoritative controllers (mutations, validation, phases)
   view/           # 3D presentation (ShipView)
   ui/             # All UI scripts
   commands/       # Command pattern (GameCommand, MoveCommand)
-  entities/       # Legacy Ship entity (being replaced by ShipState+ShipView)
 scenes/
   main.tscn       # Entry point (scene navigation controller)
   splash_screen.tscn → scenario_selection.tscn → main_game.tscn
   ui/             # UI subscenes (planning, minimap, compass, dev UI)
-  ship.tscn       # Ship prefab
 data/
   rules/          # movement_allowance.json, ships.json
   scenarios/      # Scenario definitions (test_basic.json)
@@ -62,7 +60,7 @@ addons/           # godot_mcp (MCP server addon), GUT testing framework
 
 ### State-Controller-View (SCV)
 
-- **State layer** (`scripts/state/`): Pure data Resources. `ShipState`, `ShipDefinition`, `EnvironmentState`. Serializable, deterministic. No logic.
+- **State layer** (`scripts/state/`): `Ship` (immutable identity + type data), `ShipState` (mutable game state, references `Ship`), `EnvironmentState`. Serializable, deterministic. No logic.
 - **Controller layer** (`scripts/server/`): Server-authoritative game logic. All state mutations happen here. Controllers check `is_server` before mutating. Clients are read-only.
 - **View layer** (`scripts/view/`, `scripts/ui/`): Presentation only. Reads state, renders visuals. Never mutates game state.
 
@@ -132,7 +130,6 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 - Uses `assert()` for parameter validation — fails fast on bad input
 
 ### Legacy Code
-- `scripts/entities/ship.gd` is the old Ship entity, being replaced by ShipState + ShipView split
 - `scripts/ui/planning_panel.gd` is legacy; `planning_phase_ui.gd` is the current version
 
 ### Developer UI

@@ -1,7 +1,7 @@
 extends GutTest
 ## Tests for DataManager ship definitions loading and lookups.
 ##
-## Validates ship definition parsing from ships.json, ShipDefinition.from_dict(),
+## Validates ship definition parsing from ships.json, Ship.from_dict(),
 ## and DataManager.get_ship_definition().
 
 var dm: Node
@@ -135,7 +135,7 @@ func test_sol_74_hull_hp() -> void:
 	assert_eq(def.hull_hp[0], 9)
 	assert_eq(def.hull_hp[3], 10)
 
-# --- ShipDefinition Helper Methods ---
+# --- Ship Helper Methods ---
 
 func test_get_total_crew_frigate() -> void:
 	var def = dm.get_ship_definition("frigate_38")
@@ -179,12 +179,12 @@ func test_sol_74_gun_count() -> void:
 	# 14*6 = 84 (lower port/starboard, main port/starboard, gun deck port/starboard)
 	assert_eq(def.get_gun_count(), 84, "SOL should have 84 total guns")
 
-# --- ShipDefinition.from_dict() / to_dict() Roundtrip ---
+# --- Ship.from_dict() / to_dict() Roundtrip ---
 
 func test_to_dict_roundtrip() -> void:
 	var original = dm.get_ship_definition("frigate_38")
 	var dict = original.to_dict()
-	var restored = ShipDefinition.from_dict(dict)
+	var restored = Ship.from_dict(dict)
 	assert_eq(restored.name, original.name)
 	assert_eq(restored.rating, original.rating)
 	assert_eq(restored.speed_type, original.speed_type)
@@ -194,7 +194,7 @@ func test_to_dict_roundtrip() -> void:
 func test_to_dict_preserves_arrays() -> void:
 	var original = dm.get_ship_definition("ship_of_line_74")
 	var dict = original.to_dict()
-	var restored = ShipDefinition.from_dict(dict)
+	var restored = Ship.from_dict(dict)
 	for i in range(4):
 		assert_eq(restored.rigging_hp[i], original.rigging_hp[i], "rigging_hp[%d] should match" % i)
 		assert_eq(restored.hull_hp[i], original.hull_hp[i], "hull_hp[%d] should match" % i)
@@ -203,14 +203,14 @@ func test_to_dict_preserves_arrays() -> void:
 # --- from_dict() Defaults ---
 
 func test_from_dict_with_minimal_data() -> void:
-	var def = ShipDefinition.from_dict({})
+	var def = Ship.from_dict({})
 	assert_eq(def.name, "Unknown Ship", "Missing name should default to 'Unknown Ship'")
 	assert_eq(def.nationality, "Unknown", "Missing nationality should default to 'Unknown'")
 	assert_eq(def.rating, 0, "Missing rating should default to 0")
 	assert_eq(def.speed_type, "F/F", "Missing speed_type should default to 'F/F'")
 
 func test_from_dict_with_partial_data() -> void:
-	var def = ShipDefinition.from_dict({"name": "Test Ship", "rating": 20})
+	var def = Ship.from_dict({"name": "Test Ship", "rating": 20})
 	assert_eq(def.name, "Test Ship")
 	assert_eq(def.rating, 20)
 	assert_eq(def.ship_class, 0, "Missing class should default to 0")

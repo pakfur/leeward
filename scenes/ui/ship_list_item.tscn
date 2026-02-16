@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://dq1x2y304w5v6"]
 
-[ext_resource type="Script" path="res://scripts/ui/ship_list_item.gd" id="1_ship_list_item"]
+[ext_resource type="Script" uid="uid://pasm3mfebfvh" path="res://scripts/ui/ship_list_item.gd" id="1_ship_list_item"]
 
 [node name="ShipListItem" type="PanelContainer"]
 custom_minimum_size = Vector2(0, 80)
@@ -62,14 +62,14 @@ text = "Movement"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-toggle_mode = true
 disabled = true
+toggle_mode = true
 text = "Crew"
 
 [node name="MaintenanceButton" type="Button" parent="MarginContainer/VBoxContainer/ActionButtons"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-toggle_mode = true
 disabled = true
+toggle_mode = true
 text = "Maintenance"

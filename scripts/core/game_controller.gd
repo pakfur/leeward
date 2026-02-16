@@ -161,16 +161,19 @@ func _setup_scenario(scenario: Dictionary) -> void:
 			_spawn_ship(ship_data)
 
 func _spawn_ship(ship_data: Dictionary) -> void:
-	var ship_type = ship_data.get("ship_type", "")
-	var ship_def = DataManager.get_ship_definition(ship_type)
+	var ship_type_id = ship_data.get("ship_type", "")
+	var type_def = DataManager.get_ship_definition(ship_type_id)
 
-	if ship_def == null:
-		push_error("Ship definition not found: %s" % ship_type)
+	if type_def == null:
+		push_error("Ship definition not found: %s" % ship_type_id)
 		return
 
-	# Create ship state (data only)
+	# Create Ship (immutable identity + type data) from scenario + type definition
+	var ship_ref = Ship.initialize_from_scenario(ship_data, type_def.to_dict())
+
+	# Create ship state (mutable game data only)
 	var ship_state = ShipState.new()
-	ship_state.initialize_from_scenario(ship_data, ship_def)
+	ship_state.initialize_from_scenario(ship_data, ship_ref)
 
 	# Add state to GameState
 	GameState.add_ship(ship_state)
