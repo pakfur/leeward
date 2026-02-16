@@ -106,3 +106,8 @@ layout_mode = 2
 size_flags_vertical = 3
 editable = false
 wrap_mode = 1
+
+[node name="Trace" type="VBoxContainer" parent="MainContainer/TabContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+metadata/_tab_index = 3

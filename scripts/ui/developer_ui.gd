@@ -6,6 +6,7 @@ extends Window
 @onready var environment_tab: VBoxContainer = %Environment
 @onready var ships_tab: VBoxContainer = %Ships
 @onready var controls_tab: VBoxContainer = %Controls
+@onready var trace_tab: VBoxContainer = %Trace
 
 @onready var turn_label: Label = %TurnLabel
 @onready var phase_label: Label = %PhaseLabel
@@ -24,6 +25,14 @@ var initial_scenario: Dictionary = {}  # For reset functionality
 # Field tracking for dynamic updates
 var environment_fields: Dictionary = {}  # field_name -> Control
 var ship_fields: Dictionary = {}  # field_name -> Control
+
+# Trace tab controls
+var trace_category_selector: OptionButton = null
+var trace_text_display: TextEdit = null
+var trace_follow_enabled: bool = true
+var trace_follow_btn: Button = null
+var trace_current_category: String = ""
+var _trace_known_category_count: int = 0
 
 # Dragging
 var dragging := false
@@ -49,7 +58,12 @@ func _ready() -> void:
 	# Build UI
 	_build_environment_tab()
 	_build_ships_tab()
+	_build_trace_tab()
 	_update_turn_phase_display()
+
+	# Connect to Trace autoload
+	Trace.trace_added.connect(_on_trace_added)
+	tree_exiting.connect(_on_tree_exiting)
 
 	# Store initial scenario for reset
 	if game_state:
@@ -385,6 +399,198 @@ func _log(message: String) -> void:
 	# Also print to Godot console
 	print("[DevUI] %s" % message)
 
+func _on_tree_exiting() -> void:
+	if Trace.trace_added.is_connected(_on_trace_added):
+		Trace.trace_added.disconnect(_on_trace_added)
+
+## Trace Tab
+
+func _build_trace_tab() -> void:
+	"""Build the trace log viewer tab"""
+	for child in trace_tab.get_children():
+		child.queue_free()
+
+	# Header
+	var header = Label.new()
+	header.text = "Trace Log Viewer"
+	header.add_theme_font_size_override("font_size", 16)
+	trace_tab.add_child(header)
+
+	var separator = HSeparator.new()
+	trace_tab.add_child(separator)
+
+	# Category selector row
+	var selector_row = HBoxContainer.new()
+	trace_tab.add_child(selector_row)
+
+	var selector_label = Label.new()
+	selector_label.text = "Category:"
+	selector_label.custom_minimum_size = Vector2(80, 0)
+	selector_row.add_child(selector_label)
+
+	trace_category_selector = OptionButton.new()
+	trace_category_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	trace_category_selector.item_selected.connect(_on_trace_category_selected)
+	selector_row.add_child(trace_category_selector)
+
+	_refresh_trace_categories()
+
+	var sep2 = HSeparator.new()
+	trace_tab.add_child(sep2)
+
+	# Control buttons row
+	var button_row = HBoxContainer.new()
+	trace_tab.add_child(button_row)
+
+	var scroll_top_btn = Button.new()
+	scroll_top_btn.text = "Top"
+	scroll_top_btn.tooltip_text = "Scroll to top"
+	scroll_top_btn.pressed.connect(_on_trace_scroll_top)
+	button_row.add_child(scroll_top_btn)
+
+	var scroll_bottom_btn = Button.new()
+	scroll_bottom_btn.text = "Bottom"
+	scroll_bottom_btn.tooltip_text = "Scroll to bottom"
+	scroll_bottom_btn.pressed.connect(_on_trace_scroll_bottom)
+	button_row.add_child(scroll_bottom_btn)
+
+	trace_follow_btn = Button.new()
+	trace_follow_btn.text = "Follow: ON"
+	trace_follow_btn.tooltip_text = "Auto-scroll on new messages"
+	trace_follow_btn.toggle_mode = true
+	trace_follow_btn.button_pressed = true
+	trace_follow_btn.toggled.connect(_on_trace_follow_toggled)
+	button_row.add_child(trace_follow_btn)
+
+	var copy_btn = Button.new()
+	copy_btn.text = "Copy"
+	copy_btn.tooltip_text = "Copy to clipboard"
+	copy_btn.pressed.connect(_on_trace_copy)
+	button_row.add_child(copy_btn)
+
+	var clear_btn = Button.new()
+	clear_btn.text = "Clear"
+	clear_btn.tooltip_text = "Clear current category"
+	clear_btn.pressed.connect(_on_trace_clear)
+	button_row.add_child(clear_btn)
+
+	# Text display
+	trace_text_display = TextEdit.new()
+	trace_text_display.editable = false
+	trace_text_display.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	trace_text_display.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	trace_tab.add_child(trace_text_display)
+
+
+func _refresh_trace_categories() -> void:
+	"""Refresh the category dropdown from Trace autoload"""
+	if not trace_category_selector:
+		return
+
+	var previous_selection = trace_current_category
+	trace_category_selector.clear()
+
+	var categories = Trace.get_categories()
+	if categories.is_empty():
+		trace_category_selector.add_item("(no categories)")
+		trace_category_selector.set_item_disabled(0, true)
+		trace_current_category = ""
+		return
+
+	for i in range(categories.size()):
+		trace_category_selector.add_item(categories[i])
+
+	# Restore previous selection if still valid
+	var idx = categories.find(previous_selection)
+	if idx >= 0:
+		trace_category_selector.select(idx)
+		trace_current_category = previous_selection
+	else:
+		trace_category_selector.select(0)
+		trace_current_category = categories[0]
+
+
+func _rebuild_trace_display() -> void:
+	"""Rebuild the full text display for the current category"""
+	if not trace_text_display or trace_current_category.is_empty():
+		return
+
+	var entries = Trace.get_traces(trace_current_category)
+	var text = ""
+	for entry in entries:
+		text += "[%s] %s\n" % [entry.timestamp, entry.message]
+		if entry.context != "":
+			text += "  -> %s\n" % entry.context
+
+	trace_text_display.text = text
+
+	if trace_follow_enabled:
+		trace_text_display.scroll_vertical = trace_text_display.get_line_count()
+
+
+func _on_trace_category_selected(index: int) -> void:
+	"""Handle category selection change"""
+	var categories = Trace.get_categories()
+	if index >= 0 and index < categories.size():
+		trace_current_category = categories[index]
+		_rebuild_trace_display()
+
+
+func _on_trace_added(category: String) -> void:
+	"""Handle new trace message from Trace autoload"""
+	# Refresh categories dropdown if new category appeared
+	var categories = Trace.get_categories()
+	if trace_category_selector and _trace_known_category_count != categories.size():
+		_refresh_trace_categories()
+		_trace_known_category_count = categories.size()
+
+	# Append to display if matching current category
+	if category == trace_current_category and trace_text_display:
+		var entries = Trace.get_traces(category)
+		if entries.size() > 0:
+			var entry = entries[entries.size() - 1]
+			var line = "[%s] %s\n" % [entry.timestamp, entry.message]
+			if entry.context != "":
+				line += "  -> %s\n" % entry.context
+			trace_text_display.text += line
+
+			if trace_follow_enabled:
+				trace_text_display.scroll_vertical = trace_text_display.get_line_count()
+
+
+func _on_trace_scroll_top() -> void:
+	if trace_text_display:
+		trace_text_display.scroll_vertical = 0
+
+
+func _on_trace_scroll_bottom() -> void:
+	if trace_text_display:
+		trace_text_display.scroll_vertical = trace_text_display.get_line_count()
+
+
+func _on_trace_follow_toggled(toggled_on: bool) -> void:
+	trace_follow_enabled = toggled_on
+	if trace_follow_btn:
+		trace_follow_btn.text = "Follow: ON" if toggled_on else "Follow: OFF"
+	if toggled_on and trace_text_display:
+		trace_text_display.scroll_vertical = trace_text_display.get_line_count()
+
+
+func _on_trace_copy() -> void:
+	if trace_text_display:
+		DisplayServer.clipboard_set(trace_text_display.text)
+		_log("Trace text copied to clipboard")
+
+
+func _on_trace_clear() -> void:
+	if trace_current_category.is_empty():
+		return
+	Trace.clear_category(trace_current_category)
+	if trace_text_display:
+		trace_text_display.text = ""
+	_log("Cleared trace category: %s" % trace_current_category)
+
+
 ## Public API
 
 func refresh_all() -> void:
@@ -392,4 +598,6 @@ func refresh_all() -> void:
 	_build_environment_tab()
 	_build_ships_tab()
 	_update_turn_phase_display()
+	_refresh_trace_categories()
+	_rebuild_trace_display()
 	_log("UI refreshed")
