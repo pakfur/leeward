@@ -26,17 +26,9 @@ var sessions: Dictionary = {}
 # Ship to session mapping: ship_id -> session_id
 var ship_sessions: Dictionary = {}
 
-# Configuration
-var session_timeout_ms: int = 300000  # 5 minutes default
-
-
 func _init(p_game_state: Node = null) -> void:
 	game_state = p_game_state if p_game_state else GameState
 	movement_validator = MovementValidator.new(game_state)
-
-
-func _process(_delta: float) -> void:
-	_check_expired_sessions()
 
 
 ## ============================================================================
@@ -82,8 +74,6 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 		ship_state.hex_position,
 		ship_state.facing
 	)
-	session.timeout_ms = session_timeout_ms
-
 	# Calculate initial valid moves
 	var empty_path: Array[MovementTypes.PlotStep] = []
 	var valid_moves = movement_validator.calculate_valid_moves(
@@ -414,13 +404,8 @@ func rpc_plotting_response(response_json: String) -> void:
 ## ============================================================================
 
 func _get_session(session_id: String) -> MovementPlottingSession:
-	"""Get a session by ID, checking for expiration"""
-	var session = sessions.get(session_id)
-	if session and session.is_expired_by_timeout():
-		session.expire()
-		_cleanup_session(session_id)
-		return null
-	return session
+	"""Get a session by ID"""
+	return sessions.get(session_id)
 
 
 func _validate_version(session: MovementPlottingSession, expected_version: int, request_id: String) -> MovementTypes.PlottingResponse:
@@ -473,20 +458,6 @@ func _cleanup_session(session_id: String) -> void:
 	sessions.erase(session_id)
 
 
-func _check_expired_sessions() -> void:
-	"""Check for and clean up expired sessions (called periodically)"""
-	var to_expire: Array[String] = []
-
-	for session_id in sessions:
-		var session = sessions[session_id]
-		if session.is_active() and session.is_expired_by_timeout():
-			to_expire.append(session_id)
-
-	for session_id in to_expire:
-		var session = sessions[session_id]
-		print("[MovementPlotting] Session expired: %s (ship %s)" % [session_id, session.ship_id])
-		session.expire()
-		_cleanup_session(session_id)
 
 
 func _apply_movement_to_ship(ship_id: String, plotted_path: Array[MovementTypes.PlotStep]) -> void:

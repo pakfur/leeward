@@ -7,7 +7,6 @@ enum SessionState {
 	PLOTTING,      # Active session, player can select hexes
 	SUBMITTED,     # Movement plan submitted and locked
 	CANCELLED,     # Session cancelled by player
-	EXPIRED        # Session timed out
 }
 
 # Session identification
@@ -23,14 +22,13 @@ var version: int = 0  # Increments with each hex selection
 var origin_hex: Vector2i = Vector2i.ZERO
 var origin_facing: int = 0
 var plotted_path: Array[MovementTypes.PlotStep] = []
-var valid_next_hexes: Array[MovementTypes.ValidMove] = []
+var valid_next_hexes: MovementTypes.ValidNextHexes = null
 
 # Submission state
 var can_submit: bool = true
 
 # Timing
 var created_at: float = 0.0  # Unix timestamp
-var timeout_ms: int = 86_400_000  # 300_000 (5) minutes default, configurable
 var last_activity_at: float = 0.0
 
 # Idempotency tracking
@@ -43,7 +41,7 @@ func _init() -> void:
 	created_at = Time.get_unix_time_from_system()
 	last_activity_at = created_at
 	plotted_path = []
-	valid_next_hexes = []
+	valid_next_hexes = MovementTypes.ValidNextHexes.new()
 
 
 func initialize(p_ship_id: String, p_player_id: int, p_origin_hex: Vector2i, p_origin_facing: int) -> void:
@@ -58,7 +56,7 @@ func initialize(p_ship_id: String, p_player_id: int, p_origin_hex: Vector2i, p_o
 	_touch()
 
 
-func select_hex(hex: Vector2i, new_facing: int, new_valid_hexes: Array[MovementTypes.ValidMove], new_can_submit: bool) -> void:
+func select_hex(hex: Vector2i, new_facing: int, new_valid_hexes: MovementTypes.ValidNextHexes, new_can_submit: bool) -> void:
 	"""Add a hex to the plotted path (called after validation)"""
 	var step = MovementTypes.PlotStep.new(hex, new_facing)
 	plotted_path.append(step)
@@ -68,7 +66,7 @@ func select_hex(hex: Vector2i, new_facing: int, new_valid_hexes: Array[MovementT
 	_touch()
 
 
-func undo_to_version(target_version: int, new_valid_hexes: Array[MovementTypes.ValidMove], new_can_submit: bool) -> void:
+func undo_to_version(target_version: int, new_valid_hexes: MovementTypes.ValidNextHexes, new_can_submit: bool) -> void:
 	"""Revert path to a previous version"""
 	if target_version < 0 or target_version > version:
 		push_error("MovementPlottingSession: Invalid revert_to_version %d (current: %d)" % [target_version, version])
@@ -96,26 +94,14 @@ func cancel() -> void:
 	_touch()
 
 
-func expire() -> void:
-	"""Mark session as expired"""
-	state = SessionState.EXPIRED
-
-
 func is_active() -> bool:
 	"""Check if session is still active for plotting"""
 	return state == SessionState.PLOTTING
 
 
 func is_terminated() -> bool:
-	"""Check if session has ended (submitted, cancelled, or expired)"""
+	"""Check if session has ended (submitted or cancelled)"""
 	return state != SessionState.PLOTTING
-
-
-func is_expired_by_timeout() -> bool:
-	"""Check if session should be expired due to timeout"""
-	var now = Time.get_unix_time_from_system()
-	var elapsed_ms = (now - last_activity_at) * 1000
-	return elapsed_ms > timeout_ms
 
 
 func get_current_hex() -> Vector2i:
@@ -159,10 +145,6 @@ func serialize() -> Dictionary:
 	for step in plotted_path:
 		path_data.append(step.to_dict())
 
-	var valid_hexes_data: Array = []
-	for vh in valid_next_hexes:
-		valid_hexes_data.append(vh.to_dict())
-
 	return {
 		"session_id": session_id,
 		"ship_id": ship_id,
@@ -172,7 +154,7 @@ func serialize() -> Dictionary:
 		"origin_hex": {"q": origin_hex.x, "r": origin_hex.y},
 		"origin_facing": origin_facing,
 		"plotted_path": path_data,
-		"valid_next_hexes": valid_hexes_data,
+		"valid_next_hexes": valid_next_hexes.to_dict() if valid_next_hexes else {},
 		"can_submit": can_submit
 	}
 

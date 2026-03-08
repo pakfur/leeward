@@ -13,11 +13,13 @@ const HEX_INSET = 0.9  # Fraction of hex_size for slight inset from edges
 const COLOR_VALID = Color(0.2, 0.8, 0.2, 0.35)     # Green, semi-transparent
 const COLOR_PLOTTED = Color(0.2, 0.4, 0.9, 0.45)    # Blue, semi-transparent
 const COLOR_SUBMITTED = Color(0.5, 0.5, 0.5, 0.25)  # Gray, dimmed
+const COLOR_BLOCKED = Color(0.8, 0.2, 0.2, 0.35)    # Red, semi-transparent
 
 # Child nodes for each layer
 var valid_hexes_node: Node3D = null
 var plotted_path_node: Node3D = null
 var submitted_paths_node: Node3D = null
+var blocked_hexes_node: Node3D = null
 
 # Track current valid hex positions for click detection
 var _valid_hex_positions: Array[Vector2i] = []
@@ -26,6 +28,7 @@ var _valid_hex_positions: Array[Vector2i] = []
 var _valid_material: StandardMaterial3D = null
 var _plotted_material: StandardMaterial3D = null
 var _submitted_material: StandardMaterial3D = null
+var _blocked_material: StandardMaterial3D = null
 
 
 func _ready() -> void:
@@ -41,9 +44,14 @@ func _ready() -> void:
 	submitted_paths_node.name = "SubmittedPaths"
 	add_child(submitted_paths_node)
 
+	blocked_hexes_node = Node3D.new()
+	blocked_hexes_node.name = "BlockedHexes"
+	add_child(blocked_hexes_node)
+
 	_valid_material = _create_material(COLOR_VALID)
 	_plotted_material = _create_material(COLOR_PLOTTED)
 	_submitted_material = _create_material(COLOR_SUBMITTED)
+	_blocked_material = _create_material(COLOR_BLOCKED)
 
 
 func show_valid_hexes(hexes: Array, hex_grid: HexGrid) -> void:
@@ -77,6 +85,13 @@ func show_submitted_path(ship_id: String, steps: Array, hex_grid: HexGrid) -> vo
 		_add_hex_mesh(container, world_pos, hex_grid.hex_size, _submitted_material)
 
 
+func show_blocked_hexes(hex_positions: Array[Vector2i], hex_grid: HexGrid) -> void:
+	clear_blocked_hexes()
+	for hex_pos in hex_positions:
+		var world_pos = hex_grid.axial_to_world(hex_pos.x, hex_pos.y)
+		_add_hex_mesh(blocked_hexes_node, world_pos, hex_grid.hex_size, _blocked_material)
+
+
 func clear_valid_hexes() -> void:
 	_clear_children(valid_hexes_node)
 	_valid_hex_positions.clear()
@@ -84,6 +99,10 @@ func clear_valid_hexes() -> void:
 
 func clear_plotted_path() -> void:
 	_clear_children(plotted_path_node)
+
+
+func clear_blocked_hexes() -> void:
+	_clear_children(blocked_hexes_node)
 
 
 func clear_submitted_path(ship_id: String) -> void:
@@ -97,12 +116,14 @@ func clear_submitted_path(ship_id: String) -> void:
 func clear_all() -> void:
 	clear_valid_hexes()
 	clear_plotted_path()
+	clear_blocked_hexes()
 	# Don't clear submitted paths - they persist
 
 
 func clear_everything() -> void:
 	clear_valid_hexes()
 	clear_plotted_path()
+	clear_blocked_hexes()
 	_clear_children(submitted_paths_node)
 
 

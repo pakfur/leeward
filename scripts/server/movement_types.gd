@@ -67,21 +67,61 @@ class ValidMove extends RefCounted:
 		return ValidMove.new(p_hex, move_enum, meta)
 
 
+## Valid moves organized by direction relative to ship's bow
+class ValidNextHexes extends RefCounted:
+	var port: ValidMove = null             ## Single port (left) move, or null if blocked
+	var forward: Array[ValidMove] = []     ## Forward moves, empty if blocked
+	var starboard: ValidMove = null        ## Single starboard (right) move, or null if blocked
+
+	func _init() -> void:
+		forward = []
+
+	func has_any_moves() -> bool:
+		return port != null or not forward.is_empty() or starboard != null
+
+	func get_all_valid_moves() -> Array[ValidMove]:
+		"""Flatten all valid moves into a single array for rendering"""
+		var moves: Array[ValidMove] = []
+		if port:
+			moves.append(port)
+		moves.append_array(forward)
+		if starboard:
+			moves.append(starboard)
+		return moves
+
+	func to_dict() -> Dictionary:
+		var fwd_array: Array = []
+		for vm in forward:
+			fwd_array.append(vm.to_dict())
+		return {
+			"port": port.to_dict() if port else null,
+			"forward": fwd_array,
+			"starboard": starboard.to_dict() if starboard else null
+		}
+
+	static func from_dict(data: Dictionary) -> ValidNextHexes:
+		var vnh = ValidNextHexes.new()
+		if data.get("port"):
+			vnh.port = ValidMove.from_dict(data["port"])
+		for fwd in data.get("forward", []):
+			vnh.forward.append(ValidMove.from_dict(fwd))
+		if data.get("starboard"):
+			vnh.starboard = ValidMove.from_dict(data["starboard"])
+		return vnh
+
+
 ## Result from MovementValidator.calculate_valid_moves()
 class ValidMovesResult extends RefCounted:
-	var valid_hexes: Array[ValidMove] = []
+	var valid_hexes: ValidNextHexes = null
 	var can_submit: bool = true
 	var remaining_ma: int = 0
 
 	func _init() -> void:
-		valid_hexes = []
+		valid_hexes = ValidNextHexes.new()
 
-	func add_option(hex: Vector2i, move: MoveType, metadata: MoveMetadata) -> void:
-		valid_hexes.append(ValidMove.new(hex, move, metadata))
-		
 	func to_dict() -> Dictionary:
 		return {
-			"valid_hexes": valid_hexes,
+			"valid_hexes": valid_hexes.to_dict() if valid_hexes else {},
 			"can_submit": can_submit,
 			"remaining_ma": remaining_ma
 		}
@@ -178,26 +218,22 @@ class PlottingStartedResponse extends PlottingResponse:
 	var session_version: int = 0
 	var ship_id: String = ""
 	var origin_hex: Vector2i = Vector2i.ZERO
-	var valid_next_hexes: Array[ValidMove] = []
+	var valid_next_hexes: ValidNextHexes = null
 	var can_submit: bool = true
 	var remaining_ma: int = 0
 
 	func _init() -> void:
 		type = "PLOTTING_STARTED"
-		valid_next_hexes = []
+		valid_next_hexes = ValidNextHexes.new()
 
 	func to_dict() -> Dictionary:
 		var base = super.to_dict()
-		var hexes_array: Array = []
-		for vh in valid_next_hexes:
-			hexes_array.append(vh.to_dict())
-
 		base.merge({
 			"session_id": session_id,
 			"session_version": session_version,
 			"ship_id": ship_id,
 			"origin_hex": {"q": origin_hex.x, "r": origin_hex.y},
-			"valid_next_hexes": hexes_array,
+			"valid_next_hexes": valid_next_hexes.to_dict() if valid_next_hexes else {},
 			"can_submit": can_submit,
 			"remaining_ma": remaining_ma
 		})
@@ -209,14 +245,14 @@ class HexSelectedResponse extends PlottingResponse:
 	var session_id: String = ""
 	var session_version: int = 0
 	var plotted_path: Array[PlotStep] = []
-	var valid_next_hexes: Array[ValidMove] = []
+	var valid_next_hexes: ValidNextHexes = null
 	var can_submit: bool = true
 	var remaining_ma: int = 0
 
 	func _init() -> void:
 		type = "HEX_SELECTED"
 		plotted_path = []
-		valid_next_hexes = []
+		valid_next_hexes = ValidNextHexes.new()
 
 	func to_dict() -> Dictionary:
 		var base = super.to_dict()
@@ -224,15 +260,11 @@ class HexSelectedResponse extends PlottingResponse:
 		for step in plotted_path:
 			path_array.append({"q": step.hex.x, "r": step.hex.y})
 
-		var hexes_array: Array = []
-		for vh in valid_next_hexes:
-			hexes_array.append(vh.to_dict())
-
 		base.merge({
 			"session_id": session_id,
 			"session_version": session_version,
 			"plotted_path": path_array,
-			"valid_next_hexes": hexes_array,
+			"valid_next_hexes": valid_next_hexes.to_dict() if valid_next_hexes else {},
 			"can_submit": can_submit,
 			"remaining_ma": remaining_ma
 		})
@@ -244,14 +276,14 @@ class UndoCompleteResponse extends PlottingResponse:
 	var session_id: String = ""
 	var session_version: int = 0
 	var plotted_path: Array[PlotStep] = []
-	var valid_next_hexes: Array[ValidMove] = []
+	var valid_next_hexes: ValidNextHexes = null
 	var can_submit: bool = true
 	var remaining_ma: int = 0
 
 	func _init() -> void:
 		type = "UNDO_COMPLETE"
 		plotted_path = []
-		valid_next_hexes = []
+		valid_next_hexes = ValidNextHexes.new()
 
 	func to_dict() -> Dictionary:
 		var base = super.to_dict()
@@ -259,15 +291,11 @@ class UndoCompleteResponse extends PlottingResponse:
 		for step in plotted_path:
 			path_array.append({"q": step.hex.x, "r": step.hex.y})
 
-		var hexes_array: Array = []
-		for vh in valid_next_hexes:
-			hexes_array.append(vh.to_dict())
-
 		base.merge({
 			"session_id": session_id,
 			"session_version": session_version,
 			"plotted_path": path_array,
-			"valid_next_hexes": hexes_array,
+			"valid_next_hexes": valid_next_hexes.to_dict() if valid_next_hexes else {},
 			"can_submit": can_submit,
 			"remaining_ma": remaining_ma
 		})

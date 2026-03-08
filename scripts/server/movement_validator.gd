@@ -82,7 +82,7 @@ func validate_hex_selection(
 		environment
 	)
 
-	for valid_hex_option in valid_moves.valid_hexes:
+	for valid_hex_option in valid_moves.valid_hexes.get_all_valid_moves():
 		if valid_hex_option.hex == selected_hex:
 			return MovementTypes.HexValidationResult.success(
 				valid_hex_option.metadata.resulting_facing,
@@ -119,27 +119,27 @@ func validate_submission(
 
 ## MOCK: Generate valid hex options from current position
 ## This is a placeholder that returns neighboring hexes based on facing
-func _mock_valid_hexes(current_hex: Vector2i, current_facing: int, ship_state: ShipState) -> Array[MovementTypes.ValidMove]:
-	var valid: Array[MovementTypes.ValidMove] = []
+func _mock_valid_hexes(current_hex: Vector2i, current_facing: int, ship_state: ShipState) -> MovementTypes.ValidNextHexes:
+	var result = MovementTypes.ValidNextHexes.new()
 
 	# Mock: Allow forward movement (in facing direction)
 	var forward_hex = hex_grid.get_neighbor(current_hex.x, current_hex.y, current_facing)
 	var forward_metadata = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.FORWARD, current_facing, 1)
-	valid.append(MovementTypes.ValidMove.new(forward_hex, MovementTypes.MoveType.FORWARD, forward_metadata))
+	result.forward.append(MovementTypes.ValidMove.new(forward_hex, MovementTypes.MoveType.FORWARD, forward_metadata))
 
 	# Mock: Allow port turn (turn left, 60 degrees)
 	var port_facing = (current_facing + 5) % 6  # -1 mod 6
 	var port_hex = hex_grid.get_neighbor(current_hex.x, current_hex.y, port_facing)
 	var port_metadata = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.PORT, port_facing, 1)
-	valid.append(MovementTypes.ValidMove.new(port_hex, MovementTypes.MoveType.PORT, port_metadata))
+	result.port = MovementTypes.ValidMove.new(port_hex, MovementTypes.MoveType.PORT, port_metadata)
 
 	# Mock: Allow starboard turn (turn right, 60 degrees)
 	var starboard_facing = (current_facing + 1) % 6
 	var starboard_hex = hex_grid.get_neighbor(current_hex.x, current_hex.y, starboard_facing)
 	var starboard_metadata = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.STARBOARD, starboard_facing, 1)
-	valid.append(MovementTypes.ValidMove.new(starboard_hex, MovementTypes.MoveType.STARBOARD, starboard_metadata))
+	result.starboard = MovementTypes.ValidMove.new(starboard_hex, MovementTypes.MoveType.STARBOARD, starboard_metadata)
 
-	return valid
+	return result
 
 
 ## Get movement allowance for ship based on current state

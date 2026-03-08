@@ -438,28 +438,68 @@ func _on_plotting_cancel_pressed() -> void:
 # Movement Plotting Response Handlers
 # ============================================================================
 
-func _on_plotting_started(ship_id: String, valid_hexes: Array, remaining_ma_val: int) -> void:
+func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_val: int) -> void:
 	print("Plotting started for ship %s" % ship_id)
 	if hex_overlay and hex_map:
-		hex_overlay.show_valid_hexes(valid_hexes, hex_map.get_hex_grid())
+		var hex_grid = hex_map.get_hex_grid()
+		var vnh = valid_hexes as MovementTypes.ValidNextHexes
+		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid)
+
+		# Show blocked directions as red overlays
+		var ship_state = GameState.get_ship(ship_id)
+		if ship_state:
+			var blocked = _calculate_blocked_hexes(vnh, ship_state.hex_position, ship_state.facing, hex_grid)
+			hex_overlay.show_blocked_hexes(blocked, hex_grid)
 
 	if current_planning_ui:
 		var ship_state = GameState.get_ship(ship_id)
 		var total_ma = ship_state.get_movement_allowance() if ship_state else remaining_ma_val
 		current_planning_ui.show_plotting_controls(ship_id, remaining_ma_val, total_ma)
 
-func _on_hex_selected(plotted_path: Array, valid_hexes: Array, can_submit_val: bool, remaining_ma_val: int) -> void:
+func _on_hex_selected(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int) -> void:
 	if hex_overlay and hex_map:
-		hex_overlay.show_valid_hexes(valid_hexes, hex_map.get_hex_grid())
-		hex_overlay.show_plotted_path(plotted_path, hex_map.get_hex_grid())
+		var hex_grid = hex_map.get_hex_grid()
+		var vnh = valid_hexes as MovementTypes.ValidNextHexes
+		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid)
+		hex_overlay.show_plotted_path(plotted_path, hex_grid)
+
+		# Show blocked directions from current position
+		var current_hex: Vector2i
+		var current_facing: int
+		if plotted_path.size() > 0:
+			var last_step = plotted_path[-1]
+			current_hex = last_step.hex
+			current_facing = last_step.facing
+		else:
+			var ship_state = GameState.get_ship(movement_client.active_ship_id)
+			current_hex = ship_state.hex_position
+			current_facing = ship_state.facing
+		var blocked = _calculate_blocked_hexes(vnh, current_hex, current_facing, hex_grid)
+		hex_overlay.show_blocked_hexes(blocked, hex_grid)
 
 	if current_planning_ui:
 		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
 
-func _on_undo_complete(plotted_path: Array, valid_hexes: Array, can_submit_val: bool, remaining_ma_val: int) -> void:
+func _on_undo_complete(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int) -> void:
 	if hex_overlay and hex_map:
-		hex_overlay.show_valid_hexes(valid_hexes, hex_map.get_hex_grid())
-		hex_overlay.show_plotted_path(plotted_path, hex_map.get_hex_grid())
+		var hex_grid = hex_map.get_hex_grid()
+		var vnh = valid_hexes as MovementTypes.ValidNextHexes
+		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid)
+		hex_overlay.show_plotted_path(plotted_path, hex_grid)
+
+		# Show blocked directions from current position
+		var current_hex: Vector2i
+		var current_facing: int
+		if plotted_path.size() > 0:
+			var last_step = plotted_path[-1]
+			current_hex = last_step.hex
+			current_facing = last_step.facing
+		else:
+			var ship_state = GameState.get_ship(movement_client.active_ship_id)
+			current_hex = ship_state.hex_position
+			current_facing = ship_state.facing
+		var blocked = _calculate_blocked_hexes(vnh, current_hex, current_facing, hex_grid)
+		hex_overlay.show_blocked_hexes(blocked, hex_grid)
 
 	if current_planning_ui:
 		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
@@ -489,6 +529,23 @@ func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
 
 func _on_plotting_error(error_code: String, message: String) -> void:
 	print("Plotting error: %s - %s" % [error_code, message])
+
+
+func _calculate_blocked_hexes(valid_hexes: MovementTypes.ValidNextHexes,
+	current_hex: Vector2i,
+	current_facing: int,
+	hex_grid: HexGrid) -> Array[Vector2i]:
+	"""Calculate hex positions for blocked directions (port/forward/starboard) relative to the bow"""
+	var blocked: Array[Vector2i] = []
+	if valid_hexes.forward.is_empty():
+		blocked.append(hex_grid.get_neighbor(current_hex.x, current_hex.y, current_facing))
+	if valid_hexes.port == null:
+		var port_dir = (current_facing + 5) % 6
+		blocked.append(hex_grid.get_neighbor(current_hex.x, current_hex.y, port_dir))
+	if valid_hexes.starboard == null:
+		var starboard_dir = (current_facing + 1) % 6
+		blocked.append(hex_grid.get_neighbor(current_hex.x, current_hex.y, starboard_dir))
+	return blocked
 
 # ============================================================================
 # Phase Resolution

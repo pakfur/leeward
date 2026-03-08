@@ -19,7 +19,7 @@ var _request_counter: int = 0
 var active_session_id: String = ""
 var active_ship_id: String = ""
 var session_version: int = 0
-var valid_next_hexes: Array = []
+var valid_next_hexes: MovementTypes.ValidNextHexes = null
 var plotted_path: Array = []  # Array[MovementTypes.PlotStep]
 var can_submit: bool = false
 var remaining_ma: int = 0
@@ -41,7 +41,7 @@ func start_plotting(player_id: int, ship_id: String) -> void:
 	active_session_id = r.session_id
 	active_ship_id = r.ship_id
 	session_version = r.session_version
-	valid_next_hexes = Array(r.valid_next_hexes)
+	valid_next_hexes = r.valid_next_hexes
 	plotted_path = []
 	can_submit = r.can_submit
 	remaining_ma = r.remaining_ma
@@ -64,7 +64,7 @@ func select_hex(hex: Vector2i) -> void:
 	var r = response as MovementTypes.HexSelectedResponse
 	session_version = r.session_version
 	plotted_path = Array(r.plotted_path)
-	valid_next_hexes = Array(r.valid_next_hexes)
+	valid_next_hexes = r.valid_next_hexes
 	can_submit = r.can_submit
 	remaining_ma = r.remaining_ma
 
@@ -85,7 +85,7 @@ func undo() -> void:
 	var r = response as MovementTypes.UndoCompleteResponse
 	session_version = r.session_version
 	plotted_path = Array(r.plotted_path)
-	valid_next_hexes = Array(r.valid_next_hexes)
+	valid_next_hexes = r.valid_next_hexes
 	can_submit = r.can_submit
 	remaining_ma = r.remaining_ma
 
@@ -106,7 +106,7 @@ func undo_all() -> void:
 	var r = response as MovementTypes.UndoCompleteResponse
 	session_version = r.session_version
 	plotted_path = Array(r.plotted_path)
-	valid_next_hexes = Array(r.valid_next_hexes)
+	valid_next_hexes = r.valid_next_hexes
 	can_submit = r.can_submit
 	remaining_ma = r.remaining_ma
 
@@ -160,7 +160,7 @@ func _clear_session() -> void:
 	active_session_id = ""
 	active_ship_id = ""
 	session_version = 0
-	valid_next_hexes = []
+	valid_next_hexes = null
 	plotted_path = []
 	can_submit = false
 	remaining_ma = 0
