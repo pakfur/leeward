@@ -11,6 +11,7 @@ extends Window
 @onready var hex_coords_checkbox: CheckBox = %HexCoordsCheckbox
 
 signal hex_coords_toggled(enabled: bool)
+signal hex_labels_toggled(enabled: bool)
 
 @onready var turn_label: Label = %TurnLabel
 @onready var phase_label: Label = %PhaseLabel
@@ -166,6 +167,31 @@ func _build_environment_tab() -> void:
 	_add_field(fields_container, env, "visibility", ["clear", "hazy", "fog", "storm"], null, "string")
 	_add_field(fields_container, env, "time_of_day", ["dawn", "day", "dusk", "night"], null, "string")
 	_add_field(fields_container, env, "precipitation", ["none", "rain", "snow", "storm"], null, "string")
+
+	# Debug overlay options
+	var overlay_sep = HSeparator.new()
+	fields_container.add_child(overlay_sep)
+
+	var overlay_header = Label.new()
+	overlay_header.text = "Debug Overlays"
+	overlay_header.add_theme_font_size_override("font_size", 14)
+	fields_container.add_child(overlay_header)
+
+	var hex_labels_hbox = HBoxContainer.new()
+	fields_container.add_child(hex_labels_hbox)
+
+	var hex_labels_label = Label.new()
+	hex_labels_label.text = "view_hex_coordinates:"
+	hex_labels_label.custom_minimum_size = Vector2(200, 0)
+	hex_labels_hbox.add_child(hex_labels_label)
+
+	var hex_labels_option = OptionButton.new()
+	hex_labels_option.add_item("false")
+	hex_labels_option.add_item("true")
+	hex_labels_option.select(0)  # Default false
+	hex_labels_option.item_selected.connect(func(index): _on_hex_labels_toggled(index == 1))
+	hex_labels_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hex_labels_hbox.add_child(hex_labels_option)
 
 func _build_ships_tab() -> void:
 	"""Build the ships editor tab"""
@@ -380,6 +406,10 @@ func _on_turn_changed(_turn) -> void:
 func _on_hex_coords_toggled(enabled: bool) -> void:
 	hex_coords_toggled.emit(enabled)
 	_log("Hex coordinates display: %s" % ("ON" if enabled else "OFF"))
+
+func _on_hex_labels_toggled(enabled: bool) -> void:
+	hex_labels_toggled.emit(enabled)
+	_log("Hex coordinate labels: %s" % ("ON" if enabled else "OFF"))
 
 func _on_advance_phase_pressed() -> void:
 	"""Advance to next phase"""

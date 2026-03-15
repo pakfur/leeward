@@ -71,6 +71,7 @@ func _ready() -> void:
 	_setup_hex_coord_label()
 	if developer_ui:
 		developer_ui.hex_coords_toggled.connect(_on_hex_coords_toggled)
+		developer_ui.hex_labels_toggled.connect(_on_hex_labels_toggled)
 
 	# Start the game
 	GameState.start_new_game(scenario)
@@ -99,6 +100,10 @@ func _on_hex_coords_toggled(enabled: bool) -> void:
 	hex_coords_enabled = enabled
 	if hex_coord_label:
 		hex_coord_label.visible = enabled
+
+func _on_hex_labels_toggled(enabled: bool) -> void:
+	if hex_map:
+		hex_map.set_hex_labels_visible(enabled)
 
 func _process(_delta: float) -> void:
 	if not hex_coords_enabled or not hex_coord_label or not camera or not hex_map:

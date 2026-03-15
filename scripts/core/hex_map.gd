@@ -13,6 +13,7 @@ var hex_meshes: Dictionary = {}  # Map of Vector2i(q,r) -> MeshInstance3D (not r
 var ocean_material: ShaderMaterial  # Shared material for all hexes
 var grid_overlay: MeshInstance3D  # Static grid overlay above water
 var water_plane: MeshInstance3D  # Single plane for seamless water
+var hex_labels_container: Node3D = null  # Container for hex coordinate Label3D nodes
 
 func _ready() -> void:
 	hex_grid = HexGrid.new(hex_size)
@@ -302,6 +303,45 @@ func hide_grid_overlay() -> void:
 	"""Hide the hex grid overlay"""
 	if grid_overlay:
 		grid_overlay.visible = false
+
+func set_hex_labels_visible(show: bool) -> void:
+	"""Toggle hex coordinate labels (q=##,r=##) on each hex"""
+	if show:
+		if hex_labels_container == null:
+			_create_hex_labels()
+		hex_labels_container.visible = true
+	else:
+		if hex_labels_container:
+			hex_labels_container.visible = false
+
+func _create_hex_labels() -> void:
+	"""Create Label3D nodes showing coordinates at each hex center"""
+	hex_labels_container = Node3D.new()
+	hex_labels_container.name = "HexLabels"
+	add_child(hex_labels_container)
+
+	var offset_q = -grid_width / 2
+	var offset_r = -grid_height / 2
+
+	for q in range(grid_width):
+		for r in range(grid_height):
+			var hex_coord = Vector2i(q + offset_q, r + offset_r)
+			var world_pos = hex_grid.axial_to_world(hex_coord.x, hex_coord.y)
+
+			var label = Label3D.new()
+			label.text = "q=%d,r=%d" % [hex_coord.x, hex_coord.y]
+			label.font_size = 32
+			label.pixel_size = 0.005
+			label.position = Vector3(world_pos.x, 0.15, world_pos.z)
+			label.rotation_degrees = Vector3(90, 180, 0)  # Face up, readable from above
+			label.modulate = Color(1.0, 1.0, 0.6, 0.8)
+			label.outline_modulate = Color(0, 0, 0, 0.9)
+			label.outline_size = 8
+			label.no_depth_test = true
+			label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+			hex_labels_container.add_child(label)
+
+	print("Created %d hex coordinate labels" % (grid_width * grid_height))
 
 func set_hex_grid_visible(visible: bool) -> void:
 	"""Set hex grid visibility (shader-based grid that responds to waves)"""

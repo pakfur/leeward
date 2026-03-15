@@ -63,7 +63,7 @@ func _update_position_from_state(ship_state: ShipState, hex_grid: HexGrid) -> vo
 func _update_rotation_from_state(ship_state: ShipState) -> void:
 	"""Update the 3D rotation based on state"""
 	# Each hex face is 60 degrees, facing 0 is east
-	var angle_deg = -ship_state.facing * 60.0 + 90.0
+	var angle_deg = -ship_state.facing * 60.0 - 90.0
 	if model_node:
 		model_node.rotation_degrees = Vector3(0, angle_deg, 0)
 
