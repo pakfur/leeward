@@ -1,0 +1,45 @@
+{
+	"_doc": "Bearing-off success probability table derived from Close Action rules VI.D.2. A ship attempting to bear off rolls 1d6 and must roll its SK (crew skill) or more, with class DRMs (-1 for class 1, +0 for class 2, +1 for class 3, +2 for class 4). This table maps crew_quality letter (A..G, where SK = A=1..G=7) and maneuverability letter (a..d, used as a class proxy: a=class1..d=class4) to the resulting d6 success probability. Probability is computed as max(0.0, min(1.0, (7 - target) / 6)) where target = SK - DRM, clamped so target<=1 auto-succeeds (1.0) and target>=7 auto-fails (0.0). The friendly-ship +1 DRM and per-turn turn-count limits from VI.D.2 are NOT baked into this table; callers apply them separately.",
+	"A": {
+		"a": 0.8333333333333334,
+		"b": 1.0,
+		"c": 1.0,
+		"d": 1.0
+	},
+	"B": {
+		"a": 0.6666666666666666,
+		"b": 0.8333333333333334,
+		"c": 1.0,
+		"d": 1.0
+	},
+	"C": {
+		"a": 0.5,
+		"b": 0.6666666666666666,
+		"c": 0.8333333333333334,
+		"d": 1.0
+	},
+	"D": {
+		"a": 0.3333333333333333,
+		"b": 0.5,
+		"c": 0.6666666666666666,
+		"d": 0.8333333333333334
+	},
+	"E": {
+		"a": 0.16666666666666666,
+		"b": 0.3333333333333333,
+		"c": 0.5,
+		"d": 0.6666666666666666
+	},
+	"F": {
+		"a": 0.0,
+		"b": 0.16666666666666666,
+		"c": 0.3333333333333333,
+		"d": 0.5
+	},
+	"G": {
+		"a": 0.0,
+		"b": 0.0,
+		"c": 0.16666666666666666,
+		"d": 0.3333333333333333
+	}
+}

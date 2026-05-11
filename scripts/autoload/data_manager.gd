@@ -6,6 +6,7 @@ var movement_allowance_table: Dictionary = {}
 var speed_change_table: Dictionary = {}
 var tacking_table: Dictionary = {}
 var turning_table: Dictionary = {}
+var bearing_off_table: Dictionary = {}
 var ship_definitions: Dictionary = {}  # Dictionary[String, Ship]
 var scenarios: Dictionary = {}
 
@@ -243,6 +244,79 @@ func get_min_heading_change_movement_required(direction: String, ship_speed: int
 		return 0
 
 	return int(maneuverability_dict[maneuverability_lower])
+
+func load_bearing_off_table(file_path: String = "res://data/rules/bearing_off_table.json") -> bool:
+	"""Load the bearing-off success probability table from JSON.
+
+	Structure: crew_quality letter (A..G) -> maneuverability letter (a..d) -> float (0.0..1.0).
+	A top-level `_doc` key documents the derivation and is ignored by lookups.
+	"""
+	if not FileAccess.file_exists(file_path):
+		push_warning("Bearing off table not found at: %s" % file_path)
+		return false
+
+	var file = FileAccess.open(file_path, FileAccess.READ)
+	if file == null:
+		push_error("Failed to open bearing off table: %s" % file_path)
+		return false
+
+	var json = JSON.new()
+	var parse_result = json.parse(file.get_as_text())
+	file.close()
+
+	if parse_result != OK:
+		push_error("Failed to parse bearing off table JSON")
+		return false
+
+	if json.data is Dictionary:
+		bearing_off_table = json.data
+		# Count crew quality grades excluding the documentation key.
+		var grade_count = bearing_off_table.size()
+		if bearing_off_table.has("_doc"):
+			grade_count -= 1
+		print("Loaded bearing off table with %d crew quality grades" % grade_count)
+		return true
+	else:
+		push_error("Bearing off table JSON must be a dictionary")
+		return false
+
+func get_bearing_off_probability(crew_quality: String, maneuverability: String) -> float:
+	"""Look up bearing-off success probability from the table.
+
+	crew_quality: 'A' through 'G' (case-insensitive); SK = A=1..G=7 per CA rules VI.D.2.
+	maneuverability: 'a' through 'd' (case-insensitive); used as a class proxy a=class1..d=class4.
+	Returns 0.0 if any key is missing (with push_error). The +1 DRM for friendly ships
+	and per-turn turn-count limits are NOT baked in here; apply them at the caller.
+	"""
+	var crew_quality_upper = crew_quality.to_upper()
+	assert(
+		crew_quality_upper == "A" or crew_quality_upper == "B" or crew_quality_upper == "C" or
+		crew_quality_upper == "D" or crew_quality_upper == "E" or crew_quality_upper == "F" or
+		crew_quality_upper == "G",
+		"Invalid crew_quality '%s'. Valid values: A, B, C, D, E, F, G" % crew_quality
+	)
+
+	var maneuverability_lower = maneuverability.to_lower()
+	assert(
+		maneuverability_lower == "a" or maneuverability_lower == "b" or
+		maneuverability_lower == "c" or maneuverability_lower == "d",
+		"Invalid maneuverability '%s'. Valid values: a, b, c, d" % maneuverability
+	)
+
+	if not bearing_off_table.has(crew_quality_upper):
+		push_error("Bearing off table missing crew_quality: %s" % crew_quality_upper)
+		return 0.0
+
+	var maneuverability_dict = bearing_off_table[crew_quality_upper]
+	if not maneuverability_dict is Dictionary:
+		push_error("Bearing off table: crew_quality '%s' value is not a Dictionary" % crew_quality_upper)
+		return 0.0
+
+	if not maneuverability_dict.has(maneuverability_lower):
+		push_error("Bearing off table missing maneuverability '%s' for crew_quality '%s'" % [maneuverability_lower, crew_quality_upper])
+		return 0.0
+
+	return float(maneuverability_dict[maneuverability_lower])
 
 func load_ship_definitions(file_path: String = "res://data/rules/ships.json") -> bool:
 	"""Load ship definitions from JSON and convert to Ship instances"""
