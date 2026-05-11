@@ -1,0 +1,117 @@
+{
+  "name": "Test Scenario - Four Ships",
+  "description": "Basic test scenario with four opposing ships for development testing",
+  "wind_direction": 0,
+  "wind_speed": 2,
+  "wind_speed_change": "steady",
+  "wind_direction_change": "none",
+  "region": "oceanic",
+  "sea_state": 1,
+  "map": {
+	"map_texture": "res://assets/textures/water_default.png",
+	"show_hex": true
+  },
+  "map_bounds": {
+	"width": 100,
+	"height": 100
+  },
+  "minimap_texture": "",
+  "ships": [
+	{
+	  "id": "player_ship_1",
+	  "player_id": 0,
+	  "ship_type": "frigate_38",
+	  "position": {
+		"q": -8,
+		"r": -3
+	  },
+	  "facing": 1,
+	  "speed": 2,
+	  "movement_points": 0,
+	  "acceleration": 0,
+	  "sail_state": "MS",
+	  "crew_quality": "Trained",
+	  "crew_morale": 4
+	},
+	{
+	  "id": "player_ship_2",
+	  "player_id": 0,
+	  "ship_type": "frigate_38",
+	  "position": {
+		"q": -9,
+		"r": 2
+	  },
+	  "facing": 1,
+	  "speed": 2,
+	  "movement_points": 0,
+	  "acceleration": 0,
+	  "sail_state": "MS",
+	  "crew_quality": "Trained",
+	  "crew_morale": 4
+	},
+	{
+	  "id": "enemy_ship_1",
+	  "player_id": 1,
+	  "ship_type": "corvette_24",
+	  "position": {
+		"q": 8,
+		"r": 0
+	  },
+	  "facing": 3,
+	  "speed": 0,
+	  "movement_points": 0,
+	  "acceleration": 2,
+	  "sail_state": "MS",
+	  "crew_quality": "Trained",
+	  "crew_morale": 4
+	},
+	{
+	  "id": "enemy_ship_1",
+	  "player_id": 1,
+	  "ship_type": "corvette_24",
+	  "position": {
+		"q": 7,
+		"r": 2
+	  },
+	  "facing": 3,
+	  "speed": 0,
+	  "movement_points": 0,
+	  "acceleration": 2,
+	  "sail_state": "MS",
+	  "crew_quality": "Trained",
+	  "crew_morale": 4
+	},
+	{
+	  "id": "enemy_ship_2",
+	  "player_id": 1,
+	  "ship_type": "corvette_24",
+	  "position": {
+		"q": 9,
+		"r": 1
+	  },
+	  "facing": 3,
+	  "speed": 0,
+	  "movement_points": 0,
+	  "acceleration": 2,
+	  "sail_state": "MS",
+	  "crew_quality": "Trained",
+	  "crew_morale": 4
+	},
+	{
+	  "id": "enemy_ship_3",
+	  "player_id": 1,
+	  "ship_type": "corvette_24",
+	  "position": {
+		"q": 8,
+		"r": 0
+	  },
+	  "facing": 3,
+	  "speed": 0,
+	  "movement_points": 0,
+	  "acceleration": 2,
+	  "sail_state": "MS",
+	  "crew_quality": "Trained",
+	  "crew_morale": 4
+	}
+  ]
+}

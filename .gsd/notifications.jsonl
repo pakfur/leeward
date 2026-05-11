@@ -1,0 +1,6 @@
+{"id":"33949e42-8407-4990-a609-3ea56226ae92","ts":"2026-05-11T16:55:34.490Z","severity":"info","message":"Native Anthropic web search active","source":"notify","read":false}
+{"id":"00725068-eb0d-412f-9b59-72affd45355d","ts":"2026-05-11T17:00:56.738Z","severity":"info","message":"Created global GSD skill preferences at /Users/jkline/.gsd/PREFERENCES.md","source":"notify","read":false}
+{"id":"6972c6e3-5817-4e62-a744-e144ddc7ee0d","ts":"2026-05-11T17:00:56.742Z","severity":"info","message":"GSD preferences (global) — pick a category to configure.","source":"notify","read":false}
+{"id":"390dde0a-8821-4ff1-917e-420320754f79","ts":"2026-05-11T17:01:03.210Z","severity":"info","message":"Mode: solo — defaults: auto_push=true, push_branches=false, pre_merge_check=auto, merge_strategy=squash, isolation=worktree, unique_milestone_ids=false","source":"notify","read":false}
+{"id":"77c7af56-c243-4e9f-ab2f-d09ea4666fa1","ts":"2026-05-11T17:05:37.621Z","severity":"warning","message":"Context7: No CONTEXT7_API_KEY set. Using free tier (1000 req/month limit). Set CONTEXT7_API_KEY for higher limits.","source":"notify","read":false}
+{"id":"ae79b59d-9b8e-4bd1-b63d-31b527fe2f76","ts":"2026-05-11T17:05:37.887Z","severity":"info","message":"Saved global preferences to /Users/jkline/.gsd/PREFERENCES.md","source":"notify","read":false}
