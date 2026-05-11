@@ -1,4 +1,6 @@
 {
+	"readme" : "same_direction|opposite_direction -> ship speed -> Maneuver Type -> min hexes forward before turn",
+	
 	"same_direction": {
 		"1": {
 			"a": 1,

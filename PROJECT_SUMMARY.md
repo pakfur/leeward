@@ -72,9 +72,9 @@ This architecture is designed to support future multiplayer functionality with s
 │  │  - NetworkSync (state synchronization)               │  │
 │  └──────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
-                            │
-                            │ State Updates
-                            ▼
+							│
+							│ State Updates
+							▼
 ┌─────────────────────────────────────────────────────────────┐
 │                     GameController                           │
 │                   (Scene Controller)                         │
@@ -192,8 +192,8 @@ Leeward/
 │   ├── developer_ui.md
 │   └── environment_shader_integration.md
 └── addons/
-    ├── godot_mcp/             # MCP server integration
-    └── test/                  # Test plugin
+	├── godot_mcp/             # MCP server integration
+	└── test/                  # Test plugin
 ```
 
 ---
@@ -215,11 +215,11 @@ Leeward/
 
 **Coordinate System:**
 ```
-     NW(4)  NE(5)
-        \  /
-    W(3)─●─E(0)
-        /  \
-     SW(2)  SE(1)
+	 NW(4)  NE(5)
+		\  /
+	W(3)─●─E(0)
+		/  \
+	 SW(2)  SE(1)
 ```
 
 ### 2. Game State Manager (`scripts/autoload/game_state.gd`)
@@ -429,18 +429,18 @@ Ships are defined in `ships.json`:
 ```json
 {
   "frigate_38": {
-    "name": "38-gun Frigate",
-    "nationality": "British",
-    "rating": 38,
-    "class": 4,
-    "maneuverability": "B",
-    "speed_type": "F/F",
-    "type": "Frigate",
-    "rigging_sections": 4,
-    "rigging_quality": 4,
-    "hull_sections": 3,
-    "hull_max_hp": [8, 8, 8],
-    "crew_count": 280
+	"name": "38-gun Frigate",
+	"nationality": "British",
+	"rating": 38,
+	"class": 4,
+	"maneuverability": "B",
+	"speed_type": "F/F",
+	"type": "Frigate",
+	"rigging_sections": 4,
+	"rigging_quality": 4,
+	"hull_sections": 3,
+	"hull_max_hp": [8, 8, 8],
+	"crew_count": 280
   }
 }
 ```
@@ -456,14 +456,14 @@ Scenarios define initial game setup:
   "wind_speed": 2,
   "sea_state": 1,
   "ships": [
-    {
-      "id": "player_ship",
-      "player_id": 0,
-      "ship_type": "frigate_38",
-      "position": {"q": 5, "r": 15},
-      "facing": 0,
-      "sail_state": "MS"
-    }
+	{
+	  "id": "player_ship",
+	  "player_id": 0,
+	  "ship_type": "frigate_38",
+	  "position": {"q": 5, "r": 15},
+	  "facing": 0,
+	  "sail_state": "MS"
+	}
   ]
 }
 ```

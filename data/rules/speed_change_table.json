@@ -1,14 +1,16 @@
 {
+	"readme" : "acceleration|deceleration -> Maneuver Type -> Allowed Speed Change ",
+	
 	"acceleration": {
-		"a": 2,
-		"b": 2,
-		"c": 3,
-		"d": 3
+		"A": 2,
+		"B": 2,
+		"C": 3,
+		"D": 3
 	},
 	"deceleration": {
-		"a": 2,
-		"b": 3,
-		"c": 3,
-		"d": 4
+		"A": 2,
+		"B": 3,
+		"C": 3,
+		"D": 4
 	}
 }
