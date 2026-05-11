@@ -1,4 +1,4 @@
-# GSD context snapshot (2026-05-11T23:31:56.572Z)
+# GSD context snapshot (2026-05-11T23:46:20.745Z)
 
 ## Active context
 Active: M001 / S01 / T01 - Add bearing_off_table.json + DataManager wrapper + unit tests
