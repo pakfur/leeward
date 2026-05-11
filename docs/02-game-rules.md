@@ -146,6 +146,51 @@ EXAMPLE: A fast frigate (ship speed=F/F) which is close-hauled (wind facing = C)
 
 ## Movement Rules
 
+Calculating Movement Allowance:
+	ship.speed == the number of MA used in the last turn
+	
+1. Calculate Movement Allowence and speed range
+	- ma:  movement_allowance_table(type, rigging, sail state, wind speed, facing)
+	- minimum_ma: max(ship.speed from last turn - speed_change_table("deceleration", ship.maneuverability), 0)
+	- maximum_ma: max(minimum_ma, min(ship.speed from last turn + speed_change_table("acceleration", ship.maneuverability), MA))
+	- effective_ma_lower = if ma > 0: minimum_ma else: 0
+	- effective_ma_higher = if ma > 0: maximum_ma else: 0
+
+2. If ship.speed = 0:
+	if ship.tacking and ship.facing is L (In Irons):
+		- dice_modifier = calculate_tacking_drm(ship_state)
+		- tacked_success = random(0,1) + dice_modifier <= tacking_table(ship.maneuverability, environmant.wind_speed)
+		- if tacked_success: 
+			continue turn one facing, recaclulate movement allowance and speed range 
+		- else: 
+			if first attempt: 
+				end movement, try one more time next turn
+			else:
+				ship.immobilized = true
+	else:
+		ship.imobilized = environment.wind_speed == 0 || ship.speed last two turns == 0
+				
+2.1 calculate_tacking_drm(ship_state)
+	- +0.2 for each ship.crew_count > 0 not assigned rigging work 
+	- +0.2 each rigging lost
+	- +0.1 if ship.facing == L
+	- +0.1 if ship.towing 
+	- +0.3 if reversing tack (ie starting a tack turn, then turning back next turn instead of following through)
+	- +0.3 if ship.rudder_health <= 0
+	
+	
+3. Calculate the minimum number of forward movement hexes a ship must move before turning:
+	3.1 since_last = count the number of uninterrupted forward movement taken since last heading change (port or starboard), go back as many turns as necessary
+	3.2 last_direction = if previous turn is port: "port" else: "starboard"
+	3.3 port_minimum_forward =  min (1, if last_direction == "port": lookup(turning_table, "same_direction", ship.maneuverability, ship.speed) else: lookup(turning_table, "opposite_direction", ship.maneuverability, ship.speed))
+	3.4 starboard_minimum_forward =  min (1, if last_direction == "starboard": lookup(turning_table, "same_direction", ship.maneuverability, ship.speed) else: lookup(turning_table, "opposite_direction", ship.maneuverability, ship.speed))
+	3.5 can_change_heading = if port: since_last >= port_minimum_forward else: since_last >= starboard_minimum_forwward
+
+4. Immobilized Ship
+	4.1 Immobilized if: speed 0 two turns and NOT anchored OR NOT cutting its anchor cable OR environment.wind_speed = 0
+
+	
+
 1. Calculate Movement Allowance (MA). This is the theoritical maximum movement allowed
 2. Plot Actions spending MA until MA = 0, or movement restrictions are exceeded
 

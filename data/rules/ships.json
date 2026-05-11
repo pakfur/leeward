@@ -12,8 +12,9 @@
 	"freeboard": 8,
 	"rigging_hp": [5, 5, 6, 6],
 	"hull_hp": [5, 5, 5, 6],
-	"crew_count": [3, 3, 3, 3],
+	"crew_count": [3, 3, 3],
 	"marine_count": 2,
+	"crew_quality": "B",
 	"guns": {
 	  "long_guns": {
 		"main_deck_port": {"count": 19, "size": 18},
@@ -36,8 +37,9 @@
 	"freeboard": 6,
 	"rigging_hp": [3, 4, 4, 4],
 	"hull_hp": [3, 4, 4, 4],
-	"crew_count": [2, 2, 2, 2],
+	"crew_count": [2, 2, 2],
 	"marine_count": 2,
+	"crew_quality": "B",
 	"guns": {
 	  "long_guns": {
 		"main_deck_port": {"count": 12, "size": 9},
@@ -57,8 +59,9 @@
 	"freeboard": 12,
 	"rigging_hp": [7, 7, 7, 7],
 	"hull_hp": [9, 9, 9, 10],
-	"crew_count": [6, 6, 7, 7],
+	"crew_count": [6, 6, 7],
 	"marine_count": 7,
+	"crew_quality": "B",
 	"guns": {
 	  "long_guns": {
 		"lower_deck_port": {"count": 14, "size": 32},

@@ -16,15 +16,20 @@ var ship_name: String:
 	get: return ship.ship_name if ship else "Unknown"
 var ship_type: String:
 	get: return ship.ship_type if ship else ""
-var crew_quality: String:
-	get: return ship.crew_quality if ship else "Trained"
 
 # Position and movement (hex-based, deterministic)
 @export var hex_position: Vector2i = Vector2i.ZERO
 @export var facing: int = 0  # 0-5, hex direction
 @export var speed: int = 0  # hexes per turn
-@export var movement_points: int = 0 # current turns movement points
+@export var immobilized: bool = false  # ship cannot move
+@export var tacking: bool = false # user has indicated they are tacking
+@export var movement_allowance: int = 0 # current turns movement points
+@export var min_ma: int = 0 # current ma + any deceleration considerations
+@export var max_ma: int = 0 # current speed + acceleration and ma considerations
 @export var acceleration: int = 0 # current ships acceleration, negative value indicates deceleration
+
+# Towing
+@export var towing: bool = false
 
 # Sail and rigging state
 @export var sail_state: String = "MS"  # FS, MS, PS, NS
@@ -35,6 +40,9 @@ var crew_quality: String:
 
 # Crew
 @export var crew_morale: int = 4  # 2-5
+@export var crew_count: Array[int] = [0, 0, 0] # number of "crew" in each section, 1-12 per section (does not reflect actual crew count)
+@export var marine_count: int = 0 # number of "marines" 0-12
+@export var crew_quality: String = "B" # A=Elite, B=Veteran, C-D=Trained, E=Green, F-G=Demoralized
 
 # Plotted actions for this turn
 var plotted_actions: Dictionary = {
@@ -125,6 +133,8 @@ func get_status_summary() -> Dictionary:
 		"hull_hp": hull_current_hp,
 		"hull_max": hull_max,
 		"crew_quality": crew_quality,
+		"crew_count": crew_count,
+		"marine_count": marine_count,
 		"morale": crew_morale,
 		"rigging": get_rigging_quality(),
 		"rigging_hp": rigging_current_hp,
@@ -138,12 +148,19 @@ func serialize() -> Dictionary:
 		"position": {"q": hex_position.x, "r": hex_position.y},
 		"facing": facing,
 		"speed": speed,
-		"movement_points": movement_points,
+		"immobilized": immobilized,
+		"tacking": tacking,
+		"movement_allowance": movement_allowance,
+		"min_ma": min_ma,
+		"max_ma": max_ma,
+		"towing": towing,
 		"acceleration": acceleration,
 		"sail_state": sail_state,
 		"rigging_current_hp": rigging_current_hp,
 		"hull_current_hp": hull_current_hp,
 		"crew_morale": crew_morale,
+		"crew_count": crew_count,
+		"marine_count": marine_count,
 		"plotted_actions": plotted_actions
 	}
 	return data
@@ -164,7 +181,12 @@ static func deserialize(data: Dictionary) -> ShipState:
 
 	state.facing = data.get("facing", 0)
 	state.speed = data.get("speed", 0)
-	state.movement_points = data.get("movement_points", 0)
+	state.movement_allowance = data.get("movement_allowance", 0)
+	state.immobilized = data.get("immobilized")
+	state.tacking = data.get("tacking")
+	state.min_ma = data.get("min_ma")
+	state.max_ma = data.get("max_ma")
+	state.towing = data.get("towing")
 	state.acceleration = data.get("acceleration", 0)
 	state.sail_state = data.get("sail_state", "MS")
 
@@ -181,6 +203,12 @@ static func deserialize(data: Dictionary) -> ShipState:
 		state.hull_current_hp.append(int(hp))
 
 	state.crew_morale = data.get("crew_morale", 4)
+	var crew_count_data = data.get("crew_count", [0, 0, 0])
+	state.crew_count.clear()
+	for ct in crew_count_data:
+		state.crew_count.append(int(ct))
+	state.marine_count = data.get("marine_count", 0)
+	
 	state.plotted_actions = data.get("plotted_actions", {
 		"movement": [],
 		"sail_change": "",
@@ -200,7 +228,7 @@ func initialize_from_scenario(data: Dictionary, ship_ref: Ship) -> void:
 	hex_position = Vector2i(data.get("position", {}).get("q", 0), data.get("position", {}).get("r", 0))
 	facing = data.get("facing", 0)
 	speed = data.get("speed", data.get("current_speed", 0))  # Support both "speed" and legacy "current_speed"
-	movement_points = data.get("movement_points", 0)
+	movement_allowance = data.get("movement_allowance", 0)
 	acceleration = data.get("acceleration", 0)
 
 	# Sail state

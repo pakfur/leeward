@@ -3,6 +3,9 @@ extends Node
 
 # Cached data
 var movement_allowance_table: Dictionary = {}
+var speed_change_table: Dictionary = {}
+var tacking_table: Dictionary = {}
+var turning_table: Dictionary = {}
 var ship_definitions: Dictionary = {}  # Dictionary[String, Ship]
 var scenarios: Dictionary = {}
 
@@ -37,6 +40,209 @@ func load_movement_allowance_table(file_path: String = "res://data/rules/movemen
 	else:
 		push_error("Movement allowance JSON must be a nested dictionary")
 		return false
+
+func load_speed_change_table(file_path: String = "res://data/rules/speed_change_table.json") -> bool:
+	"""Load the speed change lookup table from JSON"""
+	if not FileAccess.file_exists(file_path):
+		push_warning("Speed change table not found at: %s" % file_path)
+		return false
+
+	var file = FileAccess.open(file_path, FileAccess.READ)
+	if file == null:
+		push_error("Failed to open speed change table: %s" % file_path)
+		return false
+
+	var json = JSON.new()
+	var parse_result = json.parse(file.get_as_text())
+	file.close()
+
+	if parse_result != OK:
+		push_error("Failed to parse speed change JSON")
+		return false
+
+	if json.data is Dictionary:
+		speed_change_table = json.data
+		print("Loaded speed change table with %d change types" % speed_change_table.size())
+		return true
+	else:
+		push_error("Speed change JSON must be a dictionary")
+		return false
+
+func get_speed_change(change_type: String, maneuverability: String) -> int:
+	"""Look up speed change cost from the table.
+
+	change_type: 'acceleration' or 'deceleration'
+	maneuverability: 'a' through 'd' (case-insensitive)
+	"""
+	assert(
+		change_type == "acceleration" or change_type == "deceleration",
+		"Invalid change_type '%s'. Valid values: acceleration, deceleration" % change_type
+	)
+
+	var maneuverability_lower = maneuverability.to_lower()
+	assert(
+		maneuverability_lower == "a" or maneuverability_lower == "b" or
+		maneuverability_lower == "c" or maneuverability_lower == "d",
+		"Invalid maneuverability '%s'. Valid values: a, b, c, d" % maneuverability
+	)
+
+	if not speed_change_table.has(change_type):
+		push_error("Speed change table missing change_type: %s" % change_type)
+		return 0
+
+	var maneuverability_dict = speed_change_table[change_type]
+	if not maneuverability_dict is Dictionary:
+		push_error("Speed change table: change_type '%s' value is not a Dictionary" % change_type)
+		return 0
+
+	if not maneuverability_dict.has(maneuverability_lower):
+		push_error("Speed change table missing maneuverability '%s' for change_type '%s'" % [maneuverability_lower, change_type])
+		return 0
+
+	return int(maneuverability_dict[maneuverability_lower])
+
+func load_tacking_table(file_path: String = "res://data/rules/tacking_table.json") -> bool:
+	"""Load the tacking percentage lookup table from JSON"""
+	if not FileAccess.file_exists(file_path):
+		push_warning("Tacking table not found at: %s" % file_path)
+		return false
+
+	var file = FileAccess.open(file_path, FileAccess.READ)
+	if file == null:
+		push_error("Failed to open tacking table: %s" % file_path)
+		return false
+
+	var json = JSON.new()
+	var parse_result = json.parse(file.get_as_text())
+	file.close()
+
+	if parse_result != OK:
+		push_error("Failed to parse tacking table JSON")
+		return false
+
+	if json.data is Dictionary:
+		tacking_table = json.data
+		print("Loaded tacking table with %d maneuverability grades" % tacking_table.size())
+		return true
+	else:
+		push_error("Tacking table JSON must be a dictionary")
+		return false
+
+func get_tacking_percent(maneuverability: String, wind_speed: int) -> float:
+	"""Look up tacking failure percentage from the table.
+
+	maneuverability: 'a' through 'd' (case-insensitive)
+	wind_speed: 0-4 (0 returns 0.0; 1-4 indexes into the array)
+	"""
+	var maneuverability_lower = maneuverability.to_lower()
+	assert(
+		maneuverability_lower == "a" or maneuverability_lower == "b" or
+		maneuverability_lower == "c" or maneuverability_lower == "d",
+		"Invalid maneuverability '%s'. Valid values: a, b, c, d" % maneuverability
+	)
+
+	assert(
+		wind_speed >= 0 and wind_speed <= 4,
+		"Invalid wind_speed %d. Valid range: 0-4" % wind_speed
+	)
+
+	if wind_speed == 0:
+		return 0.0
+
+	if not tacking_table.has(maneuverability_lower):
+		push_error("Tacking table missing maneuverability: %s" % maneuverability_lower)
+		return 0.0
+
+	var wind_array = tacking_table[maneuverability_lower]
+	if not wind_array is Array:
+		push_error("Tacking table: maneuverability '%s' value is not an Array" % maneuverability_lower)
+		return 0.0
+
+	var index = wind_speed - 1
+	if index < 0 or index >= wind_array.size():
+		push_error("Tacking table: wind_speed %d out of range for maneuverability '%s'" % [wind_speed, maneuverability_lower])
+		return 0.0
+
+	return float(wind_array[index])
+
+func load_turning_table(file_path: String = "res://data/rules/turning_table.json") -> bool:
+	"""Load the turning table from JSON"""
+	if not FileAccess.file_exists(file_path):
+		push_warning("Turning table not found at: %s" % file_path)
+		return false
+
+	var file = FileAccess.open(file_path, FileAccess.READ)
+	if file == null:
+		push_error("Failed to open turning table: %s" % file_path)
+		return false
+
+	var json = JSON.new()
+	var parse_result = json.parse(file.get_as_text())
+	file.close()
+
+	if parse_result != OK:
+		push_error("Failed to parse turning table JSON")
+		return false
+
+	if json.data is Dictionary:
+		turning_table = json.data
+		print("Loaded turning table with %d direction types" % turning_table.size())
+		return true
+	else:
+		push_error("Turning table JSON must be a dictionary")
+		return false
+
+func get_min_heading_change_movement_required(direction: String, ship_speed: int, maneuverability: String) -> int:
+	"""Look up minimum forward movement required between heading changes.
+
+	direction: 'same_direction' or 'opposite_direction'
+	ship_speed: 1-10 (returns -1 if <= 0)
+	maneuverability: 'a' through 'd' (case-insensitive)
+	"""
+	if ship_speed <= 0:
+		return -1
+
+	assert(
+		direction == "same_direction" or direction == "opposite_direction",
+		"Invalid direction '%s'. Valid values: same_direction, opposite_direction" % direction
+	)
+
+	assert(
+		ship_speed >= 1 and ship_speed <= 10,
+		"Invalid ship_speed %d. Valid range: 1-10" % ship_speed
+	)
+
+	var maneuverability_lower = maneuverability.to_lower()
+	assert(
+		maneuverability_lower == "a" or maneuverability_lower == "b" or
+		maneuverability_lower == "c" or maneuverability_lower == "d",
+		"Invalid maneuverability '%s'. Valid values: a, b, c, d" % maneuverability
+	)
+
+	if not turning_table.has(direction):
+		push_error("Turning table missing direction: %s" % direction)
+		return 0
+
+	var speed_dict = turning_table[direction]
+	if not speed_dict is Dictionary:
+		push_error("Turning table: direction '%s' value is not a Dictionary" % direction)
+		return 0
+
+	var speed_key = str(ship_speed)
+	if not speed_dict.has(speed_key):
+		push_error("Turning table missing speed '%s' for direction '%s'" % [speed_key, direction])
+		return 0
+
+	var maneuverability_dict = speed_dict[speed_key]
+	if not maneuverability_dict is Dictionary:
+		push_error("Turning table: speed '%s' value is not a Dictionary" % speed_key)
+		return 0
+
+	if not maneuverability_dict.has(maneuverability_lower):
+		push_error("Turning table missing maneuverability '%s' for direction '%s', speed '%s'" % [maneuverability_lower, direction, speed_key])
+		return 0
+
+	return int(maneuverability_dict[maneuverability_lower])
 
 func load_ship_definitions(file_path: String = "res://data/rules/ships.json") -> bool:
 	"""Load ship definitions from JSON and convert to Ship instances"""

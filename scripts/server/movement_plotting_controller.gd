@@ -80,8 +80,7 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 		ship_state,
 		ship_state.hex_position,
 		ship_state.facing,
-		empty_path,
-		game_state.environment
+		empty_path
 	)
 	session.valid_next_hexes = valid_moves.valid_hexes
 	session.can_submit = valid_moves.can_submit
@@ -132,8 +131,7 @@ func handle_select_hex(session_id: String, expected_version: int, selected_hex: 
 		session.get_current_hex(),
 		session.get_current_facing(),
 		selected_hex,
-		session.plotted_path,
-		game_state.environment
+		session.plotted_path
 	)
 
 	if not validation.is_valid:
@@ -151,8 +149,7 @@ func handle_select_hex(session_id: String, expected_version: int, selected_hex: 
 		ship_state,
 		selected_hex,
 		validation.new_facing,
-		new_path,
-		game_state.environment
+		new_path
 	)
 
 	# Apply the selection
@@ -234,8 +231,7 @@ func handle_undo(session_id: String, expected_version: int, revert_to_version: i
 		ship_state,
 		new_hex,
 		new_facing,
-		path_after_undo,
-		game_state.environment
+		path_after_undo
 	)
 
 	# Apply the undo
@@ -314,8 +310,7 @@ func handle_submit_movement(session_id: String, expected_version: int, request_i
 	var ship_state = game_state.get_ship(session.ship_id)
 	var submission_check = movement_validator.validate_submission(
 		ship_state,
-		session.plotted_path,
-		game_state.environment
+		session.plotted_path
 	)
 
 	if not submission_check.can_submit:

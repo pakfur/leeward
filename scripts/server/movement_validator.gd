@@ -26,20 +26,18 @@ func _init(p_game_state: Node = null) -> void:
 ## - current_hex: Current position in the path
 ## - current_facing: Current facing direction (0-5)
 ## - path_so_far: Array[PlotStep] representing moves already made
-## - environment: Current environment state
 ##
 ## Returns: ValidMovesResult
 func calculate_valid_moves(
 	ship_state: ShipState,
 	current_hex: Vector2i,
 	current_facing: int,
-	path_so_far: Array[MovementTypes.PlotStep],
-	environment: EnvironmentState
+	path_so_far: Array[MovementTypes.PlotStep]
 ) -> MovementTypes.ValidMovesResult:
 	# TODO: Implement real movement rules
 	# For now, return mocked response based on ship's movement allowance
 
-	var ma = _get_movement_allowance(ship_state, current_facing, environment)
+	var ma = _get_movement_allowance(ship_state, current_facing, game_state.environment)
 	var moves_made = path_so_far.size()
 	var remaining_ma = max(0, ma - moves_made)
 
@@ -70,16 +68,14 @@ func validate_hex_selection(
 	current_hex: Vector2i,
 	current_facing: int,
 	selected_hex: Vector2i,
-	path_so_far: Array[MovementTypes.PlotStep],
-	environment: EnvironmentState
+	path_so_far: Array[MovementTypes.PlotStep]
 ) -> MovementTypes.HexValidationResult:
 	# Get valid moves and check if selected hex is among them
 	var valid_moves = calculate_valid_moves(
 		ship_state,
 		current_hex,
 		current_facing,
-		path_so_far,
-		environment
+		path_so_far
 	)
 
 	for valid_hex_option in valid_moves.valid_hexes.get_all_valid_moves():
@@ -105,8 +101,7 @@ func validate_hex_selection(
 ## Returns: SubmissionValidationResult
 func validate_submission(
 	ship_state: ShipState,
-	path: Array[MovementTypes.PlotStep],
-	environment: EnvironmentState
+	path: Array[MovementTypes.PlotStep]
 ) -> MovementTypes.SubmissionValidationResult:
 	# TODO: Implement real validation
 	# Check things like:

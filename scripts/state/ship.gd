@@ -8,7 +8,7 @@ var ship_id: String = ""
 var player_id: int = 0
 var ship_name: String = ""
 var ship_type: String = ""
-var crew_quality: String = "Trained"
+var crew_quality: String = "B" # A=Elite, B=Veteran, C-D=Trained, E=Green, F-G=Demoralized
 
 # Basic ship information (from type definition)
 var name: String = ""
