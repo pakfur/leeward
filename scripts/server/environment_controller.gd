@@ -67,7 +67,6 @@ func tick_environment(env_state: EnvironmentState, turn_number: int) -> void:
 func update_water_shader() -> void:
 	"""Update water shader parameters based on current environment state"""
 	if not hex_map or not game_state or not game_state.environment:
-		push_warning("EnvironmentController: Cannot update shader - missing references")
 		return
 
 	var ocean_material = hex_map.ocean_material as ShaderMaterial

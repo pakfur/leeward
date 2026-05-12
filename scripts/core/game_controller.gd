@@ -33,6 +33,9 @@ var playback_controller: MovementResolutionPlaybackController = null
 var hex_coord_label: Label = null
 var hex_coords_enabled: bool = false
 
+# When true, POST_COMBAT auto-advances immediately instead of awaiting 2-second timer
+var skip_post_combat_delay: bool = false
+
 func _ready() -> void:
 	print("GameController ready")
 
@@ -613,8 +616,8 @@ func _on_playback_completed() -> void:
 func _enter_post_combat_phase() -> void:
 	print("Post-combat phase - waiting for player to end turn")
 	# TODO: Add UI button to end turn
-	# For now, auto-advance after delay
-	await get_tree().create_timer(2.0).timeout
+	if not skip_post_combat_delay:
+		await get_tree().create_timer(2.0).timeout
 
 	if GameState.is_server and GameState.phase_controller:
 		GameState.phase_controller.advance_phase()
