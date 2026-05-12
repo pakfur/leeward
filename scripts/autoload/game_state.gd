@@ -37,6 +37,8 @@ var environment_controller: EnvironmentController = null
 var command_validator: CommandValidator = null
 var network_sync: NetworkSync = null
 var movement_plotting_controller: MovementPlottingController = null
+var movement_resolver: MovementResolver = null
+var stub_ai: StubAI = null
 
 # State objects (authoritative on server, read-only on client)
 var environment: EnvironmentState = null  # Environmental conditions
@@ -70,6 +72,8 @@ func _initialize_server_controllers() -> void:
 	network_sync = NetworkSync.new(self)
 	network_sync.is_server = is_server
 	movement_plotting_controller = MovementPlottingController.new(self)
+	movement_resolver = MovementResolver.new(self, environment_controller.rng)
+	stub_ai = StubAI.new(self)
 
 	# Add movement plotting controller to scene tree (it needs _process for timeouts)
 	add_child(movement_plotting_controller)

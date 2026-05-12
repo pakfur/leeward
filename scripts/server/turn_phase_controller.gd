@@ -5,6 +5,7 @@ extends Node
 
 signal phase_changed(new_phase: int)
 signal turn_changed(turn_number: int)
+signal resolution_log_ready(log: MovementTypes.ResolutionLog)
 
 enum GamePhase {
 	SETUP,
@@ -24,6 +25,7 @@ var current_phase: GamePhase = GamePhase.SETUP
 var current_turn: int = 0
 var players_ready: Array[bool] = [false, false]
 var is_server: bool = true  # Set to true on server, false on clients
+var _pending_resolution_log: MovementTypes.ResolutionLog = null
 
 # Reference to game state (authoritative on server)
 var game_state: Node = null
@@ -107,6 +109,9 @@ func _enter_planning_phase() -> void:
 	players_ready = [false, false]
 	print("[Server] Phase: PLANNING - Players plot their actions")
 
+	if game_state.stub_ai:
+		game_state.stub_ai.plot_all_ai_ships()
+
 func player_submit_plan(player_id: int) -> bool:
 	"""SERVER ONLY: Validate and accept player plan submission"""
 	if not is_server:
@@ -132,12 +137,35 @@ func player_submit_plan(player_id: int) -> bool:
 	return true
 
 func _enter_movement_resolution_phase() -> void:
-	"""SERVER ONLY: Enter movement resolution phase"""
+	"""SERVER ONLY: Enter movement resolution phase.
+	Runs the resolver and emits resolution_log_ready. Does NOT auto-advance.
+	The view layer plays back the log and calls on_playback_completed() when done."""
 	current_phase = GamePhase.MOVEMENT_RESOLUTION
 	phase_changed.emit(current_phase)
 	print("[Server] Phase: MOVEMENT_RESOLUTION")
-	# Movement resolution happens via ShipStateController
-	# This just sets the phase
+
+	if game_state.movement_resolver and game_state.environment:
+		var all_ships = game_state.get_all_ships()
+		var log = game_state.movement_resolver.run(all_ships, game_state.environment)
+		_pending_resolution_log = log
+		Trace.trace_log("TurnPhase", "MOVEMENT_RESOLUTION resolver done", {"turn": log.turn, "ships": log.ship_results.size()})
+		resolution_log_ready.emit(log)
+	else:
+		advance_phase()
+
+
+func on_playback_completed() -> void:
+	"""Called by the view layer after resolution playback finishes.
+	Applies results to state and advances to the next phase."""
+	if current_phase != GamePhase.MOVEMENT_RESOLUTION:
+		push_error("TurnPhaseController: on_playback_completed called outside MOVEMENT_RESOLUTION")
+		return
+	if _pending_resolution_log:
+		var all_ships = game_state.get_all_ships()
+		game_state.movement_resolver.apply_results(_pending_resolution_log, all_ships)
+		Trace.trace_log("TurnPhase", "MOVEMENT_RESOLUTION results applied", _pending_resolution_log.to_dict())
+		_pending_resolution_log = null
+	advance_phase()
 
 func _enter_combat_resolution_phase() -> void:
 	"""SERVER ONLY: Enter combat resolution phase"""

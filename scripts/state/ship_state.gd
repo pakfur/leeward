@@ -23,6 +23,8 @@ var ship_type: String:
 @export var speed: int = 0  # hexes per turn
 @export var immobilized: bool = false  # ship cannot move
 @export var tacking: bool = false # user has indicated they are tacking
+@export var fouled_with: String = ""  # ship_id of fouled partner, empty if not fouled
+@export var collision_this_turn: bool = false  # set during resolution, cleared at turn start
 @export var movement_allowance: int = 0 # current turns movement points
 @export var min_ma: int = 0 # current ma + any deceleration considerations
 @export var max_ma: int = 0 # current speed + acceleration and ma considerations
@@ -150,6 +152,8 @@ func serialize() -> Dictionary:
 		"speed": speed,
 		"immobilized": immobilized,
 		"tacking": tacking,
+		"fouled_with": fouled_with,
+		"collision_this_turn": collision_this_turn,
 		"movement_allowance": movement_allowance,
 		"min_ma": min_ma,
 		"max_ma": max_ma,
@@ -182,8 +186,10 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.facing = data.get("facing", 0)
 	state.speed = data.get("speed", 0)
 	state.movement_allowance = data.get("movement_allowance", 0)
-	state.immobilized = data.get("immobilized")
-	state.tacking = data.get("tacking")
+	state.immobilized = data.get("immobilized", false)
+	state.tacking = data.get("tacking", false)
+	state.fouled_with = data.get("fouled_with", "")
+	state.collision_this_turn = data.get("collision_this_turn", false)
 	state.min_ma = data.get("min_ma")
 	state.max_ma = data.get("max_ma")
 	state.towing = data.get("towing")
@@ -263,8 +269,10 @@ func initialize_from_scenario(data: Dictionary, ship_ref: Ship) -> void:
 
 	print("ShipState initialized: %s (%s) at %s facing %d, speed %d" % [ship_name, ship_type, hex_position, facing, speed])
 
+func clear_turn_flags() -> void:
+	collision_this_turn = false
+
 func clear_plot() -> void:
-	"""Clear all plotted actions"""
 	plotted_actions = {
 		"movement": [],
 		"sail_change": "",

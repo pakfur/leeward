@@ -26,6 +26,9 @@ var movement_client: MovementPlottingClient = null
 var hex_overlay: Node3D = null  # HexOverlay instance
 var submitted_paths: Dictionary = {}  # ship_id -> Array[PlotStep]
 
+# Resolution playback
+var playback_controller: MovementResolutionPlaybackController = null
+
 # Debug hex coordinate display
 var hex_coord_label: Label = null
 var hex_coords_enabled: bool = false
@@ -52,6 +55,10 @@ func _ready() -> void:
 	GameState.phase_changed.connect(_on_phase_changed)
 	if planning_panel:
 		planning_panel.plan_submitted.connect(_on_player_plan_submitted)
+
+	# Connect resolution log signal for playback
+	if GameState.phase_controller:
+		GameState.phase_controller.resolution_log_ready.connect(_on_resolution_log_ready)
 
 	# Set hex_map reference for environment controller (for water shader updates)
 	if GameState.environment_controller and hex_map:
@@ -559,25 +566,49 @@ func _calculate_blocked_hexes(valid_hexes: MovementTypes.ValidNextHexes,
 func _resolve_movement() -> void:
 	if not GameState.is_server:
 		print("[Client] Waiting for movement resolution from server")
-		_sync_all_views()
-		await get_tree().create_timer(1.0).timeout
 		return
 
-	print("[Server] Resolving movement...")
+	# Resolution is now driven by TurnPhaseController:
+	# 1. Phase controller runs resolver and emits resolution_log_ready
+	# 2. _on_resolution_log_ready creates playback controller and animates
+	# 3. On playback_completed, we apply results and advance phase
+	# Nothing to do here — the signal handler does the work.
+	print("[Server] MOVEMENT_RESOLUTION phase entered, awaiting playback...")
 
-	# Use ship controller to resolve movement
-	if GameState.ship_controller:
-		GameState.ship_controller.resolve_all_movement()
 
-	# Sync all views to state after resolution
-	_sync_all_views()
+func _on_resolution_log_ready(log: MovementTypes.ResolutionLog) -> void:
+	print("[Playback] Resolution log received: %d ships, %d impulses" % [log.ship_results.size(), log.max_impulses])
 
-	# For now, just advance phase
-	await get_tree().create_timer(1.0).timeout
+	# Clear hex overlay from planning
+	if hex_overlay:
+		hex_overlay.clear_everything()
 
-	# Advance to next phase
+	# Create playback controller
+	if playback_controller and playback_controller.is_inside_tree():
+		playback_controller.queue_free()
+
+	var hex_grid_ref: HexGrid = hex_map.get_hex_grid() if hex_map else HexGrid.new()
+	playback_controller = MovementResolutionPlaybackController.new(hex_grid_ref, ship_views, 0)
+	playback_controller.name = "PlaybackController"
+	add_child(playback_controller)
+
+	playback_controller.playback_completed.connect(_on_playback_completed, CONNECT_ONE_SHOT)
+	playback_controller.play(log)
+
+
+func _on_playback_completed() -> void:
+	print("[Playback] Playback complete, applying results and advancing")
+
+	# Clean up playback controller
+	if playback_controller:
+		playback_controller.queue_free()
+		playback_controller = null
+
+	# Sync views to the updated state (results applied by phase controller)
 	if GameState.phase_controller:
-		GameState.phase_controller.advance_phase()
+		GameState.phase_controller.on_playback_completed()
+
+	_sync_all_views()
 
 func _enter_post_combat_phase() -> void:
 	print("Post-combat phase - waiting for player to end turn")
