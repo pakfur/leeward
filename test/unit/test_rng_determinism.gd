@@ -49,6 +49,46 @@ func test_rng_seeded_from_scenario_matches_expected_first_value() -> void:
 func test_zero_seed_is_valid() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 0
-	# Just confirm no crash — zero is the default fallback when scenario omits seed.
 	var _val := rng.randi()
 	assert_true(true, "Zero seed should not crash")
+
+
+func _run_tick_sequence(seed_value: int, ticks: int) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var env := EnvironmentState.new()
+	env.wind_direction = 0
+	env.wind_speed = 2
+	env.wind_speed_change = "steady"
+	env.region = "oceanic"
+	var history: Array[EnvironmentState] = []
+	var results := []
+	for turn in range(1, ticks + 1):
+		env.tick_environment(turn, rng, history)
+		results.append({"dir": env.wind_direction, "spd": env.wind_speed})
+	return results
+
+
+func test_tick_environment_deterministic_with_same_seed() -> void:
+	var run_a := _run_tick_sequence(42, 10)
+	var run_b := _run_tick_sequence(42, 10)
+	for i in range(run_a.size()):
+		assert_eq(run_a[i].dir, run_b[i].dir, "Wind direction must match at tick %d" % i)
+		assert_eq(run_a[i].spd, run_b[i].spd, "Wind speed must match at tick %d" % i)
+
+
+func test_tick_environment_diverges_with_different_seeds() -> void:
+	var run_a := _run_tick_sequence(42, 20)
+	var run_b := _run_tick_sequence(99, 20)
+	var diverged := false
+	for i in range(run_a.size()):
+		if run_a[i].dir != run_b[i].dir or run_a[i].spd != run_b[i].spd:
+			diverged = true
+			break
+	assert_true(diverged, "Different seeds should produce different environment sequences")
+
+
+func test_environment_controller_has_no_private_rng() -> void:
+	var ctrl := EnvironmentController.new()
+	assert_false("rng" in ctrl, "EnvironmentController should not have a private rng property")
+	ctrl.free()

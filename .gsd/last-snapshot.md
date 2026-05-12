@@ -1,4 +1,4 @@
-# GSD context snapshot (2026-05-12T15:03:58.536Z)
+# GSD context snapshot (2026-05-12T15:38:12.829Z)
 
 ## Active context
 Active: M001 / S02 / T02 - Migrate EnvironmentController to consume GameState.rng

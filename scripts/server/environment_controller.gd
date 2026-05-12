@@ -1,11 +1,10 @@
 class_name EnvironmentController
 extends Node
 ## EnvironmentController - Manages environment state and visuals
-## Handles RNG for environment changes and updates water shader based on conditions
+## Uses GameState.rng for deterministic environment changes; updates water shader based on conditions
 
 signal environment_updated()
 
-var rng: RandomNumberGenerator
 var is_server: bool = true
 var hex_map: Node3D = null  # Reference to HexMap for accessing ocean_material
 var game_state: Node = null  # Reference to GameState for accessing environment
@@ -23,14 +22,8 @@ const HEX_DIRECTIONS = {
 func _init(state: Node = null, map: Node3D = null) -> void:
 	game_state = state if state else GameState
 	hex_map = map
-	rng = RandomNumberGenerator.new()
 
 func _ready():
-	if is_server:
-		rng = RandomNumberGenerator.new()
-		rng.seed = Time.get_ticks_msec()
-		print("EnvironmentController RNG seed: ", rng.seed)
-
 	# Connect to phase changes
 	if game_state:
 		game_state.phase_changed.connect(_on_phase_changed)
@@ -59,7 +52,7 @@ func tick_environment(env_state: EnvironmentState, turn_number: int) -> void:
 
 	# Pass results to the Resource's deterministic methods
 	# Include history array (passed by reference, no performance cost)
-	env_state.tick_environment(turn_number, rng, history)
+	env_state.tick_environment(turn_number, game_state.rng, history)
 
 	# After environment state is updated, update the shader
 	update_water_shader()
