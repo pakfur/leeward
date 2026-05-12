@@ -75,7 +75,7 @@ func _initialize_server_controllers() -> void:
 	network_sync = NetworkSync.new(self)
 	network_sync.is_server = is_server
 	movement_plotting_controller = MovementPlottingController.new(self)
-	movement_resolver = MovementResolver.new(self, environment_controller.rng)
+	movement_resolver = MovementResolver.new(self)
 	stub_ai = StubAI.new(self)
 
 	# Add movement plotting controller to scene tree (it needs _process for timeouts)

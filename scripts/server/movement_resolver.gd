@@ -6,13 +6,23 @@ extends RefCounted
 
 var game_state: Node = null
 var hex_grid: HexGrid = null
-var rng: RandomNumberGenerator = null
+var _explicit_rng: RandomNumberGenerator = null
+
+var rng: RandomNumberGenerator:
+	get:
+		if _explicit_rng:
+			return _explicit_rng
+		if game_state and game_state.get("rng"):
+			return game_state.rng
+		if not _explicit_rng:
+			_explicit_rng = RandomNumberGenerator.new()
+		return _explicit_rng
 
 
 func _init(p_game_state: Node = null, p_rng: RandomNumberGenerator = null) -> void:
 	game_state = p_game_state if p_game_state else GameState
 	hex_grid = HexGrid.new()
-	rng = p_rng if p_rng else RandomNumberGenerator.new()
+	_explicit_rng = p_rng
 
 
 ## ============================================================================

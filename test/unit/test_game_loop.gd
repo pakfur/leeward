@@ -29,8 +29,9 @@ func before_each() -> void:
 		GameState.movement_plotting_controller.ship_sessions.clear()
 
 	# Seed all RNGs for determinism in tests
-	if GameState.environment_controller:
-		GameState.environment_controller.rng.seed = 100
+	if not GameState.rng:
+		GameState.rng = RandomNumberGenerator.new()
+	GameState.rng.seed = 100
 
 	var test_rng = RandomNumberGenerator.new()
 	test_rng.seed = 200
@@ -250,8 +251,9 @@ func test_deterministic_resolution_with_same_seed() -> void:
 			GameState.movement_plotting_controller.ship_sessions.clear()
 
 		# Deterministic seeds — same for both runs
-		if GameState.environment_controller:
-			GameState.environment_controller.rng.seed = 500
+		if not GameState.rng:
+			GameState.rng = RandomNumberGenerator.new()
+		GameState.rng.seed = 500
 
 		var test_rng = RandomNumberGenerator.new()
 		test_rng.seed = 600

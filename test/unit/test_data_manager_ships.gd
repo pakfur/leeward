@@ -138,11 +138,11 @@ func test_sol_74_hull_hp() -> void:
 
 func test_get_total_crew_frigate() -> void:
 	var def = dm.get_ship_definition("frigate_38")
-	assert_eq(def.get_total_crew(), 9, "Frigate total crew: 3+3+3 = 9")
+	assert_eq(def.get_total_crew(), 12, "Frigate total crew: 3+3+3+3 = 12")
 
 func test_get_total_crew_sol() -> void:
 	var def = dm.get_ship_definition("ship_of_line_74")
-	assert_eq(def.get_total_crew(), 19, "SOL total crew: 6+6+7 = 19")
+	assert_eq(def.get_total_crew(), 26, "SOL total crew: 6+6+7+7 = 26")
 
 func test_get_total_rigging_hp_frigate() -> void:
 	var def = dm.get_ship_definition("frigate_38")
