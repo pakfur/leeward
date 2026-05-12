@@ -2,6 +2,8 @@
 
 Guidance for Claude Code working on the Leeward project.
 
+For human-facing developer setup (prerequisites, Godot MCP bridge, contribution flow), see `CONTRIBUTING.md`. This file is Claude-facing.
+
 ## Project Overview
 
 Leeward is a Godot 4.6 naval sailing game (Age of Sail) using the Forward Plus renderer. It's a turn-based tactical game where players command ships on a hex grid, plotting movement and combat across a 10-phase turn cycle. Architecture is server-authoritative with a State-Controller-View pattern.
@@ -70,7 +72,7 @@ addons/           # godot_mcp (MCP server addon), GUT testing framework
 
 - **GameState** (`scripts/autoload/game_state.gd`): Central state container. Holds all ships, environment, turn/phase, state history. Creates and owns all server controllers in `_ready()`.
 - **DataManager** (`scripts/autoload/data_manager.gd`): Loads and caches JSON data (movement tables, ship definitions, scenarios). Provides lookup methods.
-- **Trace** (`scripts/autoload/trace.gd`): Lightweight tracing/logging autoload — prefer over `print` in game code; covered by `test_trace.gd`.
+- **Trace** (`scripts/autoload/trace.gd`): Lightweight tracing/logging autoload. **Required** in runtime code — `.claude/hooks/block_raw_print.py` blocks raw `print()` at Edit/Write time. Exempt: `scripts/util/`, `scripts/utils/`, `scripts/autoload/trace.gd`, `scripts/autoload/mcp_server.gd`, `addons/`. Per-line bypass: trailing `# allow-print`. Covered by `test_trace.gd`.
 
 Note: `scripts/autoload/mcp_server.gd` lives in this folder but is **not** an autoload — it's wired through the `godot_mcp` editor plugin.
 
@@ -79,6 +81,8 @@ Note: `scripts/autoload/mcp_server.gd` lives in this folder but is **not** an au
 SETUP → ENVIRONMENT → PLANNING → MOVEMENT_RESOLUTION → COMBAT_RESOLUTION → DRIFT_CALCULATION → STATUS_ADJUSTMENT → MORALE_CHECK → MESSAGE_DELIVERY → POST_COMBAT → END_TURN → (back to ENVIRONMENT)
 
 Managed by `TurnPhaseController`. Currently ENVIRONMENT, PLANNING, and MOVEMENT_RESOLUTION are implemented; others are stubbed.
+
+When implementing a stubbed phase, invoke the `phase-implementer` skill (`.claude/skills/phase-implementer/`). It codifies the SCV pattern (server-authority guard, `game_state.rng`, automatic state-history snapshots, GUT test template) grounded in the three implemented phases.
 
 ### Movement Plotting Protocol
 
@@ -101,6 +105,8 @@ Session-based async system in `MovementPlottingController`/`MovementPlottingSess
 - Sail states: `fs` (fighting), `ms` (maneuvering), `ps` (plain), `ns` (no sail)
 
 Access via `DataManager.get_movement_allowance(speed_type: String, wind_speed: int, wind_facing: String, sail_state: String, rigging_quality: int)`. Note the argument order does **not** match the JSON nesting order, and `wind_speed`/`rigging_quality` are `int` at the API even though the JSON keys are strings.
+
+Validate after edits: `python3 .claude/skills/validate-rule-table/scripts/validate.py`. Catches typos (e.g. `"FS"` vs `"fs"`) that would silently return 0 at lookup time instead of erroring.
 
 Other rule lookups on `DataManager`: `get_speed_change(change_type, maneuverability)`, `get_tacking_percent(maneuverability, wind_speed)`, `get_min_heading_change_movement_required(direction, ship_speed, maneuverability)`.
 
