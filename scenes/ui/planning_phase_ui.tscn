@@ -104,6 +104,14 @@ text = "Cancel"
 [node name="HSeparator3" type="HSeparator" parent="VBoxContainer"]
 layout_mode = 2
 
+[node name="EndPlanningButton" type="Button" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 36)
+theme_override_font_sizes/font_size = 14
+disabled = true
+text = "End Planning (0/0)"
+
 [node name="InstructionsLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2

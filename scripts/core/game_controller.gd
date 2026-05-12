@@ -347,6 +347,7 @@ func _enter_planning_phase() -> void:
 		current_planning_ui.undo_all_pressed.connect(_on_plotting_undo_all_pressed)
 		current_planning_ui.submit_pressed.connect(_on_plotting_submit_pressed)
 		current_planning_ui.cancel_pressed.connect(_on_plotting_cancel_pressed)
+		current_planning_ui.end_planning_pressed.connect(_on_end_planning_pressed)
 
 	# Load into context panel (must be done before setup to ensure @onready nodes are available)
 	if context_panel:
@@ -381,7 +382,7 @@ func _on_planning_ship_selected(ship_id: String) -> void:
 	_select_ship(ship_id)
 
 func _on_planning_action_toggled(ship_id: String, action_type: String, active: bool) -> void:
-	print("Planning UI: Action '%s' toggled to %s for ship %s" % [action_type, active, ship_id])
+	Trace.trace_log("GameController", "Action '%s' toggled to %s for ship %s" % [action_type, active, ship_id])
 
 	# Store action state locally
 	if not selected_actions.has(ship_id):
@@ -391,6 +392,19 @@ func _on_planning_action_toggled(ship_id: String, action_type: String, active: b
 	# Handle movement action
 	if action_type == "movement" and movement_client:
 		if active:
+			# If re-plotting a submitted ship, clear the old submission first
+			if current_planning_ui and current_planning_ui.is_ship_submitted(ship_id):
+				submitted_paths.erase(ship_id)
+				current_planning_ui.mark_ship_unsubmitted(ship_id)
+				# Clear the submitted path overlay
+				if hex_overlay:
+					hex_overlay.clear_submitted_path(ship_id)
+				# Clear plotted_actions on the ship state
+				var ship_state = GameState.get_ship(ship_id)
+				if ship_state:
+					ship_state.plotted_actions.movement = []
+				Trace.trace_log("GameController", "Re-plotting ship %s — cleared previous submission" % ship_id)
+
 			var ship_state = GameState.get_ship(ship_id)
 			if ship_state:
 				movement_client.start_plotting(ship_state.player_id, ship_id)
@@ -398,22 +412,28 @@ func _on_planning_action_toggled(ship_id: String, action_type: String, active: b
 			if movement_client.is_plotting_ship(ship_id):
 				movement_client.cancel()
 
-func _on_player_plan_submitted() -> void:
-	print("Player submitted plan")
+func _on_end_planning_pressed() -> void:
+	# Double-check all ships are submitted
+	if current_planning_ui and not current_planning_ui.are_all_ships_submitted():
+		push_warning("End Planning pressed but not all ships submitted")
+		return
 
-	# Cancel any active plotting session
+	Trace.trace_log("GameController", "End Planning pressed — all player-0 ships submitted")
+
+	# Cancel any stale plotting session
 	if movement_client and movement_client.is_plotting():
 		movement_client.cancel()
 
-	# Submit plan to server (via phase controller if server, or via network if client)
+	# Submit plan to server
 	if GameState.is_server and GameState.phase_controller:
 		GameState.phase_controller.player_submit_plan(0)
-
-		# TODO: Wait for AI or submit AI plan immediately
+		# Stub: submit player 1 immediately (StubAI will replace this in S08)
 		GameState.phase_controller.player_submit_plan(1)
 	else:
-		# TODO: Send plan submission to server via network
-		push_warning("Client plan submission not yet implemented - needs network layer")
+		push_warning("Client plan submission not yet implemented — needs network layer")
+
+func _on_player_plan_submitted() -> void:
+	_on_end_planning_pressed()
 
 # ============================================================================
 # Movement Plotting UI Callbacks
@@ -444,7 +464,7 @@ func _on_plotting_cancel_pressed() -> void:
 # ============================================================================
 
 func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_val: int) -> void:
-	print("Plotting started for ship %s" % ship_id)
+	Trace.trace_log("GameController", "Plotting started for ship %s" % ship_id)
 	if hex_overlay and hex_map:
 		var hex_grid = hex_map.get_hex_grid()
 		var vnh = valid_hexes as MovementTypes.ValidNextHexes
@@ -510,7 +530,7 @@ func _on_undo_complete(plotted_path: Array, valid_hexes: Variant, can_submit_val
 		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
 
 func _on_plotting_cancelled(ship_id: String) -> void:
-	print("Plotting cancelled for ship %s" % ship_id)
+	Trace.trace_log("GameController", "Plotting cancelled for ship %s" % ship_id)
 	if hex_overlay:
 		hex_overlay.clear_all()
 
@@ -518,7 +538,7 @@ func _on_plotting_cancelled(ship_id: String) -> void:
 		current_planning_ui.hide_plotting_controls()
 
 func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
-	print("Movement submitted for ship %s: %d steps" % [ship_id, final_path.size()])
+	Trace.trace_log("GameController", "Movement submitted for ship %s: %d steps" % [ship_id, final_path.size()])
 
 	# Store submitted path
 	submitted_paths[ship_id] = final_path
@@ -530,10 +550,10 @@ func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
 
 	if current_planning_ui:
 		current_planning_ui.hide_plotting_controls()
-		current_planning_ui.deactivate_movement_button(ship_id)
+		current_planning_ui.mark_ship_submitted(ship_id)
 
 func _on_plotting_error(error_code: String, message: String) -> void:
-	print("Plotting error: %s - %s" % [error_code, message])
+	Trace.trace_log("GameController", "Plotting error: %s - %s" % [error_code, message])
 
 
 func _calculate_blocked_hexes(valid_hexes: MovementTypes.ValidNextHexes,
