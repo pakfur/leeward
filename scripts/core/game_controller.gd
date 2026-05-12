@@ -463,7 +463,7 @@ func _on_plotting_cancel_pressed() -> void:
 # Movement Plotting Response Handlers
 # ============================================================================
 
-func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_val: int) -> void:
+func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_val: int, is_tacking: bool = false) -> void:
 	Trace.trace_log("GameController", "Plotting started for ship %s" % ship_id)
 	if hex_overlay and hex_map:
 		var hex_grid = hex_map.get_hex_grid()
@@ -480,8 +480,9 @@ func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_va
 		var ship_state = GameState.get_ship(ship_id)
 		var total_ma = ship_state.get_movement_allowance() if ship_state else remaining_ma_val
 		current_planning_ui.show_plotting_controls(ship_id, remaining_ma_val, total_ma)
+		_update_tacking_display(is_tacking)
 
-func _on_hex_selected(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int) -> void:
+func _on_hex_selected(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int, is_tacking: bool = false) -> void:
 	if hex_overlay and hex_map:
 		var hex_grid = hex_map.get_hex_grid()
 		var vnh = valid_hexes as MovementTypes.ValidNextHexes
@@ -504,8 +505,9 @@ func _on_hex_selected(plotted_path: Array, valid_hexes: Variant, can_submit_val:
 
 	if current_planning_ui:
 		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
+		_update_tacking_display(is_tacking)
 
-func _on_undo_complete(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int) -> void:
+func _on_undo_complete(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int, is_tacking: bool = false) -> void:
 	if hex_overlay and hex_map:
 		var hex_grid = hex_map.get_hex_grid()
 		var vnh = valid_hexes as MovementTypes.ValidNextHexes
@@ -528,6 +530,7 @@ func _on_undo_complete(plotted_path: Array, valid_hexes: Variant, can_submit_val
 
 	if current_planning_ui:
 		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
+		_update_tacking_display(is_tacking)
 
 func _on_plotting_cancelled(ship_id: String) -> void:
 	Trace.trace_log("GameController", "Plotting cancelled for ship %s" % ship_id)
@@ -554,6 +557,27 @@ func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
 
 func _on_plotting_error(error_code: String, message: String) -> void:
 	Trace.trace_log("GameController", "Plotting error: %s - %s" % [error_code, message])
+
+
+func _update_tacking_display(is_tacking: bool) -> void:
+	if not current_planning_ui or not movement_client:
+		return
+	if not is_tacking:
+		current_planning_ui.update_tacking_state(false, 0.0)
+		return
+
+	var ship_state = GameState.get_ship(movement_client.active_ship_id)
+	if not ship_state or not ship_state.ship:
+		current_planning_ui.update_tacking_state(false, 0.0)
+		return
+
+	var maneuverability = ship_state.ship.maneuverability.to_lower()
+	var wind_speed = GameState.environment.wind_speed if GameState.environment else 2
+	var probability = DataManager.get_tacking_percent(maneuverability, wind_speed)
+	Trace.trace_log("GameController", "Tacking attempt: %s, maneuverability=%s, wind_speed=%d, probability=%.0f%%" % [
+		ship_state.ship_id, maneuverability, wind_speed, probability * 100.0
+	])
+	current_planning_ui.update_tacking_state(true, probability)
 
 
 func _calculate_blocked_hexes(valid_hexes: MovementTypes.ValidNextHexes,

@@ -72,6 +72,15 @@ text = "Path: (none)"
 horizontal_alignment = 1
 autowrap_mode = 2
 
+[node name="TackingLabel" type="Label" parent="VBoxContainer/PlottingControls"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(1, 0.8, 0.2, 1)
+text = "⚓ Tacking: 0%"
+horizontal_alignment = 1
+
 [node name="ButtonRow" type="HBoxContainer" parent="VBoxContainer/PlottingControls"]
 layout_mode = 2
 theme_override_constants/separation = 4

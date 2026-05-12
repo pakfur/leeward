@@ -89,6 +89,9 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 	sessions[session.session_id] = session
 	ship_sessions[ship_id] = session.session_id
 
+	# Update session tacking state
+	session.is_tacking_attempt = valid_moves.is_tacking_attempt
+
 	# Build response
 	var response = MovementTypes.PlottingStartedResponse.new()
 	response.request_id = request_id
@@ -99,6 +102,7 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 	response.valid_next_hexes = session.valid_next_hexes
 	response.can_submit = session.can_submit
 	response.remaining_ma = valid_moves.remaining_ma
+	response.is_tacking_attempt = session.is_tacking_attempt
 
 	session.cache_response(request_id, response)
 	session_started.emit(session.session_id, ship_id)
@@ -162,6 +166,7 @@ func handle_select_hex(session_id: String, expected_version: int, selected_hex: 
 		move_type,
 		new_valid_moves.remaining_ma
 	)
+	session.is_tacking_attempt = new_valid_moves.is_tacking_attempt
 
 	# Build response
 	var response = MovementTypes.HexSelectedResponse.new()
@@ -172,6 +177,7 @@ func handle_select_hex(session_id: String, expected_version: int, selected_hex: 
 	response.valid_next_hexes = session.valid_next_hexes
 	response.can_submit = session.can_submit
 	response.remaining_ma = new_valid_moves.remaining_ma
+	response.is_tacking_attempt = session.is_tacking_attempt
 
 	session.cache_response(request_id, response)
 	session_updated.emit(session_id, session.version)
@@ -244,6 +250,7 @@ func handle_undo(session_id: String, expected_version: int, revert_to_version: i
 		new_valid_moves.can_submit,
 		new_valid_moves.remaining_ma
 	)
+	session.is_tacking_attempt = new_valid_moves.is_tacking_attempt
 
 	# Build response
 	var response = MovementTypes.UndoCompleteResponse.new()
@@ -254,6 +261,7 @@ func handle_undo(session_id: String, expected_version: int, revert_to_version: i
 	response.valid_next_hexes = session.valid_next_hexes
 	response.can_submit = session.can_submit
 	response.remaining_ma = new_valid_moves.remaining_ma
+	response.is_tacking_attempt = session.is_tacking_attempt
 
 	session.cache_response(request_id, response)
 	session_updated.emit(session_id, session.version)

@@ -115,6 +115,7 @@ class ValidMovesResult extends RefCounted:
 	var valid_hexes: ValidNextHexes = null
 	var can_submit: bool = true
 	var remaining_ma: int = 0
+	var is_tacking_attempt: bool = false
 
 	func _init() -> void:
 		valid_hexes = ValidNextHexes.new()
@@ -123,7 +124,8 @@ class ValidMovesResult extends RefCounted:
 		return {
 			"valid_hexes": valid_hexes.to_dict() if valid_hexes else {},
 			"can_submit": can_submit,
-			"remaining_ma": remaining_ma
+			"remaining_ma": remaining_ma,
+			"is_tacking_attempt": is_tacking_attempt
 		}
 
 
@@ -225,6 +227,7 @@ class PlottingStartedResponse extends PlottingResponse:
 	var valid_next_hexes: ValidNextHexes = null
 	var can_submit: bool = true
 	var remaining_ma: int = 0
+	var is_tacking_attempt: bool = false
 
 	func _init() -> void:
 		type = "PLOTTING_STARTED"
@@ -239,7 +242,8 @@ class PlottingStartedResponse extends PlottingResponse:
 			"origin_hex": {"q": origin_hex.x, "r": origin_hex.y},
 			"valid_next_hexes": valid_next_hexes.to_dict() if valid_next_hexes else {},
 			"can_submit": can_submit,
-			"remaining_ma": remaining_ma
+			"remaining_ma": remaining_ma,
+			"is_tacking_attempt": is_tacking_attempt
 		})
 		return base
 
@@ -252,6 +256,7 @@ class HexSelectedResponse extends PlottingResponse:
 	var valid_next_hexes: ValidNextHexes = null
 	var can_submit: bool = true
 	var remaining_ma: int = 0
+	var is_tacking_attempt: bool = false
 
 	func _init() -> void:
 		type = "HEX_SELECTED"
@@ -270,7 +275,8 @@ class HexSelectedResponse extends PlottingResponse:
 			"plotted_path": path_array,
 			"valid_next_hexes": valid_next_hexes.to_dict() if valid_next_hexes else {},
 			"can_submit": can_submit,
-			"remaining_ma": remaining_ma
+			"remaining_ma": remaining_ma,
+			"is_tacking_attempt": is_tacking_attempt
 		})
 		return base
 
@@ -283,6 +289,7 @@ class UndoCompleteResponse extends PlottingResponse:
 	var valid_next_hexes: ValidNextHexes = null
 	var can_submit: bool = true
 	var remaining_ma: int = 0
+	var is_tacking_attempt: bool = false
 
 	func _init() -> void:
 		type = "UNDO_COMPLETE"
@@ -301,7 +308,8 @@ class UndoCompleteResponse extends PlottingResponse:
 			"plotted_path": path_array,
 			"valid_next_hexes": valid_next_hexes.to_dict() if valid_next_hexes else {},
 			"can_submit": can_submit,
-			"remaining_ma": remaining_ma
+			"remaining_ma": remaining_ma,
+			"is_tacking_attempt": is_tacking_attempt
 		})
 		return base
 

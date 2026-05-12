@@ -5,9 +5,9 @@ extends RefCounted
 ## Manages the request/response cycle with MovementPlottingController.
 ## Currently calls handle_*() directly for single-player; will use RPC for multiplayer.
 
-signal plotting_started(ship_id: String, valid_hexes: Array, remaining_ma: int)
-signal hex_selected(plotted_path: Array, valid_hexes: Array, can_submit: bool, remaining_ma: int)
-signal undo_complete(plotted_path: Array, valid_hexes: Array, can_submit: bool, remaining_ma: int)
+signal plotting_started(ship_id: String, valid_hexes: Array, remaining_ma: int, is_tacking_attempt: bool)
+signal hex_selected(plotted_path: Array, valid_hexes: Array, can_submit: bool, remaining_ma: int, is_tacking_attempt: bool)
+signal undo_complete(plotted_path: Array, valid_hexes: Array, can_submit: bool, remaining_ma: int, is_tacking_attempt: bool)
 signal plotting_cancelled(ship_id: String)
 signal movement_submitted(ship_id: String, final_path: Array)
 signal plotting_error(error_code: String, message: String)
@@ -23,6 +23,7 @@ var valid_next_hexes: MovementTypes.ValidNextHexes = null
 var plotted_path: Array = []  # Array[MovementTypes.PlotStep]
 var can_submit: bool = false
 var remaining_ma: int = 0
+var is_tacking_attempt: bool = false
 
 
 func _init(controller: MovementPlottingController) -> void:
@@ -45,8 +46,9 @@ func start_plotting(player_id: int, ship_id: String) -> void:
 	plotted_path = []
 	can_submit = r.can_submit
 	remaining_ma = r.remaining_ma
+	is_tacking_attempt = r.is_tacking_attempt
 
-	plotting_started.emit(ship_id, valid_next_hexes, remaining_ma)
+	plotting_started.emit(ship_id, valid_next_hexes, remaining_ma, is_tacking_attempt)
 
 
 func select_hex(hex: Vector2i) -> void:
@@ -67,8 +69,9 @@ func select_hex(hex: Vector2i) -> void:
 	valid_next_hexes = r.valid_next_hexes
 	can_submit = r.can_submit
 	remaining_ma = r.remaining_ma
+	is_tacking_attempt = r.is_tacking_attempt
 
-	hex_selected.emit(plotted_path, valid_next_hexes, can_submit, remaining_ma)
+	hex_selected.emit(plotted_path, valid_next_hexes, can_submit, remaining_ma, is_tacking_attempt)
 
 
 func undo() -> void:
@@ -88,8 +91,9 @@ func undo() -> void:
 	valid_next_hexes = r.valid_next_hexes
 	can_submit = r.can_submit
 	remaining_ma = r.remaining_ma
+	is_tacking_attempt = r.is_tacking_attempt
 
-	undo_complete.emit(plotted_path, valid_next_hexes, can_submit, remaining_ma)
+	undo_complete.emit(plotted_path, valid_next_hexes, can_submit, remaining_ma, is_tacking_attempt)
 
 
 func undo_all() -> void:
@@ -109,8 +113,9 @@ func undo_all() -> void:
 	valid_next_hexes = r.valid_next_hexes
 	can_submit = r.can_submit
 	remaining_ma = r.remaining_ma
+	is_tacking_attempt = r.is_tacking_attempt
 
-	undo_complete.emit(plotted_path, valid_next_hexes, can_submit, remaining_ma)
+	undo_complete.emit(plotted_path, valid_next_hexes, can_submit, remaining_ma, is_tacking_attempt)
 
 
 func cancel() -> void:
@@ -164,6 +169,7 @@ func _clear_session() -> void:
 	plotted_path = []
 	can_submit = false
 	remaining_ma = 0
+	is_tacking_attempt = false
 
 
 func _next_request_id() -> String:

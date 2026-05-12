@@ -47,6 +47,7 @@ func calculate_valid_moves(
 	var result = MovementTypes.ValidMovesResult.new()
 	result.remaining_ma = ps.remaining_ma
 	result.can_submit = true
+	result.is_tacking_attempt = ps.is_tacking_attempt
 
 	if ps.luffing_ended:
 		return result

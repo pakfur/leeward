@@ -24,6 +24,7 @@ const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
 @onready var undo_all_button: Button = %UndoAllButton
 @onready var submit_button: Button = %SubmitButton
 @onready var cancel_button: Button = %CancelButton
+@onready var tacking_label: Label = %TackingLabel
 
 # Track state
 var ship_list_items: Dictionary = {}  # ship_id -> ShipListItem
@@ -161,11 +162,21 @@ func show_plotting_controls(ship_id: String, remaining_ma_val: int, total_ma: in
 func hide_plotting_controls() -> void:
 	if plotting_controls:
 		plotting_controls.visible = false
+	if tacking_label:
+		tacking_label.visible = false
 
 func update_plotting_state(plotted_path_arr: Array, remaining_ma_val: int, can_submit_val: bool) -> void:
 	_update_ma_display(remaining_ma_val, remaining_ma_val + plotted_path_arr.size())
 	_update_path_display(plotted_path_arr)
 	_update_button_states(not plotted_path_arr.is_empty(), can_submit_val)
+
+func update_tacking_state(is_tacking: bool, probability: float) -> void:
+	if not tacking_label:
+		return
+	tacking_label.visible = is_tacking
+	if is_tacking:
+		var pct = int(probability * 100.0)
+		tacking_label.text = "Tacking: %d%% success" % pct
 
 func mark_ship_submitted(ship_id: String) -> void:
 	submitted_ships[ship_id] = true
