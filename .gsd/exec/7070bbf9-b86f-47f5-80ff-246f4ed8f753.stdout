@@ -1,0 +1,377 @@
+godot --headless -s addons/gut/gut_cmdln.gd -gtest=res://test/unit/test_rng_determinism.gd -gexit
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+SCRIPT ERROR: Trying to assign value of type 'Nil' to a variable of type 'bool'.
+          at: _static_init (res://addons/gut/gut_loader.gd:35)
+          GDScript backtrace (most recent call first):
+              [0] _static_init (res://addons/gut/gut_loader.gd:35)
+              [1] @static_initializer (res://addons/gut/gut_loader.gd:1)
+              [2] _init (res://addons/gut/gut_cmdln.gd:23)
+GameState initialized (server: true)
+Server controllers initialized
+DataManager initialized
+---  GUT  ---
+[1m[INFO]:  [0musing [/Users/jkline/Library/Application Support/Godot/app_userdata/Leeward] for temporary output.
+Godot version:  4.6.2
+GUT version:  9.5.0
+[4m
+
+res://test/unit/test_data_manager_bearing_off.gd
+[0mLoaded bearing off table with 7 crew quality grades
+* test_bearing_off_table_loads_successfully
+* test_bearing_off_table_has_all_crew_quality_grades
+* test_bearing_off_table_has_all_maneuverability_grades
+* test_lookup_A_a_is_5_of_6
+* test_lookup_C_b_is_4_of_6
+* test_lookup_E_a_is_1_of_6
+* test_lookup_G_a_is_zero
+* test_lookup_A_d_is_one
+* test_crew_quality_lowercase_converted_to_uppercase
+* test_maneuverability_uppercase_converted_to_lowercase
+* test_better_crew_quality_geq_worse_at_same_maneuverability
+[1m11/11 passed.
+[0m[4m
+
+res://test/unit/test_data_manager_movement.gd
+[0mLoaded movement allowance table with 9 speed types
+* test_movement_table_loads_successfully
+* test_movement_table_has_all_speed_types
+* test_movement_table_speed_type_count
+* test_movement_table_has_wind_facings_per_speed_type
+* test_movement_table_has_wind_speeds_1_through_4
+* test_movement_table_has_rigging_qualities_1_through_4
+* test_luffing_returns_zero_for_all_speed_types
+* test_luffing_returns_zero_all_wind_speeds
+* test_luffing_returns_zero_all_sail_states
+* test_lookup_lf_close_hauled_ws1_rq4_fs
+* test_lookup_lf_close_hauled_ws2_rq4_ps
+* test_lookup_lf_broad_reach_ws3_rq4_ms
+* test_lookup_ff_broad_reach_ws2_rq4_ps
+* test_lookup_ff_reach_ws1_rq4_fs
+* test_lookup_ff_close_hauled_ws3_rq3_ms
+* test_lookup_cf_broad_reach_ws2_rq4_fs
+* test_lookup_cf_reach_ws1_rq3_ms
+* test_lookup_cs_close_hauled_ws4_rq4_ps
+* test_lookup_cvs_broad_reach_ws3_rq4_ms
+* test_low_rigging_quality_reduces_options
+* test_rigging_quality_2_close_hauled
+* test_rigging_quality_3_broad_reach
+* test_missing_sail_state_returns_zero
+* test_no_sail_returns_zero
+* test_sail_state_uppercase_converted_to_lowercase
+* test_sail_state_mixed_case
+* test_wind_speed_min_boundary
+* test_wind_speed_max_boundary
+* test_rigging_quality_min_boundary
+* test_rigging_quality_max_boundary
+* test_broad_reach_faster_than_close_hauled
+* test_plain_sail_faster_than_fighting_sail
+* test_higher_wind_speed_generally_faster
+* test_higher_rigging_quality_at_least_as_fast
+[1m34/34 passed.
+[0m[4m
+
+res://test/unit/test_data_manager_scenarios.gd
+[0m* test_load_test_basic_scenario
+Loaded scenario: test_basic
+* test_scenario_has_name
+Loaded scenario: test_basic
+* test_scenario_has_wind_direction
+Loaded scenario: test_basic
+* test_scenario_has_wind_speed
+Loaded scenario: test_basic
+* test_scenario_has_ships
+Loaded scenario: test_basic
+* test_scenario_ship_has_required_fields
+Loaded scenario: test_basic
+* test_scenario_ship_position_has_q_r
+Loaded scenario: test_basic
+* test_scenario_player_ship_values
+Loaded scenario: test_basic
+* test_scenario_enemy_ship_values
+Loaded scenario: test_basic
+* test_nonexistent_scenario_returns_default
+WARNING: Scenario not found: res://data/scenarios/this_scenario_does_not_exist.json
+     at: push_warning (core/variant/variant_utility.cpp:1034)
+     GDScript backtrace (most recent call first):
+         [0] load_scenario (res://scripts/autoload/data_manager.gd:360)
+         [1] test_nonexistent_scenario_returns_default (res://test/unit/test_data_manager_scenarios.gd:72)
+         [2] _run_test (res://addons/gut/gut.gd:612)
+         [3] _test_the_scripts (res://addons/gut/gut.gd:815)
+         [4] test_scripts (res://addons/gut/gut.gd:1027)
+         [5] run_tests (res://addons/gut/gui/GutRunner.gd:194)
+         [6] _run_tests (res://addons/gut/cli/gut_cli.gd:238)
+         [7] main (res://addons/gut/cli/gut_cli.gd:284)
+         [8] _init (res://addons/gut/gut_cmdln.gd:39)
+[34m[ExpectedError][0mExpected engine error containing 'Scenario not found'.  Expected warning for missing scenario
+* test_default_scenario_has_valid_structure
+WARNING: Scenario not found: res://data/scenarios/nonexistent.json
+     at: push_warning (core/variant/variant_utility.cpp:1034)
+     GDScript backtrace (most recent call first):
+         [0] load_scenario (res://scripts/autoload/data_manager.gd:360)
+         [1] test_default_scenario_has_valid_structure (res://test/unit/test_data_manager_scenarios.gd:78)
+         [2] _run_test (res://addons/gut/gut.gd:612)
+         [3] _test_the_scripts (res://addons/gut/gut.gd:815)
+         [4] test_scripts (res://addons/gut/gut.gd:1027)
+         [5] run_tests (res://addons/gut/gui/GutRunner.gd:194)
+         [6] _run_tests (res://addons/gut/cli/gut_cli.gd:238)
+         [7] main (res://addons/gut/cli/gut_cli.gd:284)
+         [8] _init (res://addons/gut/gut_cmdln.gd:39)
+[34m[ExpectedError][0mExpected engine error containing 'Scenario not found'.  Expected warning for missing scenario
+[1m11/11 passed.
+[0m[4m
+
+res://test/unit/test_data_manager_ships.gd
+[0mLoaded 3 ship definitions
+* test_ship_definitions_load_successfully
+* test_expected_ship_ids_present
+* test_ship_definition_count
+* test_get_ship_definition_returns_ship_definition
+* test_get_ship_definition_unknown_returns_null
+WARNING: Ship definition not found: nonexistent_ship
+     at: push_warning (core/variant/variant_utility.cpp:1034)
+     GDScript backtrace (most recent call first):
+         [0] get_ship_definition (res://scripts/autoload/data_manager.gd:479)
+         [1] test_get_ship_definition_unknown_returns_null (res://test/unit/test_data_manager_ships.gd:33)
+         [2] _run_test (res://addons/gut/gut.gd:612)
+         [3] _test_the_scripts (res://addons/gut/gut.gd:815)
+         [4] test_scripts (res://addons/gut/gut.gd:1027)
+         [5] run_tests (res://addons/gut/gui/GutRunner.gd:194)
+         [6] _run_tests (res://addons/gut/cli/gut_cli.gd:238)
+         [7] main (res://addons/gut/cli/gut_cli.gd:284)
+         [8] _init (res://addons/gut/gut_cmdln.gd:39)
+[34m[ExpectedError][0mExpected engine error containing 'Ship definition not found'.  Expected warning for missing ship ID
+* test_frigate_38_name
+* test_frigate_38_nationality
+* test_frigate_38_rating
+* test_frigate_38_class
+* test_frigate_38_maneuverability
+* test_frigate_38_speed_type
+* test_frigate_38_type
+* test_frigate_38_draft
+* test_frigate_38_freeboard
+* test_frigate_38_rigging_hp
+* test_frigate_38_hull_hp
+* test_frigate_38_crew_count
+[31m    [Failed]:  [0m[0] expected to equal [3]:  
+      at line 94
+* test_frigate_38_marine_count
+* test_corvette_24_speed_type
+* test_corvette_24_class
+* test_corvette_24_maneuverability
+* test_sol_74_speed_type
+* test_sol_74_type
+* test_sol_74_rating
+* test_sol_74_rigging_hp
+* test_sol_74_hull_hp
+* test_get_total_crew_frigate
+[31m    [Failed]:  [0m[9] expected to equal [12]:  Frigate total crew: 3+3+3+3 = 12
+      at line 142
+* test_get_total_crew_sol
+[31m    [Failed]:  [0m[19] expected to equal [26]:  SOL total crew: 6+6+7+7 = 26
+      at line 146
+* test_get_total_rigging_hp_frigate
+* test_get_total_hull_hp_frigate
+* test_get_total_rigging_hp_sol
+* test_get_total_hull_hp_sol
+* test_frigate_38_gun_count
+* test_corvette_24_gun_count
+* test_sol_74_gun_count
+* test_to_dict_roundtrip
+* test_to_dict_preserves_arrays
+* test_from_dict_with_minimal_data
+* test_from_dict_with_partial_data
+[1m36/39 passed.
+[0m[4m
+
+res://test/unit/test_data_manager_speed_change.gd
+[0mLoaded speed change table with 2 change types
+* test_speed_change_table_loads_successfully
+* test_speed_change_table_has_both_change_types
+* test_speed_change_table_change_type_count
+* test_speed_change_table_has_all_maneuverability_grades
+* test_lookup_acceleration_a
+* test_lookup_acceleration_b
+* test_lookup_acceleration_c
+* test_lookup_acceleration_d
+* test_lookup_deceleration_a
+* test_lookup_deceleration_b
+* test_lookup_deceleration_c
+* test_lookup_deceleration_d
+* test_maneuverability_uppercase_converted_to_lowercase
+* test_maneuverability_mixed_case_deceleration
+* test_maneuverability_all_uppercase
+* test_maneuverability_uppercase_d
+* test_deceleration_cost_gte_acceleration_cost
+* test_worse_maneuverability_costs_at_least_as_much
+[1m18/18 passed.
+[0m[4m
+
+res://test/unit/test_data_manager_tacking.gd
+[0mLoaded tacking table with 4 maneuverability grades
+* test_tacking_table_loads_successfully
+* test_tacking_table_has_all_maneuverability_grades
+* test_tacking_table_grade_count
+* test_tacking_table_arrays_have_4_elements
+* test_lookup_a_ws1
+* test_lookup_a_ws2
+* test_lookup_a_ws3
+* test_lookup_a_ws4
+* test_lookup_b_ws1
+* test_lookup_b_ws2
+* test_lookup_b_ws3
+* test_lookup_b_ws4
+* test_lookup_c_ws1
+* test_lookup_c_ws2
+* test_lookup_c_ws3
+* test_lookup_c_ws4
+* test_lookup_d_ws1
+* test_lookup_d_ws2
+* test_lookup_d_ws3
+* test_lookup_d_ws4
+* test_wind_speed_zero_returns_zero
+* test_maneuverability_uppercase
+* test_maneuverability_uppercase_b
+* test_maneuverability_uppercase_c
+* test_maneuverability_uppercase_d
+* test_worse_maneuverability_higher_tacking_percent
+* test_all_values_between_zero_and_one
+* test_return_type_is_float
+[1m28/28 passed.
+[0m[4m
+
+res://test/unit/test_data_manager_turning.gd
+[0mLoaded turning table with 2 direction types
+* test_turning_table_loads_successfully
+* test_turning_table_has_both_directions
+* test_turning_table_has_speeds_1_through_10
+* test_turning_table_has_all_maneuverability_grades
+* test_same_dir_speed1_a
+* test_same_dir_speed1_d
+* test_same_dir_speed3_a
+* test_same_dir_speed3_b
+* test_same_dir_speed4_b
+* test_same_dir_speed6_a
+* test_same_dir_speed6_c
+* test_same_dir_speed6_d
+* test_same_dir_speed8_d
+* test_same_dir_speed10_a
+* test_same_dir_speed10_d
+* test_opp_dir_speed1_a
+* test_opp_dir_speed5_a
+* test_opp_dir_speed5_d
+* test_opp_dir_speed6_a
+* test_opp_dir_speed6_d
+* test_opp_dir_speed8_a
+* test_opp_dir_speed8_d
+* test_opp_dir_speed10_b
+* test_opp_dir_speed10_d
+* test_speed_zero_returns_negative_one
+* test_speed_negative_returns_negative_one
+* test_speed_negative_large_returns_negative_one
+* test_maneuverability_uppercase
+* test_maneuverability_uppercase_b
+* test_maneuverability_uppercase_c
+* test_maneuverability_uppercase_d
+* test_same_direction_gte_opposite_direction
+* test_higher_speed_requires_at_least_as_many_hexes
+* test_better_maneuverability_requires_at_most_as_many_hexes
+* test_all_values_at_least_one
+[1m35/35 passed.
+[0m[4m
+
+res://test/unit/test_rng_determinism.gd
+[0m* test_rng_property_exists_on_game_state
+* test_same_seed_produces_same_sequence
+* test_different_seeds_diverge
+* test_rng_seeded_from_scenario_matches_expected_first_value
+* test_zero_seed_is_valid
+[1m5/5 passed.
+[0m[4m
+
+res://test/unit/test_trace.gd
+[0m* test_trace_log_creates_category
+[Trace:TestCat] hello
+* test_trace_log_stores_message
+[Trace:TestCat] hello world
+* test_trace_log_with_context
+[Trace:TestCat] msg | { "key": "val" }
+* test_trace_log_without_context
+[Trace:TestCat] msg
+* test_trace_log_has_timestamp
+[Trace:TestCat] msg
+* test_trace_log_with_string_context
+[Trace:TestCat] msg | some string context
+* test_categories_ordered_by_insertion
+[Trace:Alpha] a
+[Trace:Beta] b
+[Trace:Gamma] c
+* test_duplicate_category_not_added_twice
+[Trace:Cat] a
+[Trace:Cat] b
+* test_multiple_messages_same_category
+[Trace:Cat] first
+[Trace:Cat] second
+* test_get_traces_unknown_category_returns_empty
+* test_clear_category
+[Trace:Cat] msg
+* test_clear_all
+[Trace:A] 1
+[Trace:B] 2
+* test_trace_added_signal_emitted
+[Trace:SigCat] test
+* test_trace_added_signal_fires_on_each_log
+[Trace:Cat] a
+[Trace:Cat] b
+[Trace:Other] c
+* test_clear_nonexistent_category_no_error
+[1m15/15 passed.
+[0m
+
+
+
+[33m==============================================[0m
+[33m= 5 Orphans[0m
+[33m==============================================[0m
+res://test/unit/test_data_manager_bearing_off.gd
+    - Outside Tests
+[33m        * [<Node#36037461434>(turn_phase_controller.gd)]
+        * [<Node#36054238651>(ship_state_controller.gd)]
+        * [<Node#36104570301>(command_validator.gd)]
+        * [<Node#36121347518>(network_sync.gd)]
+        * [<Node#36071015881>(environment_controller.gd)][0m
+
+
+[33m==============================================
+[0m[33m= Run Summary
+[0m[33m==============================================
+[0m[4m
+res://test/unit/test_data_manager_ships.gd
+[0m- test_frigate_38_crew_count
+[31m    [Failed]:  [0m[0] expected to equal [3]:  
+          at line 94
+- test_get_total_crew_frigate
+[31m    [Failed]:  [0m[9] expected to equal [12]:  Frigate total crew: 3+3+3+3 = 12
+          at line 142
+- test_get_total_crew_sol
+[31m    [Failed]:  [0m[19] expected to equal [26]:  SOL total crew: 6+6+7+7 = 26
+          at line 146
+
+Totals
+------
+Scripts               9
+Tests               196
+Passing Tests       193
+Failing Tests         3
+Asserts           731/734
+Orphans               5
+Time              0.423s
+
+
+[31m---- 3 failing tests ----
+[0m
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+     at: cleanup (core/object/object.cpp:2641)
+ERROR: 13 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+make: *** [test-file] Error 1

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M001/S01/T01",
+  "timestamp": 1778537990383,
+  "passed": false,
+  "discoverySource": "preference",
+  "checks": [
+    {
+      "command": "make test",
+      "exitCode": 2,
+      "durationMs": 1166,
+      "verdict": "fail"
+    }
+  ],
+  "retryAttempt": 1,
+  "maxRetries": 2
+}
