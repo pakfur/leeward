@@ -1,0 +1,8 @@
+ok: true
+total issues: 3
+errors: 0
+warnings: 3
+stale_crash_lock present: no
+   warning gitignore_missing_patterns | project
+   warning env_git_remote | environment
+   warning provider_key_missing | project

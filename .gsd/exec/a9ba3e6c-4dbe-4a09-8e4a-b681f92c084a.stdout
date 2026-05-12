@@ -1,0 +1,4 @@
+isDbAvailable: false
+readCrashLock: null
+all workers: 0
+doctor stale_crash_lock: Stale auto-mode worker (PID 59817, started 2026-05-12T00:40:45.429Z, was executing discuss-milestone M001) — process is no longer running

@@ -1,0 +1,18 @@
+{
+  "id": "a9ba3e6c-4dbe-4a09-8e4a-b681f92c084a",
+  "runtime": "node",
+  "purpose": null,
+  "script_chars": 1297,
+  "started_at": "2026-05-12T13:54:53.778Z",
+  "finished_at": "2026-05-12T13:54:56.505Z",
+  "exit_code": 0,
+  "signal": null,
+  "timed_out": false,
+  "duration_ms": 2727,
+  "stdout_bytes": 221,
+  "stderr_bytes": 0,
+  "stdout_truncated": false,
+  "stderr_truncated": false,
+  "stdout_path": "/Users/jkline/gws/pakfur/leeward/.gsd/exec/a9ba3e6c-4dbe-4a09-8e4a-b681f92c084a.stdout",
+  "stderr_path": "/Users/jkline/gws/pakfur/leeward/.gsd/exec/a9ba3e6c-4dbe-4a09-8e4a-b681f92c084a.stderr"
+}
