@@ -44,7 +44,7 @@ func _find_camera() -> void:
 	if viewport:
 		camera = viewport.get_camera_3d()
 		if camera:
-			print("WindCompass: Auto-found camera: %s" % camera.name)
+			Trace.trace_log("WindCompass", "Auto-found camera: %s" % camera.name)
 		else:
 			push_warning("WindCompass: No camera found in viewport")
 
@@ -85,7 +85,7 @@ func set_wind_direction(direction: int) -> void:
 func _update_wind_direction() -> void:
 	"""Update from GameState (server-authoritative)"""
 	set_wind_direction(GameState.wind_direction)
-	print("WindCompass: Wind direction updated to %d (%s)" % [wind_direction, _get_direction_name()])
+	Trace.trace_log("WindCompass", "Wind direction updated to %d (%s)" % [wind_direction, _get_direction_name()])
 
 func _get_direction_name() -> String:
 	"""Get human-readable wind direction for debugging"""

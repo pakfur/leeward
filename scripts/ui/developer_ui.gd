@@ -465,8 +465,7 @@ func _log(message: String) -> void:
 	# Auto-scroll to bottom
 	console_output.scroll_vertical = console_output.get_line_count()
 
-	# Also print to Godot console
-	print("[DevUI] %s" % message)
+	Trace.trace_log("DevUI", message)
 
 func _on_tree_exiting() -> void:
 	if Trace.trace_added.is_connected(_on_trace_added):

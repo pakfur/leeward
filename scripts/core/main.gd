@@ -8,7 +8,7 @@ const GAME_SCENE = preload("res://scenes/main_game.tscn")
 var current_scene: Node = null
 
 func _ready() -> void:
-	print("Main controller ready")
+	Trace.trace_log("Main", "Main controller ready")
 	_load_splash_screen()
 
 func _load_splash_screen() -> void:
@@ -21,7 +21,7 @@ func _load_splash_screen() -> void:
 
 func _on_play_requested() -> void:
 	"""User clicked Play - show scenario selection"""
-	print("Loading scenario selection")
+	Trace.trace_log("Main", "Loading scenario selection")
 	_change_scene(SCENARIO_SELECTION)
 
 	if current_scene:
@@ -30,7 +30,7 @@ func _on_play_requested() -> void:
 
 func _on_scenario_selected(scenario_name: String) -> void:
 	"""User selected a scenario - start the game"""
-	print("Starting game with scenario: " + scenario_name)
+	Trace.trace_log("Main", "Starting game with scenario: " + scenario_name)
 
 	# Store selected scenario for GameController to load
 	GameState.selected_scenario = scenario_name
@@ -39,7 +39,7 @@ func _on_scenario_selected(scenario_name: String) -> void:
 
 func _on_back_to_menu() -> void:
 	"""Return to main menu"""
-	print("Returning to main menu")
+	Trace.trace_log("Main", "Returning to main menu")
 	_load_splash_screen()
 
 func _on_quit_requested() -> void:

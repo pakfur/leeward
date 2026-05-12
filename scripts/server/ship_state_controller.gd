@@ -26,7 +26,7 @@ func set_ship_position(ship_id: String, hex_position: Vector2i) -> bool:
 
 	ship.hex_position = hex_position
 	ship_state_changed.emit(ship_id)
-	print("[Server] Ship %s moved to %s" % [ship_id, hex_position])
+	Trace.trace_log("ShipState", "Ship %s moved to %s" % [ship_id, hex_position])
 	return true
 
 func set_ship_facing(ship_id: String, facing: int) -> bool:
@@ -42,7 +42,7 @@ func set_ship_facing(ship_id: String, facing: int) -> bool:
 
 	ship.facing = facing % 6
 	ship_state_changed.emit(ship_id)
-	print("[Server] Ship %s facing changed to %d" % [ship_id, ship.facing])
+	Trace.trace_log("ShipState", "Ship %s facing changed to %d" % [ship_id, ship.facing])
 	return true
 
 func set_ship_speed(ship_id: String, speed: int) -> bool:
@@ -80,7 +80,7 @@ func set_sail_state(ship_id: String, sail_state: String) -> bool:
 
 	ship.sail_state = sail_state
 	ship_state_changed.emit(ship_id)
-	print("[Server] Ship %s sail state: %s" % [ship_id, sail_state])
+	Trace.trace_log("ShipState", "Ship %s sail state: %s" % [ship_id, sail_state])
 	return true
 
 func apply_rigging_damage(ship_id: String, section: int, damage: int) -> bool:
@@ -132,7 +132,7 @@ func apply_hull_damage(ship_id: String, section: int, damage: int) -> bool:
 
 	ship.hull_current_hp[section] = max(0, ship.hull_current_hp[section] - damage)
 	ship_state_changed.emit(ship_id)
-	print("[Server] Ship %s hull section %d: %d/%d HP" % [
+	Trace.trace_log("ShipState", "Ship %s hull section %d: %d/%d HP" % [
 		ship_id, section, ship.hull_current_hp[section], ship.hull_max_hp[section]
 	])
 	return true
@@ -203,7 +203,7 @@ func set_plotted_movement(ship_id: String, movement_commands: Array[String]) -> 
 		return false
 
 	ship.plotted_actions["movement"] = movement_commands
-	print("[Server] Ship %s plotted movement: %s" % [ship_id, movement_commands])
+	Trace.trace_log("ShipState", "Ship %s plotted movement: %s" % [ship_id, movement_commands])
 	return true
 
 func clear_plotted_actions(ship_id: String) -> bool:
@@ -235,12 +235,12 @@ func resolve_movement(ship_id: String) -> bool:
 
 	var movement = ship.plotted_actions.get("movement", [])
 	if movement.is_empty():
-		print("[Server] Ship %s has no plotted movement" % ship_id)
+		Trace.trace_log("ShipState", "Ship %s has no plotted movement" % ship_id)
 		return true
 
 	# TODO: Implement actual movement resolution
 	# For now, just log the movement
-	print("[Server] Resolving movement for %s: %s" % [ship.ship_name, movement])
+	Trace.trace_log("ShipState", "Resolving movement for %s: %s" % [ship.ship_name, movement])
 
 	# Movement logic will be implemented later with hex grid calculations
 	# This would involve:
@@ -259,6 +259,6 @@ func resolve_all_movement() -> void:
 		push_error("ShipStateController: Cannot resolve movement on client")
 		return
 
-	print("[Server] Resolving movement for all ships")
+	Trace.trace_log("ShipState", "Resolving movement for all ships")
 	for ship_id in game_state.ships.keys():
 		resolve_movement(ship_id)

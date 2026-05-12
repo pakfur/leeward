@@ -107,7 +107,7 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 	session.cache_response(request_id, response)
 	session_started.emit(session.session_id, ship_id)
 
-	print("[MovementPlotting] Session started: %s for ship %s" % [session.session_id, ship_id])
+	Trace.trace_log("MovementPlotting", "Session started: %s for ship %s" % [session.session_id, ship_id])
 	Trace.trace_log("MovementPlotting", "START_PLOTTING: Session Started", response.to_dict())
 	return response
 
@@ -182,7 +182,7 @@ func handle_select_hex(session_id: String, expected_version: int, selected_hex: 
 	session.cache_response(request_id, response)
 	session_updated.emit(session_id, session.version)
 
-	print("[MovementPlotting] Hex selected: session %s, version %d, hex (%d, %d)" % [
+	Trace.trace_log("MovementPlotting", "Hex selected: session %s, version %d, hex (%d, %d)" % [
 		session_id, session.version, selected_hex.x, selected_hex.y
 	])
 	Trace.trace_log("MovementPlotting", "SELECT_HEX: Add a Hex [selected_hex: %s]" % [selected_hex], response.to_dict())
@@ -266,7 +266,7 @@ func handle_undo(session_id: String, expected_version: int, revert_to_version: i
 	session.cache_response(request_id, response)
 	session_updated.emit(session_id, session.version)
 
-	print("[MovementPlotting] Undo: session %s, reverted to version %d" % [session_id, session.version])
+	Trace.trace_log("MovementPlotting", "Undo: session %s, reverted to version %d" % [session_id, session.version])
 	Trace.trace_log("MovementPlotting", "UNDO: Revert [revert_to_version: %d]" % [revert_to_version], response.to_dict())
 	return response
 
@@ -285,10 +285,9 @@ func handle_cancel_plotting(session_id: String, request_id: String) -> MovementT
 		session.cancel()
 		_cleanup_session(session_id)
 		session_cancelled.emit(session_id, ship_id)
-		print("[MovementPlotting] Session cancelled: %s" % session_id)
+		Trace.trace_log("MovementPlotting", "Session cancelled: %s" % session_id)
 	else:
-		# Already gone - that's fine, return success
-		print("[MovementPlotting] Cancel requested for unknown/expired session: %s" % session_id)
+		Trace.trace_log("MovementPlotting", "Cancel requested for unknown/expired session: %s" % session_id)
 	Trace.trace_log("MovementPlotting", "CANCEL_PLOTTING: Cancel", response.to_dict())
 	return response
 
@@ -352,7 +351,7 @@ func handle_submit_movement(session_id: String, expected_version: int, request_i
 	# Clean up session
 	_cleanup_session(session_id)
 
-	print("[MovementPlotting] Movement submitted: session %s, ship %s, %d hexes" % [
+	Trace.trace_log("MovementPlotting", "Movement submitted: session %s, ship %s, %d hexes" % [
 		session_id, session.ship_id, final_path.size()
 	])
 	Trace.trace_log("MovementPlotting", "SUBMIT_MOVEMENT: Finalize", response.to_dict())
@@ -476,7 +475,7 @@ func _apply_movement_to_ship(ship_id: String, plotted_path: Array[MovementTypes.
 		for step in plotted_path:
 			movement_commands.append(step.to_dict())
 		ship_state.plotted_actions.movement = movement_commands
-		print("[MovementPlotting] Applied movement plan to ship %s: %d steps" % [ship_id, movement_commands.size()])
+		Trace.trace_log("MovementPlotting", "Applied movement plan to ship %s: %d steps" % [ship_id, movement_commands.size()])
 
 
 func _send_response_to_peer(peer_id: int, response: MovementTypes.PlottingResponse) -> void:
@@ -521,4 +520,4 @@ func cancel_all_sessions() -> void:
 			session_cancelled.emit(session_id, session.ship_id)
 	sessions.clear()
 	ship_sessions.clear()
-	print("[MovementPlotting] All sessions cancelled")
+	Trace.trace_log("MovementPlotting", "All sessions cancelled")

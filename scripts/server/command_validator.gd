@@ -116,7 +116,7 @@ func execute_command(command: GameCommand) -> Dictionary:
 		return {"success": false, "error": "Unknown command type"}
 
 	if result:
-		print("[Server] Command executed successfully: %s" % command.get_class())
+		Trace.trace_log("Command", "Command executed successfully: %s" % command.get_class())
 		return {"success": true}
 	else:
 		return {"success": false, "error": "Command execution failed"}

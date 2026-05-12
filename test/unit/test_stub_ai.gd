@@ -136,7 +136,7 @@ func test_forward_strategy_produces_straight_line() -> void:
 
 
 func test_forward_strategy_respects_ma() -> void:
-	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 3, 2)
+	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 3, 4)
 	_add_ship(ai)
 
 	stub_ai.plot_all_ai_ships()

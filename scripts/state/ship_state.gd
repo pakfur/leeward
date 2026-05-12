@@ -89,7 +89,7 @@ func get_movement_allowance() -> int:
 		rigging_quality
 	)
 
-	print("[get_movement_allowance] MA: %d | wind: %s | facing: %s | speed: %s | sail: %s" % [ma, wind_dir, wind_facing, GameState.wind_speed, sail_state])
+	Trace.trace_log("ShipState", "MA: %d | wind: %s | facing: %s | speed: %s | sail: %s" % [ma, wind_dir, wind_facing, GameState.wind_speed, sail_state])
 	return ma
 
 func get_rigging_quality() -> int:
@@ -267,7 +267,7 @@ func initialize_from_scenario(data: Dictionary, ship_ref: Ship) -> void:
 	# Crew
 	crew_morale = data.get("crew_morale", 4)
 
-	print("ShipState initialized: %s (%s) at %s facing %d, speed %d" % [ship_name, ship_type, hex_position, facing, speed])
+	Trace.trace_log("ShipState", "Initialized: %s (%s) at %s facing %d, speed %d" % [ship_name, ship_type, hex_position, facing, speed])
 
 func clear_turn_flags() -> void:
 	collision_this_turn = false

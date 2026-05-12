@@ -64,7 +64,7 @@ func _update_wind_speed(rng: RandomNumberGenerator, history: Array[EnvironmentSt
 
 	wind_speed = clampi(wind_speed, 0, 4)
 	if temp_wind_speed != wind_speed:
-		print("Wind speed changed from %d to %d" % [temp_wind_speed, wind_speed])
+		Trace.trace_log("Environment", "Wind speed changed from %d to %d" % [temp_wind_speed, wind_speed])
 
 func _update_wind_direction(rng: RandomNumberGenerator, history: Array[EnvironmentState]) -> void:
 	"""Update wind direction based on change patterns
@@ -115,7 +115,7 @@ func _update_wind_direction(rng: RandomNumberGenerator, history: Array[Environme
 						if wind_direction < original_wind_direction:
 							wind_direction = (wind_direction + 1 + 6) % 6
 	if wind_direction != temp_wind_direction:
-		print("Wind direction changed from %d to %d" % [temp_wind_direction, wind_direction])
+		Trace.trace_log("Environment", "Wind direction changed from %d to %d" % [temp_wind_direction, wind_direction])
 
 
 func _update_weather(rng: RandomNumberGenerator, history: Array[EnvironmentState]) -> void:
@@ -189,7 +189,7 @@ func initialize_from_scenario(scenario_data: Dictionary) -> void:
 	time_of_day = scenario_data.get("time_of_day", "day")
 	precipitation = scenario_data.get("precipitation", "none")
 
-	print("EnvironmentState initialized: Environment %s, Wind %s (%d), Speed %s (%d), Sea %s (%d)" % [
+	Trace.trace_log("Environment", "EnvironmentState initialized: %s, Wind %s (%d), Speed %s (%d), Sea %s (%d)" % [
 		region,
 		get_wind_direction_name(), wind_direction,
 		get_wind_speed_name(), wind_speed,

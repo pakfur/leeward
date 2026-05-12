@@ -41,7 +41,7 @@ func _ready() -> void:
 	set_deferred("size:x", current_width)
 	panel_container.set_deferred("size:x", current_width)
 
-	print("ContextPanel initialized: expanded_width=%f, collapsed_width=%f" % [expanded_width, collapsed_width])
+	Trace.trace_log("UI", "ContextPanel initialized: expanded_width=%f, collapsed_width=%f" % [expanded_width, collapsed_width])
 
 func _create_collapsed_button() -> void:
 	"""Create the expand button shown when panel is collapsed"""
@@ -99,7 +99,7 @@ func _on_toggle_pressed() -> void:
 	animation_progress = 0.0
 
 	# Start animation
-	print("ContextPanel: %s" % ("Expanding" if is_expanded else "Collapsing"))
+	Trace.trace_log("UI", "ContextPanel: %s" % ("Expanding" if is_expanded else "Collapsing"))
 
 func _finish_animation() -> void:
 	"""Called when animation completes"""

@@ -43,7 +43,7 @@ func execute_local_for_testing() -> bool:
 		return false
 
 	ship_state.plotted_actions["movement"] = movement_commands
-	print("MoveCommand: Ship %s plotted movement: %s" % [ship_id, movement_commands])
+	Trace.trace_log("Command", "MoveCommand: Ship %s plotted movement: %s" % [ship_id, movement_commands])
 	return true
 
 func serialize() -> Dictionary:

@@ -11,7 +11,7 @@ var bearing_off_table: Dictionary = {}
 var scenarios: Dictionary = {}
 
 func _ready() -> void:
-	print("DataManager initialized")
+	Trace.trace_log("DataManager", "Initialized")
 
 func load_movement_allowance_table(file_path: String = "res://data/rules/movement_allowance.json") -> bool:
 	"""Load the movement allowance lookup table from JSON (nested format)"""
@@ -36,7 +36,7 @@ func load_movement_allowance_table(file_path: String = "res://data/rules/movemen
 	# Store the nested dictionary structure
 	if json.data is Dictionary:
 		movement_allowance_table = json.data
-		print("Loaded movement allowance table with %d speed types" % movement_allowance_table.size())
+		Trace.trace_log("DataManager", "Loaded movement allowance table with %d speed types" % movement_allowance_table.size())
 		return true
 	else:
 		push_error("Movement allowance JSON must be a nested dictionary")
@@ -64,7 +64,7 @@ func load_speed_change_table(file_path: String = "res://data/rules/speed_change_
 	if json.data is Dictionary:
 		speed_change_table = json.data
 		speed_change_table.erase("_doc")
-		print("Loaded speed change table with %d change types" % speed_change_table.size())
+		Trace.trace_log("DataManager", "Loaded speed change table with %d change types" % speed_change_table.size())
 		return true
 	else:
 		push_error("Speed change JSON must be a dictionary")
@@ -125,7 +125,7 @@ func load_tacking_table(file_path: String = "res://data/rules/tacking_table.json
 	if json.data is Dictionary:
 		tacking_table = json.data
 		tacking_table.erase("_doc")
-		print("Loaded tacking table with %d maneuverability grades" % tacking_table.size())
+		Trace.trace_log("DataManager", "Loaded tacking table with %d maneuverability grades" % tacking_table.size())
 		return true
 	else:
 		push_error("Tacking table JSON must be a dictionary")
@@ -190,7 +190,7 @@ func load_turning_table(file_path: String = "res://data/rules/turning_table.json
 	if json.data is Dictionary:
 		turning_table = json.data
 		turning_table.erase("_doc")
-		print("Loaded turning table with %d direction types" % turning_table.size())
+		Trace.trace_log("DataManager", "Loaded turning table with %d direction types" % turning_table.size())
 		return true
 	else:
 		push_error("Turning table JSON must be a dictionary")
@@ -271,7 +271,7 @@ func load_bearing_off_table(file_path: String = "res://data/rules/bearing_off_ta
 		var grade_count = bearing_off_table.size()
 		if bearing_off_table.has("_doc"):
 			grade_count -= 1
-		print("Loaded bearing off table with %d crew quality grades" % grade_count)
+		Trace.trace_log("DataManager", "Loaded bearing off table with %d crew quality grades" % grade_count)
 		return true
 	else:
 		push_error("Bearing off table JSON must be a dictionary")
@@ -339,7 +339,7 @@ func load_ship_definitions(file_path: String = "res://data/rules/ships.json") ->
 			else:
 				push_warning("Invalid ship data for '%s'" % ship_id)
 
-	print("Loaded %d ship definitions" % ship_definitions.size())
+	Trace.trace_log("DataManager", "Loaded %d ship definitions" % ship_definitions.size())
 	return true
 
 func load_scenario(scenario_name: String, file_path: String = "") -> Dictionary:
@@ -383,7 +383,7 @@ func load_scenario(scenario_name: String, file_path: String = "") -> Dictionary:
 			if ship is Dictionary and ship.has("crew_quality"):
 				ship["crew_quality"] = _normalize_crew_quality(ship["crew_quality"])
 
-	print("Loaded scenario: %s" % scenario_name)
+	Trace.trace_log("DataManager", "Loaded scenario: %s" % scenario_name)
 	return scenario_dict
 
 func get_movement_allowance(speed_type: String, wind_speed: int, wind_facing: String,
@@ -567,7 +567,7 @@ func _create_default_movement_table() -> void:
 			}
 		}
 	}
-	print("Created default movement allowance table (nested format)")
+	Trace.trace_log("DataManager", "Created default movement allowance table (nested format)")
 
 func _create_default_ships() -> void:
 	"""Create default ship definitions for testing"""
@@ -607,7 +607,7 @@ func _create_default_ships() -> void:
 	corvette.marine_count = 2
 	ship_definitions["corvette_24"] = corvette
 
-	print("Created default ship definitions: %d ships" % ship_definitions.size())
+	Trace.trace_log("DataManager", "Created default ship definitions: %d ships" % ship_definitions.size())
 
 func _normalize_crew_quality(text: String) -> String:
 	var upper = text.strip_edges().to_upper()

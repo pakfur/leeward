@@ -111,9 +111,9 @@ func _on_submit_pressed() -> void:
 		success = move_command.execute_local_for_testing()
 
 	if success:
-		print("PlanningPanel: Move command executed for %s" % current_ship.ship_name)
+		Trace.trace_log("UI", "PlanningPanel: Move command executed for %s" % current_ship.ship_name)
 	else:
-		print("PlanningPanel: Move command failed for %s" % current_ship.ship_name)
+		Trace.trace_log("UI", "PlanningPanel: Move command failed for %s" % current_ship.ship_name)
 
 	# Emit plan submitted signal
 	plan_submitted.emit()

@@ -64,7 +64,7 @@ func _create_ocean_material() -> void:
 	# Disable hex grid in shader (we'll use a separate overlay instead)
 	ocean_material.set_shader_parameter("show_hex_grid", false)
 
-	print("Ocean material loaded and configured")
+	Trace.trace_log("HexMap", "Ocean material loaded and configured")
 
 func _create_water_plane() -> void:
 	"""Create a single large plane for seamless water rendering"""
@@ -93,11 +93,11 @@ func _create_water_plane() -> void:
 	water_plane.material_override = ocean_material
 	water_plane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
-	print("Water plane created on XZ plane: X=%.1f Z=%.1f with %d subdivisions" % [map_width_x, map_depth_z, 128])
+	Trace.trace_log("HexMap", "Water plane created on XZ plane: X=%.1f Z=%.1f with %d subdivisions" % [map_width_x, map_depth_z, 128])
 
 func _initialize_hex_tracking() -> void:
 	"""Initialize hex coordinate tracking (no visible meshes)"""
-	print("Initializing hex tracking: %dx%d" % [grid_width, grid_height])
+	Trace.trace_log("HexMap", "Initializing hex tracking: %dx%d" % [grid_width, grid_height])
 
 	# Calculate offset to center the grid
 	var offset_q = -grid_width / 2
@@ -113,10 +113,10 @@ func _initialize_hex_tracking() -> void:
 			# Print first hex for debugging
 			if not sample_printed and q == 0 and r == 0:
 				var world_pos = hex_grid.axial_to_world(hex_coord.x, hex_coord.y)
-				print("First hex at coord %s -> world pos %s" % [hex_coord, world_pos])
+				Trace.trace_log("HexMap", "First hex at coord %s -> world pos %s" % [hex_coord, world_pos])
 				sample_printed = true
 
-	print("Initialized tracking for %d hex coordinates" % hex_meshes.size())
+	Trace.trace_log("HexMap", "Initialized tracking for %d hex coordinates" % hex_meshes.size())
 
 func _create_hex_tile(coord: Vector2i) -> void:
 	"""Create a single hex tile at the given axial coordinates"""
@@ -264,7 +264,7 @@ func _create_grid_overlay() -> void:
 	grid_overlay.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(grid_overlay)
 
-	print("Grid overlay created with %d vertices" % vertices.size())
+	Trace.trace_log("HexMap", "Grid overlay created with %d vertices" % vertices.size())
 
 func world_to_hex(world_pos: Vector3) -> Vector2i:
 	"""Convert world position to hex coordinates"""
@@ -341,7 +341,7 @@ func _create_hex_labels() -> void:
 			label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 			hex_labels_container.add_child(label)
 
-	print("Created %d hex coordinate labels" % (grid_width * grid_height))
+	Trace.trace_log("HexMap", "Created %d hex coordinate labels" % (grid_width * grid_height))
 
 func set_hex_grid_visible(visible: bool) -> void:
 	"""Set hex grid visibility (shader-based grid that responds to waves)"""
@@ -349,4 +349,4 @@ func set_hex_grid_visible(visible: bool) -> void:
 	# The shader grid is part of the water and responds to waves
 	if ocean_material:
 		ocean_material.set_shader_parameter("show_hex_grid", visible)
-		print("Hex grid (shader) visibility set to: %s" % visible)
+		Trace.trace_log("HexMap", "Hex grid (shader) visibility set to: %s" % visible)

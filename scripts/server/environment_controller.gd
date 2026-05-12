@@ -28,7 +28,7 @@ func _ready():
 	if game_state:
 		game_state.phase_changed.connect(_on_phase_changed)
 
-	print("EnvironmentController initialized (server: %s)" % is_server)
+	Trace.trace_log("Environment", "EnvironmentController initialized (server: %s)" % is_server)
 
 func set_hex_map(map: Node3D) -> void:
 	"""Set the hex map reference (needed if not passed in constructor)"""
@@ -80,7 +80,7 @@ func update_water_shader() -> void:
 
 	environment_updated.emit()
 
-	print("EnvironmentController: Updated water shader - Wind: %s (%d), Speed: %s (%d), Sea: %s (%d)" % [
+	Trace.trace_log("Environment", "Updated water shader - Wind: %s (%d), Speed: %s (%d), Sea: %s (%d)" % [
 		env.get_wind_direction_name(), wind_dir,
 		env.get_wind_speed_name(), wind_speed,
 		env.get_sea_state_name(), sea_state

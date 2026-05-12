@@ -61,7 +61,7 @@ var sea_state: int:
 	get: return environment.sea_state if environment else 1
 
 func _ready() -> void:
-	print("GameState initialized (server: %s)" % is_server)
+	Trace.trace_log("GameState", "Initialized (server: %s)" % is_server)
 	# Initialize server controllers if this is the server
 	if is_server:
 		_initialize_server_controllers()
@@ -78,7 +78,12 @@ func _initialize_server_controllers() -> void:
 	movement_resolver = MovementResolver.new(self)
 	stub_ai = StubAI.new(self)
 
-	# Add movement plotting controller to scene tree (it needs _process for timeouts)
+	# Add Node-based controllers to the tree so _ready/_process fire and they're freed on exit
+	add_child(phase_controller)
+	add_child(ship_controller)
+	add_child(environment_controller)
+	add_child(command_validator)
+	add_child(network_sync)
 	add_child(movement_plotting_controller)
 
 	# Connect signals
@@ -95,7 +100,7 @@ func _initialize_server_controllers() -> void:
 		if ship_controller:
 			ship_controller.ship_state_changed.connect(_on_state_changed_broadcast)
 
-	print("Server controllers initialized")
+	Trace.trace_log("GameState", "Server controllers initialized")
 
 func start_new_game(scenario_data: Dictionary) -> void:
 	"""Initialize a new game with scenario data - SERVER ONLY"""
@@ -118,7 +123,7 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	environment = EnvironmentState.new()
 	environment.initialize_from_scenario(scenario_data)
 
-	print("Game started - Turn: 1, Wind: %s (%d), Speed: %s (%d)" % [
+	Trace.trace_log("GameState", "Game started - Turn: 1, Wind: %s (%d), Speed: %s (%d)" % [
 		environment.get_wind_direction_name(),
 		environment.wind_direction,
 		environment.get_wind_speed_name(),
@@ -142,7 +147,7 @@ func _on_server_turn_changed(turn_number: int) -> void:
 		var previous_turn = turn_number - 1
 		save_environment_snapshot(previous_turn)
 		save_all_ships_snapshot(previous_turn)
-		print("GameState: Saved state snapshots for turn %d" % previous_turn)
+		Trace.trace_log("GameState", "Saved state snapshots for turn %d" % previous_turn)
 
 	current_turn = turn_number
 	turn_changed.emit(current_turn)
@@ -158,7 +163,7 @@ func _on_state_changed_broadcast(_arg = null) -> void:
 func _on_movement_submitted(session_id: String, ship_id: String, final_path: Array) -> void:
 	"""Handle movement submission from plotting controller
 	final_path is Array[MovementTypes.PlotStep]"""
-	print("GameState: Movement submitted for ship %s (%d hexes)" % [ship_id, final_path.size()])
+	Trace.trace_log("GameState", "Movement submitted for ship %s (%d hexes)" % [ship_id, final_path.size()])
 	# The movement is already applied to ship_state.plotted_actions by the controller
 	# Additional handling (e.g., checking if all ships have submitted) can go here
 
@@ -178,7 +183,7 @@ func add_ship(ship_state: ShipState) -> void:
 		ships_by_player[ship_state.player_id] = []
 	ships_by_player[ship_state.player_id].append(ship_state.ship_id)
 
-	print("GameState: Added ship %s (player %d)" % [ship_state.ship_id, ship_state.player_id])
+	Trace.trace_log("GameState", "Added ship %s (player %d)" % [ship_state.ship_id, ship_state.player_id])
 
 func remove_ship(ship_id: String) -> void:
 	"""Remove a ship from game state"""
@@ -193,7 +198,7 @@ func remove_ship(ship_id: String) -> void:
 	if ships_by_player.has(player_id):
 		ships_by_player[player_id].erase(ship_id)
 
-	print("GameState: Removed ship %s" % ship_id)
+	Trace.trace_log("GameState", "Removed ship %s" % ship_id)
 
 func get_ship(ship_id: String) -> ShipState:
 	"""Get ship state by ID"""
@@ -236,7 +241,7 @@ func save_environment_snapshot(turn_number: int) -> void:
 		environment_history.append(null)
 
 	environment_history[turn_number] = snapshot
-	print("GameState: Saved environment snapshot for turn %d" % turn_number)
+	Trace.trace_log("GameState", "Saved environment snapshot for turn %d" % turn_number)
 
 func get_environment_at_turn(turn_number: int) -> EnvironmentState:
 	"""Get environment state from a specific turn (returns null if not found)"""
@@ -271,7 +276,7 @@ func save_ship_snapshot(ship_id: String, turn_number: int) -> void:
 		history.append(null)
 
 	history[turn_number] = snapshot
-	print("GameState: Saved ship %s snapshot for turn %d" % [ship_id, turn_number])
+	Trace.trace_log("GameState", "Saved ship %s snapshot for turn %d" % [ship_id, turn_number])
 
 func save_all_ships_snapshot(turn_number: int) -> void:
 	"""Save snapshots of all ships for the given turn"""
@@ -297,7 +302,7 @@ func clear_state_history() -> void:
 	"""Clear all historical state data (for new game)"""
 	environment_history.clear()
 	ship_history.clear()
-	print("GameState: Cleared all state history")
+	Trace.trace_log("GameState", "Cleared all state history")
 
 ## State Serialization (for save/load and multiplayer)
 
@@ -373,7 +378,7 @@ func deserialize_full_state(data: Dictionary) -> void:
 					history_array.append(null)
 			ship_history[ship_id] = history_array
 
-	print("GameState: Loaded state for turn %d, phase %s, %d ships, %d turns of history" % [
+	Trace.trace_log("GameState", "Loaded state for turn %d, phase %s, %d ships, %d turns of history" % [
 		current_turn,
 		get_phase_name(),
 		ships.size(),
@@ -437,7 +442,7 @@ func sync_from_server(state_data: Dictionary) -> void:
 
 	# Emit sync signal
 	state_synced.emit()
-	print("[Client] State synced from server: Turn %d, Phase %s, %d ships" % [
+	Trace.trace_log("GameState", "State synced from server: Turn %d, Phase %s, %d ships" % [
 		current_turn,
 		get_phase_name(),
 		ships.size()
