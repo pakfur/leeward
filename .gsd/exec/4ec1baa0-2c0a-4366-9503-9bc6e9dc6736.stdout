@@ -1,0 +1,15 @@
+SCRIPT ERROR: Parse Error: Identifier "EnvironmentState" not declared in the current scope.
+SCRIPT ERROR: Parse Error: Identifier "ShipState" not declared in the current scope.
+SCRIPT ERROR: Parse Error: Identifier "EnvironmentState" not declared in the current scope.
+SCRIPT ERROR: Parse Error: Could not find type "ShipState" in the current scope.
+SCRIPT ERROR: Parse Error: Identifier "ShipState" not declared in the current scope.
+SCRIPT ERROR: Parse Error: Identifier "EnvironmentState" not declared in the current scope.
+SCRIPT ERROR: Parse Error: Identifier "ShipState" not declared in the current scope.
+ERROR: Failed to load script "res://scripts/autoload/game_state.gd" with error "Parse error".
+ERROR: Failed to instantiate an autoload, script 'res://scripts/autoload/game_state.gd' does not inherit from 'Node'.
+SCRIPT ERROR: Parse Error: Could not find type "Ship" in the current scope.
+SCRIPT ERROR: Parse Error: Identifier "Ship" not declared in the current scope.
+SCRIPT ERROR: Parse Error: Identifier "Ship" not declared in the current scope.
+SCRIPT ERROR: Parse Error: Identifier "Ship" not declared in the current scope.
+ERROR: Failed to load script "res://scripts/autoload/data_manager.gd" with error "Parse error".
+ERROR: Failed to instantiate an autoload, script 'res://scripts/autoload/data_manager.gd' does not inherit from 'Node'.

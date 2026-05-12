@@ -1,6 +1,7 @@
 {
   "name": "Test Scenario - Four Ships",
   "description": "Basic test scenario with four opposing ships for development testing",
+  "seed": 67890,
   "wind_direction": 0,
   "wind_speed": 2,
   "wind_speed_change": "steady",

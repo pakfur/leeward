@@ -1,0 +1,18 @@
+{
+  "id": "4ec1baa0-2c0a-4366-9503-9bc6e9dc6736",
+  "runtime": "bash",
+  "purpose": "find test result summary lines",
+  "script_chars": 126,
+  "started_at": "2026-05-12T15:02:08.011Z",
+  "finished_at": "2026-05-12T15:02:08.357Z",
+  "exit_code": 0,
+  "signal": null,
+  "timed_out": false,
+  "duration_ms": 346,
+  "stdout_bytes": 1356,
+  "stderr_bytes": 0,
+  "stdout_truncated": false,
+  "stderr_truncated": false,
+  "stdout_path": "/Users/jkline/gws/pakfur/leeward/.gsd/worktrees/M001/.gsd/exec/4ec1baa0-2c0a-4366-9503-9bc6e9dc6736.stdout",
+  "stderr_path": "/Users/jkline/gws/pakfur/leeward/.gsd/worktrees/M001/.gsd/exec/4ec1baa0-2c0a-4366-9503-9bc6e9dc6736.stderr"
+}

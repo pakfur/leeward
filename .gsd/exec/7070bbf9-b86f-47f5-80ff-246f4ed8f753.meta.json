@@ -1,0 +1,18 @@
+{
+  "id": "7070bbf9-b86f-47f5-80ff-246f4ed8f753",
+  "runtime": "bash",
+  "purpose": "run test_rng_determinism.gd after import",
+  "script_chars": 114,
+  "started_at": "2026-05-12T15:03:18.252Z",
+  "finished_at": "2026-05-12T15:03:19.638Z",
+  "exit_code": 2,
+  "signal": null,
+  "timed_out": false,
+  "duration_ms": 1386,
+  "stdout_bytes": 13623,
+  "stderr_bytes": 0,
+  "stdout_truncated": false,
+  "stderr_truncated": false,
+  "stdout_path": "/Users/jkline/gws/pakfur/leeward/.gsd/worktrees/M001/.gsd/exec/7070bbf9-b86f-47f5-80ff-246f4ed8f753.stdout",
+  "stderr_path": "/Users/jkline/gws/pakfur/leeward/.gsd/worktrees/M001/.gsd/exec/7070bbf9-b86f-47f5-80ff-246f4ed8f753.stderr"
+}
