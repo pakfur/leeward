@@ -4,7 +4,7 @@ Guidance for Claude Code working on the Leeward project.
 
 ## Project Overview
 
-Leeward is a Godot 4.4 naval sailing game (Age of Sail) using the Forward Plus renderer. It's a turn-based tactical game where players command ships on a hex grid, plotting movement and combat across a 10-phase turn cycle. Architecture is server-authoritative with a State-Controller-View pattern.
+Leeward is a Godot 4.6 naval sailing game (Age of Sail) using the Forward Plus renderer. It's a turn-based tactical game where players command ships on a hex grid, plotting movement and combat across a 10-phase turn cycle. Architecture is server-authoritative with a State-Controller-View pattern.
 
 ## Commands
 
@@ -35,20 +35,22 @@ Manual testing also available via scenarios and the Developer UI (F12 in-game).
 
 ```
 scripts/
-  autoload/       # Singletons: GameState, DataManager
+  autoload/       # Singletons: Trace, GameState, DataManager (see project.godot [autoload])
   core/           # Game controller, hex grid, hex map, camera, wave calc
   state/          # Pure data objects: Ship (immutable), ShipState (mutable), EnvironmentState
   server/         # Server-authoritative controllers (mutations, validation, phases)
-  view/           # 3D presentation (ShipView)
+  view/           # 3D presentation (ShipView, HexOverlay)
   ui/             # All UI scripts
   commands/       # Command pattern (GameCommand, MoveCommand)
+  util/, utils/   # Asset-generation helpers (compass, water texture) — not runtime code
 scenes/
   main.tscn       # Entry point (scene navigation controller)
   splash_screen.tscn → scenario_selection.tscn → main_game.tscn
   ui/             # UI subscenes (planning, minimap, compass, dev UI)
 data/
-  rules/          # movement_allowance.json, ships.json
-  scenarios/      # Scenario definitions (test_basic.json)
+  rules/          # movement_allowance, ships, bearing_off_table, speed_change_table,
+                  #   tacking_table, turning_table (all .json)
+  scenarios/      # Scenario definitions (test_basic.json, test_fleet.json)
 docs/             # Design docs, game rules, architecture diagrams
 assets/           # Models, textures, shaders, UI art
 test/
@@ -68,6 +70,9 @@ addons/           # godot_mcp (MCP server addon), GUT testing framework
 
 - **GameState** (`scripts/autoload/game_state.gd`): Central state container. Holds all ships, environment, turn/phase, state history. Creates and owns all server controllers in `_ready()`.
 - **DataManager** (`scripts/autoload/data_manager.gd`): Loads and caches JSON data (movement tables, ship definitions, scenarios). Provides lookup methods.
+- **Trace** (`scripts/autoload/trace.gd`): Lightweight tracing/logging autoload — prefer over `print` in game code; covered by `test_trace.gd`.
+
+Note: `scripts/autoload/mcp_server.gd` lives in this folder but is **not** an autoload — it's wired through the `godot_mcp` editor plugin.
 
 ### Turn Phase Cycle (10 phases)
 
@@ -95,7 +100,9 @@ Session-based async system in `MovementPlottingController`/`MovementPlottingSess
 - Rigging quality: `1`–`4` (calculated from HP percentage)
 - Sail states: `fs` (fighting), `ms` (maneuvering), `ps` (plain), `ns` (no sail)
 
-Access via `DataManager.get_movement_allowance(speed_type, wind_facing, wind_speed, rigging_quality, sail_state)`.
+Access via `DataManager.get_movement_allowance(speed_type: String, wind_speed: int, wind_facing: String, sail_state: String, rigging_quality: int)`. Note the argument order does **not** match the JSON nesting order, and `wind_speed`/`rigging_quality` are `int` at the API even though the JSON keys are strings.
+
+Other rule lookups on `DataManager`: `get_speed_change(change_type, maneuverability)`, `get_tacking_percent(maneuverability, wind_speed)`, `get_min_heading_change_movement_required(direction, ship_speed, maneuverability)`.
 
 ### Ship Definitions (`data/rules/ships.json`)
 
@@ -110,7 +117,7 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 ### Hex Grid
 - **Axial coordinates** (q, r) with **pointy-top** orientation
 - **Direction numbering**: 0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE
-- Ship size matters: 1-hex ships (corvettes) center in a hex; 2-hex ships (frigates, SOL) position on the edge between two hexes based on facing — use `axial_to_edge_world()`
+- **All ships are 1-hex.** `ShipState.get_ship_size()` is deprecated and hardcoded to return 1; use `HexGrid.axial_to_world()` for positioning. The `axial_to_edge_world()` path and `size == 2` branches in `ShipView` are dead code kept for possible future revival.
 
 ### Server Authority
 - All mutations guard with `if not is_server: push_error()` — never bypass this
@@ -131,6 +138,7 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 
 ### Legacy Code
 - `scripts/ui/planning_panel.gd` is legacy; `planning_phase_ui.gd` is the current version
+- `axial_to_edge_world()` in `hex_grid.gd` and the `size == 2` branch in `ShipView._update_position_from_state` are unused (see Hex Grid note).
 
 ### Developer UI
 - Press **F12** in-game to toggle the debug inspection panel
