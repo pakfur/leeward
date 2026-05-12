@@ -177,22 +177,26 @@ class SubmissionValidationResult extends RefCounted:
 class PlotStep extends RefCounted:
 	var hex: Vector2i = Vector2i.ZERO
 	var facing: int = 0
+	var move_type: MoveType = MoveType.NONE
 
-	func _init(p_hex: Vector2i = Vector2i.ZERO, p_facing: int = 0) -> void:
+	func _init(p_hex: Vector2i = Vector2i.ZERO, p_facing: int = 0, p_move_type: MoveType = MoveType.NONE) -> void:
 		hex = p_hex
 		facing = p_facing
+		move_type = p_move_type
 
 	func to_dict() -> Dictionary:
 		return {
 			"hex": {"q": hex.x, "r": hex.y},
-			"facing": facing
+			"facing": facing,
+			"move_type": move_type
 		}
 
 	static func from_dict(data: Dictionary) -> PlotStep:
 		var hex_data = data.get("hex", {})
 		return PlotStep.new(
 			Vector2i(hex_data.get("q", 0), hex_data.get("r", 0)),
-			data.get("facing", 0)
+			data.get("facing", 0),
+			data.get("move_type", MoveType.NONE)
 		)
 
 

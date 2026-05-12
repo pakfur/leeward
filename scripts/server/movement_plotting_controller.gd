@@ -142,8 +142,9 @@ func handle_select_hex(session_id: String, expected_version: int, selected_hex: 
 		)
 
 	# Calculate new valid moves from the selected position
+	var move_type = validation.metadata.move_type if validation.metadata else MovementTypes.MoveType.NONE
 	var new_path = session.get_path_copy()
-	new_path.append(MovementTypes.PlotStep.new(selected_hex, validation.new_facing))
+	new_path.append(MovementTypes.PlotStep.new(selected_hex, validation.new_facing, move_type))
 
 	var new_valid_moves = movement_validator.calculate_valid_moves(
 		ship_state,
@@ -157,7 +158,9 @@ func handle_select_hex(session_id: String, expected_version: int, selected_hex: 
 		selected_hex,
 		validation.new_facing,
 		new_valid_moves.valid_hexes,
-		new_valid_moves.can_submit
+		new_valid_moves.can_submit,
+		move_type,
+		new_valid_moves.remaining_ma
 	)
 
 	# Build response
@@ -238,7 +241,8 @@ func handle_undo(session_id: String, expected_version: int, revert_to_version: i
 	session.undo_to_version(
 		revert_to_version,
 		new_valid_moves.valid_hexes,
-		new_valid_moves.can_submit
+		new_valid_moves.can_submit,
+		new_valid_moves.remaining_ma
 	)
 
 	# Build response
