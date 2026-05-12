@@ -45,6 +45,9 @@ var environment: EnvironmentState = null  # Environmental conditions
 var ships: Dictionary = {}  # ship_id -> ShipState
 var ships_by_player: Dictionary = {0: [], 1: []}  # player_id -> Array[ship_id]
 
+# Shared seeded RNG — seeded from scenario on game start; all controllers share this instance
+var rng: RandomNumberGenerator = null
+
 # State history tracking (indexed by turn number)
 var environment_history: Array[EnvironmentState] = []  # Historical environment states
 var ship_history: Dictionary = {}  # ship_id -> Array[ShipState] for historical ship states
@@ -101,6 +104,12 @@ func start_new_game(scenario_data: Dictionary) -> void:
 		return
 
 	active_scenario = scenario_data
+
+	# Seed the shared RNG from scenario (default to 0 if no seed provided)
+	var seed_value: int = scenario_data.get("seed", 0)
+	rng = RandomNumberGenerator.new()
+	rng.seed = seed_value
+	Trace.trace_log("GameState", "RNG seeded", seed_value)
 
 	# Clear any existing state history
 	clear_state_history()

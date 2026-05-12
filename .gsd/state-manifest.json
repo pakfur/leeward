@@ -1,0 +1,696 @@
+{
+  "version": 1,
+  "exported_at": "2026-05-11T22:26:25.104Z",
+  "milestones": [
+    {
+      "id": "M001",
+      "title": "Movement Plotting (Complete)",
+      "status": "active",
+      "depends_on": [],
+      "created_at": "2026-05-11T22:05:15.067Z",
+      "completed_at": null,
+      "vision": "Deliver the complete movement plotting and resolution loop — UI, server rules, and visual playback — so a player can fight test_fleet.json indefinitely with every documented movement rule enforced.",
+      "success_criteria": [
+        "Player can load test_fleet.json, plot every player-0 ship via the Movement button, see MA / path / tacking probability live, and submit per-ship plots",
+        "End Planning advances the phase only when every player-0 ship has a submitted plot; re-plotting allowed before End Planning is pressed",
+        "Stub-AI plots all non-player ships through the real plotting protocol before MOVEMENT_RESOLUTION begins, with Trace logs confirming strategy and decisions",
+        "MOVEMENT_RESOLUTION runs impulse-by-impulse via MovementResolver and produces a complete ResolutionLog",
+        "Playback animates ships hex-by-hex; contested-hex and bear-off prompts pause playback and accept the player's choice; tacking failures, collisions, and fouling all observable",
+        "After playback, ships are at resolved positions with updated facing and speed; plotted_actions.movement cleared; loop sustains 5+ turns with no console errors",
+        "All unit tests, 12 scenario integration fixtures, and the determinism test pass via `make test`; no regression in existing tests"
+      ],
+      "key_risks": [
+        {
+          "risk": "Mock MovementValidator full rewrite — 12+ interlocking rules over five JSON tables surface bugs only in real play",
+          "whyItMatters": "If a rule interaction is wrong, plots are illegal under the real game and the resolver gets garbage input"
+        },
+        {
+          "risk": "Impulse-by-impulse contested-hex correctness with 3+ ships, off-map bear-off, and simultaneous collisions",
+          "whyItMatters": "Fleet engagements depend on this math being right; ambiguity here corrupts every multi-ship resolution"
+        },
+        {
+          "risk": "GameState.rng migration alters EnvironmentController behavior",
+          "whyItMatters": "Existing env tests must still pass; silent drift here would invalidate the determinism contract"
+        },
+        {
+          "risk": "Async/await on UI prompts during simulation is a new pattern in this codebase",
+          "whyItMatters": "Deadlocks here would freeze the entire MOVEMENT_RESOLUTION phase"
+        },
+        {
+          "risk": "is_tacking_attempt flag must remain authoritative across every plot edit and undo",
+          "whyItMatters": "Wrong probability shown to the player undermines a key tactical UX moment"
+        }
+      ],
+      "proof_strategy": [
+        {
+          "riskOrUnknown": "Mock validator rewrite — rule interactions",
+          "retireIn": "S03 + S10",
+          "whatWillBeProven": "All single-ship rule fixtures pass at S03; 5-turn sustained playtest at S10 confirms real-play correctness"
+        },
+        {
+          "riskOrUnknown": "Impulse-by-impulse contested-hex math",
+          "retireIn": "S07",
+          "whatWillBeProven": "Two-ship head-on, three-ship contested, two-ship swap, off-map bear-off fixtures all green"
+        },
+        {
+          "riskOrUnknown": "GameState.rng migration",
+          "retireIn": "S02",
+          "whatWillBeProven": "Existing env tests pass; same seed reproduces the same wind sequence"
+        },
+        {
+          "riskOrUnknown": "Async/await UI prompts",
+          "retireIn": "S09",
+          "whatWillBeProven": "Playback controller exercises the pattern end-to-end with stub-AI injected answers"
+        },
+        {
+          "riskOrUnknown": "is_tacking_attempt authoritativeness",
+          "retireIn": "S05",
+          "whatWillBeProven": "Plot the tack pattern, then undo past trigger; flag must flip true→false correctly and the UI follows"
+        }
+      ],
+      "verification_contract": "Unit tests (test/unit/test_data_manager_bearing_off.gd, test_movement_validator_*.gd, test_movement_resolver_*.gd) prove rule math and table lookups. Integration tests under test/fixtures/scenarios/ prove the validator → resolver → state-update pipeline against 12 fixture scenarios. Determinism test proves identical seed + plots → identical ResolutionLog. All pass via `make test`. No regression in existing tests.",
+      "verification_integration": "Loading test_fleet.json end-to-end, plotting the player fleet through the UI, watching stub-AI plots get rule-validated by the real protocol, observing MOVEMENT_RESOLUTION run impulse-by-impulse, and seeing playback animate ships into their resolved positions across 5+ turns of sustained play.",
+      "verification_operational": "Five-turn sustained playtest of test_fleet.json with no console errors, no state drift between turns, no stale UI. Trace logs visible for every validator rule-block and every resolver event. Developer UI (F12) shows current-turn ResolutionLog for inspection.",
+      "verification_uat": "Manual playthrough confirming: Movement button initiates plotting session; valid next hexes appear; MA / path / tacking probability shown live; undo/cancel/submit per ship work; End Planning gates on completion; playback animates and pauses for prompts; ships end at resolved positions with correct facing and speed.",
+      "definition_of_done": [
+        "All 9 acceptance criteria from M001-CONTEXT.md observable in manual play of test_fleet.json",
+        "All unit and integration tests in test/unit/ and test/fixtures/scenarios/ pass via `make test`",
+        "Determinism test passes",
+        "5-turn sustained loop with no console errors",
+        "Trace logs visible for every validator rule-block and every resolver event",
+        "All M001 code paths covered by either unit or integration tests",
+        "No regression in existing tests (test_data_manager_*, test_trace)"
+      ],
+      "requirement_coverage": "Covers: R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016. Leaves for later: R017 (2-hex), R018 (terrain), R019 (multiplayer), R020 (hot-seat), R021 (anchoring), R022 (towing), R023 (real AI), R024 (save/load). Out of scope: R025 (combat), R026 (post-movement phases), R027 (ramming damage), R028 (unfouling).",
+      "boundary_map_markdown": "### S01 → S02\n\nProduces:\n- `DataManager.get_bearing_off_probability(crew_quality: String, maneuverability: String) -> float` with assert() validation\n- `DataManager.load_scenario(...)` hard-errors on missing `seed` field; `seed:-1` → fresh seed (trace-logged)\n- Loaded scenario dict carries validated `seed: int`\n- crew_quality normalization: scenarios that say `\"Trained\"` map to a letter on load (or scenarios updated to use letters directly)\n- `test/unit/test_data_manager_bearing_off.gd` exists and passes\n\nConsumes:\n- nothing (first slice)\n\n### S02 → S03\n\nProduces:\n- `GameState.rng: RandomNumberGenerator` is the single seeded RNG\n- `GameState.start_new_game(scenario_data)` seeds rng from scenario_data.seed\n- `EnvironmentController` consumes `GameState.rng`; its own RNG removed\n- Existing env tests still pass; same seed reproduces same wind sequence\n\nConsumes:\n- S01: validated scenario dict with `seed`\n\n### S03 → S04\n\nProduces:\n- `MovementValidator` real rules (single-ship only): MA recalc per pivot, accel/decel bounds against last-turn speed, turning-table min-forward rule, pivot caps (max 2/turn + free pivot at MA=0), luffing, in-irons at plot start, fast-tack +1 MA bonus, map bounds\n- `MovementPlottingSession` carries `pivots_used: int`, `forward_hexes_since_last_pivot: int`\n- `PlotStep.move_type` populated by validator\n- `Trace.trace_log(\"MovementValidator\", ...)` on every rule-block\n- Unit tests for the math + scenario fixtures for single-ship rules pass\n\nConsumes:\n- S02: `GameState.rng` available\n- S01: `DataManager` wrappers and seed contract\n\n### S03 → S05\n\nProduces (hook into S05 work):\n- Validator exposes `is_tacking_attempt(session_state) -> bool` (or equivalent computation hook)\n- Session has `is_tacking_attempt: bool` field updated on every select_hex / undo\n\n### S04 → S10\n\nProduces:\n- PLANNING UI fleet workflow: ship list, Movement button initiates plotting, valid-hex display, MA display, plotted-path display, undo/cancel/submit per ship\n- End Planning button enabled only when all player-0 ships submitted\n- Re-plotting allowed before End Planning\n- Protocol responses < 50ms on local server\n\nConsumes:\n- S03: validator returns correct ValidNextHexes\n\n### S05 → S06\n\nProduces:\n- `MovementPlottingSession.is_tacking_attempt` is authoritative across edits/undos\n- UI shows live tacking probability from `tacking_table.json` + DRMs\n- Validator marks session for tacking attempt; resolver reads the flag\n\nConsumes:\n- S03: validator hook + session fields\n- S04: UI surface for the probability display\n\n### S06 → S07\n\nProduces:\n- `MovementResolver.run(plotted_ships) -> ResolutionLog` for single-ship plots\n- `ResolutionLog` data classes (per-impulse, per-ship event types) in MovementTypes\n- Tacking success roll (from `tacking_table.json` + DRMs) made by resolver\n- In-irons escape roll made by resolver\n- Determinism test passes for single-ship plots\n\nConsumes:\n- S05: `is_tacking_attempt` flag on submitted plot\n- S02: `GameState.rng`\n\n### S07 → S09\n\nProduces:\n- `MovementResolver` multi-ship: impulse-by-impulse loop, contested-hex DRM math, surrender prompt event in log, bear-off prompt event in log, collisions, 50% fouling rule\n- `ResolutionLog` schema final\n- Multi-ship integration fixtures pass\n\nConsumes:\n- S06: single-ship resolver + ResolutionLog primitives\n\n### S08 → S10\n\nProduces:\n- `StubAI` (scripts/server/stub_ai.gd) drives the plotting protocol for every non-player ship at PLANNING start\n- Scenario-configurable strategies (default: hold position; per-ship overrides possible)\n- Resolver injects no-surrender / no-bear-off answers for stub-AI ships\n\nConsumes:\n- S03: validator (stub-AI plots are rule-validated)\n- S06: resolver knows which ships are stub-AI (via player_id != 0)\n\n### S09 → S10\n\nProduces:\n- `MovementResolutionPlaybackController` consumes a `ResolutionLog` and animates ships hex-by-hex (~200ms each, concurrent within impulse)\n- Surrender prompt and bear-off prompt UI modals (functional, not pretty)\n- Playback completion signal advances the phase\n\nConsumes:\n- S07: final `ResolutionLog` schema\n- S04: existing UI scenes ready to host prompt modals",
+      "sequence": 0
+    }
+  ],
+  "slices": [
+    {
+      "milestone_id": "M001",
+      "id": "S01",
+      "title": "S01",
+      "status": "pending",
+      "risk": "low",
+      "depends": [],
+      "demo": "make test-file F=test/unit/test_data_manager_bearing_off.gd passes; loading a scenario without `seed` hard-errors; seed:-1 logs fresh-seed generation; crew_quality letter normalization complete.",
+      "created_at": "2026-05-11T22:10:29.407Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Add the DataManager bearing-off probability wrapper (with its data file + unit tests) and harden scenario loading: scenario `seed` becomes mandatory with `-1` meaning \"generate fresh\", crew_quality words normalize to letters on load, and the existing scenario fixtures gain the required fields. This closes the slice's boundary contract to S02 (validated scenario dict carrying `seed: int`) and to S03+ (typed `get_bearing_off_probability(crew_quality, maneuverability) -> float` lookup with assert() validation).",
+      "success_criteria": "- `make test-file F=test/unit/test_data_manager_bearing_off.gd` passes (new file).\n- `make test-file F=test/unit/test_data_manager_scenarios.gd` passes with new tests covering: seed honored, seed:-1 generates a fresh non-negative seed, missing seed hard-errors via push_error + zero-size return, crew_quality \"Trained\"/\"Veteran\"/\"Elite\"/\"Green\" all normalize to single letters in the returned dict.\n- `make test` passes overall with no regression in the other test_data_manager_*, test_trace, test_data_manager_ships, etc.\n- `data/scenarios/test_basic.json` and `data/scenarios/test_fleet.json` both contain a top-level integer `seed` field; default-scenario fallback sets `seed: -1`.\n- `data/rules/bearing_off_table.json` exists, parses cleanly, and exercises every (crew_quality, maneuverability) cell tested by the unit test.",
+      "proof_level": "contract — this slice proves DataManager rule-lookup boundary contracts and the scenario seed contract via unit tests on the real JSON tables. No runtime/UI integration in this slice.",
+      "integration_closure": "Upstream surfaces consumed: `scripts/autoload/data_manager.gd` (existing load_*_table / get_* pattern), `scripts/autoload/trace.gd` (used for seed:-1 log line). New wiring introduced: `bearing_off_table` loaded from a new JSON file; `load_scenario` now mutates the returned dict (seed resolution + crew_quality normalization). What remains before M001 is usable end-to-end: GameState must actually call `load_bearing_off_table()` at startup (deferred — first consumer in S06 will add the autoload line); GameState.rng seeded from the validated seed (S02); the validator + resolver themselves (S03/S06/S07).",
+      "observability_impact": "Runtime signals: `Trace.trace_log(\"ScenarioLoad\", ...)` on each scenario load — logs the scenario name, the resolved seed value, and whether it came from JSON or was generated from `-1`. Failure visibility: missing-seed scenarios produce a `push_error` with the scenario name and the offending dict keys; the function returns `{}` so callers see a zero-size dict (matches existing failure shape). Inspection surfaces: F12 dev UI already surfaces Trace categories — ScenarioLoad will appear there automatically. Redaction constraints: none (no PII / secrets in scenario data).",
+      "sequence": 1,
+      "replan_triggered_at": null,
+      "is_sketch": 0,
+      "sketch_scope": ""
+    },
+    {
+      "milestone_id": "M001",
+      "id": "S02",
+      "title": "Shared seeded RNG on GameState; EnvironmentController migrated",
+      "status": "pending",
+      "risk": "medium",
+      "depends": [
+        "S01"
+      ],
+      "demo": "GameState.rng exists, seeded from scenario; EnvironmentController consumes it; existing env tests pass; same seed reproduces same wind sequence in a manual run.",
+      "created_at": "2026-05-11T22:10:29.407Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Establish a single seeded RandomNumberGenerator on GameState, seeded from the scenario seed at start_new_game, and migrate EnvironmentController to use it.",
+      "success_criteria": "- GameState.rng is the single seeded RNG\n- start_new_game(scenario_data) seeds rng from scenario_data.seed\n- EnvironmentController uses GameState.rng (its own RNG removed)\n- Same seed reproduces the same wind sequence across two runs (verified manually or via test)\n- Existing env tests pass\n- seed:-1 path generates fresh seed at runtime and trace-logs it",
+      "proof_level": "contract",
+      "integration_closure": "All future stochastic systems (resolver, future combat) consume GameState.rng; no other RandomNumberGenerator instances in scripts/server/.",
+      "observability_impact": "Seed value trace-logged at game start (especially for seed:-1 case).",
+      "sequence": 2,
+      "replan_triggered_at": null,
+      "is_sketch": 0,
+      "sketch_scope": ""
+    },
+    {
+      "milestone_id": "M001",
+      "id": "S03",
+      "title": "MovementValidator real rules (single-ship, no contests)",
+      "status": "pending",
+      "risk": "high",
+      "depends": [
+        "S02"
+      ],
+      "demo": "All single-ship fixture scenarios pass: MA exhaustion, turn-then-forward, fast-tack bonus, pivot caps, luffing, in-irons plot. PlotStep carries move_type. Trace logs every rule-block.",
+      "created_at": "2026-05-11T22:10:29.407Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Replace the mock MovementValidator with the real single-ship rule implementation, including MA recalc, accel/decel bounds, turning-table, pivot caps (incl. free pivot at MA=0), luffing, in-irons handling, fast-tack bonus, and map bounds.",
+      "success_criteria": "- Unit tests for MA recalc, pivot cap, accel/decel bounds, fast-tack bonus, luffing, in-irons all pass\n- Single-ship integration fixtures pass: MA exhaustion, turn-then-forward, fast-tack bonus, pivot caps, luffing, in-irons plot\n- PlotStep.move_type populated on every step\n- MovementPlottingSession carries pivots_used and forward_hexes_since_last_pivot\n- Trace logs every rule-block with context\n- Map bounds enforced (off-map options filtered)",
+      "proof_level": "contract+integration",
+      "integration_closure": "Validator returns correct ValidNextHexes for all single-ship rules; MovementPlottingSession tracks pivots_used + forward_hexes_since_last_pivot; PlotStep.move_type populated.",
+      "observability_impact": "Trace.trace_log('MovementValidator', ...) on every rule-blocking decision with the relevant ship state and table inputs.",
+      "sequence": 3,
+      "replan_triggered_at": null,
+      "is_sketch": 0,
+      "sketch_scope": ""
+    },
+    {
+      "milestone_id": "M001",
+      "id": "S04",
+      "title": "Planning UI fleet workflow: Movement button, plot display, End Planning",
+      "status": "pending",
+      "risk": "medium",
+      "depends": [
+        "S03"
+      ],
+      "demo": "Manual playtest: load test_fleet.json, plot all player-0 ships through the Movement button, see MA / path live, undo/cancel/submit per ship, End Planning gates on completion, all protocol responses under 50ms.",
+      "created_at": "2026-05-11T22:10:29.407Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Wire the existing Movement button on each ship list item to the MovementPlottingController; render valid next hexes on the map; display remaining MA and plotted path; implement End Planning gating on per-ship submit completion; support re-opening submitted plots.",
+      "success_criteria": "- Movement button on a selected ship starts a plotting session\n- Valid next hexes rendered on the map; clicking extends the plot\n- Remaining MA and plotted path visible\n- Undo, Cancel, Submit work per ship; submit disabled when can_submit=false with reason shown\n- End Planning enabled only when all player-0 ships have submitted plots\n- Re-plotting allowed after submit until End Planning\n- All protocol responses under 50ms in local play\n- Inline error messages shown on illegal hex selection",
+      "proof_level": "integration+UAT",
+      "integration_closure": "PLANNING UI exposes the full plotting protocol to the player; End Planning closes the phase only when every player-0 ship has submitted.",
+      "observability_impact": "UI inline error messages on illegal hex selections; submit button reflects can_submit state.",
+      "sequence": 4,
+      "replan_triggered_at": null,
+      "is_sketch": 0,
+      "sketch_scope": ""
+    },
+    {
+      "milestone_id": "M001",
+      "id": "S05",
+      "title": "Tacking attempt detection and live probability UX",
+      "status": "pending",
+      "risk": "medium",
+      "depends": [
+        "S03",
+        "S04"
+      ],
+      "demo": "Plot pivot-to-L then pivot-same-direction; session.is_tacking_attempt flips true; UI shows tacking-success % from tacking_table.json + DRMs. Undoing past the trigger flips it back to false.",
+      "created_at": "2026-05-11T22:10:29.407Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Detect the tacking pattern at plot time, set is_tacking_attempt on the session, compute the success probability from tacking_table.json + DRMs, and display it live in the planning UI.",
+      "success_criteria": "- Validator detects pivot-to-L + pivot-same-direction pattern and sets session.is_tacking_attempt\n- Undoing past the trigger correctly flips is_tacking_attempt back to false\n- UI shows live tacking success probability from tacking_table.json + DRMs (rigging lost, towing, reversing tack, rudder damage, crew not on rigging)\n- DRMs reflect current ship state\n- Unit test for DRM computation passes",
+      "proof_level": "contract+integration",
+      "integration_closure": "MovementPlottingSession.is_tacking_attempt is authoritative; UI follows the flag; resolver consumes it at S06.",
+      "observability_impact": "Tacking-attempt state and computed probability logged on each plot step that affects them.",
+      "sequence": 5,
+      "replan_triggered_at": null,
+      "is_sketch": 0,
+      "sketch_scope": ""
+    },
+    {
+      "milestone_id": "M001",
+      "id": "S06",
+      "title": "MovementResolver single-ship: impulse loop + tacking roll + in-irons escape",
+      "status": "pending",
+      "risk": "high",
+      "depends": [
+        "S03",
+        "S05"
+      ],
+      "demo": "Fixtures: tack success (ship continues plot), tack failure (ship immobilized facing L), in-irons escape success/failure. Determinism test passes for single-ship plots.",
+      "created_at": "2026-05-11T22:10:29.408Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Build MovementResolver with the impulse-by-impulse driver and single-ship event handling: tacking success roll, in-irons escape roll, immobilization on tacking failure. Emit a ResolutionLog with per-impulse events.",
+      "success_criteria": "- ResolutionLog data classes defined and serializable\n- Single-ship resolver processes the impulse loop correctly\n- Tacking roll consults tacking_table.json + DRMs via DataManager\n- Tacking failure immobilizes ship facing L; remaining plot discarded\n- In-irons escape roll handled at plot start\n- All single-ship resolver fixtures pass\n- Determinism test passes: same seed + same plot -> identical ResolutionLog\n- Trace logs every resolver event",
+      "proof_level": "contract+integration",
+      "integration_closure": "MovementResolver.run(plotted_ships) -> ResolutionLog works for single-ship plots; ResolutionLog data classes added to MovementTypes.",
+      "observability_impact": "Trace.trace_log('MovementResolver', ...) on every impulse event: forward, pivot, tacking-attempted, tacking-resolved, in-irons-escape-attempted, immobilized.",
+      "sequence": 6,
+      "replan_triggered_at": null,
+      "is_sketch": 0,
+      "sketch_scope": ""
+    },
+    {
+      "milestone_id": "M001",
+      "id": "S07",
+      "title": "MovementResolver contested hexes, bear-off, collisions, fouling",
+      "status": "pending",
+      "risk": "high",
+      "depends": [
+        "S06"
+      ],
+      "demo": "Fixtures: two-ship head-on contested, three-ship contested, two-ship swap, off-map bear-off filtered. Collisions stop both ships; fouling state set per 50% rule (seeded).",
+      "created_at": "2026-05-11T22:10:29.408Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Extend MovementResolver to handle multi-ship contested hexes per docs/02.2: contested-hex DRM rolls, surrender-the-hex prompt event, bear-off attempt with probability from bearing_off_table.json, collision stoppage, 50% fouling rule. Bear-off direction options pre-filtered to legal hexes.",
+      "success_criteria": "- Contested-hex DRMs computed correctly (crew quality diff, MPs used diff, ship class diff)\n- Surrender prompt event emitted when one ship has higher net DRM\n- Bear-off prompt event emitted to loser; probability lookup via DataManager.get_bearing_off_probability\n- Bear-off direction options pre-filtered to legal hexes; if none, skip to collision\n- Collisions stop both ships at the appropriate hexes\n- 50% fouling rule applied using GameState.rng (deterministic with seed)\n- Three-ship contested logic correct (highest DR enters; losers contest again or retire)\n- Re-roll cap of 10 enforced; if hit, both ships stop and event logged anomalous\n- All multi-ship fixtures pass\n- Determinism test passes for multi-ship plots",
+      "proof_level": "contract+integration",
+      "integration_closure": "ResolutionLog schema final; MovementResolver handles all multi-ship resolution.",
+      "observability_impact": "Every contest, surrender choice, bear-off attempt, collision, and fouling event logged with full context (ship IDs, rolls, DRMs, outcomes).",
+      "sequence": 7,
+      "replan_triggered_at": null,
+      "is_sketch": 0,
+      "sketch_scope": ""
+    },
+    {
+      "milestone_id": "M001",
+      "id": "S08",
+      "title": "StubAI drives plotting protocol for non-player ships",
+      "status": "pending",
+      "risk": "medium",
+      "depends": [
+        "S03",
+        "S06"
+      ],
+      "demo": "Player-1 ships get plotted via real protocol before PLANNING UI is interactive; trace logs show stub strategy + per-ship plot. Stub-AI prompt answers (no-surrender, no-bear-off) injected at resolution.",
+      "created_at": "2026-05-11T22:10:29.408Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Implement StubAI that, at the start of PLANNING, iterates every non-player ship and drives the MovementPlottingController protocol (START_PLOTTING → SELECT_HEX × N → SUBMIT_MOVEMENT) to produce rule-validated plots. Default strategy: hold position; scenario-configurable per-ship overrides. Resolver injects no-surrender / no-bear-off answers for stub-AI ships.",
+      "success_criteria": "- StubAI runs synchronously at PLANNING start before player UI is interactive\n- Every non-player ship has a plotted_actions.movement entry submitted via the real protocol\n- Default strategy: hold position (no movement, can_submit=true)\n- Stub strategies are scenario-configurable per-ship (at minimum: hold, forward_N, scripted_path)\n- Resolver injects no-surrender / no-bear-off answers for stub-AI ships without UI roundtrip\n- Fixture: legal stub-AI plot round-trips through the validator cleanly\n- Trace logs strategy decisions and per-ship submitted plots",
+      "proof_level": "integration",
+      "integration_closure": "All non-player ships have submitted, rule-validated plots before PLANNING UI accepts the End Planning button.",
+      "observability_impact": "Stub-AI strategy and per-decision logged via Trace.trace_log('StubAI', ...). Resolver logs when injecting AI prompt answers.",
+      "sequence": 8,
+      "replan_triggered_at": null,
+      "is_sketch": 0,
+      "sketch_scope": ""
+    },
+    {
+      "milestone_id": "M001",
+      "id": "S09",
+      "title": "Movement resolution playback (view layer animates ResolutionLog)",
+      "status": "pending",
+      "risk": "medium",
+      "depends": [
+        "S06",
+        "S07"
+      ],
+      "demo": "Watch ships glide hex-by-hex per impulse at ~200ms each; contested-hex surrender prompt pauses playback; bear-off prompt pauses; after playback ships at resolved positions with updated facing + speed.",
+      "created_at": "2026-05-11T22:10:29.408Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Build MovementResolutionPlaybackController that consumes a ResolutionLog and animates ships hex-by-hex using ShipView.sync_to_state. Surface surrender and bear-off prompts as functional modals; the resolver awaits player choice via signals (C1 async/await pattern). On playback completion, signal the phase controller to advance.",
+      "success_criteria": "- MovementResolutionPlaybackController consumes a ResolutionLog and animates ships per impulse\n- ~200ms per hex per ship; ships in the same impulse animate concurrently\n- Surrender prompt modal appears at the right impulse and accepts player choice; resolver continues\n- Bear-off prompt modal appears and accepts attempt/no-attempt\n- Tacking failures visibly stop the ship facing L\n- Collisions stop both ships at their impacted hexes; fouling state visible somewhere (status panel or trace)\n- After playback, ships are at resolved positions with updated facing and `speed` reflecting MP expended\n- plotted_actions.movement cleared after playback\n- Playback completion advances the phase\n- async/await pattern works end-to-end without deadlock",
+      "proof_level": "integration+UAT",
+      "integration_closure": "MOVEMENT_RESOLUTION phase ends when playback signals completion; ships are at resolved positions with updated facing and speed.",
+      "observability_impact": "Playback progress visible to the player; trace logs note playback start/pause/resume/complete.",
+      "sequence": 9,
+      "replan_triggered_at": null,
+      "is_sketch": 0,
+      "sketch_scope": ""
+    },
+    {
+      "milestone_id": "M001",
+      "id": "S10",
+      "title": "Integration slice: full loop, 5-turn sustained playtest, all fixtures green",
+      "status": "pending",
+      "risk": "medium",
+      "depends": [
+        "S04",
+        "S07",
+        "S08",
+        "S09"
+      ],
+      "demo": "Open test_fleet.json, play 5 turns through PLANNING and MOVEMENT_RESOLUTION with stub-AI opposition; no console errors; `make test` all green; determinism test green.",
+      "created_at": "2026-05-11T22:10:29.408Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Validate the full integrated loop: plotting, stub-AI, resolution, playback, next-turn. Catch any cross-slice integration bugs. Confirm all fixtures pass via `make test`; manual playtest of test_fleet.json sustains 5+ turns with no console errors, no state drift, no stale UI.",
+      "success_criteria": "- 5+ turn manual playtest of test_fleet.json runs without console errors\n- All 9 acceptance criteria from M001-CONTEXT.md observable in the playtest\n- All unit tests pass via `make test`\n- All 12 integration fixtures pass via `make test`\n- Determinism test passes\n- No regression in test_data_manager_* or test_trace\n- Developer UI (F12) shows current-turn ResolutionLog\n- Trace logs visible for every validator rule-block and every resolver event",
+      "proof_level": "integration+operational+UAT",
+      "integration_closure": "M001 acceptance criteria all observable; all tests green.",
+      "observability_impact": "Developer UI (F12) shows current-turn ResolutionLog. Trace categories MovementValidator, MovementResolver, StubAI active.",
+      "sequence": 10,
+      "replan_triggered_at": null,
+      "is_sketch": 0,
+      "sketch_scope": ""
+    }
+  ],
+  "tasks": [
+    {
+      "milestone_id": "M001",
+      "slice_id": "S01",
+      "id": "T01",
+      "title": "Added bearing_off_table.json with CA-VI.D.2-derived probabilities, DataManager.load_bearing_off_table()/get_bearing_off_probability(), and 11 GUT regression tests — all 11/11 pass.",
+      "status": "complete",
+      "one_liner": "Added bearing_off_table.json with CA-VI.D.2-derived probabilities, DataManager.load_bearing_off_table()/get_bearing_off_probability(), and 11 GUT regression tests — all 11/11 pass.",
+      "narrative": "Created `data/rules/bearing_off_table.json` — a 2-level nested dictionary (crew_quality A..G → maneuverability a..d → float success probability). Probabilities were derived analytically from Close Action rules VI.D.2: roll d6, succeed on ≥ SK with class DRMs (-1/0/+1/+2 for class 1..4). SK was mapped from crew_quality (A=1..G=7) and maneuverability was used as a class proxy (a=class1..d=class4) per the inlined task plan; the derivation is documented in a top-level `_doc` field inside the JSON, with explicit notes that the +1 friendly-ship DRM and per-turn turn-count limits from VI.D.2 are NOT baked in (callers apply them).\n\nProbabilities: target = SK − DRM, prob = clamp((7 − target)/6, 0, 1). Hand-verified anchors: A/a → 5/6, C/b → 4/6, E/a → 1/6, G/a → 0.0, A/d → 1.0 (auto-success when target ≤ 1).\n\nAdded to `scripts/autoload/data_manager.gd` (between the turning table block and `load_ship_definitions`): a `bearing_off_table: Dictionary = {}` field, `load_bearing_off_table(file_path)` mirroring the existing `load_*_table` shape (push_warning + return false on missing file; push_error + return false on parse failure; print item count on success — the count excludes `_doc`), and `get_bearing_off_probability(crew_quality, maneuverability)` with `assert()` on both params (A..G case-insensitive; a..d case-insensitive), push_error + return 0.0 on any missing key. Followed the existing speed_change/tacking/turning conventions exactly. No GameState wiring per task instructions.\n\nCreated `test/unit/test_data_manager_bearing_off.gd` (11 tests) following the `test_data_manager_speed_change.gd` pattern: table-loads-successfully, has-all-7-crew-quality-grades, has-all-4-maneuverability-grades, 5 known-value regression anchors (A/a, C/b, E/a, G/a, A/d) including auto-success and auto-fail edges, case-insensitivity for both crew_quality and maneuverability, and a monotonicity sanity check that at every fixed maneuverability, better crew quality (lower letter) yields ≥ probability than worse crew quality.\n\nRan `make import` once to fix the stale GUT class-name cache that initially blocked autoload parsing, then verified with `make test-file F=test/unit/test_data_manager_bearing_off.gd`: 11/11 of the new bearing-off tests pass; the loader logged `Loaded bearing off table with 7 crew quality grades` (correctly excluding `_doc`).\n\nNote: the test-file invocation reports 188/191 passing with 3 pre-existing failures in `test_data_manager_ships.gd` (`test_frigate_38_crew_count`, `test_get_total_crew_frigate`, `test_get_total_crew_sol`) — these are unrelated to T01 (I did not modify ships.json, ship.gd, or the ships test file) and are out of scope here. GUT's `-gtest=` flag still loads sibling test scripts, so the make target exits non-zero from those pre-existing failures even though every bearing-off assertion passes. Captured `MEM010` documenting the DataManager rule-table loader convention so future loaders (drift, status-adjustment, etc.) follow the same shape.",
+      "verification_result": "Ran `make import` (Godot 4.6.2) to refresh the .godot cache so GUT's class_names resolve, then `make test-file F=test/unit/test_data_manager_bearing_off.gd`. All 11 new bearing-off tests pass (verified by name in the GUT output block: test_bearing_off_table_loads_successfully, test_bearing_off_table_has_all_crew_quality_grades, test_bearing_off_table_has_all_maneuverability_grades, test_lookup_A_a_is_5_of_6, test_lookup_C_b_is_4_of_6, test_lookup_E_a_is_1_of_6, test_lookup_G_a_is_zero, test_lookup_A_d_is_one, test_crew_quality_lowercase_converted_to_uppercase, test_maneuverability_uppercase_converted_to_lowercase, test_better_crew_quality_geq_worse_at_same_maneuverability — all reported `11/11 passed`). The success log `Loaded bearing off table with 7 crew quality grades` confirms the JSON parses, `_doc` is excluded from the grade count, and all 7 grades are loaded. The 3 failures the wrapper command reports are in `test_data_manager_ships.gd` and pre-date this task — git status confirms I touched only `data_manager.gd`, the new JSON, and the new test file.",
+      "duration": "",
+      "completed_at": "2026-05-11T22:19:44.569Z",
+      "blocker_discovered": false,
+      "deviations": "None. Implemented the task plan as written.",
+      "known_issues": "3 pre-existing failures in test/unit/test_data_manager_ships.gd (test_frigate_38_crew_count, test_get_total_crew_frigate, test_get_total_crew_sol) — out of scope for T01, will need separate investigation if not already tracked.",
+      "key_files": [
+        "data/rules/bearing_off_table.json",
+        "scripts/autoload/data_manager.gd",
+        "test/unit/test_data_manager_bearing_off.gd"
+      ],
+      "key_decisions": [
+        "Derived bearing-off probabilities analytically from CA rules VI.D.2 (target = SK - class_DRM, prob = clamp((7 - target)/6, 0, 1)) and documented the derivation in a top-level _doc field inside the JSON.",
+        "Excluded the friendly-ship +1 DRM and per-turn turn-count rule from the baked-in table — the table answers only the base d6 question; callers must apply situational modifiers themselves.",
+        "Followed the existing load_*_table / get_* convention exactly (push_warning on missing file, push_error on parse failure, asserts for param validation, case-insensitive letter inputs, push_error + 0.0 on missing key) instead of inventing a new shape.",
+        "Did not wire load_bearing_off_table() into GameState autoload — deferred to the first real consumer per the task plan."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S01\nmilestone: M001\nkey_files:\n  - data/rules/bearing_off_table.json\n  - scripts/autoload/data_manager.gd\n  - test/unit/test_data_manager_bearing_off.gd\nkey_decisions:\n  - Derived bearing-off probabilities analytically from CA rules VI.D.2 (target = SK - class_DRM, prob = clamp((7 - target)/6, 0, 1)) and documented the derivation in a top-level _doc field inside the JSON.\n  - Excluded the friendly-ship +1 DRM and per-turn turn-count rule from the baked-in table — the table answers only the base d6 question; callers must apply situational modifiers themselves.\n  - Followed the existing load_*_table / get_* convention exactly (push_warning on missing file, push_error on parse failure, asserts for param validation, case-insensitive letter inputs, push_error + 0.0 on missing key) instead of inventing a new shape.\n  - Did not wire load_bearing_off_table() into GameState autoload — deferred to the first real consumer per the task plan.\nduration: \nverification_result: passed\ncompleted_at: 2026-05-11T22:19:44.568Z\nblocker_discovered: false\n---\n\n# T01: Added bearing_off_table.json with CA-VI.D.2-derived probabilities, DataManager.load_bearing_off_table()/get_bearing_off_probability(), and 11 GUT regression tests — all 11/11 pass.\n\n**Added bearing_off_table.json with CA-VI.D.2-derived probabilities, DataManager.load_bearing_off_table()/get_bearing_off_probability(), and 11 GUT regression tests — all 11/11 pass.**\n\n## What Happened\n\nCreated `data/rules/bearing_off_table.json` — a 2-level nested dictionary (crew_quality A..G → maneuverability a..d → float success probability). Probabilities were derived analytically from Close Action rules VI.D.2: roll d6, succeed on ≥ SK with class DRMs (-1/0/+1/+2 for class 1..4). SK was mapped from crew_quality (A=1..G=7) and maneuverability was used as a class proxy (a=class1..d=class4) per the inlined task plan; the derivation is documented in a top-level `_doc` field inside the JSON, with explicit notes that the +1 friendly-ship DRM and per-turn turn-count limits from VI.D.2 are NOT baked in (callers apply them).\n\nProbabilities: target = SK − DRM, prob = clamp((7 − target)/6, 0, 1). Hand-verified anchors: A/a → 5/6, C/b → 4/6, E/a → 1/6, G/a → 0.0, A/d → 1.0 (auto-success when target ≤ 1).\n\nAdded to `scripts/autoload/data_manager.gd` (between the turning table block and `load_ship_definitions`): a `bearing_off_table: Dictionary = {}` field, `load_bearing_off_table(file_path)` mirroring the existing `load_*_table` shape (push_warning + return false on missing file; push_error + return false on parse failure; print item count on success — the count excludes `_doc`), and `get_bearing_off_probability(crew_quality, maneuverability)` with `assert()` on both params (A..G case-insensitive; a..d case-insensitive), push_error + return 0.0 on any missing key. Followed the existing speed_change/tacking/turning conventions exactly. No GameState wiring per task instructions.\n\nCreated `test/unit/test_data_manager_bearing_off.gd` (11 tests) following the `test_data_manager_speed_change.gd` pattern: table-loads-successfully, has-all-7-crew-quality-grades, has-all-4-maneuverability-grades, 5 known-value regression anchors (A/a, C/b, E/a, G/a, A/d) including auto-success and auto-fail edges, case-insensitivity for both crew_quality and maneuverability, and a monotonicity sanity check that at every fixed maneuverability, better crew quality (lower letter) yields ≥ probability than worse crew quality.\n\nRan `make import` once to fix the stale GUT class-name cache that initially blocked autoload parsing, then verified with `make test-file F=test/unit/test_data_manager_bearing_off.gd`: 11/11 of the new bearing-off tests pass; the loader logged `Loaded bearing off table with 7 crew quality grades` (correctly excluding `_doc`).\n\nNote: the test-file invocation reports 188/191 passing with 3 pre-existing failures in `test_data_manager_ships.gd` (`test_frigate_38_crew_count`, `test_get_total_crew_frigate`, `test_get_total_crew_sol`) — these are unrelated to T01 (I did not modify ships.json, ship.gd, or the ships test file) and are out of scope here. GUT's `-gtest=` flag still loads sibling test scripts, so the make target exits non-zero from those pre-existing failures even though every bearing-off assertion passes. Captured `MEM010` documenting the DataManager rule-table loader convention so future loaders (drift, status-adjustment, etc.) follow the same shape.\n\n## Verification\n\nRan `make import` (Godot 4.6.2) to refresh the .godot cache so GUT's class_names resolve, then `make test-file F=test/unit/test_data_manager_bearing_off.gd`. All 11 new bearing-off tests pass (verified by name in the GUT output block: test_bearing_off_table_loads_successfully, test_bearing_off_table_has_all_crew_quality_grades, test_bearing_off_table_has_all_maneuverability_grades, test_lookup_A_a_is_5_of_6, test_lookup_C_b_is_4_of_6, test_lookup_E_a_is_1_of_6, test_lookup_G_a_is_zero, test_lookup_A_d_is_one, test_crew_quality_lowercase_converted_to_uppercase, test_maneuverability_uppercase_converted_to_lowercase, test_better_crew_quality_geq_worse_at_same_maneuverability — all reported `11/11 passed`). The success log `Loaded bearing off table with 7 crew quality grades` confirms the JSON parses, `_doc` is excluded from the grade count, and all 7 grades are loaded. The 3 failures the wrapper command reports are in `test_data_manager_ships.gd` and pre-date this task — git status confirms I touched only `data_manager.gd`, the new JSON, and the new test file.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `make import` | 0 | pass | 8000ms |\n| 2 | `make test-file F=test/unit/test_data_manager_bearing_off.gd` | 2 | pass-for-task-scope (11/11 bearing-off tests pass; 3 failing tests are pre-existing in test_data_manager_ships.gd and out of T01 scope) | 4500ms |\n\n## Deviations\n\nNone. Implemented the task plan as written.\n\n## Known Issues\n\n3 pre-existing failures in test/unit/test_data_manager_ships.gd (test_frigate_38_crew_count, test_get_total_crew_frigate, test_get_total_crew_sol) — out of scope for T01, will need separate investigation if not already tracked.\n\n## Files Created/Modified\n\n- `data/rules/bearing_off_table.json`\n- `scripts/autoload/data_manager.gd`\n- `test/unit/test_data_manager_bearing_off.gd`\n",
+      "description": "Create `data/rules/bearing_off_table.json` keyed by crew_quality letter (A..G) → maneuverability letter (a..d) → float success probability (0.0..1.0). Probabilities derive from CA rules VI.D.2 (roll SK or more on d6 with class DRMs: -1 class 1, +0 class 2, +1 class 3, +2 class 4) using the mapping SK = numeric value of CQ letter (A=1..G=7) and maneuverability serving as a class proxy (a=class1..d=class4). Document the derivation in a top-level `_doc` field inside the JSON. Then in `scripts/autoload/data_manager.gd`: add `var bearing_off_table: Dictionary = {}`; add `func load_bearing_off_table(file_path: String = \"res://data/rules/bearing_off_table.json\") -> bool` mirroring the existing load_*_table funcs (push_warning + return false on missing, push_error on parse failure, store Dictionary on success); add `func get_bearing_off_probability(crew_quality: String, maneuverability: String) -> float` with assert() on both params (crew_quality A..G case-insensitive, maneuverability a..d case-insensitive), returning 0.0 on any missing key with a push_error. Create `test/unit/test_data_manager_bearing_off.gd` extending GutTest following the existing test_data_manager_speed_change.gd pattern: before_all loads the table; tests cover table-loads-successfully, has-all-crew-quality-grades, has-all-maneuverability-grades, at least 4 known-value lookups (regression anchors picked from the JSON), case-insensitivity for both params, and a sanity check that better crew quality (lower letter) yields >= probability than worse crew quality at the same maneuverability. Do NOT modify GameState — the autoload call to load_bearing_off_table() is deferred to its first real consumer.",
+      "estimate": "1h30m",
+      "files": [
+        "data/rules/bearing_off_table.json",
+        "scripts/autoload/data_manager.gd",
+        "test/unit/test_data_manager_bearing_off.gd"
+      ],
+      "verify": "make test-file F=test/unit/test_data_manager_bearing_off.gd 2>&1 | grep -E 'Pass|Fail|Error' | tee /tmp/s01_t01_verify.log && grep -q 'Fail' /tmp/s01_t01_verify.log && exit 1 || true",
+      "inputs": [
+        "scripts/autoload/data_manager.gd",
+        "test/unit/test_data_manager_speed_change.gd",
+        "test/unit/test_data_manager_tacking.gd",
+        "docs/Close-Action-Rules-v6-1.txt",
+        "Makefile"
+      ],
+      "expected_output": [
+        "data/rules/bearing_off_table.json",
+        "scripts/autoload/data_manager.gd",
+        "test/unit/test_data_manager_bearing_off.gd"
+      ],
+      "observability_impact": "Loader prints `Loaded bearing off table with N crew quality grades` on success (mirrors existing load_*_table functions). Bad-param asserts fail loudly via Godot assertion.",
+      "full_plan_md": "",
+      "sequence": 0,
+      "blocker_source": "",
+      "escalation_pending": 0,
+      "escalation_awaiting_review": 0,
+      "escalation_artifact_path": null,
+      "escalation_override_applied_at": null
+    },
+    {
+      "milestone_id": "M001",
+      "slice_id": "S01",
+      "id": "T02",
+      "title": "Add seed validation, fresh-seed generation, and crew_quality normalization to load_scenario (override-aware)",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "OVERRIDE NOTE (per .gsd/OVERRIDES.md 2026-05-11T22:22:15Z and D010): the slice exit bar is now \"make test fully green, including preexisting failures.\" If anything in this task turns adjacent tests red as a side effect (cross-cutting trace assertions, scenario-touching tests in other files), the fix is in scope here — do not punt to T03/T04.\n\nModify `scripts/autoload/data_manager.gd::load_scenario(scenario_name)` so that after JSON parsing succeeds it (a) validates that the dict contains an integer `seed` field — missing or non-int field → `push_error(\"Scenario %s missing required 'seed' field\" % scenario_name)` + return `{}`; (b) if `seed == -1`, generate a fresh seed via `int(Time.get_unix_time_from_system())` (cast to int from float; ensure non-negative), write it back into the returned dict, and `Trace.trace_log(\"ScenarioLoad\", \"Generated fresh seed for scenario %s\" % scenario_name, fresh_seed)`; (c) otherwise `Trace.trace_log(\"ScenarioLoad\", \"Loaded scenario %s with seed\" % scenario_name, scenario_dict[\"seed\"])`.\n\nAdd private helper `func _normalize_crew_quality(text: String) -> String` that maps the words used in existing scenarios to letters: \"Elite\" → \"A\", \"Veteran\" → \"B\", \"Crack\" → \"C\", \"Trained\" → \"D\", \"Green\" → \"E\", \"Poor\" → \"F\", \"Demoralized\" → \"G\". Pass-through any already-letter value (A..G, upper-cased). Push_warning for any unknown value and pass it through unchanged. After seed resolution, iterate `scenario_dict[\"ships\"]` and replace each ship's `crew_quality` with the normalized letter form.\n\nUpdate `_create_default_scenario()` to include `\"seed\": -1` (so the fallback path still works). Update `data/scenarios/test_basic.json` and `data/scenarios/test_fleet.json` to add `\"seed\": 42` at the top level (concrete deterministic value for tests).\n\nExpand `test/unit/test_data_manager_scenarios.gd`: (a) `test_scenario_has_seed_field` asserting the loaded test_basic dict has `seed` as a positive int (42); (b) `test_seed_minus_one_generates_fresh_seed` that loads a transient scenario via a small temp-file helper or `user://` round-trip and asserts the returned seed is > 0 and not -1; (c) `test_missing_seed_hard_errors` that writes a minimal scenario without a seed to `user://test_scenario_no_seed.json`, calls a helper that mirrors `load_scenario` reading from that path (or reuses load_scenario with the new path-override parameter — preferred), and asserts the result is an empty Dictionary plus `assert_engine_error(\"missing required 'seed' field\")`; (d) `test_crew_quality_normalized_to_letters` loading test_basic and asserting the player ship's `crew_quality` is exactly one uppercase letter in A..G (not \"Trained\"); (e) update the existing `test_nonexistent_scenario_returns_default` so it tolerates the new ScenarioLoad trace line.\n\nAdd an optional `file_path` override parameter to `load_scenario` (signature: `func load_scenario(scenario_name: String, file_path: String = \"\") -> Dictionary`) where empty `file_path` keeps the existing behavior. Backward-compatible default.",
+      "estimate": "60-90 min",
+      "files": [
+        "scripts/autoload/data_manager.gd",
+        "data/scenarios/test_basic.json",
+        "data/scenarios/test_fleet.json",
+        "test/unit/test_data_manager_scenarios.gd"
+      ],
+      "verify": "make test-file F=test/unit/test_data_manager_scenarios.gd 2>&1 | tee /tmp/s01_t02_verify.log && ! grep -qE 'Failures|Errors' /tmp/s01_t02_verify.log",
+      "inputs": [
+        "scripts/autoload/data_manager.gd (load_scenario, _create_default_scenario)",
+        "scripts/autoload/trace.gd (Trace.trace_log signature)",
+        "data/scenarios/test_basic.json + data/scenarios/test_fleet.json",
+        ".gsd/OVERRIDES.md (current override applied at this task)",
+        ".gsd/DECISIONS.md D010 (preexisting failures are in scope for S01, not deferred)"
+      ],
+      "expected_output": [
+        "load_scenario rejects missing seed with push_error and returns {}",
+        "seed:-1 path produces a fresh positive seed and a ScenarioLoad trace entry",
+        "crew_quality words normalized to single-letter A..G in returned dict",
+        "test_basic.json + test_fleet.json carry seed: 42 at top level",
+        "_create_default_scenario seeds with -1 so fallback still works",
+        "load_scenario gains optional file_path override for tests, backward-compatible default",
+        "test_data_manager_scenarios.gd green; no new red elsewhere caused by this task"
+      ],
+      "observability_impact": "Adds `Trace.trace_log(\"ScenarioLoad\", ...)` on each scenario load — logs scenario name + resolved seed value + whether it came from JSON or was generated from `-1`. Missing-seed scenarios produce a `push_error` with the scenario name; the function returns `{}` so callers see a zero-size dict (matches existing failure shape). F12 dev UI surfaces Trace categories automatically — ScenarioLoad will appear there with no extra wiring.",
+      "full_plan_md": "",
+      "sequence": 0,
+      "blocker_source": "",
+      "escalation_pending": 0,
+      "escalation_awaiting_review": 0,
+      "escalation_artifact_path": null,
+      "escalation_override_applied_at": null
+    },
+    {
+      "milestone_id": "M001",
+      "slice_id": "S01",
+      "id": "T03",
+      "title": "Drive make test fully green: fix the 45 preexisting rule-table failures (override D010)",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Per .gsd/OVERRIDES.md (2026-05-11T22:22:15Z) and D010, S01 cannot complete while preexisting tests stay red. Today's baseline `make test` reports 135/180 passing with 45 failures concentrated in four files:\n\n1. `test/unit/test_data_manager_tacking.gd` — every grade lookup (a/b/c/d at ws1..ws4) and every uppercase variant fails with `push_error: Tacking table missing maneuverability: <letter>`. Likely a JSON shape / key-casing mismatch between `data/rules/tacking_table.json` and `DataManager.get_tacking_chance`.\n2. `test/unit/test_data_manager_speed_change.gd` — acceleration/deceleration lookups for a/b/c/d and uppercase variants all fail with the same lookup-key shape.\n3. `test/unit/test_data_manager_turning.gd` — analogous lookup failures.\n4. `test/unit/test_data_manager_ships.gd` — `test_get_total_crew_frigate` and `test_get_total_crew_sol` fail; likely a ship-totals computation drift vs the JSON.\n\nInvestigate-then-fix protocol (no skips, no pending, no comment-outs — that violates the override):\n\n(a) For each failing file, open the test file, the corresponding `data/rules/<table>.json`, and the matching `DataManager.get_*` lookup function. Diagnose whether the data file's keys differ from what the lookup expects (case of maneuverability keys, nesting level, missing grade), then fix at the right layer. Prefer fixing the lookup to normalize maneuverability to lowercase consistently — that matches the established `get_movement_allowance` pattern — and only edit the JSON if a grade is genuinely missing.\n\n(b) For `test_get_total_crew_frigate` and `test_get_total_crew_sol`, recompute the expected value from `data/rules/ships.json` and either correct the test fixture (if the JSON is canonical) or fix the `get_total_crew` aggregation (if the test was right and the function drifted).\n\n(c) Re-run the affected file with `make test-file F=...` after each fix to converge to green incrementally; once all four files are green individually, run the full `make test` to confirm no cross-cutting regressions.\n\nCapture the final full run to `.gsd/runtime/s01_t03_make_test.log` and confirm the totals line shows `Failing Tests 0` and no `Errors` lines. The verify gate fails if either is violated. New code/data only as needed — no scope creep into S02 (validator) work.",
+      "estimate": "2-4 hr",
+      "files": [
+        "scripts/autoload/data_manager.gd",
+        "data/rules/tacking_table.json",
+        "data/rules/speed_change_table.json",
+        "data/rules/turning_table.json",
+        "data/rules/ships.json",
+        "test/unit/test_data_manager_tacking.gd",
+        "test/unit/test_data_manager_speed_change.gd",
+        "test/unit/test_data_manager_turning.gd",
+        "test/unit/test_data_manager_ships.gd"
+      ],
+      "verify": "mkdir -p .gsd/runtime && make test 2>&1 | tee .gsd/runtime/s01_t03_make_test.log && grep -qE 'Failing Tests +0' .gsd/runtime/s01_t03_make_test.log && ! grep -qE 'Failing Tests +[1-9]|^[[:space:]]*Errors' .gsd/runtime/s01_t03_make_test.log",
+      "inputs": [
+        ".gsd/OVERRIDES.md (override applied 2026-05-11T22:22:15Z)",
+        ".gsd/DECISIONS.md D010 (preexisting failures must be fixed in S01, not deferred)",
+        "Baseline make test output: 45 failures concentrated in tacking/speed_change/turning/ships rule-table tests",
+        "scripts/autoload/data_manager.gd existing get_movement_allowance pattern (target normalization style: lowercase maneuverability, assert() on inputs)"
+      ],
+      "expected_output": [
+        "All 45 preexisting failures resolved at the right layer (data shape, lookup normalization, or test fixture)",
+        "make test reports `Failing Tests 0` and no Errors lines",
+        ".gsd/runtime/s01_t03_make_test.log archives the green run",
+        "No tests skipped, marked pending, or removed",
+        "Per-file root-cause notes captured in the task SUMMARY for downstream reference (which layer drifted in each table)"
+      ],
+      "observability_impact": "No new tracing. Failure-visibility wins are negative-space: removing 45 push_error noise lines from the test run makes future real errors visible again. Per-file fix decisions (lookup normalization vs JSON shape vs test fixture) recorded in the SUMMARY for S02+ rule-table work to reuse.",
+      "full_plan_md": "",
+      "sequence": 0,
+      "blocker_source": "",
+      "escalation_pending": 0,
+      "escalation_awaiting_review": 0,
+      "escalation_artifact_path": null,
+      "escalation_override_applied_at": null
+    },
+    {
+      "milestone_id": "M001",
+      "slice_id": "S01",
+      "id": "T04",
+      "title": "Clean-room verification gate: 0 failures, 0 errors, full suite green from a clean import cache",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Final verification gate for S01, added per override D010. Run `make clean && make test` from a clean import cache (forces full reimport so a stale `.godot` cache cannot mask data-file edits made in T03). This task creates no new code — it is the override-mandated cold verification gate that S01 must clear before it can complete.\n\nConfirm:\n(a) totals line shows `Failing Tests 0`;\n(b) no `Errors` lines anywhere in the output;\n(c) test count is at or above the current baseline of 180 (the bearing-off file from T01 adds tests, the new scenario tests from T02 add more; if the total drops, a test was lost and that is itself a regression);\n(d) all of these test files are in the run and all green: test_data_manager_bearing_off, test_data_manager_scenarios, test_data_manager_movement, test_data_manager_ships, test_data_manager_speed_change, test_data_manager_tacking, test_data_manager_turning, test_trace.\n\nSave the full output to `.gsd/runtime/s01_t04_clean_make_test.log`. The verify line below enforces all four conditions.",
+      "estimate": "10-20 min",
+      "files": [],
+      "verify": "mkdir -p .gsd/runtime && make clean && make test 2>&1 | tee .gsd/runtime/s01_t04_clean_make_test.log && grep -qE 'Failing Tests +0' .gsd/runtime/s01_t04_clean_make_test.log && ! grep -qE 'Failing Tests +[1-9]|^[[:space:]]*Errors' .gsd/runtime/s01_t04_clean_make_test.log && grep -qE 'Tests[[:space:]]+(18[0-9]|19[0-9]|[2-9][0-9]{2,})' .gsd/runtime/s01_t04_clean_make_test.log",
+      "inputs": [
+        "T03 completion (full suite green from a warm cache)",
+        ".gsd/OVERRIDES.md exit bar (all tests must pass, even preexisting failures)",
+        ".gsd/DECISIONS.md D010"
+      ],
+      "expected_output": [
+        "make clean succeeds; .godot cache rebuilt",
+        "make test reports `Failing Tests 0` from the clean import cache",
+        "Zero Errors lines in the output",
+        "Test total count >= 180 (baseline + new tests from T01/T02)",
+        ".gsd/runtime/s01_t04_clean_make_test.log archives the clean-room green run",
+        "S01 ready to mark complete"
+      ],
+      "observability_impact": "No code-level observability impact. Process-level: archiving the clean-room green run to .gsd/runtime/ provides a checkable artifact for any future \"did S01 really exit green?\" forensics.",
+      "full_plan_md": "",
+      "sequence": 0,
+      "blocker_source": "",
+      "escalation_pending": 0,
+      "escalation_awaiting_review": 0,
+      "escalation_artifact_path": null,
+      "escalation_override_applied_at": null
+    }
+  ],
+  "decisions": [
+    {
+      "seq": 1,
+      "id": "D001",
+      "when_context": "M001",
+      "scope": "architecture",
+      "decision": "MovementValidator shape",
+      "choice": "Single MovementValidator class with broken-out private methods and an internal PlottingState snapshot.",
+      "rationale": "All rules consult JSON tables; GDScript favors clear procedural code over plugin-style rule engines; debugging interlocking rule failures is easier in one class with explicit method names. Rule-engine of composable rule classes considered and rejected as premature abstraction.",
+      "revisable": "Yes",
+      "made_by": "collaborative",
+      "source": "discussion",
+      "superseded_by": null
+    },
+    {
+      "seq": 2,
+      "id": "D002",
+      "when_context": "M001",
+      "scope": "architecture",
+      "decision": "Movement resolver placement",
+      "choice": "New MovementResolver class under scripts/server/, symmetric with MovementValidator.",
+      "rationale": "Clean separation between plotting (legality) and resolution (execution under simultaneity rules). ShipStateController and MovementPlottingController are the wrong concerns. Rejected: extending ShipStateController (bloats one class); method on plotting controller (session manager, not simulator).",
+      "revisable": "Yes",
+      "made_by": "collaborative",
+      "source": "discussion",
+      "superseded_by": null
+    },
+    {
+      "seq": 3,
+      "id": "D003",
+      "when_context": "M001",
+      "scope": "pattern",
+      "decision": "Mid-resolution user input pattern",
+      "choice": "Async/await on Godot signals for contested-hex surrender and bear-off prompts during resolution.",
+      "rationale": "Godot-idiomatic, single execution context, no new mini-protocol. Stub-AI prompt answers injected programmatically so deadlock is impossible in single-machine M001. Rejected: mini-session protocol (too heavy for yes/no); explicit state machine (too verbose).",
+      "revisable": "Yes",
+      "made_by": "collaborative",
+      "source": "discussion",
+      "superseded_by": null
+    },
+    {
+      "seq": 4,
+      "id": "D004",
+      "when_context": "M001",
+      "scope": "architecture",
+      "decision": "Resolver granularity",
+      "choice": "Impulse-by-impulse simulation: 1 MP per ship per impulse, contests checked per impulse.",
+      "rationale": "Only granularity that makes contested-hex rules behave correctly in fleet engagements. Full-plot-then-contest breaks pass-through semantics between adjacent ships. Matches Close Action mechanics referenced in docs/.",
+      "revisable": "Yes",
+      "made_by": "collaborative",
+      "source": "discussion",
+      "superseded_by": null
+    },
+    {
+      "seq": 5,
+      "id": "D005",
+      "when_context": "M001",
+      "scope": "architecture",
+      "decision": "Stub-AI plotting via real protocol",
+      "choice": "Stub-AI drives MovementPlottingController (handle_start_plotting, handle_select_hex, handle_submit_movement) for non-player ships, same as a remote client would.",
+      "rationale": "AI plots are rule-validated; exercises the full plotting stack on AI ships; player and AI travel the same code path. Direct writes to ShipState.plotted_actions rejected because they bypass validation and would silently accept illegal AI plots.",
+      "revisable": "Yes",
+      "made_by": "collaborative",
+      "source": "discussion",
+      "superseded_by": null
+    },
+    {
+      "seq": 6,
+      "id": "D006",
+      "when_context": "M001",
+      "scope": "scenario-schema",
+      "decision": "RNG determinism for scenarios",
+      "choice": "Single seeded RandomNumberGenerator on GameState; scenario JSON requires integer `seed` field; `-1` means generate a fresh seed at game start (trace-logged). EnvironmentController migrates to consume GameState.rng.",
+      "rationale": "Deterministic replay for tests/debugging. Required seed makes scenarios reproducible; -1 sentinel preserves play-variability when authors want it. Single source converges existing RNG fragmentation.",
+      "revisable": "Yes",
+      "made_by": "collaborative",
+      "source": "discussion",
+      "superseded_by": null
+    },
+    {
+      "seq": 7,
+      "id": "D007",
+      "when_context": "M001",
+      "scope": "architecture",
+      "decision": "Resolution playback architecture",
+      "choice": "Resolver emits a ResolutionLog (per-impulse events + pause-points for prompts); view-side MovementResolutionPlaybackController consumes the log, animates ships hex-by-hex, surfaces prompts via signals.",
+      "rationale": "Resolver stays pure-logic and fully testable. Player still gets the simultaneous-resolution drama. Decouples rule logic from animation timing. Rejected: live-animate as resolver steps (entangles concerns); instant resolution (kills drama).",
+      "revisable": "Yes",
+      "made_by": "collaborative",
+      "source": "discussion",
+      "superseded_by": null
+    },
+    {
+      "seq": 8,
+      "id": "D008",
+      "when_context": "M001",
+      "scope": "convention",
+      "decision": "DataManager rule-lookup boundary",
+      "choice": "All JSON rule-table lookups go through typed DataManager.get_* functions with assert() parameter validation, modeled on load_movement_allowance_table() / get_movement_allowance(). Pattern: load_<table>_table() + get_<table>(typed params) + test/unit/test_data_manager_<table>.gd. Any missing wrapper is added before its consumer is written.",
+      "rationale": "Single source of truth for rule lookups; consistent style; catches bad parameters fast; tables are independently testable. This is the established codebase convention; M001 makes it explicit and project-wide.",
+      "revisable": "Yes",
+      "made_by": "human",
+      "source": "discussion",
+      "superseded_by": null
+    },
+    {
+      "seq": 9,
+      "id": "D009",
+      "when_context": "M001",
+      "scope": "testing",
+      "decision": "Test strategy for M001",
+      "choice": "Unit tests for rule math + table lookups (existing test_data_manager_* style) plus scenario-driven integration tests under test/fixtures/scenarios/ driving the full validator → resolver → state-update path. Determinism test runs the same fixture twice with the same seed and diffs the ResolutionLog. All run via `make test`.",
+      "rationale": "Catches math and wiring bugs. Fixtures double as regression coverage for subsequent milestones. CLI test harness considered and rejected as premature scaffolding.",
+      "revisable": "Yes",
+      "made_by": "collaborative",
+      "source": "discussion",
+      "superseded_by": null
+    },
+    {
+      "seq": 10,
+      "id": "D010",
+      "when_context": "M001/S01",
+      "scope": "testing",
+      "decision": "Treatment of preexisting test failures during M001/S01",
+      "choice": "All preexisting failing tests in `make test` (currently 45 failures across test_data_manager_tacking, test_data_manager_speed_change, test_data_manager_ships, test_data_manager_turning) must be fixed before S01 can complete. The S01 verification gate (T03) is no longer \"no new regressions\"; it is \"make test is fully green\".",
+      "rationale": "User override (`.gsd/OVERRIDES.md`, 2026-05-11T22:22:15Z, applied at M001/S01/T02) changed the slice exit bar from \"no regressions vs current baseline\" to \"all tests pass, even preexisting failures\". Carrying preexisting failures forward would let the verification gate succeed on a red bar and silently accept rule-table bugs that S03+ depends on. Rejected alternatives: (a) defer preexisting failures to a later slice — defeats the override; (b) suppress/skip the failing tests — masks rule-table bugs the validator/resolver will hit.",
+      "revisable": "Yes",
+      "made_by": "human",
+      "source": "discussion",
+      "superseded_by": null
+    }
+  ],
+  "verification_evidence": [
+    {
+      "id": 1,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M001",
+      "command": "make import",
+      "exit_code": 0,
+      "verdict": "pass",
+      "duration_ms": 8000,
+      "created_at": "2026-05-11T22:19:44.569Z"
+    },
+    {
+      "id": 2,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M001",
+      "command": "make test-file F=test/unit/test_data_manager_bearing_off.gd",
+      "exit_code": 2,
+      "verdict": "pass-for-task-scope (11/11 bearing-off tests pass; 3 failing tests are pre-existing in test_data_manager_ships.gd and out of T01 scope)",
+      "duration_ms": 4500,
+      "created_at": "2026-05-11T22:19:44.569Z"
+    }
+  ]
+}
