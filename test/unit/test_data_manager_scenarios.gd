@@ -66,13 +66,57 @@ func test_scenario_enemy_ship_values() -> void:
 	assert_eq(ship["ship_type"], "corvette_24")
 	assert_eq(int(ship["facing"]), 3)
 
+# --- Seed Validation ---
+
+func test_scenario_has_seed_field() -> void:
+	var scenario = dm.load_scenario("test_basic")
+	assert_true(scenario.has("seed"), "Scenario should have seed field")
+	assert_eq(int(scenario["seed"]), 42, "test_basic seed should be 42")
+
+func test_seed_minus_one_generates_fresh_seed() -> void:
+	var temp_path = "user://test_seed_minus_one.json"
+	var content = '{"name":"seed test","seed":-1,"wind_direction":0,"wind_speed":2,"ships":[]}'
+	var f = FileAccess.open(temp_path, FileAccess.WRITE)
+	f.store_string(content)
+	f.close()
+	var scenario = dm.load_scenario("seed_test", temp_path)
+	assert_true(scenario.has("seed"), "Scenario should have seed after loading")
+	assert_true(int(scenario["seed"]) > 0, "Fresh seed should be positive, got %d" % int(scenario["seed"]))
+	assert_true(int(scenario["seed"]) != -1, "Seed should no longer be -1")
+	DirAccess.remove_absolute(temp_path)
+
+func test_missing_seed_hard_errors() -> void:
+	var temp_path = "user://test_no_seed.json"
+	var content = '{"name":"no seed","wind_direction":0,"wind_speed":2,"ships":[]}'
+	var f = FileAccess.open(temp_path, FileAccess.WRITE)
+	f.store_string(content)
+	f.close()
+	var scenario = dm.load_scenario("no_seed", temp_path)
+	assert_eq(scenario.size(), 0, "Missing seed should return empty dict")
+	assert_push_error("missing required 'seed' field")
+	DirAccess.remove_absolute(temp_path)
+
+# --- Crew Quality Normalization ---
+
+func test_crew_quality_normalized_to_letters() -> void:
+	var scenario = dm.load_scenario("test_basic")
+	var ship = scenario["ships"][0]
+	var cq = ship["crew_quality"]
+	assert_eq(cq.length(), 1, "crew_quality should be a single letter, got '%s'" % cq)
+	assert_true(cq >= "A" and cq <= "G", "crew_quality should be A-G, got '%s'" % cq)
+
+func test_trained_maps_to_d() -> void:
+	var scenario = dm.load_scenario("test_basic")
+	var cq = scenario["ships"][0]["crew_quality"]
+	assert_eq(cq, "D", "'Trained' should normalize to 'D'")
+
 # --- Nonexistent Scenario Falls Back to Default ---
 
 func test_nonexistent_scenario_returns_default() -> void:
 	var scenario = dm.load_scenario("this_scenario_does_not_exist")
 	assert_gt(scenario.size(), 0, "Nonexistent scenario should return non-empty default")
 	assert_true(scenario.has("ships"), "Default scenario should have ships")
-	assert_engine_error("Scenario not found", "Expected warning for missing scenario")
+	assert_engine_error("Scenario not found")
 
 func test_default_scenario_has_valid_structure() -> void:
 	var scenario = dm.load_scenario("nonexistent")
@@ -81,4 +125,4 @@ func test_default_scenario_has_valid_structure() -> void:
 	assert_true(scenario.has("wind_speed"), "Default scenario should have wind_speed")
 	assert_true(scenario.has("ships"), "Default scenario should have ships")
 	assert_eq(scenario["ships"].size(), 2, "Default scenario should have 2 ships")
-	assert_engine_error("Scenario not found", "Expected warning for missing scenario")
+	assert_engine_error("Scenario not found")

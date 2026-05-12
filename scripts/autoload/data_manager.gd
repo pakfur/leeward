@@ -7,6 +7,7 @@ var speed_change_table: Dictionary = {}
 var tacking_table: Dictionary = {}
 var turning_table: Dictionary = {}
 var ship_definitions: Dictionary = {}  # Dictionary[String, Ship]
+var bearing_off_table: Dictionary = {}
 var scenarios: Dictionary = {}
 
 func _ready() -> void:
@@ -62,6 +63,7 @@ func load_speed_change_table(file_path: String = "res://data/rules/speed_change_
 
 	if json.data is Dictionary:
 		speed_change_table = json.data
+		speed_change_table.erase("_doc")
 		print("Loaded speed change table with %d change types" % speed_change_table.size())
 		return true
 	else:
@@ -122,6 +124,7 @@ func load_tacking_table(file_path: String = "res://data/rules/tacking_table.json
 
 	if json.data is Dictionary:
 		tacking_table = json.data
+		tacking_table.erase("_doc")
 		print("Loaded tacking table with %d maneuverability grades" % tacking_table.size())
 		return true
 	else:
@@ -186,6 +189,7 @@ func load_turning_table(file_path: String = "res://data/rules/turning_table.json
 
 	if json.data is Dictionary:
 		turning_table = json.data
+		turning_table.erase("_doc")
 		print("Loaded turning table with %d direction types" % turning_table.size())
 		return true
 	else:
@@ -244,6 +248,66 @@ func get_min_heading_change_movement_required(direction: String, ship_speed: int
 
 	return int(maneuverability_dict[maneuverability_lower])
 
+func load_bearing_off_table(file_path: String = "res://data/rules/bearing_off_table.json") -> bool:
+	if not FileAccess.file_exists(file_path):
+		push_warning("Bearing off table not found at: %s" % file_path)
+		return false
+
+	var file = FileAccess.open(file_path, FileAccess.READ)
+	if file == null:
+		push_error("Failed to open bearing off table: %s" % file_path)
+		return false
+
+	var json = JSON.new()
+	var parse_result = json.parse(file.get_as_text())
+	file.close()
+
+	if parse_result != OK:
+		push_error("Failed to parse bearing off table JSON")
+		return false
+
+	if json.data is Dictionary:
+		bearing_off_table = json.data
+		var grade_count = bearing_off_table.size()
+		if bearing_off_table.has("_doc"):
+			grade_count -= 1
+		print("Loaded bearing off table with %d crew quality grades" % grade_count)
+		return true
+	else:
+		push_error("Bearing off table JSON must be a dictionary")
+		return false
+
+func get_bearing_off_probability(crew_quality: String, maneuverability: String) -> float:
+	var crew_quality_upper = crew_quality.to_upper()
+	assert(
+		crew_quality_upper == "A" or crew_quality_upper == "B" or crew_quality_upper == "C" or
+		crew_quality_upper == "D" or crew_quality_upper == "E" or crew_quality_upper == "F" or
+		crew_quality_upper == "G",
+		"Invalid crew_quality '%s'. Valid values: A, B, C, D, E, F, G" % crew_quality
+	)
+
+	var maneuverability_lower = maneuverability.to_lower()
+	assert(
+		maneuverability_lower == "a" or maneuverability_lower == "b" or
+		maneuverability_lower == "c" or maneuverability_lower == "d",
+		"Invalid maneuverability '%s'. Valid values: a, b, c, d" % maneuverability
+	)
+
+	if not bearing_off_table.has(crew_quality_upper):
+		push_error("Bearing off table missing crew_quality: %s" % crew_quality_upper)
+		return 0.0
+
+	var maneuverability_dict = bearing_off_table[crew_quality_upper]
+	if not maneuverability_dict is Dictionary:
+		push_error("Bearing off table: crew_quality '%s' value is not a Dictionary" % crew_quality_upper)
+		return 0.0
+
+	if not maneuverability_dict.has(maneuverability_lower):
+		push_error("Bearing off table missing maneuverability '%s' for crew_quality '%s'" % [maneuverability_lower, crew_quality_upper])
+		return 0.0
+
+	return float(maneuverability_dict[maneuverability_lower])
+
 func load_ship_definitions(file_path: String = "res://data/rules/ships.json") -> bool:
 	"""Load ship definitions from JSON and convert to Ship instances"""
 	if not FileAccess.file_exists(file_path):
@@ -278,9 +342,9 @@ func load_ship_definitions(file_path: String = "res://data/rules/ships.json") ->
 	print("Loaded %d ship definitions" % ship_definitions.size())
 	return true
 
-func load_scenario(scenario_name: String) -> Dictionary:
-	"""Load a scenario by name"""
-	var file_path = "res://data/scenarios/%s.json" % scenario_name
+func load_scenario(scenario_name: String, file_path: String = "") -> Dictionary:
+	if file_path == "":
+		file_path = "res://data/scenarios/%s.json" % scenario_name
 
 	if not FileAccess.file_exists(file_path):
 		push_warning("Scenario not found: %s" % file_path)
@@ -299,8 +363,28 @@ func load_scenario(scenario_name: String) -> Dictionary:
 		push_error("Failed to parse scenario JSON")
 		return {}
 
+	var scenario_dict: Dictionary = json.data
+
+	if not scenario_dict.has("seed") or not (scenario_dict["seed"] is int or scenario_dict["seed"] is float):
+		push_error("Scenario '%s' missing required 'seed' field (must be an integer)" % scenario_name)
+		return {}
+
+	var seed_val = int(scenario_dict["seed"])
+	if seed_val == -1:
+		seed_val = int(Time.get_unix_time_from_system()) & 0x7FFFFFFF
+		scenario_dict["seed"] = seed_val
+		Trace.trace_log("ScenarioLoad", "Generated fresh seed for scenario '%s': %d" % [scenario_name, seed_val])
+	else:
+		scenario_dict["seed"] = seed_val
+		Trace.trace_log("ScenarioLoad", "Loaded scenario '%s' with seed %d" % [scenario_name, seed_val])
+
+	if scenario_dict.has("ships") and scenario_dict["ships"] is Array:
+		for ship in scenario_dict["ships"]:
+			if ship is Dictionary and ship.has("crew_quality"):
+				ship["crew_quality"] = _normalize_crew_quality(ship["crew_quality"])
+
 	print("Loaded scenario: %s" % scenario_name)
-	return json.data
+	return scenario_dict
 
 func get_movement_allowance(speed_type: String, wind_speed: int, wind_facing: String,
 							 sail_state: String, rigging_quality: int) -> int:
@@ -525,11 +609,24 @@ func _create_default_ships() -> void:
 
 	print("Created default ship definitions: %d ships" % ship_definitions.size())
 
+func _normalize_crew_quality(text: String) -> String:
+	var upper = text.strip_edges().to_upper()
+	var word_map = {
+		"ELITE": "A", "VETERAN": "B", "CRACK": "C", "TRAINED": "D",
+		"GREEN": "E", "POOR": "F", "DEMORALIZED": "G"
+	}
+	if word_map.has(upper):
+		return word_map[upper]
+	if upper.length() == 1 and upper >= "A" and upper <= "G":
+		return upper
+	push_warning("Unknown crew_quality '%s', passing through unchanged" % text)
+	return text
+
 func _create_default_scenario() -> Dictionary:
-	"""Create a default test scenario"""
 	return {
 		"name": "Test Scenario - Two Ships",
 		"description": "Basic test scenario with two opposing ships",
+		"seed": -1,
 		"wind_direction": 0,
 		"wind_speed": 2,
 		"wind_speed_change": "steady",
