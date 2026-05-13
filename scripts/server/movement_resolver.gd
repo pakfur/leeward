@@ -682,35 +682,39 @@ func _wind_direction() -> int:
 ## ============================================================================
 
 func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) -> void:
+	var sc = game_state.ship_controller if game_state else null
 	for ship_state in ships:
 		var result = log.get_result(ship_state.ship_id)
 		if result == null:
 			continue
-		ship_state.hex_position = result.final_hex
-		ship_state.facing = result.final_facing
-		if result.immobilized:
-			ship_state.immobilized = true
-		ship_state.speed = _count_hexes_moved(result)
+		var sid = ship_state.ship_id
+		if sc:
+			sc.set_ship_position(sid, result.final_hex)
+			sc.set_ship_facing(sid, result.final_facing)
+			if result.immobilized:
+				sc.set_immobilized(sid, true)
+			sc.set_ship_speed(sid, _count_hexes_moved(result))
+			if result.collided_with != "":
+				sc.set_collision_this_turn(sid, true)
+			if result.fouled_with != "":
+				sc.set_fouled_with(sid, result.fouled_with)
+			if result.rigging_damage > 0:
+				_apply_rigging_damage(sid, result.rigging_damage, sc)
+			sc.clear_plotted_actions(sid)
+		else:
+			push_error("MovementResolver: No ship_controller available")
 
-		if result.collided_with != "":
-			ship_state.collision_this_turn = true
-		if result.fouled_with != "":
-			ship_state.fouled_with = result.fouled_with
-
-		if result.rigging_damage > 0:
-			_apply_rigging_damage(ship_state, result.rigging_damage)
-
-		ship_state.clear_plot()
-
-
-func _apply_rigging_damage(ship_state: ShipState, damage: int) -> void:
+func _apply_rigging_damage(ship_id: String, damage: int, sc: ShipStateController) -> void:
+	var ship_state = game_state.get_ship(ship_id)
+	if not ship_state:
+		return
 	var remaining: int = damage
 	for i in range(ship_state.rigging_current_hp.size()):
 		if remaining <= 0:
 			break
 		var can_take: int = ship_state.rigging_current_hp[i]
 		var taken: int = min(can_take, remaining)
-		ship_state.rigging_current_hp[i] -= taken
+		sc.apply_rigging_damage(ship_id, i, taken)
 		remaining -= taken
 
 

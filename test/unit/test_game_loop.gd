@@ -10,7 +10,7 @@ func before_all() -> void:
 	DataManager.load_movement_allowance_table()
 	DataManager.load_tacking_table()
 	DataManager.load_bearing_off_table()
-	DataManager.load_ships_table()
+	DataManager.load_ship_definitions()
 	DataManager.load_speed_change_table()
 	DataManager.load_turning_table()
 
@@ -96,7 +96,7 @@ func _plot_player_ship_forward(ship_id: String) -> void:
 	var ship_state = GameState.get_ship(ship_id)
 	if not ship_state:
 		return
-	var ma = ship_state.get_movement_allowance()
+	var ma = GameState.ship_controller.get_movement_allowance(ship_state.ship_id)
 	if ma == 0:
 		return
 	var movement: Array = []
@@ -106,7 +106,7 @@ func _plot_player_ship_forward(ship_id: String) -> void:
 		var next_hex = hex_grid.get_neighbor(current_hex.x, current_hex.y, current_facing)
 		movement.append({"hex": {"q": next_hex.x, "r": next_hex.y}, "facing": current_facing})
 		current_hex = next_hex
-	ship_state.plotted_actions.movement = movement
+	GameState.ship_controller.set_plotted_movement(ship_state.ship_id, movement)
 
 
 func _run_one_turn(phase_controller: TurnPhaseController) -> void:

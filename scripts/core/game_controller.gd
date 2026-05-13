@@ -63,11 +63,12 @@ func _ready() -> void:
 	if GameState.phase_controller:
 		GameState.phase_controller.resolution_log_ready.connect(_on_resolution_log_ready)
 
-	# Set hex_map reference for environment controller (for water shader updates)
+	# Set up OceanView for water shader updates
 	if GameState.environment_controller and hex_map:
-		GameState.environment_controller.set_hex_map(hex_map)
-		# Trigger initial shader update
-		GameState.environment_controller.force_update()
+		var ocean_view = OceanView.new(GameState, hex_map)
+		ocean_view.connect_to_controller(GameState.environment_controller)
+		add_child(ocean_view)
+		ocean_view.update_water_shader()
 
 	# Initialize hex overlay
 	_setup_hex_overlay()
@@ -407,10 +408,7 @@ func _on_planning_action_toggled(ship_id: String, action_type: String, active: b
 				# Clear the submitted path overlay
 				if hex_overlay:
 					hex_overlay.clear_submitted_path(ship_id)
-				# Clear plotted_actions on the ship state
-				var ship_state = GameState.get_ship(ship_id)
-				if ship_state:
-					ship_state.plotted_actions.movement = []
+				GameState.ship_controller.clear_plotted_actions(ship_id)
 				Trace.trace_log("GameController", "Re-plotting ship %s — cleared previous submission" % ship_id)
 
 			var ship_state = GameState.get_ship(ship_id)
@@ -432,7 +430,7 @@ func _on_end_planning_pressed() -> void:
 	if movement_client and movement_client.is_plotting():
 		movement_client.cancel()
 
-	# Submit plan to server
+	# Single-player shortcut: call controller directly under server guard
 	if GameState.is_server and GameState.phase_controller:
 		GameState.phase_controller.player_submit_plan(0)
 		# Stub: submit player 1 immediately (StubAI will replace this in S08)
@@ -486,7 +484,7 @@ func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_va
 
 	if current_planning_ui:
 		var ship_state = GameState.get_ship(ship_id)
-		var total_ma = ship_state.get_movement_allowance() if ship_state else remaining_ma_val
+		var total_ma = GameState.ship_controller.get_movement_allowance(ship_id) if ship_state else remaining_ma_val
 		current_planning_ui.show_plotting_controls(ship_id, remaining_ma_val, total_ma)
 		_update_tacking_display(is_tacking)
 

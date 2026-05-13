@@ -455,8 +455,11 @@ func _update_ship_from_data(ship: ShipState, data: Dictionary) -> void:
 	ship.facing = data.get("facing", ship.facing)
 	ship.speed = data.get("speed", ship.speed)
 	ship.sail_state = data.get("sail_state", ship.sail_state)
-	ship.rigging_quality = data.get("rigging_quality", ship.rigging_quality)
-	ship.rigging_damage = data.get("rigging_damage", ship.rigging_damage)
+	var rigging_hp_data = data.get("rigging_current_hp", null)
+	if rigging_hp_data != null:
+		ship.rigging_current_hp.clear()
+		for hp in rigging_hp_data:
+			ship.rigging_current_hp.append(int(hp))
 	ship.hull_current_hp = data.get("hull_current_hp", ship.hull_current_hp)
 	ship.crew_count = data.get("crew_count", ship.crew_count)
 	ship.crew_morale = data.get("crew_morale", ship.crew_morale)

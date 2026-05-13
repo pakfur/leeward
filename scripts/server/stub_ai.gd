@@ -16,6 +16,7 @@ func _init(p_game_state: Node = null) -> void:
 
 
 func plot_all_ai_ships() -> void:
+	assert(game_state.is_server, "StubAI: Must only run on server")
 	var controller: MovementPlottingController = game_state.movement_plotting_controller
 	if not controller:
 		push_error("StubAI: No movement_plotting_controller on game_state")

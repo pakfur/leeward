@@ -11,6 +11,58 @@ var game_state: Node = null
 func _init(state: Node = null) -> void:
 	game_state = state if state else GameState
 
+## Computed Properties
+
+func get_rigging_quality(ship_id: String) -> int:
+	var ship = game_state.get_ship(ship_id)
+	if not ship or not ship.ship:
+		return 4
+
+	var max_hp_array = ship.ship.rigging_hp
+	var total_max = 0
+	var total_current = 0
+
+	for i in range(4):
+		total_max += max_hp_array[i] if i < max_hp_array.size() else 0
+		total_current += ship.rigging_current_hp[i]
+
+	if total_max == 0:
+		return 4
+
+	var hp_percentage = float(total_current) / float(total_max)
+
+	if hp_percentage >= 0.85:
+		return 4
+	elif hp_percentage >= 0.60:
+		return 3
+	elif hp_percentage >= 0.35:
+		return 2
+	else:
+		return 1
+
+func get_movement_allowance(ship_id: String) -> int:
+	var ship = game_state.get_ship(ship_id)
+	if not ship:
+		return 0
+
+	var wind_dir = game_state.environment.wind_direction if game_state.environment else 0
+	var hex_grid = HexGrid.new()
+	var wind_facing = hex_grid.get_wind_facing(ship.facing, wind_dir)
+
+	var spd_type = ship.ship.speed_type if ship.ship else "F/F"
+	var rigging_quality = get_rigging_quality(ship_id)
+	var wind_speed = game_state.environment.wind_speed if game_state.environment else 2
+	var ma = DataManager.get_movement_allowance(
+		spd_type,
+		wind_speed,
+		wind_facing,
+		ship.sail_state,
+		rigging_quality
+	)
+
+	Trace.trace_log("ShipState", "MA: %d | wind: %s | facing: %s | speed: %s | sail: %s" % [ma, wind_dir, wind_facing, wind_speed, ship.sail_state])
+	return ma
+
 ## Movement and Positioning
 
 func set_ship_position(ship_id: String, hex_position: Vector2i) -> bool:
@@ -84,7 +136,6 @@ func set_sail_state(ship_id: String, sail_state: String) -> bool:
 	return true
 
 func apply_rigging_damage(ship_id: String, section: int, damage: int) -> bool:
-	"""SERVER ONLY: Apply rigging damage"""
 	if not is_server:
 		push_error("ShipStateController: Cannot apply damage on client")
 		return false
@@ -94,24 +145,13 @@ func apply_rigging_damage(ship_id: String, section: int, damage: int) -> bool:
 		push_error("[Server] Ship not found: %s" % ship_id)
 		return false
 
-	if section < 0 or section >= ship.rigging_damage.size():
+	if section < 0 or section >= ship.rigging_current_hp.size():
 		push_error("[Server] Invalid rigging section: %d" % section)
 		return false
 
-	ship.rigging_damage[section] += damage
-	_recalculate_rigging_quality(ship)
+	ship.rigging_current_hp[section] = max(0, ship.rigging_current_hp[section] - damage)
 	ship_state_changed.emit(ship_id)
 	return true
-
-func _recalculate_rigging_quality(ship: ShipState) -> void:
-	"""Recalculate rigging quality based on damage"""
-	var intact_sails = 0
-	for damage in ship.rigging_damage:
-		if damage > 0:
-			intact_sails += 1
-
-	# The number of sails with > 0 damage
-	ship.rigging_quality = intact_sails
 
 ## Hull Damage
 
@@ -132,8 +172,9 @@ func apply_hull_damage(ship_id: String, section: int, damage: int) -> bool:
 
 	ship.hull_current_hp[section] = max(0, ship.hull_current_hp[section] - damage)
 	ship_state_changed.emit(ship_id)
+	var max_hp = ship.ship.hull_hp[section] if ship.ship else 0
 	Trace.trace_log("ShipState", "Ship %s hull section %d: %d/%d HP" % [
-		ship_id, section, ship.hull_current_hp[section], ship.hull_max_hp[section]
+		ship_id, section, ship.hull_current_hp[section], max_hp
 	])
 	return true
 
@@ -152,7 +193,7 @@ func repair_hull(ship_id: String, section: int, repair_amount: int) -> bool:
 		push_error("[Server] Invalid hull section: %d" % section)
 		return false
 
-	var max_hp = ship.hull_max_hp[section]
+	var max_hp = ship.ship.hull_hp[section] if ship.ship else 0
 	ship.hull_current_hp[section] = min(max_hp, ship.hull_current_hp[section] + repair_amount)
 	ship_state_changed.emit(ship_id)
 	return true
@@ -191,8 +232,43 @@ func set_crew_morale(ship_id: String, morale: int) -> bool:
 
 ## Plotted Actions
 
-func set_plotted_movement(ship_id: String, movement_commands: Array[String]) -> bool:
-	"""SERVER ONLY: Set plotted movement commands"""
+func set_immobilized(ship_id: String, immobilized: bool) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify immobilized on client")
+		return false
+	var ship = game_state.get_ship(ship_id)
+	if not ship:
+		push_error("[Server] Ship not found: %s" % ship_id)
+		return false
+	ship.immobilized = immobilized
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_collision_this_turn(ship_id: String, collision: bool) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify collision on client")
+		return false
+	var ship = game_state.get_ship(ship_id)
+	if not ship:
+		push_error("[Server] Ship not found: %s" % ship_id)
+		return false
+	ship.collision_this_turn = collision
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_fouled_with(ship_id: String, fouled_with: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify fouled_with on client")
+		return false
+	var ship = game_state.get_ship(ship_id)
+	if not ship:
+		push_error("[Server] Ship not found: %s" % ship_id)
+		return false
+	ship.fouled_with = fouled_with
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_plotted_movement(ship_id: String, movement_commands: Array) -> bool:
 	if not is_server:
 		push_error("ShipStateController: Cannot plot movement on client")
 		return false
@@ -207,7 +283,6 @@ func set_plotted_movement(ship_id: String, movement_commands: Array[String]) -> 
 	return true
 
 func clear_plotted_actions(ship_id: String) -> bool:
-	"""SERVER ONLY: Clear all plotted actions for a ship"""
 	if not is_server:
 		push_error("ShipStateController: Cannot clear plot on client")
 		return false
@@ -218,6 +293,20 @@ func clear_plotted_actions(ship_id: String) -> bool:
 		return false
 
 	ship.clear_plot()
+	return true
+
+func clear_turn_flags(ship_id: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot clear turn flags on client")
+		return false
+
+	var ship = game_state.get_ship(ship_id)
+	if not ship:
+		push_error("[Server] Ship not found: %s" % ship_id)
+		return false
+
+	ship.clear_turn_flags()
+	ship_state_changed.emit(ship_id)
 	return true
 
 ## Movement Resolution

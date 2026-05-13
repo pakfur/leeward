@@ -12,8 +12,15 @@ var hex_grid: HexGrid
 
 class MockGameState extends Node:
 	var environment: EnvironmentState = null
+	var ship_controller: ShipStateController = null
+	var ships: Dictionary = {}
 	func _init() -> void:
 		environment = EnvironmentState.new()
+		ship_controller = ShipStateController.new(self)
+	func get_ship(ship_id: String) -> ShipState:
+		return ships.get(ship_id, null)
+	func register_ship(ss: ShipState) -> void:
+		ships[ss.ship_id] = ss
 
 
 func _make_ship(speed_type: String = "F/F", maneuverability: String = "b") -> Ship:
@@ -46,6 +53,7 @@ func _make_ship_state(
 	for i in range(4):
 		ss.rigging_current_hp[i] = 10
 		ss.hull_current_hp[i] = 8
+	mock_gs.register_ship(ss)
 	return ss
 
 

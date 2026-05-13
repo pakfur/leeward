@@ -22,6 +22,7 @@ func before_each() -> void:
 	env.wind_speed = 3
 	env.sea_state = 1
 	GameState.environment = env
+	GameState.ships.clear()
 
 
 func _make_ship_def(maneuverability: String = "C", speed_type: String = "F/F", ship_class: int = 3) -> Ship:
@@ -81,6 +82,7 @@ func _make_ship_state(
 	state.crew_count = crew
 	state.marine_count = 2
 	state.crew_quality = crew_quality
+	GameState.ships[ship_id] = state
 	return state
 
 
@@ -92,7 +94,7 @@ func _plot_straight(state: ShipState, steps: int) -> void:
 		var next_hex = hex_grid.get_neighbor(current_hex.x, current_hex.y, state.facing)
 		movement.append({"hex": {"q": next_hex.x, "r": next_hex.y}, "facing": state.facing})
 		current_hex = next_hex
-	state.plotted_actions.movement = movement
+	GameState.ship_controller.set_plotted_movement(state.ship_id, movement)
 
 
 # ===========================================================================

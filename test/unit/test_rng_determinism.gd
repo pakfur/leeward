@@ -61,11 +61,17 @@ func _run_tick_sequence(seed_value: int, ticks: int) -> Array:
 	env.wind_speed = 2
 	env.wind_speed_change = "steady"
 	env.region = "oceanic"
-	var history: Array[EnvironmentState] = []
+
+	GameState.rng = rng
+	GameState.environment = env
+	GameState.environment_history = [] as Array[EnvironmentState]
+
+	var ctrl := EnvironmentController.new(GameState)
 	var results := []
 	for turn in range(1, ticks + 1):
-		env.tick_environment(turn, rng, history)
+		ctrl.tick_environment(env, turn)
 		results.append({"dir": env.wind_direction, "spd": env.wind_speed})
+	ctrl.free()
 	return results
 
 

@@ -61,7 +61,7 @@ func _validate_move_command(command: MoveCommand) -> Dictionary:
 
 func _validate_movement_allowance(ship: ShipState, movement_commands: Array[String]) -> Dictionary:
 	"""Validate that movement commands don't exceed movement allowance"""
-	var ma = ship.get_movement_allowance()
+	var ma = game_state.ship_controller.get_movement_allowance(ship.ship_id)
 	var total_movement = 0
 
 	for cmd in movement_commands:

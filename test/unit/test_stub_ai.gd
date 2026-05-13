@@ -10,7 +10,7 @@ func before_all() -> void:
 	DataManager.load_movement_allowance_table()
 	DataManager.load_tacking_table()
 	DataManager.load_bearing_off_table()
-	DataManager.load_ships_table()
+	DataManager.load_ship_definitions()
 	DataManager.load_speed_change_table()
 	DataManager.load_turning_table()
 
@@ -142,7 +142,7 @@ func test_forward_strategy_respects_ma() -> void:
 	stub_ai.plot_all_ai_ships()
 
 	var steps: Array = ai.plotted_actions.movement
-	var ma = ai.get_movement_allowance()
+	var ma = GameState.ship_controller.get_movement_allowance(ai.ship_id)
 	assert_eq(steps.size(), ma, "Should consume exactly the full MA (%d)" % ma)
 
 
@@ -246,7 +246,7 @@ func test_player_and_ai_ships_both_resolve() -> void:
 		var next_hex = hex_grid.get_neighbor(current_hex.x, current_hex.y, 3)
 		movement.append({"hex": {"q": next_hex.x, "r": next_hex.y}, "facing": 3})
 		current_hex = next_hex
-	player.plotted_actions.movement = movement
+	GameState.ship_controller.set_plotted_movement(player.ship_id, movement)
 
 	var rng = RandomNumberGenerator.new()
 	rng.seed = 42

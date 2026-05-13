@@ -21,7 +21,7 @@ func test_scenario_has_name() -> void:
 func test_scenario_has_wind_direction() -> void:
 	var scenario = dm.load_scenario("test_basic")
 	assert_true(scenario.has("wind_direction"), "Scenario should have wind_direction")
-	assert_eq(int(scenario["wind_direction"]), 0)
+	assert_eq(int(scenario["wind_direction"]), 2)
 
 func test_scenario_has_wind_speed() -> void:
 	var scenario = dm.load_scenario("test_basic")

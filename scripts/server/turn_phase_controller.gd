@@ -87,8 +87,7 @@ func _enter_environment_phase() -> void:
 			# Use controller which manages RNG and updates shader
 			game_state.environment_controller.tick_environment(game_state.environment, current_turn)
 		else:
-			# Fallback to direct update (no RNG, no shader)
-			game_state.environment.tick_environment(current_turn)
+			push_warning("TurnPhaseController: No environment_controller available for tick")
 
 		Trace.trace_log("TurnPhase", "Environment: Wind %s (%d), Speed %s (%d), Sea %s (%d)" % [
 			game_state.environment.get_wind_direction_name(),

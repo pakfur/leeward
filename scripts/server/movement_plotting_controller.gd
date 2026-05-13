@@ -16,7 +16,7 @@ signal session_submitted(session_id: String, ship_id: String, final_path: Array)
 signal session_cancelled(session_id: String, ship_id: String)
 signal plotting_error(request_id: String, error_code: String, message: String)
 
-# Reference to game state
+var is_server: bool = true
 var game_state: Node = null
 var movement_validator: MovementValidator = null
 
@@ -37,7 +37,8 @@ func _init(p_game_state: Node = null) -> void:
 
 ## START_PLOTTING - Initialize a new plotting session for a ship
 func handle_start_plotting(player_id: int, ship_id: String, request_id: String) -> MovementTypes.PlottingResponse:
-	# Validate request
+	if not is_server:
+		return MovementTypes.PlottingErrorResponse.create(request_id, "NOT_SERVER", "Cannot plot on client")
 	if ship_id.is_empty():
 		Trace.trace_log(Trace.MOVEMENT_PLOTTING_CATEGORY, "INVALID_REQUEST - ship_id is required")
 		return MovementTypes.PlottingErrorResponse.create(request_id, "INVALID_REQUEST", "ship_id is required")
@@ -114,7 +115,8 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 
 ## SELECT_HEX - Add a hex to the plotted path
 func handle_select_hex(session_id: String, expected_version: int, selected_hex: Vector2i, request_id: String) -> MovementTypes.PlottingResponse:
-	# Get session
+	if not is_server:
+		return MovementTypes.PlottingErrorResponse.create(request_id, "NOT_SERVER", "Cannot plot on client")
 	var session = _get_session(session_id)
 	if not session:
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SESSION_NOT_FOUND", "Session %s not found" % session_id)
@@ -191,7 +193,8 @@ func handle_select_hex(session_id: String, expected_version: int, selected_hex: 
 
 ## UNDO - Revert the path to a previous version
 func handle_undo(session_id: String, expected_version: int, revert_to_version: int, request_id: String) -> MovementTypes.PlottingResponse:
-	# Get session
+	if not is_server:
+		return MovementTypes.PlottingErrorResponse.create(request_id, "NOT_SERVER", "Cannot plot on client")
 	var session = _get_session(session_id)
 	if not session:
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SESSION_NOT_FOUND", "Session %s not found" % session_id)
@@ -273,7 +276,8 @@ func handle_undo(session_id: String, expected_version: int, revert_to_version: i
 
 ## CANCEL_PLOTTING - Discard the session entirely
 func handle_cancel_plotting(session_id: String, request_id: String) -> MovementTypes.PlottingResponse:
-	# Get session (idempotent - return success even if already cancelled/expired)
+	if not is_server:
+		return MovementTypes.PlottingErrorResponse.create(request_id, "NOT_SERVER", "Cannot plot on client")
 	var session = sessions.get(session_id)
 
 	var response = MovementTypes.PlottingCancelledResponse.new()
@@ -294,7 +298,8 @@ func handle_cancel_plotting(session_id: String, request_id: String) -> MovementT
 
 ## SUBMIT_MOVEMENT - Finalize the plotted path
 func handle_submit_movement(session_id: String, expected_version: int, request_id: String) -> MovementTypes.PlottingResponse:
-	# Get session
+	if not is_server:
+		return MovementTypes.PlottingErrorResponse.create(request_id, "NOT_SERVER", "Cannot plot on client")
 	var session = _get_session(session_id)
 	if not session:
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SESSION_NOT_FOUND", "Session %s not found" % session_id)
@@ -467,15 +472,12 @@ func _cleanup_session(session_id: String) -> void:
 
 
 func _apply_movement_to_ship(ship_id: String, plotted_path: Array[MovementTypes.PlotStep]) -> void:
-	"""Store the plotted movement in the ship's state"""
-	var ship_state = game_state.get_ship(ship_id)
-	if ship_state:
-		# Convert plotted_path to movement commands format
-		var movement_commands: Array = []
-		for step in plotted_path:
-			movement_commands.append(step.to_dict())
-		ship_state.plotted_actions.movement = movement_commands
-		Trace.trace_log("MovementPlotting", "Applied movement plan to ship %s: %d steps" % [ship_id, movement_commands.size()])
+	var movement_commands: Array = []
+	for step in plotted_path:
+		movement_commands.append(step.to_dict())
+	if game_state.ship_controller:
+		game_state.ship_controller.set_plotted_movement(ship_id, movement_commands)
+	Trace.trace_log("MovementPlotting", "Applied movement plan to ship %s: %d steps" % [ship_id, movement_commands.size()])
 
 
 func _send_response_to_peer(peer_id: int, response: MovementTypes.PlottingResponse) -> void:
@@ -512,7 +514,9 @@ func get_all_active_sessions() -> Array[MovementPlottingSession]:
 
 
 func cancel_all_sessions() -> void:
-	"""Cancel all active sessions (e.g., when leaving planning phase)"""
+	if not is_server:
+		push_error("MovementPlottingController: Cannot cancel sessions on client")
+		return
 	for session_id in sessions.keys():
 		var session = sessions[session_id]
 		if session.is_active():
