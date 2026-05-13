@@ -8,19 +8,21 @@ signal sync_requested()
 var is_server: bool = true
 var game_state: Node = null
 
-# Sync settings
-var auto_sync_enabled: bool = true
-var sync_interval: float = 0.1  # Sync every 100ms
+# Sync settings — disabled until a network transport layer exists
+var auto_sync_enabled: bool = false
+var sync_interval: float = 0.1
 var _sync_timer: float = 0.0
+
+const TRACE_CATEGORY = "NetworkSync"
 
 func _init(state: Node = null) -> void:
 	game_state = state if state else GameState
 
 func _ready() -> void:
 	if is_server:
-		print("[NetworkSync] Server sync initialized")
+		Trace.trace_log(TRACE_CATEGORY, "Server sync initialized")
 	else:
-		print("[NetworkSync] Client sync initialized")
+		Trace.trace_log(TRACE_CATEGORY, "Client sync initialized")
 
 func _process(delta: float) -> void:
 	if not auto_sync_enabled or not is_server:
@@ -45,7 +47,7 @@ func broadcast_state() -> void:
 	# For now, this is a placeholder for future network implementation
 	# Example: rpc("receive_state_update", state_data)
 
-	print("[Server] State broadcast ready (awaiting network layer)")
+	Trace.trace_log(TRACE_CATEGORY, "State broadcast ready (awaiting network layer)")
 
 func broadcast_state_delta(changes: Dictionary) -> void:
 	"""SERVER ONLY: Broadcast incremental state changes (optimization)"""
@@ -55,7 +57,7 @@ func broadcast_state_delta(changes: Dictionary) -> void:
 
 	# TODO: Send delta changes instead of full state for bandwidth optimization
 	# This would include only what changed since last sync
-	print("[Server] Delta sync ready (awaiting network layer)")
+	Trace.trace_log(TRACE_CATEGORY, "Delta sync ready (awaiting network layer)")
 
 func _serialize_game_state() -> Dictionary:
 	"""Serialize current game state for network transmission"""
@@ -83,7 +85,7 @@ func receive_state_update(state_data: Dictionary) -> void:
 		push_warning("NetworkSync: Server received state update (ignoring)")
 		return
 
-	print("[Client] Receiving state update from server")
+	Trace.trace_log(TRACE_CATEGORY, "Receiving state update from server")
 	game_state.sync_from_server(state_data)
 
 func receive_delta_update(delta_data: Dictionary) -> void:
@@ -92,7 +94,7 @@ func receive_delta_update(delta_data: Dictionary) -> void:
 		push_warning("NetworkSync: Server received delta update (ignoring)")
 		return
 
-	print("[Client] Receiving delta update from server")
+	Trace.trace_log(TRACE_CATEGORY, "Receiving delta update from server")
 	_apply_delta_changes(delta_data)
 
 func _apply_delta_changes(delta: Dictionary) -> void:
@@ -136,7 +138,7 @@ func send_command_to_server(command: GameCommand) -> void:
 	# TODO: Send command to server via network
 	# Example: rpc_id(1, "receive_command", command_data)
 
-	print("[Client] Command queued for server: %s" % command.get_class())
+	Trace.trace_log(TRACE_CATEGORY, "Command queued for server: %s" % command.get_class())
 
 func receive_command(command_data: Dictionary) -> void:
 	"""SERVER ONLY: Receive command from client and execute"""
@@ -153,7 +155,7 @@ func receive_command(command_data: Dictionary) -> void:
 	# Execute via command validator
 	if game_state.command_validator:
 		var result = game_state.command_validator.execute_command(command)
-		print("[Server] Command executed: %s (success: %s)" % [
+		Trace.trace_log(TRACE_CATEGORY, "Command executed: %s (success: %s)" % [
 			command.get_class(),
 			result.get("success", false)
 		])
@@ -169,7 +171,7 @@ func receive_command_result(result: Dictionary) -> void:
 		return
 
 	if result.get("success", false):
-		print("[Client] Command executed successfully on server")
+		Trace.trace_log(TRACE_CATEGORY, "Command executed successfully on server")
 	else:
 		push_error("[Client] Command failed on server: %s" % result.get("error", "Unknown error"))
 
@@ -180,9 +182,7 @@ func request_full_sync() -> void:
 	if is_server:
 		broadcast_state()
 	else:
-		# TODO: Send sync request to server
-		# rpc_id(1, "client_requests_sync")
-		print("[Client] Full sync requested from server")
+		Trace.trace_log(TRACE_CATEGORY, "Full sync requested from server")
 		sync_requested.emit()
 
 func client_requests_sync() -> void:
@@ -190,6 +190,6 @@ func client_requests_sync() -> void:
 	if not is_server:
 		return
 
-	print("[Server] Client requested full sync")
+	Trace.trace_log(TRACE_CATEGORY, "Client requested full sync")
 	# TODO: Send full state to requesting client
 	# rpc_id(sender_id, "receive_state_update", _serialize_game_state())

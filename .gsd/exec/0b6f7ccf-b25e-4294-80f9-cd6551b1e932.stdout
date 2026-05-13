@@ -1,0 +1,10 @@
+ok: false
+total issues: 4
+stale_crash_lock count: 1
+  - Stale auto-mode worker (PID 51498, started 2026-05-11T23:47:08.910Z, was executing discuss-milestone M001) — process is no longer running
+errors: 1
+  E: stale_crash_lock | project | Stale auto-mode worker (PID 51498, started 2026-05-11T23:47:08.910Z, was executing discuss-milestone
+warnings: 3
+  W: gitignore_missing_patterns | project
+  W: env_git_remote | environment
+  W: provider_key_missing | project

@@ -371,17 +371,25 @@ func _add_readonly_field(container: Control, label_text: String, value: String) 
 ## Field Change Handlers
 
 func _on_environment_field_changed(property: String, value) -> void:
-	"""Immediately update environment state when field changes"""
-	if not game_state or not game_state.environment:
+	if not game_state or not game_state.environment_controller:
 		return
-
-	game_state.environment.set(property, value)
-	_log("Environment.%s = %s (visual update on next turn)" % [property, value])
+	game_state.environment_controller.set_environment_property(property, value)
+	_log("Environment.%s = %s" % [property, value])
 
 func _on_ship_field_changed(ship: Object, property: String, value) -> void:
-	"""Immediately update ship state when field changes"""
-	ship.set(property, value)
-	_log("Ship %s.%s = %s" % [ship.ship_id, property, value])
+	if not game_state or not game_state.ship_controller:
+		return
+	var sid: String = ship.ship_id
+	match property:
+		"facing":
+			game_state.ship_controller.set_ship_facing(sid, value)
+		"speed":
+			game_state.ship_controller.set_ship_speed(sid, value)
+		"sail_state":
+			game_state.ship_controller.set_sail_state(sid, value)
+		_:
+			push_warning("DeveloperUI: No controller method for ship property '%s'" % property)
+	_log("Ship %s.%s = %s" % [sid, property, value])
 
 ## Controls
 
@@ -412,7 +420,7 @@ func _on_hex_labels_toggled(enabled: bool) -> void:
 	_log("Hex coordinate labels: %s" % ("ON" if enabled else "OFF"))
 
 func _on_advance_phase_pressed() -> void:
-	"""Advance to next phase"""
+	# Debug-only: direct controller call for developer UI
 	if game_state and game_state.phase_controller:
 		game_state.phase_controller.advance_phase()
 		_log("Advanced phase")
@@ -465,8 +473,7 @@ func _log(message: String) -> void:
 	# Auto-scroll to bottom
 	console_output.scroll_vertical = console_output.get_line_count()
 
-	# Also print to Godot console
-	print("[DevUI] %s" % message)
+	Trace.trace_log("DevUI", message)
 
 func _on_tree_exiting() -> void:
 	if Trace.trace_added.is_connected(_on_trace_added):

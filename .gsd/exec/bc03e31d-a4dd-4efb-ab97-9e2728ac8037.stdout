@@ -1,0 +1,6 @@
+ok: false
+issues: 4
+fixesApplied: ["cleared stale auto-mode worker state","added missing GSD runtime patterns to .gitignore","updated /Users/jkline/gws/pakfur/leeward/.gsd/STATE.md"]
+stale_crash_lock remaining: 1
+remaining errors: 1
+  - stale_crash_lock project project

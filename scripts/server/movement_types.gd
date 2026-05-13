@@ -115,6 +115,7 @@ class ValidMovesResult extends RefCounted:
 	var valid_hexes: ValidNextHexes = null
 	var can_submit: bool = true
 	var remaining_ma: int = 0
+	var is_tacking_attempt: bool = false
 
 	func _init() -> void:
 		valid_hexes = ValidNextHexes.new()
@@ -123,7 +124,8 @@ class ValidMovesResult extends RefCounted:
 		return {
 			"valid_hexes": valid_hexes.to_dict() if valid_hexes else {},
 			"can_submit": can_submit,
-			"remaining_ma": remaining_ma
+			"remaining_ma": remaining_ma,
+			"is_tacking_attempt": is_tacking_attempt
 		}
 
 
@@ -177,22 +179,26 @@ class SubmissionValidationResult extends RefCounted:
 class PlotStep extends RefCounted:
 	var hex: Vector2i = Vector2i.ZERO
 	var facing: int = 0
+	var move_type: MoveType = MoveType.NONE
 
-	func _init(p_hex: Vector2i = Vector2i.ZERO, p_facing: int = 0) -> void:
+	func _init(p_hex: Vector2i = Vector2i.ZERO, p_facing: int = 0, p_move_type: MoveType = MoveType.NONE) -> void:
 		hex = p_hex
 		facing = p_facing
+		move_type = p_move_type
 
 	func to_dict() -> Dictionary:
 		return {
 			"hex": {"q": hex.x, "r": hex.y},
-			"facing": facing
+			"facing": facing,
+			"move_type": move_type
 		}
 
 	static func from_dict(data: Dictionary) -> PlotStep:
 		var hex_data = data.get("hex", {})
 		return PlotStep.new(
 			Vector2i(hex_data.get("q", 0), hex_data.get("r", 0)),
-			data.get("facing", 0)
+			data.get("facing", 0),
+			data.get("move_type", MoveType.NONE)
 		)
 
 
@@ -221,6 +227,7 @@ class PlottingStartedResponse extends PlottingResponse:
 	var valid_next_hexes: ValidNextHexes = null
 	var can_submit: bool = true
 	var remaining_ma: int = 0
+	var is_tacking_attempt: bool = false
 
 	func _init() -> void:
 		type = "PLOTTING_STARTED"
@@ -235,7 +242,8 @@ class PlottingStartedResponse extends PlottingResponse:
 			"origin_hex": {"q": origin_hex.x, "r": origin_hex.y},
 			"valid_next_hexes": valid_next_hexes.to_dict() if valid_next_hexes else {},
 			"can_submit": can_submit,
-			"remaining_ma": remaining_ma
+			"remaining_ma": remaining_ma,
+			"is_tacking_attempt": is_tacking_attempt
 		})
 		return base
 
@@ -248,6 +256,7 @@ class HexSelectedResponse extends PlottingResponse:
 	var valid_next_hexes: ValidNextHexes = null
 	var can_submit: bool = true
 	var remaining_ma: int = 0
+	var is_tacking_attempt: bool = false
 
 	func _init() -> void:
 		type = "HEX_SELECTED"
@@ -266,7 +275,8 @@ class HexSelectedResponse extends PlottingResponse:
 			"plotted_path": path_array,
 			"valid_next_hexes": valid_next_hexes.to_dict() if valid_next_hexes else {},
 			"can_submit": can_submit,
-			"remaining_ma": remaining_ma
+			"remaining_ma": remaining_ma,
+			"is_tacking_attempt": is_tacking_attempt
 		})
 		return base
 
@@ -279,6 +289,7 @@ class UndoCompleteResponse extends PlottingResponse:
 	var valid_next_hexes: ValidNextHexes = null
 	var can_submit: bool = true
 	var remaining_ma: int = 0
+	var is_tacking_attempt: bool = false
 
 	func _init() -> void:
 		type = "UNDO_COMPLETE"
@@ -297,7 +308,8 @@ class UndoCompleteResponse extends PlottingResponse:
 			"plotted_path": path_array,
 			"valid_next_hexes": valid_next_hexes.to_dict() if valid_next_hexes else {},
 			"can_submit": can_submit,
-			"remaining_ma": remaining_ma
+			"remaining_ma": remaining_ma,
+			"is_tacking_attempt": is_tacking_attempt
 		})
 		return base
 
@@ -340,6 +352,128 @@ class MovementSubmittedResponse extends PlottingResponse:
 		})
 		return base
 
+
+## ============================================================================
+## Resolution Types
+## ============================================================================
+
+enum ResolutionEventType {
+	MOVE,
+	TACKING_ROLL,
+	IN_IRONS_ESCAPE_ROLL,
+	IMMOBILIZED,
+	SKIP_NO_PLOT,
+	CONTESTED_HEX_ROLL,
+	BEARING_OFF_ROLL,
+	BEARING_OFF_PIVOT_DENIED,
+	COLLISION,
+	FOULING,
+	COLLISION_RIGGING_LOSS,
+	STOPPED,
+}
+
+class ResolutionEvent extends RefCounted:
+	var ship_id: String = ""
+	var impulse: int = 0
+	var event_type: ResolutionEventType = ResolutionEventType.MOVE
+	var from_hex: Vector2i = Vector2i.ZERO
+	var to_hex: Vector2i = Vector2i.ZERO
+	var facing: int = 0
+	var roll: float = -1.0
+	var threshold: float = -1.0
+	var success: bool = true
+	var detail: String = ""
+
+	func _init(p_ship_id: String = "", p_impulse: int = 0, p_type: ResolutionEventType = ResolutionEventType.MOVE) -> void:
+		ship_id = p_ship_id
+		impulse = p_impulse
+		event_type = p_type
+
+	func to_dict() -> Dictionary:
+		var d := {
+			"ship_id": ship_id,
+			"impulse": impulse,
+			"event_type": event_type,
+			"from_hex": {"q": from_hex.x, "r": from_hex.y},
+			"to_hex": {"q": to_hex.x, "r": to_hex.y},
+			"facing": facing,
+			"success": success,
+		}
+		if roll >= 0.0:
+			d["roll"] = roll
+			d["threshold"] = threshold
+		if detail != "":
+			d["detail"] = detail
+		return d
+
+
+class ShipResolutionResult extends RefCounted:
+	var ship_id: String = ""
+	var events: Array[ResolutionEvent] = []
+	var final_hex: Vector2i = Vector2i.ZERO
+	var final_facing: int = 0
+	var immobilized: bool = false
+	var tacking_failed: bool = false
+	var collided_with: String = ""
+	var fouled_with: String = ""
+	var rigging_damage: int = 0
+	var stopped_at_impulse: int = -1
+
+	func _init(p_ship_id: String = "") -> void:
+		ship_id = p_ship_id
+		events = []
+
+	func to_dict() -> Dictionary:
+		var ev_array: Array = []
+		for ev in events:
+			ev_array.append(ev.to_dict())
+		var d := {
+			"ship_id": ship_id,
+			"events": ev_array,
+			"final_hex": {"q": final_hex.x, "r": final_hex.y},
+			"final_facing": final_facing,
+			"immobilized": immobilized,
+			"tacking_failed": tacking_failed,
+		}
+		if collided_with != "":
+			d["collided_with"] = collided_with
+		if fouled_with != "":
+			d["fouled_with"] = fouled_with
+		if rigging_damage > 0:
+			d["rigging_damage"] = rigging_damage
+		if stopped_at_impulse >= 0:
+			d["stopped_at_impulse"] = stopped_at_impulse
+		return d
+
+
+class ResolutionLog extends RefCounted:
+	var turn: int = 0
+	var ship_results: Dictionary = {}
+	var max_impulses: int = 0
+
+	func _init(p_turn: int = 0) -> void:
+		turn = p_turn
+
+	func add_result(result: ShipResolutionResult) -> void:
+		ship_results[result.ship_id] = result
+
+	func get_result(ship_id: String) -> ShipResolutionResult:
+		return ship_results.get(ship_id)
+
+	func to_dict() -> Dictionary:
+		var results_dict := {}
+		for sid in ship_results:
+			results_dict[sid] = ship_results[sid].to_dict()
+		return {
+			"turn": turn,
+			"max_impulses": max_impulses,
+			"ship_results": results_dict,
+		}
+
+
+## ============================================================================
+## Protocol Response Types (continued)
+## ============================================================================
 
 ## Error response for any failed request
 class PlottingErrorResponse extends PlottingResponse:

@@ -15,13 +15,13 @@ func _ready() -> void:
 	quit_dialog.confirmed.connect(_on_quit_confirmed)
 
 func _on_play_pressed() -> void:
-	print("Play button pressed")
+	Trace.trace_log("UI", "Play button pressed")
 	play_requested.emit()
 
 func _on_quit_pressed() -> void:
-	print("Quit button pressed - showing confirmation")
+	Trace.trace_log("UI", "Quit button pressed - showing confirmation")
 	quit_dialog.popup_centered()
 
 func _on_quit_confirmed() -> void:
-	print("Quit confirmed")
+	Trace.trace_log("UI", "Quit confirmed")
 	get_tree().quit()

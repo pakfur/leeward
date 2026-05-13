@@ -69,7 +69,7 @@ func _update_display() -> void:
 
 	# Update instructions
 	if instructions_label:
-		var ma = current_ship.get_movement_allowance()
+		var ma = GameState.ship_controller.get_movement_allowance(current_ship_id)
 		instructions_label.text = "Movement Allowance: %d\nCommands: F# (forward), P (port), S (starboard)\nExample: F2 S F1" % ma
 
 	# Load current plotted actions if any
@@ -111,9 +111,9 @@ func _on_submit_pressed() -> void:
 		success = move_command.execute_local_for_testing()
 
 	if success:
-		print("PlanningPanel: Move command executed for %s" % current_ship.ship_name)
+		Trace.trace_log("UI", "PlanningPanel: Move command executed for %s" % current_ship.ship_name)
 	else:
-		print("PlanningPanel: Move command failed for %s" % current_ship.ship_name)
+		Trace.trace_log("UI", "PlanningPanel: Move command failed for %s" % current_ship.ship_name)
 
 	# Emit plan submitted signal
 	plan_submitted.emit()
@@ -136,7 +136,7 @@ func _on_clear_pressed() -> void:
 	if not current_ship:
 		return
 
-	current_ship.clear_plot()
+	GameState.ship_controller.clear_plotted_actions(current_ship_id)
 
 	if movement_input:
 		movement_input.text = ""

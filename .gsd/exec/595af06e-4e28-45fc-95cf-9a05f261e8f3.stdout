@@ -1,0 +1,14 @@
+lock: null
+alive: null
+aw exports: [
+  'autoWorkerHeartbeatTtlSeconds',
+  'findStaleWorkerForProject',
+  'getActiveAutoWorkers',
+  'getAllAutoWorkers',
+  'getAutoWorker',
+  'heartbeatAutoWorker',
+  'markWorkerCrashed',
+  'markWorkerStopping',
+  'registerAutoWorker'
+]
+active workers count: 0

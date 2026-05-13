@@ -42,8 +42,8 @@ func execute_local_for_testing() -> bool:
 	if not ship_state:
 		return false
 
-	ship_state.plotted_actions["movement"] = movement_commands
-	print("MoveCommand: Ship %s plotted movement: %s" % [ship_id, movement_commands])
+	GameState.ship_controller.set_plotted_movement(ship_id, movement_commands)
+	Trace.trace_log("Command", "MoveCommand: Ship %s plotted movement: %s" % [ship_id, movement_commands])
 	return true
 
 func serialize() -> Dictionary:

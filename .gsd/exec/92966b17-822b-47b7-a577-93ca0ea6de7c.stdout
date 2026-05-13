@@ -1,0 +1,20 @@
+SCRIPT ERROR: Parse Error: Identifier "EnvironmentState" not declared in the current scope.
+          at: GDScript::reload (res://scripts/autoload/game_state.gd:406)
+SCRIPT ERROR: Parse Error: Identifier "ShipState" not declared in the current scope.
+          at: GDScript::reload (res://scripts/autoload/game_state.gd:431)
+ERROR: Failed to load script "res://scripts/autoload/game_state.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript.cpp:2907)
+ERROR: Failed to instantiate an autoload, script 'res://scripts/autoload/game_state.gd' does not inherit from 'Node'.
+   at: start (main/main.cpp:4412)
+SCRIPT ERROR: Parse Error: Could not find type "Ship" in the current scope.
+          at: GDScript::reload (res://scripts/autoload/data_manager.gd:474)
+SCRIPT ERROR: Parse Error: Identifier "Ship" not declared in the current scope.
+          at: GDScript::reload (res://scripts/autoload/data_manager.gd:348)
+SCRIPT ERROR: Parse Error: Identifier "Ship" not declared in the current scope.
+          at: GDScript::reload (res://scripts/autoload/data_manager.gd:567)
+SCRIPT ERROR: Parse Error: Identifier "Ship" not declared in the current scope.
+          at: GDScript::reload (res://scripts/autoload/data_manager.gd:584)
+ERROR: Failed to load script "res://scripts/autoload/data_manager.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript.cpp:2907)
+ERROR: Failed to instantiate an autoload, script 'res://scripts/autoload/data_manager.gd' does not inherit from 'Node'.
+   at: start (main/main.cpp:4412)

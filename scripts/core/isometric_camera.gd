@@ -26,7 +26,7 @@ var drag_threshold: float = 5.0  # pixels before considering it a drag
 func _ready() -> void:
 	camera_distance = initial_distance
 	_update_camera_transform()
-	print("Camera initialized at position: %s, looking at: %s" % [position, camera_target])
+	Trace.trace_log("Camera", "Initialized at position: %s, looking at: %s" % [position, camera_target])
 
 func _process(_delta: float) -> void:
 	"""Update camera transform continuously during tweening"""
@@ -201,7 +201,7 @@ func center_on_ships(ship_positions: Array[Vector3]) -> void:
 	isometric_angle = 85.0  # Reset to 85 degrees
 
 	_update_camera_transform()
-	print("Centered camera on %d ships at distance %f" % [ship_positions.size(), camera_distance])
+	Trace.trace_log("Camera", "Centered on %d ships at distance %f" % [ship_positions.size(), camera_distance])
 
 func focus_on_ship(world_pos: Vector3, ship_facing: int, zoom_distance: float = -1.0) -> void:
 	"""
@@ -256,7 +256,7 @@ func focus_on_ship(world_pos: Vector3, ship_facing: int, zoom_distance: float = 
 		_update_camera_transform()  # Final update
 	)
 
-	print("Focusing camera on ship at %s (facing: %d, rotation: %.1f°, distance: %.1f)" %
+	Trace.trace_log("Camera", "Focusing on ship at %s (facing: %d, rotation: %.1f°, distance: %.1f)" %
 		[world_pos, ship_facing, target_rotation, target_distance])
 
 func _update_camera_transform() -> void:

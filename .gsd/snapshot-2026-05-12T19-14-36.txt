@@ -1,0 +1,7 @@
+[38;2;141;183;255m[1mExport Options[22m[39m
+
+  [38;2;141;183;255m[m][39m  Markdown report — full project summary with tables
+  [38;2;141;183;255m[j][39m  JSON report — machine-readable project data
+  [38;2;141;183;255m[s][39m  Snapshot — current view as plain text
+
+[38;2;77;88;112mLast export: /Users/jkline/gws/pakfur/leeward/.gsd/export-2026-05-12T19-14-32.json[39m

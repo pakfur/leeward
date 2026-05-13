@@ -1,0 +1,3 @@
+Error: Cannot find module 'better-sqlite3'
+Require stack:
+- /Users/jkline/gws/pakfur/leeward/.gsd/worktrees/M001/[eval]

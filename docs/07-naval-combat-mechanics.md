@@ -27,21 +27,21 @@
 
 **Points of Sail:**
 ```
-         Wind Direction
-              ↓
-        Into Wind (No Sail)
-            /    \
-    Close Hauled  Close Hauled
-     (45°)           (45°)
-       /              \
+		 Wind Direction
+			  ↓
+		Into Wind (No Sail)
+			/    \
+	Close Hauled  Close Hauled
+	 (45°)           (45°)
+	   /              \
   Beam Reach      Beam Reach
-    (90°)           (90°)
-      \              /
+	(90°)           (90°)
+	  \              /
    Broad Reach   Broad Reach
-     (135°)        (135°)
-        \          /
-         Running
-         (180°)
+	 (135°)        (135°)
+		\          /
+		 Running
+		 (180°)
 ```
 
 ### Speed Modifiers

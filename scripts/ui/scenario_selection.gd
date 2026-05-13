@@ -53,7 +53,7 @@ func _load_scenarios() -> void:
 
 	dir.list_dir_end()
 
-	print("Loaded %d scenarios" % scenarios.size())
+	Trace.trace_log("UI", "Loaded %d scenarios" % scenarios.size())
 
 func _load_scenario_file(path: String) -> Dictionary:
 	"""Load a single scenario JSON file"""
@@ -102,7 +102,7 @@ func _on_start_pressed() -> void:
 	var index = selected_index[0]
 	var scenario_name = scenario_files[index]
 
-	print("Starting scenario: " + scenario_name)
+	Trace.trace_log("UI", "Starting scenario: " + scenario_name)
 	scenario_selected.emit(scenario_name)
 
 func _on_back_pressed() -> void:

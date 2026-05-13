@@ -1,4 +1,6 @@
 {
+	"_doc": "acceleration|deceleration -> Maneuver Type -> Allowed Speed Change",
+
 	"acceleration": {
 		"a": 2,
 		"b": 2,

@@ -1,0 +1,9 @@
+ok: false
+total issues: 4
+fixesApplied: ["cleared stale auto-mode worker state","added missing GSD runtime patterns to .gitignore","updated /Users/jkline/gws/pakfur/leeward/.gsd/STATE.md"]
+errors: 1
+  - stale_crash_lock | project | project | Stale auto-mode worker (PID 59817, started 2026-05-12T00:40:45.429Z, was executing discuss-milestone
+warnings: 3
+  - gitignore_missing_patterns | project | project
+  - env_git_remote | project | environment
+  - provider_key_missing | project | project

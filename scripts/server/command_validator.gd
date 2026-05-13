@@ -61,7 +61,7 @@ func _validate_move_command(command: MoveCommand) -> Dictionary:
 
 func _validate_movement_allowance(ship: ShipState, movement_commands: Array[String]) -> Dictionary:
 	"""Validate that movement commands don't exceed movement allowance"""
-	var ma = ship.get_movement_allowance()
+	var ma = game_state.ship_controller.get_movement_allowance(ship.ship_id)
 	var total_movement = 0
 
 	for cmd in movement_commands:
@@ -116,7 +116,7 @@ func execute_command(command: GameCommand) -> Dictionary:
 		return {"success": false, "error": "Unknown command type"}
 
 	if result:
-		print("[Server] Command executed successfully: %s" % command.get_class())
+		Trace.trace_log("Command", "Command executed successfully: %s" % command.get_class())
 		return {"success": true}
 	else:
 		return {"success": false, "error": "Command execution failed"}

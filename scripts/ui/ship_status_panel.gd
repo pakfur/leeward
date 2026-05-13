@@ -31,48 +31,52 @@ func _update_display() -> void:
 	if not current_ship_state:
 		return
 
-	var status = current_ship_state.get_status_summary()
+	var s = current_ship_state
+	var hull_max = s.ship.hull_hp if s.ship else [0, 0, 0, 0]
 
 	if ship_name_label:
-		ship_name_label.text = status.name
+		ship_name_label.text = s.ship_name
 
 	if ship_type_label:
-		ship_type_label.text = status.type
+		ship_type_label.text = s.ship.name if s.ship else s.ship_type
 
 	if position_label:
-		position_label.text = "Position: (%d, %d)" % [status.position.x, status.position.y]
+		position_label.text = "Position: (%d, %d)" % [s.hex_position.x, s.hex_position.y]
 
 	if facing_label:
 		var facing_names = ["E", "SE", "SW", "W", "NW", "NE"]
-		facing_label.text = "Facing: %s (%d)" % [facing_names[status.facing], status.facing]
+		facing_label.text = "Facing: %s (%d)" % [facing_names[s.facing], s.facing]
 
 	if speed_label:
-		speed_label.text = "Speed: %d hexes/turn" % status.speed
+		speed_label.text = "Speed: %d hexes/turn" % s.speed
 
 	if sail_state_label:
 		var sail_names = {"FS": "Fighting Sail", "MS": "Maneuvering Sail", "PS": "Plain Sail", "NS": "No Sail"}
-		sail_state_label.text = "Sail: %s" % sail_names.get(status.sail_state, status.sail_state)
+		sail_state_label.text = "Sail: %s" % sail_names.get(s.sail_state, s.sail_state)
 
 	if hull_label:
 		var hull_text = "Hull: "
-		for i in range(status.hull_hp.size()):
-			hull_text += "%d/%d" % [status.hull_hp[i], status.hull_max[i]]
-			if i < status.hull_hp.size() - 1:
+		for i in range(s.hull_current_hp.size()):
+			var max_hp = hull_max[i] if i < hull_max.size() else 0
+			hull_text += "%d/%d" % [s.hull_current_hp[i], max_hp]
+			if i < s.hull_current_hp.size() - 1:
 				hull_text += ", "
 		hull_label.text = hull_text
 
 	if crew_label:
-		crew_label.text = "Crew: %d (%s)" % [status.morale, status.crew_quality]
+		crew_label.text = "Crew: %d (%s)" % [s.crew_morale, s.crew_quality]
 
 	if morale_label:
 		var morale_names = ["", "", "Low", "Fair", "Good", "High"]
-		morale_label.text = "Morale: %s (%d)" % [morale_names[status.morale] if status.morale < morale_names.size() else "Unknown", status.morale]
+		morale_label.text = "Morale: %s (%d)" % [morale_names[s.crew_morale] if s.crew_morale < morale_names.size() else "Unknown", s.crew_morale]
 
 	if rigging_label:
-		rigging_label.text = "Rigging: %d/4" % status.rigging
+		var rq = GameState.ship_controller.get_rigging_quality(s.ship_id) if GameState.ship_controller else 4
+		rigging_label.text = "Rigging: %d/4" % rq
 
 	if ma_label:
-		ma_label.text = "Movement Allowance: %d" % status.movement_allowance
+		var ma = GameState.ship_controller.get_movement_allowance(s.ship_id) if GameState.ship_controller else 0
+		ma_label.text = "Movement Allowance: %d" % ma
 
 func _on_close_pressed() -> void:
 	visible = false

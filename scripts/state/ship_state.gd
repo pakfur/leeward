@@ -23,6 +23,8 @@ var ship_type: String:
 @export var speed: int = 0  # hexes per turn
 @export var immobilized: bool = false  # ship cannot move
 @export var tacking: bool = false # user has indicated they are tacking
+@export var fouled_with: String = ""  # ship_id of fouled partner, empty if not fouled
+@export var collision_this_turn: bool = false  # set during resolution, cleared at turn start
 @export var movement_allowance: int = 0 # current turns movement points
 @export var min_ma: int = 0 # current ma + any deceleration considerations
 @export var max_ma: int = 0 # current speed + acceleration and ma considerations
@@ -70,77 +72,6 @@ func get_ship_size() -> int:
 	#else:
 		#return 2
 
-func get_movement_allowance() -> int:
-	"""Calculate current movement allowance"""
-	var wind_dir = GameState.wind_direction
-	var hex_grid = HexGrid.new()
-	var wind_facing = hex_grid.get_wind_facing(facing, wind_dir)
-
-	var spd_type = ship.speed_type if ship else "F/F"
-	# Calculate rigging quality from current HP (1-4 based on average HP percentage)
-	var rigging_quality = get_rigging_quality()
-	var ma = DataManager.get_movement_allowance(
-		spd_type,
-		GameState.wind_speed,
-		wind_facing,
-		sail_state,
-		rigging_quality
-	)
-
-	print("[get_movement_allowance] MA: %d | wind: %s | facing: %s | speed: %s | sail: %s" % [ma, wind_dir, wind_facing, GameState.wind_speed, sail_state])
-	return ma
-
-func get_rigging_quality() -> int:
-	"""Calculate rigging quality (1-4) based on current HP compared to definition max"""
-	if ship == null:
-		return 4  # Default to best quality if no definition
-
-	var max_hp_array = ship.rigging_hp
-	var total_max = 0
-	var total_current = 0
-
-	for i in range(4):
-		total_max += max_hp_array[i] if i < max_hp_array.size() else 0
-		total_current += rigging_current_hp[i]
-
-	if total_max == 0:
-		return 4
-
-	var hp_percentage = float(total_current) / float(total_max)
-
-	# Convert percentage to quality (1-4)
-	if hp_percentage >= 0.85:
-		return 4
-	elif hp_percentage >= 0.60:
-		return 3
-	elif hp_percentage >= 0.35:
-		return 2
-	else:
-		return 1
-
-func get_status_summary() -> Dictionary:
-	"""Get a summary of ship status for UI display"""
-	var hull_max = ship.hull_hp if ship else [0, 0, 0, 0]
-	var ship_def_name = ship.name if ship else ship_type
-	return {
-		"name": ship_name,
-		"type": ship_def_name,
-		"size": get_ship_size(),
-		"position": hex_position,
-		"facing": facing,
-		"speed": speed,
-		"sail_state": sail_state,
-		"hull_hp": hull_current_hp,
-		"hull_max": hull_max,
-		"crew_quality": crew_quality,
-		"crew_count": crew_count,
-		"marine_count": marine_count,
-		"morale": crew_morale,
-		"rigging": get_rigging_quality(),
-		"rigging_hp": rigging_current_hp,
-		"movement_allowance": get_movement_allowance()
-	}
-
 func serialize() -> Dictionary:
 	"""Serialize state for network transmission or save/load"""
 	var data = {
@@ -150,6 +81,8 @@ func serialize() -> Dictionary:
 		"speed": speed,
 		"immobilized": immobilized,
 		"tacking": tacking,
+		"fouled_with": fouled_with,
+		"collision_this_turn": collision_this_turn,
 		"movement_allowance": movement_allowance,
 		"min_ma": min_ma,
 		"max_ma": max_ma,
@@ -182,8 +115,10 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.facing = data.get("facing", 0)
 	state.speed = data.get("speed", 0)
 	state.movement_allowance = data.get("movement_allowance", 0)
-	state.immobilized = data.get("immobilized")
-	state.tacking = data.get("tacking")
+	state.immobilized = data.get("immobilized", false)
+	state.tacking = data.get("tacking", false)
+	state.fouled_with = data.get("fouled_with", "")
+	state.collision_this_turn = data.get("collision_this_turn", false)
 	state.min_ma = data.get("min_ma")
 	state.max_ma = data.get("max_ma")
 	state.towing = data.get("towing")
@@ -261,10 +196,12 @@ func initialize_from_scenario(data: Dictionary, ship_ref: Ship) -> void:
 	# Crew
 	crew_morale = data.get("crew_morale", 4)
 
-	print("ShipState initialized: %s (%s) at %s facing %d, speed %d" % [ship_name, ship_type, hex_position, facing, speed])
+	Trace.trace_log("ShipState", "Initialized: %s (%s) at %s facing %d, speed %d" % [ship_name, ship_type, hex_position, facing, speed])
+
+func clear_turn_flags() -> void:
+	collision_this_turn = false
 
 func clear_plot() -> void:
-	"""Clear all plotted actions"""
 	plotted_actions = {
 		"movement": [],
 		"sail_change": "",

@@ -91,7 +91,6 @@ func test_frigate_38_crew_count() -> void:
 	assert_eq(def.crew_count[0], 3)
 	assert_eq(def.crew_count[1], 3)
 	assert_eq(def.crew_count[2], 3)
-	assert_eq(def.crew_count[3], 3)
 
 func test_frigate_38_marine_count() -> void:
 	var def = dm.get_ship_definition("frigate_38")

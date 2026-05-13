@@ -14,6 +14,7 @@ signal action_button_pressed(action_type: String)
 
 var ship_state: ShipState = null
 var is_selected: bool = false
+var is_submitted: bool = false
 
 # Default icons by ship type
 const ICON_PATHS = {
@@ -26,6 +27,7 @@ const ICON_PATHS = {
 # Style themes
 var normal_style: StyleBoxFlat
 var selected_style: StyleBoxFlat
+var submitted_style: StyleBoxFlat
 
 func _ready() -> void:
 	# Create styles
@@ -41,6 +43,12 @@ func _ready() -> void:
 	selected_style.set_border_width_all(2)
 	selected_style.set_corner_radius_all(4)
 
+	submitted_style = StyleBoxFlat.new()
+	submitted_style.bg_color = Color(0.2, 0.3, 0.2, 0.9)
+	submitted_style.border_color = Color(0.4, 0.7, 0.4, 1.0)
+	submitted_style.set_border_width_all(1)
+	submitted_style.set_corner_radius_all(4)
+
 	add_theme_stylebox_override("panel", normal_style)
 
 	# Connect button signals
@@ -55,12 +63,10 @@ func _ready() -> void:
 	gui_input.connect(_on_gui_input)
 
 func setup(state: ShipState) -> void:
-	"""Initialize the list item with ship state data"""
 	ship_state = state
 	_update_display()
 
 func _update_display() -> void:
-	"""Update all UI elements with current ship state"""
 	if not ship_state:
 		return
 
@@ -91,7 +97,6 @@ func _update_display() -> void:
 			ship_icon.texture = load(icon_path)
 
 func _get_icon_path_for_ship_type(ship_type: String) -> String:
-	"""Get icon path based on ship type"""
 	var type_lower = ship_type.to_lower()
 
 	for key in ICON_PATHS.keys():
@@ -101,16 +106,26 @@ func _get_icon_path_for_ship_type(ship_type: String) -> String:
 	return ICON_PATHS["default"]
 
 func set_selected_state(selected: bool) -> void:
-	"""Update visual state when ship is selected"""
 	is_selected = selected
+	_apply_panel_style()
 
-	if selected:
+func set_submitted_state(submitted: bool) -> void:
+	is_submitted = submitted
+	_apply_panel_style()
+	if ship_name_label and submitted:
+		ship_name_label.text = ship_state.ship_name + " [OK]" if ship_state else ship_name_label.text
+	elif ship_name_label and ship_state:
+		ship_name_label.text = ship_state.ship_name
+
+func _apply_panel_style() -> void:
+	if is_selected:
 		add_theme_stylebox_override("panel", selected_style)
+	elif is_submitted:
+		add_theme_stylebox_override("panel", submitted_style)
 	else:
 		add_theme_stylebox_override("panel", normal_style)
 
 func set_action_button_state(action_type: String, active: bool) -> void:
-	"""Set the toggle state of an action button"""
 	var button: Button = null
 
 	match action_type:
@@ -125,7 +140,6 @@ func set_action_button_state(action_type: String, active: bool) -> void:
 		button.button_pressed = active
 
 func _on_gui_input(event: InputEvent) -> void:
-	"""Handle clicks on the panel"""
 	if event is InputEventMouseButton:
 		if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			selected.emit()

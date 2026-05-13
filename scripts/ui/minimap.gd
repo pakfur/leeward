@@ -48,7 +48,7 @@ func _ready() -> void:
 	# Set z-index below DevUI
 	z_index = 10
 
-	print("MiniMap initialized: size=%s, bounds=%s, camera=%s" % [size, map_bounds, camera != null])
+	Trace.trace_log("MiniMap", "Initialized: size=%s, bounds=%s, camera=%s" % [size, map_bounds, camera != null])
 
 func _find_camera() -> void:
 	"""Auto-find the camera in the scene"""
@@ -56,7 +56,7 @@ func _find_camera() -> void:
 	if viewport:
 		camera = viewport.get_camera_3d()
 		if camera:
-			print("MiniMap: Found camera: %s" % camera.name)
+			Trace.trace_log("MiniMap", "Found camera: %s" % camera.name)
 		else:
 			push_warning("MiniMap: No camera found")
 
@@ -233,7 +233,7 @@ func _create_ship_icon(ship_id: String) -> void:
 	ship_layer.add_child(icon)
 	ship_icons[ship_id] = icon
 
-	print("MiniMap: Created icon for ship %s" % ship_id)
+	Trace.trace_log("MiniMap", "Created icon for ship %s" % ship_id)
 
 func _update_ship_positions() -> void:
 	"""Update positions of all ship icons"""
