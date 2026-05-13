@@ -71,10 +71,12 @@ func _update_display() -> void:
 		morale_label.text = "Morale: %s (%d)" % [morale_names[s.crew_morale] if s.crew_morale < morale_names.size() else "Unknown", s.crew_morale]
 
 	if rigging_label:
+		# Read-only query — OK from UI layer  SCV:ALLOW
 		var rq = GameState.ship_controller.get_rigging_quality(s.ship_id) if GameState.ship_controller else 4
 		rigging_label.text = "Rigging: %d/4" % rq
 
 	if ma_label:
+		# Read-only query — OK from UI layer  SCV:ALLOW
 		var ma = GameState.ship_controller.get_movement_allowance(s.ship_id) if GameState.ship_controller else 0
 		ma_label.text = "Movement Allowance: %d" % ma
 

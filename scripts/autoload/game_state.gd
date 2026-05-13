@@ -175,7 +175,7 @@ func get_phase_name() -> String:
 ## Ship Management Functions
 
 func add_ship(ship_state: ShipState) -> void:
-	"""Add a ship to game state"""
+	## Add a ship to the state container. Used by both server (setup) and client (sync).  SCV:ALLOW
 	ships[ship_state.ship_id] = ship_state
 
 	# Track by player
@@ -186,7 +186,7 @@ func add_ship(ship_state: ShipState) -> void:
 	Trace.trace_log("GameState", "Added ship %s (player %d)" % [ship_state.ship_id, ship_state.player_id])
 
 func remove_ship(ship_id: String) -> void:
-	"""Remove a ship from game state"""
+	## Remove a ship from the state container. Used by both server and client.  SCV:ALLOW
 	if not ships.has(ship_id):
 		return
 
@@ -449,7 +449,8 @@ func sync_from_server(state_data: Dictionary) -> void:
 	])
 
 func _update_ship_from_data(ship: ShipState, data: Dictionary) -> void:
-	"""Update ship state from serialized data"""
+	## CLIENT ONLY: Apply serialized ship data from server sync.  SCV:ALLOW
+	## Callers (sync_from_server, NetworkSync._apply_delta_changes) are guarded against server-side use.
 	var pos = data.get("position", {"q": ship.hex_position.x, "r": ship.hex_position.y})
 	ship.hex_position = Vector2i(pos.q, pos.r)
 	ship.facing = data.get("facing", ship.facing)

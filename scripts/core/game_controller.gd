@@ -12,6 +12,7 @@ extends Node
 
 # Planning phase UI
 const PlanningPhaseUI = preload("res://scenes/ui/planning_phase_ui.tscn")
+const OceanViewScript = preload("res://scripts/view/ocean_view.gd")
 var current_planning_ui: Control = null
 
 # Views (presentation layer)
@@ -42,6 +43,10 @@ func _ready() -> void:
 	# Load data
 	DataManager.load_movement_allowance_table()
 	DataManager.load_ship_definitions()
+	DataManager.load_speed_change_table()
+	DataManager.load_tacking_table()
+	DataManager.load_bearing_off_table()
+	DataManager.load_turning_table()
 
 	# Clear previous game state
 	GameState.clear_ships()
@@ -65,7 +70,7 @@ func _ready() -> void:
 
 	# Set up OceanView for water shader updates
 	if GameState.environment_controller and hex_map:
-		var ocean_view = OceanView.new(GameState, hex_map)
+		var ocean_view = OceanViewScript.new(GameState, hex_map)
 		ocean_view.connect_to_controller(GameState.environment_controller)
 		add_child(ocean_view)
 		ocean_view.update_water_shader()
@@ -332,6 +337,8 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 			_resolve_movement()
 		GameState.GamePhase.POST_COMBAT:
 			_enter_post_combat_phase()
+		GameState.GamePhase.END_TURN:
+			_end_turn()
 
 func _enter_planning_phase() -> void:
 	Trace.trace_log("GameController", "Entering planning phase for player 0")
@@ -408,7 +415,8 @@ func _on_planning_action_toggled(ship_id: String, action_type: String, active: b
 				# Clear the submitted path overlay
 				if hex_overlay:
 					hex_overlay.clear_submitted_path(ship_id)
-				GameState.ship_controller.clear_plotted_actions(ship_id)
+				if GameState.is_server:
+					GameState.ship_controller.clear_plotted_actions(ship_id)
 				Trace.trace_log("GameController", "Re-plotting ship %s — cleared previous submission" % ship_id)
 
 			var ship_state = GameState.get_ship(ship_id)
@@ -430,7 +438,7 @@ func _on_end_planning_pressed() -> void:
 	if movement_client and movement_client.is_plotting():
 		movement_client.cancel()
 
-	# Single-player shortcut: call controller directly under server guard
+	# Single-player shortcut: call controller directly under server guard  SCV:ALLOW
 	if GameState.is_server and GameState.phase_controller:
 		GameState.phase_controller.player_submit_plan(0)
 		# Stub: submit player 1 immediately (StubAI will replace this in S08)
@@ -645,7 +653,7 @@ func _on_playback_completed() -> void:
 		playback_controller.queue_free()
 		playback_controller = null
 
-	# Sync views to the updated state (results applied by phase controller)
+	# Intentional view→controller callback: phase controller applies results and advances  SCV:ALLOW
 	if GameState.phase_controller:
 		GameState.phase_controller.on_playback_completed()
 
@@ -656,10 +664,16 @@ func _enter_post_combat_phase() -> void:
 	if not skip_post_combat_delay:
 		await get_tree().create_timer(2.0).timeout
 
+	# Single-player shortcut: advance phase under server guard  SCV:ALLOW
 	if GameState.is_server and GameState.phase_controller:
 		GameState.phase_controller.advance_phase()
 	else:
 		push_warning("Client phase advance not yet implemented - needs network layer")
+
+func _end_turn() -> void:
+	# Single-player shortcut: advance phase under server guard  SCV:ALLOW
+	if GameState.is_server and GameState.phase_controller:
+		GameState.phase_controller.advance_phase()
 
 func _sync_all_views() -> void:
 	for ship_id in ship_views.keys():

@@ -7,6 +7,16 @@ description: Verify State-Controller-View pattern adherence across the Leeward c
 
 Scan the Leeward codebase for violations of the State-Controller-View architecture.
 
+## Accepted Violations — `SCV:ALLOW`
+
+Lines or blocks marked with the comment `SCV:ALLOW` have been reviewed and accepted as intentional exceptions. **Skip these entirely** — do not report them as violations, do not suggest fixes, do not count them in the summary. When scanning for violations, check surrounding lines (within 3 lines above and below) for `SCV:ALLOW` before reporting.
+
+Common accepted patterns:
+- **Client-only sync paths** in `network_sync.gd` and `game_state.gd` — direct state mutation is correct for applying server-authoritative data on clients
+- **Read-only controller queries** from UI — calling `get_movement_allowance()`, `get_rigging_quality()` from view/UI code is acceptable since these are pure reads
+- **Single-player shortcuts** in `game_controller.gd` — direct controller calls guarded by `GameState.is_server` are acceptable for the current architecture
+- **One-time setup methods** on state objects — `initialize_from_scenario()` is called only during game init, not during runtime
+
 ## What to Check
 
 ### 1. Missing Server Authority Guards (CRITICAL)
@@ -44,14 +54,17 @@ grep -rn "\.\(speed\|facing\|sail_state\|hex_position\|plotted_actions\|crew_mor
 
 # View calling controllers
 grep -rn "Controller\." scripts/view/ scripts/ui/
+
+# Find accepted violations (should NOT be reported)
+grep -rn "SCV:ALLOW" scripts/
 ```
 
 ## Report Format
 
-For each violation found, report:
+For each violation found (that is NOT marked `SCV:ALLOW`), report:
 - **Severity**: CRITICAL or WARNING
 - **File**: path:line_number
 - **Issue**: what the violation is
 - **Fix**: how to resolve it
 
-Group by severity, then by file. End with a summary count.
+Group by severity, then by file. End with a summary count (excluding accepted violations).

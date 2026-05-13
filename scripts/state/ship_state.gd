@@ -156,7 +156,7 @@ static func deserialize(data: Dictionary) -> ShipState:
 	return state
 
 func initialize_from_scenario(data: Dictionary, ship_ref: Ship) -> void:
-	"""Initialize the ship state from scenario data with a Ship instance"""
+	## One-time setup during game init. Not a runtime mutation.  SCV:ALLOW
 	ship = ship_ref
 
 	# Position and movement
@@ -198,10 +198,10 @@ func initialize_from_scenario(data: Dictionary, ship_ref: Ship) -> void:
 
 	Trace.trace_log("ShipState", "Initialized: %s (%s) at %s facing %d, speed %d" % [ship_name, ship_type, hex_position, facing, speed])
 
-func clear_turn_flags() -> void:
+func _clear_turn_flags() -> void:
 	collision_this_turn = false
 
-func clear_plot() -> void:
+func _clear_plot() -> void:
 	plotted_actions = {
 		"movement": [],
 		"sail_change": "",

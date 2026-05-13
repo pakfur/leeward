@@ -208,11 +208,13 @@ func _touch() -> void:
 
 
 func _generate_uuid() -> String:
-	"""Generate a simple UUID v4"""
 	var chars = "0123456789abcdef"
 	var uuid = ""
+	# Uses OS entropy, not game_state.rng — session IDs must not consume deterministic RNG rolls
+	var local_rng = RandomNumberGenerator.new()
+	local_rng.randomize()
 	for i in range(32):
 		if i == 8 or i == 12 or i == 16 or i == 20:
 			uuid += "-"
-		uuid += chars[randi() % 16]
+		uuid += chars[local_rng.randi() % 16]
 	return uuid

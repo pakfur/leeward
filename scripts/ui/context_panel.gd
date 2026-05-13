@@ -129,10 +129,14 @@ func set_context_content(content_node: Control) -> void:
 	"""Replace the content area with a new context-specific UI"""
 	# Clear existing content
 	for child in content_container.get_children():
+		if child == content_node:
+			continue
 		child.queue_free()
 
-	# Add new content
-	if content_node:
+	# Add new content if not already parented here
+	if content_node and content_node.get_parent() != content_container:
+		if content_node.get_parent():
+			content_node.get_parent().remove_child(content_node)
 		content_container.add_child(content_node)
 
 func get_content_container() -> Control:

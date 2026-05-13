@@ -816,7 +816,7 @@ func test_crew_quality_index() -> void:
 func test_clear_turn_flags() -> void:
 	var state = _make_ship_state()
 	state.collision_this_turn = true
-	state.clear_turn_flags()
+	state._clear_turn_flags()
 	assert_false(state.collision_this_turn, "clear_turn_flags should reset collision_this_turn")
 
 

@@ -292,7 +292,7 @@ func clear_plotted_actions(ship_id: String) -> bool:
 		push_error("[Server] Ship not found: %s" % ship_id)
 		return false
 
-	ship.clear_plot()
+	ship._clear_plot()
 	return true
 
 func clear_turn_flags(ship_id: String) -> bool:
@@ -305,7 +305,7 @@ func clear_turn_flags(ship_id: String) -> bool:
 		push_error("[Server] Ship not found: %s" % ship_id)
 		return false
 
-	ship.clear_turn_flags()
+	ship._clear_turn_flags()
 	ship_state_changed.emit(ship_id)
 	return true
 

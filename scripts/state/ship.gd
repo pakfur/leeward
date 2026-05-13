@@ -86,7 +86,7 @@ static func initialize_from_scenario(data: Dictionary, type_def: Dictionary) -> 
 	var ship = Ship.from_dict(type_def)
 
 	# Override with instance-specific identity from scenario
-	ship.ship_id = data.get("id", "ship_" + str(randi()))
+	ship.ship_id = data.get("id", "ship_unknown")
 	ship.player_id = data.get("player_id", 0)
 	ship.ship_type = data.get("ship_type", "")
 	ship.ship_name = data.get("ship_name", ship.name)

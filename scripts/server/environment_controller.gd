@@ -107,4 +107,7 @@ func _update_weather(_env_state: EnvironmentState, _rng: RandomNumberGenerator, 
 	pass
 
 func force_update() -> void:
+	if not is_server:
+		push_error("EnvironmentController: Cannot force_update on client")
+		return
 	environment_updated.emit()

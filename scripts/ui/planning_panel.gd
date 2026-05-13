@@ -69,7 +69,7 @@ func _update_display() -> void:
 
 	# Update instructions
 	if instructions_label:
-		var ma = GameState.ship_controller.get_movement_allowance(current_ship_id)
+		var ma = GameState.ship_controller.get_movement_allowance(current_ship_id)  # Read-only query  SCV:ALLOW
 		instructions_label.text = "Movement Allowance: %d\nCommands: F# (forward), P (port), S (starboard)\nExample: F2 S F1" % ma
 
 	# Load current plotted actions if any
@@ -136,6 +136,9 @@ func _on_clear_pressed() -> void:
 	if not current_ship:
 		return
 
+	if not GameState.is_server:
+		push_warning("PlanningPanel: Cannot clear actions on client")
+		return
 	GameState.ship_controller.clear_plotted_actions(current_ship_id)
 
 	if movement_input:

@@ -4,6 +4,8 @@ extends RefCounted
 ##
 ## Manages the request/response cycle with MovementPlottingController.
 ## Currently calls handle_*() directly for single-player; will use RPC for multiplayer.
+## SCV:ALLOW — Direct controller calls are an intentional single-player shortcut.
+## The controller methods have their own is_server guards.
 
 signal plotting_started(ship_id: String, valid_hexes: Array, remaining_ma: int, is_tacking_attempt: bool)
 signal hex_selected(plotted_path: Array, valid_hexes: Array, can_submit: bool, remaining_ma: int, is_tacking_attempt: bool)

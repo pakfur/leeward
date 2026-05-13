@@ -66,7 +66,7 @@ static func deserialize(data: Dictionary) -> EnvironmentState:
 	return state
 
 func initialize_from_scenario(scenario_data: Dictionary) -> void:
-	"""Initialize environment from scenario data"""
+	## One-time setup during game init, called from GameState.start_new_game() (guarded by is_server).  SCV:ALLOW
 	wind_direction = scenario_data.get("wind_direction", 0)
 	wind_speed = scenario_data.get("wind_speed", 2)
 	wind_speed_change = scenario_data.get("wind_speed_change", "steady")

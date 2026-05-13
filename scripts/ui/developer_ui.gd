@@ -420,7 +420,9 @@ func _on_hex_labels_toggled(enabled: bool) -> void:
 	_log("Hex coordinate labels: %s" % ("ON" if enabled else "OFF"))
 
 func _on_advance_phase_pressed() -> void:
-	# Debug-only: direct controller call for developer UI
+	if not GameState.is_server:
+		_log("ERROR: Cannot advance phase on client")
+		return
 	if game_state and game_state.phase_controller:
 		game_state.phase_controller.advance_phase()
 		_log("Advanced phase")
@@ -428,7 +430,9 @@ func _on_advance_phase_pressed() -> void:
 		_log("ERROR: No phase controller available")
 
 func _on_advance_turn_pressed() -> void:
-	"""Advance to next turn (skip through all phases)"""
+	if not GameState.is_server:
+		_log("ERROR: Cannot advance turn on client")
+		return
 	if game_state and game_state.phase_controller:
 		# Keep advancing phases until we reach the next turn
 		var start_turn = game_state.current_turn
@@ -440,7 +444,9 @@ func _on_advance_turn_pressed() -> void:
 		_log("ERROR: No phase controller available")
 
 func _on_reset_pressed() -> void:
-	"""Reset game state to initial scenario"""
+	if not GameState.is_server:
+		_log("ERROR: Cannot reset game on client")
+		return
 	if initial_scenario.is_empty():
 		_log("ERROR: No initial scenario stored")
 		return

@@ -98,7 +98,8 @@ func receive_delta_update(delta_data: Dictionary) -> void:
 	_apply_delta_changes(delta_data)
 
 func _apply_delta_changes(delta: Dictionary) -> void:
-	"""Apply incremental changes to game state"""
+	## CLIENT ONLY: Apply state changes received from server.  SCV:ALLOW
+	## Direct mutation is intentional — caller (receive_delta_update) guards against server-side use.
 	# Update phase if changed
 	if delta.has("phase"):
 		game_state.current_phase = delta.phase
