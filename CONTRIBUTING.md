@@ -62,23 +62,87 @@ Test files live in `test/unit/`, named `test_*.gd`, extending `GutTest`. Use `be
 
 ## Claude Code integration (optional)
 
-This repo ships some opt-in Claude Code automation. Skip this section if you don't use Claude Code.
+This repo ships opt-in Claude Code automation. Skip this section if you don't use Claude Code.
 
 ### What's in the repo
 
-- `.claude/skills/` — project-relevant skills (e.g. `godot-gdscript-patterns`). Loaded automatically when Claude Code starts in this directory.
-- `.claude/settings.json` — committed, team-wide settings. Currently configures the print() guard hook (below).
-- `.claude/hooks/block_raw_print.py` — the hook script.
-- `.claude/settings.local.json` — your personal overrides (already in `.gitignore`).
-- `.mcp.json` — your personal MCP-server configuration (already in `.gitignore`). Each developer creates their own.
+| Path | Checked in? | Purpose |
+|------|-------------|---------|
+| `.claude/settings.json` | Yes | Team-wide hooks and permissions |
+| `.claude/hooks/block_raw_print.py` | Yes | PreToolUse: blocks raw `print()` in runtime GDScript |
+| `.claude/hooks/run_related_tests.py` | Yes | PostToolUse: auto-runs `make test` after editing server/state/core/autoload/test scripts |
+| `.claude/skills/` | Yes | Project skills — `phase-implementer`, `validate-rule-table`, `scenario-creator`, `gen-test`, etc. |
+| `.claude/agents/scv-reviewer.md` | Yes | Subagent that audits State-Controller-View pattern adherence |
+| `.claude/settings.local.json` | No (gitignored) | Your personal permission overrides |
+| `.mcp.json` | No (gitignored) | Your personal MCP server configuration |
 
-### The print() guard hook
+### First-time setup after cloning
 
-Lives at `.claude/hooks/block_raw_print.py`, wired through `.claude/settings.json` as a `PreToolUse` hook on `Edit|Write|MultiEdit`. It blocks raw `print(` from being introduced into `.gd` files outside the exempt paths listed in the project conventions above.
+After cloning the repo, set up two MCP servers in `.mcp.json` at the repo root:
+
+```json
+{
+  "mcpServers": {
+    "godot": {
+      "command": "node",
+      "args": ["/ABSOLUTE/PATH/TO/godot-mcp/build/index.js"],
+      "env": {
+        "GODOT_PATH": "/ABSOLUTE/PATH/TO/godot",
+        "DEBUG": "false"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/context7-mcp@latest"]
+    }
+  }
+}
+```
+
+- **Godot MCP**: requires local setup — see [Setting up the Godot MCP bridge](#setting-up-the-godot-mcp-bridge) below.
+- **context7**: no setup needed beyond Node.js 18+. Provides live documentation lookup for Godot, GDScript, GUT, and any other library.
+
+Everything else (hooks, skills, agents, permissions) loads automatically from the checked-in `.claude/` directory.
+
+### Hooks
+
+#### `block_raw_print.py` (PreToolUse)
+
+Blocks raw `print(` from being introduced into `.gd` files outside the exempt paths listed in the project conventions above.
 
 - Per-line bypass: append `# allow-print` to the offending line.
-- The hook is pure Python 3, no dependencies. It silently no-ops on JSON-parse failure so a malformed hook input never blocks your edit.
+- Pure Python 3, no dependencies. Silently no-ops on JSON-parse failure.
 - To disable temporarily, comment out the `PreToolUse` block in `.claude/settings.json`, or move the hook config to `settings.local.json` and toggle it there.
+
+#### `run_related_tests.py` (PostToolUse)
+
+Automatically runs `make test` after editing GDScript files in `scripts/server/`, `scripts/state/`, `scripts/core/`, `scripts/autoload/`, or `test/unit/`. Non-matching edits (UI, view, shaders, etc.) pass through silently.
+
+- 120-second timeout for the test suite.
+- On failure: reports the failing test lines to the Claude session.
+- To disable: comment out the `PostToolUse` block in `.claude/settings.json`.
+
+### Skills
+
+Invoke with `/skill-name` in a Claude Code session:
+
+| Skill | Invocation | Purpose |
+|-------|------------|---------|
+| `phase-implementer` | `/phase-implementer` | Implement a stubbed turn phase following SCV patterns |
+| `validate-rule-table` | `/validate-rule-table` | Validate JSON rule table syntax and key consistency |
+| `scenario-creator` | `/scenario-creator` | Create a new scenario JSON file with valid ship placements |
+| `gen-test` | `/gen-test` | Generate a GUT test file for a GDScript source file |
+| `godot-gdscript-patterns` | Auto (Claude-invoked) | Godot 4 GDScript patterns reference |
+
+### Subagents
+
+| Agent | How to use | Purpose |
+|-------|------------|---------|
+| `scv-reviewer` | Ask Claude: "run the SCV reviewer" | Scans for State-Controller-View pattern violations |
+
+### Permissions
+
+`.claude/settings.json` includes project-wide permission allowlists for common operations (`make *`, `python3 .claude/*`, `git add *`, etc.) to reduce permission prompts. Add personal overrides to `.claude/settings.local.json`.
 
 ### Setting up the Godot MCP bridge
 

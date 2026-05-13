@@ -1,4 +1,4 @@
-# GSD context snapshot (2026-05-12T19:32:18.267Z)
+# GSD context snapshot (2026-05-12T20:26:45.508Z)
 
 ## Top project memories
 - [MEM010] (convention) DataManager rule-table loaders share a fixed shape: a `_doc` key inside the JSON (excluded from item counts), `load_X_table(file_path) -> bool` (push_warning + return false on missing file, push_error + return false on parse failure, returns true and prints item count on success), and `get_X(...)` lookups that `assert()` valid params (case-insensitive letter args canonicalized to one case), then push_error and return a zero value (0, 0.0, or {}) on any missing key.

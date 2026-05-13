@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-05-12T19:19:05Z | Files: 446 | Described: 0/446
-<!-- gsd:codebase-meta {"generatedAt":"2026-05-12T19:19:05Z","fingerprint":"51637a32eef6f6fc4957c3aeca95b395b29703f9","fileCount":446,"truncated":false} -->
+Generated: 2026-05-12T20:27:02Z | Files: 452 | Described: 0/452
+<!-- gsd:codebase-meta {"generatedAt":"2026-05-12T20:27:02Z","fingerprint":"61cb61eace1194beb42ae0188d4431c54696aaf8","fileCount":452,"truncated":false} -->
 
 ### (root)/
 - `.editorconfig`
@@ -20,6 +20,7 @@ Generated: 2026-05-12T19:19:05Z | Files: 446 | Described: 0/446
 - `project.godot`
 - `QUICKSTART.md`
 - `README.md`
+- `skills-lock.json`
 - `WARP.md`
 
 ### addons/godot_mcp/
@@ -237,4 +238,4 @@ Generated: 2026-05-12T19:19:05Z | Files: 446 | Described: 0/446
 - `scripts/view/ship_view.gd.uid`
 
 ### test/unit/
-- *(23 files: 12 .gd, 11 .uid)*
+- *(28 files: 15 .gd, 13 .uid)*

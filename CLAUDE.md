@@ -74,6 +74,8 @@ addons/           # godot_mcp (MCP server addon), GUT testing framework
 - **DataManager** (`scripts/autoload/data_manager.gd`): Loads and caches JSON data (movement tables, ship definitions, scenarios). Provides lookup methods.
 - **Trace** (`scripts/autoload/trace.gd`): Lightweight tracing/logging autoload. **Required** in runtime code — `.claude/hooks/block_raw_print.py` blocks raw `print()` at Edit/Write time. Exempt: `scripts/util/`, `scripts/utils/`, `scripts/autoload/trace.gd`, `scripts/autoload/mcp_server.gd`, `addons/`. Per-line bypass: trailing `# allow-print`. Covered by `test_trace.gd`.
 
+**Auto-test hook**: `.claude/hooks/run_related_tests.py` runs `make test` automatically after editing files in `scripts/server/`, `scripts/state/`, `scripts/core/`, `scripts/autoload/`, or `test/unit/`. Configured as a `PostToolUse` hook in `.claude/settings.json`.
+
 Note: `scripts/autoload/mcp_server.gd` lives in this folder but is **not** an autoload — it's wired through the `godot_mcp` editor plugin.
 
 ### Turn Phase Cycle (10 phases)
@@ -83,6 +85,8 @@ SETUP → ENVIRONMENT → PLANNING → MOVEMENT_RESOLUTION → COMBAT_RESOLUTION
 Managed by `TurnPhaseController`. Currently ENVIRONMENT, PLANNING, and MOVEMENT_RESOLUTION are implemented; others are stubbed.
 
 When implementing a stubbed phase, invoke the `phase-implementer` skill (`.claude/skills/phase-implementer/`). It codifies the SCV pattern (server-authority guard, `game_state.rng`, automatic state-history snapshots, GUT test template) grounded in the three implemented phases.
+
+Other project skills: `scenario-creator` (create scenario JSONs), `gen-test` (scaffold GUT test files). The `scv-reviewer` agent (`.claude/agents/scv-reviewer.md`) audits State-Controller-View pattern adherence across the codebase.
 
 ### Movement Plotting Protocol
 
@@ -145,6 +149,9 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 ### Legacy Code
 - `scripts/ui/planning_panel.gd` is legacy; `planning_phase_ui.gd` is the current version
 - `axial_to_edge_world()` in `hex_grid.gd` and the `size == 2` branch in `ShipView._update_position_from_state` are unused (see Hex Grid note).
+
+### SCV Audit
+Run the `scv-reviewer` agent as a **final step** before reporting any planned work as complete. Do not run it after each individual task or phase — only once at the very end, after all code changes are made and tests pass. Fix any violations it finds before finishing.
 
 ### Developer UI
 - Press **F12** in-game to toggle the debug inspection panel
