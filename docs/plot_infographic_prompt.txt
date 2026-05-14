@@ -1,0 +1,71 @@
+A top-down infographic of a 19th-century Ship of the Line on a hex-based naval wargame map, visually communicating ship movement rules and constraints.
+
+CENTRAL COMPOSITION:
+A detailed top-down Ship of the Line sits at center on a clearly defined pointy-top hex grid. The ship's bow points toward one hex edge, indicating its heading. The six adjacent hex directions are numbered 0 through 5 clockwise: 0=East, 1=Southeast, 2=Southwest, 3=West, 4=Northwest, 5=Northeast. A bold wind arrow enters from one edge of the composition, establishing wind direction.
+
+DOMINANT VISUAL — WIND-FACING ZONES (largest element after the ship):
+The six hexes surrounding the ship are color-coded into four wind-facing zones based on the angle between the ship's heading and the wind direction:
+
+- L (Luffing) — the hex directly into the wind (relative angle 0). Colored red or hatched with a stop symbol. Movement Allowance is ALWAYS 0. Pivoting into this zone ends all movement immediately.
+- C (Close-hauled) — the two hexes at 60 degrees off the wind (relative angles 1 and 5). Colored amber. Reduced Movement Allowance. This is the closest a ship can sail toward the wind.
+- B (Broad Reach) — the two hexes at 120 degrees off the wind (relative angles 2 and 4). Colored green. Best Movement Allowance values. The fastest point of sail.
+- R (Running) — the hex directly downwind (relative angle 3). Colored blue. Moderate Movement Allowance. Sailing with the wind directly behind.
+
+Show arrows from the ship into each adjacent hex. Arrows in the L zone are crossed out. Arrows in B zones are the boldest and longest. Arrows in C zones are medium. The R zone arrow is slightly shorter than B. Each zone label (L, C, B, R) is clearly visible on or near its hex.
+
+ZONE 1 — PIVOT AND TURNING RULES (panel connected to the ship's beam):
+Diagram showing the two move types: FORWARD (advance one hex in the direction of heading, costs 1 Movement Allowance) and PIVOT (rotate heading 60 degrees port or starboard, staying in the same hex).
+
+Key constraints displayed as small iconic rules:
+- Maximum 2 pivots per turn
+- No consecutive pivots — at least 1 forward hex between pivots
+- Minimum forward hexes required before a second pivot, shown as a small lookup:
+  Speed 1–2: 1 hex (all ships)
+  Speed 3: 1–2 hexes depending on maneuverability
+  Speed 4–5: 1–2 hexes
+  Speed 6–7: 1–3 hexes
+  Speed 8–10: 2–3 hexes
+- Pivoting into the Luffing zone (red) immediately ends movement for the turn
+
+ZONE 2 — SPEED ENVELOPE (panel connected to the ship's quarter):
+A vertical gauge or thermometer showing the Movement Allowance range for the current turn. Movement Allowance ranges from 0 to 10 hexes per turn.
+
+The permitted range is constrained by acceleration and deceleration limits based on ship maneuverability (rated a through d, where a is least maneuverable and d is most):
+- Acceleration per turn: a=+2, b=+2, c=+3, d=+3
+- Deceleration per turn: a=−2, b=−3, c=−3, d=−4
+
+Below the gauge, three sail state icons in a row showing their effect on base Movement Allowance:
+- PS (Plain Sail): full canvas icon — highest MA, most vulnerable
+- MS (Maneuvering Sail): partial canvas icon — moderate MA
+- FS (Fighting Sail): minimal canvas icon — lowest MA, combat-ready
+
+A small annotation: rigging damage (quality 4=full down to 1=crippled) further reduces the base MA value.
+
+ZONE 3 — TACKING (panel connected to the ship's bow):
+A small diagram showing a ship pivoting through the Luffing zone (red) — the maneuver of crossing the wind eye to change which side is windward. This is the only way to reverse windward direction.
+
+Tacking success probability displayed as a compact grid:
+                Wind Speed 1  2    3    4
+Maneuverability a:   20%    40%  60%  50%
+                b:   30%    50%  70%  60%
+                c:   50%    70%  80%  70%
+                d:   70%    80%  90%  80%
+
+A warning icon: failed tack = ship immobilized for the turn.
+Note: wind speed 4 is harder than wind speed 3 (probabilities decrease).
+
+ZONE 4 — SHIP CLASS REFERENCE (small legend, bottom corner):
+A compact table showing the three ship classes and their speed type codes:
+- Line Ship (L): heavy warship, types L/F (fast), L/S (slow), L/VS (very slow). Maneuverability typically b.
+- Frigate (F): medium warship, types F/F, F/S, F/VS. Maneuverability typically c.
+- Corvette (C): light warship, types C/F, C/S, C/VS. Maneuverability typically d.
+
+Speed type determines base Movement Allowance at each wind facing and wind speed. Smaller ships are faster and more maneuverable but less durable.
+
+STYLE:
+19th-century naval chart and Admiralty diagram aesthetic. Parchment texture background. Ink linework for the hex grid and ship outline. Subtle watercolor wash for the ocean hexes. Compass rose in one corner with wind direction emphasized. Cartographic border markings.
+
+The wind-facing zone coloring on the central hexes is the visual anchor — it should read immediately. Panels are connected to the ship with fine engraved lines. Each panel uses icons and small diagrams rather than paragraphs. Minimal text, maximum diagrammatic clarity.
+
+TECHNICAL REQUIREMENTS:
+Orthographic top-down view. High resolution. Crisp linework. Clean layout with strong visual hierarchy: wind zones dominant, movement arrows secondary, rule panels tertiary. No perspective distortion. Hex edges must be sharp and unambiguous — no soft or faded grid lines.
