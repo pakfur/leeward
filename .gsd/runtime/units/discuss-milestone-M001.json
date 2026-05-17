@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "unitType": "discuss-milestone",
+  "unitId": "M001",
+  "startedAt": 1778610655764,
+  "updatedAt": 1778610655766,
+  "phase": "dispatched",
+  "wrapupWarningSent": false,
+  "continueHereFired": false,
+  "timeoutAt": null,
+  "lastProgressAt": 1778610655764,
+  "progressCount": 0,
+  "lastProgressKind": "dispatch",
+  "recoveryAttempts": 0
+}

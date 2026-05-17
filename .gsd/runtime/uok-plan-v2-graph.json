@@ -1,0 +1,153 @@
+{
+  "compiledAt": "2026-05-12T15:04:04.253Z",
+  "milestoneId": "M001",
+  "pipeline": {
+    "clarifyRoundLimit": 3,
+    "researchSynthesized": false,
+    "draftContextIncluded": false,
+    "finalizedContextIncluded": true,
+    "sourcePhase": "executing"
+  },
+  "nodes": [
+    {
+      "id": "execute-task:M001:S01:T01",
+      "kind": "unit",
+      "dependsOn": [],
+      "writes": [
+        "data/rules/bearing_off_table.json",
+        "scripts/autoload/data_manager.gd",
+        "test/unit/test_data_manager_bearing_off.gd"
+      ],
+      "metadata": {
+        "unitType": "execute-task",
+        "unitId": "M001.S01.T01",
+        "title": "Merged bearing_off_table.json, DataManager wrapper methods, and unit tests from worktree into main tree",
+        "status": "complete"
+      }
+    },
+    {
+      "id": "execute-task:M001:S01:T02",
+      "kind": "unit",
+      "dependsOn": [
+        "execute-task:M001:S01:T01"
+      ],
+      "writes": [
+        "scripts/autoload/data_manager.gd",
+        "data/scenarios/test_basic.json",
+        "data/scenarios/test_fleet.json",
+        "test/unit/test_data_manager_scenarios.gd"
+      ],
+      "metadata": {
+        "unitType": "execute-task",
+        "unitId": "M001.S01.T02",
+        "title": "Added seed validation, fresh-seed generation, and crew_quality word-to-letter normalization to load_scenario",
+        "status": "complete"
+      }
+    },
+    {
+      "id": "execute-task:M001:S01:T03",
+      "kind": "unit",
+      "dependsOn": [
+        "execute-task:M001:S01:T02"
+      ],
+      "writes": [
+        "data/rules/ships.json",
+        "data/rules/speed_change_table.json",
+        "data/rules/tacking_table.json",
+        "data/rules/turning_table.json",
+        "scripts/autoload/data_manager.gd"
+      ],
+      "metadata": {
+        "unitType": "execute-task",
+        "unitId": "M001.S01.T03",
+        "title": "Fixed 45 preexisting test failures across 4 data files by normalizing JSON keys and adding missing data",
+        "status": "complete"
+      }
+    },
+    {
+      "id": "execute-task:M001:S01:T04",
+      "kind": "unit",
+      "dependsOn": [
+        "execute-task:M001:S01:T03"
+      ],
+      "writes": [],
+      "metadata": {
+        "unitType": "execute-task",
+        "unitId": "M001.S01.T04",
+        "title": "Clean-room verification passed: make clean && make import && make test → 196/196 tests, 0 failures",
+        "status": "complete"
+      }
+    },
+    {
+      "id": "complete-slice:M001:S01",
+      "kind": "verification",
+      "dependsOn": [
+        "execute-task:M001:S01:T04"
+      ],
+      "metadata": {
+        "unitType": "complete-slice",
+        "unitId": "M001.S01",
+        "title": "S01",
+        "status": "complete"
+      }
+    },
+    {
+      "id": "execute-task:M001:S02:T01",
+      "kind": "unit",
+      "dependsOn": [],
+      "writes": [
+        "scripts/autoload/game_state.gd",
+        "test/unit/test_rng_determinism.gd",
+        "data/scenarios/test_basic.json",
+        "data/scenarios/test_fleet.json"
+      ],
+      "metadata": {
+        "unitType": "execute-task",
+        "unitId": "M001.S02.T01",
+        "title": "Added GameState.rng property seeded from scenario_data[\"seed\"], with Trace logging and a 5-test determinism test suite",
+        "status": "complete"
+      }
+    },
+    {
+      "id": "execute-task:M001:S02:T02",
+      "kind": "unit",
+      "dependsOn": [
+        "execute-task:M001:S02:T01"
+      ],
+      "writes": [],
+      "metadata": {
+        "unitType": "execute-task",
+        "unitId": "M001.S02.T02",
+        "title": "Migrate EnvironmentController to consume GameState.rng",
+        "status": "pending"
+      }
+    },
+    {
+      "id": "execute-task:M001:S02:T03",
+      "kind": "unit",
+      "dependsOn": [
+        "execute-task:M001:S02:T02"
+      ],
+      "writes": [],
+      "metadata": {
+        "unitType": "execute-task",
+        "unitId": "M001.S02.T03",
+        "title": "Write determinism + integration tests for seeded RNG",
+        "status": "pending"
+      }
+    },
+    {
+      "id": "complete-slice:M001:S02",
+      "kind": "verification",
+      "dependsOn": [
+        "execute-task:M001:S02:T03"
+      ],
+      "metadata": {
+        "unitType": "complete-slice",
+        "unitId": "M001.S02",
+        "title": "S02",
+        "status": "pending"
+      }
+    }
+  ]
+}

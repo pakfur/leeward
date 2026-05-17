@@ -1,0 +1,2 @@
+{"type":"model_change","id":"bc793ccf","parentId":null,"timestamp":"2026-05-12T02:44:03.974Z","provider":"openai","modelId":"codex-mini-latest"}
+{"type":"thinking_level_change","id":"d4ca869d","parentId":"bc793ccf","timestamp":"2026-05-12T02:44:03.975Z","thinkingLevel":"off"}

@@ -1,0 +1,2 @@
+{"type":"thinking_level_change","id":"8ea161f4","parentId":null,"timestamp":"2026-05-12T15:04:05.537Z","thinkingLevel":"off"}
+{"type":"model_change","id":"34675ac0","parentId":"8ea161f4","timestamp":"2026-05-12T15:04:05.552Z","provider":"claude-code","modelId":"claude-sonnet-4-6"}
