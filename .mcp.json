@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "godot": {
+      "command": "node",
+      "args": ["/Users/jkline/tools/godot-mcp/build/index.js"],
+      "env": {
+        "GODOT_PATH": "/usr/local/bin/godot",
+        "DEBUG": "false"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/context7-mcp@latest"]
+    }
+  }
+}

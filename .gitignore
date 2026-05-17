@@ -52,19 +52,6 @@ logs/
 *.tmp
 *.temp
 
-# ── GSD runtime (should not be committed) ──
-.gsd/activity/
-.gsd/runtime/
-.gsd/auto.lock
-.gsd/gsd.db*
-.gsd/completed-units*.json
-.gsd/event-log.jsonl
-
-# ── GSD baseline (auto-generated) ──
-.gsd-id
-.mcp.json
-.bg-shell/
-*.code-workspace
 .env
 .env.*
 !.env.example
