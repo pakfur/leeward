@@ -1,16 +1,29 @@
 {
-  "mcpServers": {
-    "godot": {
-      "command": "node",
-      "args": ["/Users/jkline/tools/godot-mcp/build/index.js"],
-      "env": {
-        "GODOT_PATH": "/usr/local/bin/godot",
-        "DEBUG": "false"
-      }
-    },
-    "context7": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/context7-mcp@latest"]
+    "mcpServers":
+    {
+        "context7":
+        {
+            "command": "npx",
+            "args":
+            [
+                "-y",
+                "@upstash/context7-mcp",
+                "--api-key",
+                "ctx7sk-30ecd33c-cb1a-44ac-88b2-ea30ed7c9bd2"
+            ]
+        },
+        "godot":
+        {
+            "command": "node",
+            "args":
+            [
+                "/Users/jk/gws/godot-mcp/build/index.js"
+            ],
+            "env":
+            {
+                "GODOT_PATH": "/usr/local/bin/godot",
+                "DEBUG": "true"
+            }
+        }
     }
-  }
 }
