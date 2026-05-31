@@ -8,6 +8,16 @@ For human-facing developer setup (prerequisites, Godot MCP bridge, contribution 
 
 Leeward is a Godot 4.6 naval sailing game (Age of Sail) using the Forward Plus renderer. It's a turn-based tactical game where players command ships on a hex grid, plotting movement and combat across a 10-phase turn cycle. Architecture is server-authoritative with a State-Controller-View pattern.
 
+## Tooling (MCP Servers)
+
+**Prefer the `godot-mcp` MCP server for Godot interactions whenever possible**, instead of ad-hoc shell commands. It is the most reliable way to drive the editor and a running game. Use it for:
+- Running/stopping the project (`run_project`, `stop_project`) and reading output (`get_debug_output`).
+- Checking the running game for problems: `game_get_errors` (push_error/push_warning + parser warnings) and `game_get_logs` (print output). After editing GDScript, relaunch and confirm `game_get_errors` returns zero — this is the canonical way to verify a clean build.
+- Inspecting/driving the live game (scene tree, nodes, input, screenshots) via the `game_*` tools, and project/scene/script management (`read_scene`, `read_project_settings`, `list_project_files`, etc.).
+- Note the in-game interaction server (`scripts/mcp_interaction_server.gd`) binds `127.0.0.1:9090`; the `game_*` tools connect to it. If `game_get_errors`/`game_get_logs` returns "No active Godot process" right after launch, it's a startup race — wait ~1s and retry.
+
+**For Godot API docs, use the `context7` MCP server with library `/godotengine/godot-docs`.** Call `context7` (`query-docs` against `/godotengine/godot-docs`) before relying on memory for engine/class/method APIs — training data may lag the 4.6 API. Skip the `resolve-library-id` step; this project's library ID is fixed.
+
 ## Commands
 
 ```bash
