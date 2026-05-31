@@ -24,7 +24,7 @@ func set_environment_property(property: String, value: Variant) -> bool:
 	environment_updated.emit()
 	return true
 
-func tick_environment(env_state: EnvironmentState, turn_number: int) -> void:
+func tick_environment(env_state: EnvironmentState, _turn_number: int) -> void:
 	if not is_server:
 		return
 

@@ -625,6 +625,7 @@ func _resolve_movement() -> void:
 	Trace.trace_log("GameController", "[Server] MOVEMENT_RESOLUTION phase entered, awaiting playback...")
 
 
+@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 func _on_resolution_log_ready(log: MovementTypes.ResolutionLog) -> void:
 	Trace.trace_log("GameController", "[Playback] Resolution log received: %d ships, %d impulses" % [log.ship_results.size(), log.max_impulses])
 

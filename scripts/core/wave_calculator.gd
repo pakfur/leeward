@@ -29,7 +29,6 @@ func noise(x: Vector2) -> float:
 	var f = Vector2(x.x - floor(x.x), x.y - floor(x.y))  # fract equivalent
 	f = Vector2(f.x * f.x * (3.0 - 2.0 * f.x), f.y * f.y * (3.0 - 2.0 * f.y))
 
-	var a = Vector2(1.0, 0.0)
 	return lerp(
 		lerp(hash(p + Vector2(0, 0)), hash(p + Vector2(1, 0)), f.x),
 		lerp(hash(p + Vector2(0, 1)), hash(p + Vector2(1, 1)), f.x),

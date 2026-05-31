@@ -2,6 +2,7 @@ extends Control
 ## SplashScreen - Main menu with Play and Quit options
 
 signal play_requested()
+@warning_ignore("unused_signal")  # Connected by main.gd as part of the scene's external API
 signal quit_requested()
 
 @onready var play_button: Button = %PlayButton

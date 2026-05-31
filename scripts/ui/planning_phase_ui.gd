@@ -152,7 +152,7 @@ func get_submitted_count() -> int:
 # Plotting Controls
 # ============================================================================
 
-func show_plotting_controls(ship_id: String, remaining_ma_val: int, total_ma: int) -> void:
+func show_plotting_controls(_ship_id: String, remaining_ma_val: int, total_ma: int) -> void:
 	if plotting_controls:
 		plotting_controls.visible = true
 		_update_ma_display(remaining_ma_val, total_ma)

@@ -30,6 +30,7 @@ func _init(p_game_state: Node = null, p_rng: RandomNumberGenerator = null) -> vo
 ## ============================================================================
 
 func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementTypes.ResolutionLog:
+	@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 	var log = MovementTypes.ResolutionLog.new(game_state.current_turn if game_state else 0)
 
 	var results: Dictionary = {}
@@ -308,9 +309,9 @@ func _resolve_collision_or_bearoff(
 	results: Dictionary,
 	current_hexes: Dictionary,
 	stopped: Dictionary,
-	environment: EnvironmentState,
+	_environment: EnvironmentState,
 	forward_since_turn: Dictionary,
-	pivots_this_turn: Dictionary
+	_pivots_this_turn: Dictionary
 ) -> void:
 	var loser: ShipState = ship_map[loser_id]
 	var loser_result: MovementTypes.ShipResolutionResult = results[loser_id]
@@ -648,7 +649,7 @@ func _get_ship_wind_facing(ship_state: ShipState) -> String:
 	return hex_grid.get_wind_facing(ship_state.facing, wind_dir)
 
 
-func _get_luffing_facing(ship_state: ShipState, environment: EnvironmentState) -> int:
+func _get_luffing_facing(_ship_state: ShipState, environment: EnvironmentState) -> int:
 	return environment.wind_direction
 
 
@@ -681,6 +682,7 @@ func _wind_direction() -> int:
 ## Apply results to state
 ## ============================================================================
 
+@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) -> void:
 	var sc = game_state.ship_controller if game_state else null
 	for ship_state in ships:

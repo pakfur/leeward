@@ -2534,22 +2534,22 @@ func _cmd_ui_theme(params: Dictionary) -> void:
 
 	# Color overrides
 	var colors: Dictionary = overrides.get("colors", {})
-	for name in colors:
-		var c: Dictionary = colors[name]
-		ctrl.add_theme_color_override(name, Color(float(c.get("r", 0)), float(c.get("g", 0)), float(c.get("b", 0)), float(c.get("a", 1))))
-		applied.append("color:" + name)
+	for theme_name in colors:
+		var c: Dictionary = colors[theme_name]
+		ctrl.add_theme_color_override(theme_name, Color(float(c.get("r", 0)), float(c.get("g", 0)), float(c.get("b", 0)), float(c.get("a", 1))))
+		applied.append("color:" + theme_name)
 
 	# Constant overrides
 	var constants: Dictionary = overrides.get("constants", {})
-	for name in constants:
-		ctrl.add_theme_constant_override(name, int(constants[name]))
-		applied.append("constant:" + name)
+	for theme_name in constants:
+		ctrl.add_theme_constant_override(theme_name, int(constants[theme_name]))
+		applied.append("constant:" + theme_name)
 
 	# Font size overrides
 	var font_sizes: Dictionary = overrides.get("font_sizes", {})
-	for name in font_sizes:
-		ctrl.add_theme_font_size_override(name, int(font_sizes[name]))
-		applied.append("font_size:" + name)
+	for theme_name in font_sizes:
+		ctrl.add_theme_font_size_override(theme_name, int(font_sizes[theme_name]))
+		applied.append("font_size:" + theme_name)
 
 	_send_response({"success": true, "node_path": node_path, "applied": applied})
 
@@ -2890,7 +2890,7 @@ func _cmd_input_state(params: Dictionary) -> void:
 				"hidden": mode_val = Input.MOUSE_MODE_HIDDEN
 				"captured": mode_val = Input.MOUSE_MODE_CAPTURED
 				"confined": mode_val = Input.MOUSE_MODE_CONFINED
-			Input.mouse_mode = mode_val
+			Input.mouse_mode = mode_val as Input.MouseMode
 			_send_response({"success": true, "action": "set_mouse_mode", "mode": mode_str})
 		_:
 			_send_response({"error": "Unknown input_state action: %s" % action})
@@ -3047,7 +3047,7 @@ func _cmd_process_mode(params: Dictionary) -> void:
 		"when_paused": mode_val = Node.PROCESS_MODE_WHEN_PAUSED
 		"always": mode_val = Node.PROCESS_MODE_ALWAYS
 		"disabled": mode_val = Node.PROCESS_MODE_DISABLED
-	node.process_mode = mode_val
+	node.process_mode = mode_val as Node.ProcessMode
 	_send_response({"success": true, "node_path": node_path, "mode": mode_str})
 
 

@@ -41,7 +41,7 @@ func broadcast_state() -> void:
 		push_error("NetworkSync: Cannot broadcast state on client")
 		return
 
-	var state_data = _serialize_game_state()
+	var _state_data = _serialize_game_state()
 
 	# TODO: Send state_data to all connected clients via network
 	# For now, this is a placeholder for future network implementation
@@ -49,7 +49,7 @@ func broadcast_state() -> void:
 
 	Trace.trace_log(TRACE_CATEGORY, "State broadcast ready (awaiting network layer)")
 
-func broadcast_state_delta(changes: Dictionary) -> void:
+func broadcast_state_delta(_changes: Dictionary) -> void:
 	"""SERVER ONLY: Broadcast incremental state changes (optimization)"""
 	if not is_server:
 		push_error("NetworkSync: Cannot broadcast delta on client")
@@ -134,7 +134,7 @@ func send_command_to_server(command: GameCommand) -> void:
 		push_error("NetworkSync: Cannot send command to self on server")
 		return
 
-	var command_data = command.serialize()
+	var _command_data = command.serialize()
 
 	# TODO: Send command to server via network
 	# Example: rpc_id(1, "receive_command", command_data)

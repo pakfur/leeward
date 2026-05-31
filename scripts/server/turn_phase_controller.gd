@@ -145,6 +145,7 @@ func _enter_movement_resolution_phase() -> void:
 
 	if game_state.movement_resolver and game_state.environment:
 		var all_ships = game_state.get_all_ships()
+		@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 		var log = game_state.movement_resolver.run(all_ships, game_state.environment)
 		_pending_resolution_log = log
 		Trace.trace_log("TurnPhase", "MOVEMENT_RESOLUTION resolver done", {"turn": log.turn, "ships": log.ship_results.size()})

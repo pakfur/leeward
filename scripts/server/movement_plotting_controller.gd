@@ -14,6 +14,7 @@ signal session_started(session_id: String, ship_id: String)
 signal session_updated(session_id: String, version: int)
 signal session_submitted(session_id: String, ship_id: String, final_path: Array)  # Array[MovementTypes.PlotStep]
 signal session_cancelled(session_id: String, ship_id: String)
+@warning_ignore("unused_signal")  # Part of the controller's signal API; errors are currently returned via responses
 signal plotting_error(request_id: String, error_code: String, message: String)
 
 var is_server: bool = true
@@ -404,7 +405,7 @@ func rpc_submit_movement(session_id: String, expected_version: int, request_id: 
 
 
 @rpc("authority", "call_remote", "reliable")
-func rpc_plotting_response(response_json: String) -> void:
+func rpc_plotting_response(_response_json: String) -> void:
 	# This is called on clients to receive responses
 	# Client-side handling would parse the JSON and dispatch to appropriate handlers
 	pass

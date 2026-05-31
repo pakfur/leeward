@@ -87,8 +87,8 @@ func validate_hex_selection(
 
 
 func validate_submission(
-	ship_state: ShipState,
-	path: Array[MovementTypes.PlotStep]
+	_ship_state: ShipState,
+	_path: Array[MovementTypes.PlotStep]
 ) -> MovementTypes.SubmissionValidationResult:
 	return MovementTypes.SubmissionValidationResult.success()
 
@@ -115,7 +115,6 @@ func _build_plotting_state(
 	var decel = DataManager.get_speed_change("deceleration", ps.maneuverability)
 
 	# Replay path to compute state at current position
-	var replay_facing = ship_state.facing
 	for step in path_so_far:
 		if step.move_type == MovementTypes.MoveType.FORWARD:
 			ps.forward_hexes_since_last_pivot += 1
@@ -132,8 +131,6 @@ func _build_plotting_state(
 			# Check for tacking: pivot to L then same direction again
 			if ps.pivots_used >= 2 and ps.luffing_ended:
 				ps.is_tacking_attempt = true
-
-		replay_facing = step.facing
 
 	# Calculate MA at current facing
 	var wind_facing = hex_grid.get_wind_facing(current_facing, ps.wind_direction)
@@ -314,7 +311,7 @@ func _add_pivot_options(
 func _get_min_forward_for_pivot(
 	ps: PlottingState,
 	pivot_direction: MovementTypes.MoveType,
-	ship_state: ShipState
+	_ship_state: ShipState
 ) -> int:
 	var direction: String
 	if ps.last_pivot_direction == MovementTypes.MoveType.NONE:

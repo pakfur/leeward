@@ -105,8 +105,8 @@ func _get_icon_path_for_ship_type(ship_type: String) -> String:
 
 	return ICON_PATHS["default"]
 
-func set_selected_state(selected: bool) -> void:
-	is_selected = selected
+func set_selected_state(selected_state: bool) -> void:
+	is_selected = selected_state
 	_apply_panel_style()
 
 func set_submitted_state(submitted: bool) -> void:

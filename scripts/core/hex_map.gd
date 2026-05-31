@@ -100,7 +100,9 @@ func _initialize_hex_tracking() -> void:
 	Trace.trace_log("HexMap", "Initializing hex tracking: %dx%d" % [grid_width, grid_height])
 
 	# Calculate offset to center the grid
+	@warning_ignore("integer_division")
 	var offset_q = -grid_width / 2
+	@warning_ignore("integer_division")
 	var offset_r = -grid_height / 2
 
 	var sample_printed = false
@@ -193,7 +195,9 @@ func _create_grid_overlay() -> void:
 
 	var overlay_y = 0.05  # Slightly above water surface
 	var line_width = 0.04  # Width of grid lines
+	@warning_ignore("integer_division")
 	var offset_q = -grid_width / 2
+	@warning_ignore("integer_division")
 	var offset_r = -grid_height / 2
 
 	var vertex_index = 0
@@ -274,12 +278,12 @@ func hex_to_world(coord: Vector2i) -> Vector3:
 	"""Convert hex coordinates to world position"""
 	return hex_grid.axial_to_world(coord.x, coord.y)
 
-func highlight_hex(coord: Vector2i, color: Color = Color.YELLOW) -> void:
+func highlight_hex(_coord: Vector2i, _color: Color = Color.YELLOW) -> void:
 	"""Highlight a specific hex tile (no-op for now - could add overlay marker later)"""
 	# TODO: Could create a temporary marker mesh at this hex position
 	pass
 
-func clear_highlight(coord: Vector2i) -> void:
+func clear_highlight(_coord: Vector2i) -> void:
 	"""Remove highlight from a hex tile (no-op for now)"""
 	# TODO: Could remove marker mesh
 	pass
@@ -304,9 +308,9 @@ func hide_grid_overlay() -> void:
 	if grid_overlay:
 		grid_overlay.visible = false
 
-func set_hex_labels_visible(show: bool) -> void:
+func set_hex_labels_visible(labels_visible: bool) -> void:
 	"""Toggle hex coordinate labels (q=##,r=##) on each hex"""
-	if show:
+	if labels_visible:
 		if hex_labels_container == null:
 			_create_hex_labels()
 		hex_labels_container.visible = true
@@ -320,7 +324,9 @@ func _create_hex_labels() -> void:
 	hex_labels_container.name = "HexLabels"
 	add_child(hex_labels_container)
 
+	@warning_ignore("integer_division")
 	var offset_q = -grid_width / 2
+	@warning_ignore("integer_division")
 	var offset_r = -grid_height / 2
 
 	for q in range(grid_width):
@@ -343,10 +349,10 @@ func _create_hex_labels() -> void:
 
 	Trace.trace_log("HexMap", "Created %d hex coordinate labels" % (grid_width * grid_height))
 
-func set_hex_grid_visible(visible: bool) -> void:
+func set_hex_grid_visible(grid_visible: bool) -> void:
 	"""Set hex grid visibility (shader-based grid that responds to waves)"""
 	# Only use shader hex grid, not the mesh overlay
 	# The shader grid is part of the water and responds to waves
 	if ocean_material:
-		ocean_material.set_shader_parameter("show_hex_grid", visible)
-		Trace.trace_log("HexMap", "Hex grid (shader) visibility set to: %s" % visible)
+		ocean_material.set_shader_parameter("show_hex_grid", grid_visible)
+		Trace.trace_log("HexMap", "Hex grid (shader) visibility set to: %s" % grid_visible)

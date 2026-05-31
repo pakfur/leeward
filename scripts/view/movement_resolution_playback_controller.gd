@@ -23,6 +23,7 @@ func _init(p_hex_grid: HexGrid = null, p_ship_views: Dictionary = {}, p_player_i
 	_player_id = p_player_id
 
 
+@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 func play(log: MovementTypes.ResolutionLog) -> void:
 	if _playing:
 		return

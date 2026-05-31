@@ -117,13 +117,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func zoom_in() -> void:
-	var old_distance = camera_distance
 	camera_distance = clamp(camera_distance - zoom_speed * camera_distance, min_zoom, max_zoom)
 	_update_camera_transform()
 	#print("Zoom in: %f -> %f" % [old_distance, camera_distance])
 
 func zoom_out() -> void:
-	var old_distance = camera_distance
 	camera_distance = clamp(camera_distance + zoom_speed * camera_distance, min_zoom, max_zoom)
 	_update_camera_transform()
 	#print("Zoom out: %f -> %f" % [old_distance, camera_distance])
@@ -288,7 +286,7 @@ func _update_camera_transform() -> void:
 
 	# Construct the basis (right, up, -forward for Godot's coordinate system)
 	# Note: Godot cameras look along -Z, so we use -forward for the Z axis
-	var basis = Basis(right, up, -forward)
+	var new_basis = Basis(right, up, -forward)
 
 	# Apply the basis to the camera
-	transform.basis = basis
+	transform.basis = new_basis

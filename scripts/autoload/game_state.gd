@@ -6,6 +6,7 @@ extends Node
 
 signal phase_changed(new_phase: GamePhase)
 signal turn_changed(turn_number: int)
+@warning_ignore("unused_signal")  # Part of the state API; emitted once multiplayer readiness is wired
 signal player_ready(player_id: int)
 signal state_synced()  # Emitted when state is synced from server
 
@@ -160,7 +161,7 @@ func _on_state_changed_broadcast(_arg = null) -> void:
 		pass  # network_sync.broadcast_state() called automatically via timer
 
 
-func _on_movement_submitted(session_id: String, ship_id: String, final_path: Array) -> void:
+func _on_movement_submitted(_session_id: String, ship_id: String, final_path: Array) -> void:
 	"""Handle movement submission from plotting controller
 	final_path is Array[MovementTypes.PlotStep]"""
 	Trace.trace_log("GameState", "Movement submitted for ship %s (%d hexes)" % [ship_id, final_path.size()])

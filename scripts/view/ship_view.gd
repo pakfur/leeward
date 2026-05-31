@@ -2,8 +2,7 @@ class_name ShipView
 extends Node3D
 ## ShipView - Visual representation of a ship (presentation only, no game state)
 
-const WaveCalculator = preload("res://scripts/core/wave_calculator.gd")
-
+@warning_ignore("unused_signal")  # Connected externally (game_controller); emitted only by 3D click handling
 signal selected()
 
 var state_id: String = ""  # Reference to ShipState in GameState
