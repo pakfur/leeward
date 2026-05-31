@@ -93,11 +93,16 @@ class ValidNextHexes extends RefCounted:
 		var fwd_array: Array = []
 		for vm in forward:
 			fwd_array.append(vm.to_dict())
-		return {
-			"port": port.to_dict() if port else null,
+		var result := {
+			"port": null,
 			"forward": fwd_array,
-			"starboard": starboard.to_dict() if starboard else null
+			"starboard": null,
 		}
+		if port:
+			result["port"] = port.to_dict()
+		if starboard:
+			result["starboard"] = starboard.to_dict()
+		return result
 
 	static func from_dict(data: Dictionary) -> ValidNextHexes:
 		var vnh = ValidNextHexes.new()
