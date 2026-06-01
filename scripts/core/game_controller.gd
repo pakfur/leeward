@@ -19,7 +19,7 @@ var current_planning_ui: Control = null
 var ship_views: Dictionary = {}  # ship_id -> ShipView
 var selected_ship_id: String = ""
 var ship_indicators: Node3D = null     # ShipIndicators
-var indicator_overlay: Control = null  # IndicatorOverlay (added in Task 4)
+var indicator_overlay: Control = null  # IndicatorOverlay
 const HUMAN_PLAYER_ID := 0
 
 # Planning phase state (client-side)
@@ -410,6 +410,11 @@ func _center_camera_on_all_ships() -> void:
 		camera.center_on_ships(ship_positions)
 
 func _on_phase_changed(phase: GameState.GamePhase) -> void:
+	# Selection is a planning-time affordance — clear it (and any hover) on every phase change
+	# so the one-shot indicator snapshot can't go stale across resolution/turn boundaries.
+	_deselect_ship()
+	_hover_candidates.clear()
+	_clear_hover()
 	Trace.trace_log("GameController", "Phase changed to: %s" % GameState.get_phase_name())
 
 	match phase:
