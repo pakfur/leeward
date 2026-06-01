@@ -18,6 +18,9 @@ var current_planning_ui: Control = null
 # Views (presentation layer)
 var ship_views: Dictionary = {}  # ship_id -> ShipView
 var selected_ship_id: String = ""
+var ship_indicators: Node3D = null     # ShipIndicators
+var indicator_overlay: Control = null  # IndicatorOverlay (added in Task 4)
+const HUMAN_PLAYER_ID := 0
 
 # Planning phase state (client-side)
 var selected_actions: Dictionary = {}  # ship_id -> {action_type -> bool}
@@ -77,6 +80,7 @@ func _ready() -> void:
 
 	# Initialize hex overlay
 	_setup_hex_overlay()
+	_setup_indicators()
 
 	# Initialize movement plotting client
 	if GameState.movement_plotting_controller:
@@ -98,6 +102,12 @@ func _setup_hex_overlay() -> void:
 	hex_overlay.set_script(overlay_script)
 	hex_overlay.name = "HexOverlay"
 	add_child(hex_overlay)
+
+func _setup_indicators() -> void:
+	ship_indicators = load("res://scripts/view/ship_indicators.gd").new()
+	ship_indicators.name = "ShipIndicators"
+	add_child(ship_indicators)
+	ship_indicators.setup(camera)
 
 func _setup_hex_coord_label() -> void:
 	hex_coord_label = Label.new()
@@ -272,11 +282,7 @@ func _handle_ship_selection(screen_pos: Vector2) -> void:
 	var result = space_state.intersect_ray(query)
 
 	if result.is_empty():
-		# Click on empty space - deselect
-		if not selected_ship_id.is_empty():
-			selected_ship_id = ""
-			if ship_status_panel:
-				ship_status_panel.visible = false
+		_deselect_ship()
 		return
 
 	# Check if we hit a ship
@@ -295,7 +301,32 @@ func _find_ship_view_from_collider(collider: Node) -> ShipView:
 	return null
 
 func _select_ship(ship_id: String) -> void:
+	# Clear any previous selection visuals (dialog starts hidden on a new selection)
+	if ship_indicators:
+		ship_indicators.clear_selected()
+	if ship_status_panel:
+		ship_status_panel.visible = false
+
 	selected_ship_id = ship_id
+	_show_selected_indicators(ship_id)
+
+func _show_selected_indicators(ship_id: String) -> void:
+	var ship_state = GameState.get_ship(ship_id)
+	if not ship_state or not hex_map or not GameState.environment:
+		return
+	var env = GameState.environment
+	var model = ShipIndicatorModel.build_selected(
+		ship_state.hex_position, ship_state.facing, ship_state.speed,
+		env.wind_direction, env.wind_speed, hex_map.get_hex_grid())
+	if ship_indicators:
+		ship_indicators.show_selected(model)
+
+func _deselect_ship() -> void:
+	selected_ship_id = ""
+	if ship_indicators:
+		ship_indicators.clear_selected()
+	if ship_status_panel:
+		ship_status_panel.visible = false
 
 func _center_camera_on_all_ships() -> void:
 	var all_ships = GameState.get_all_ships()
