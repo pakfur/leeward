@@ -137,7 +137,7 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 ### Hex Grid
 - **Axial coordinates** (q, r) with **pointy-top** orientation
 - **Direction numbering**: 0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE
-- **All ships are 1-hex.** `ShipState.get_ship_size()` is deprecated and hardcoded to return 1; use `HexGrid.axial_to_world()` for positioning. The `axial_to_edge_world()` path and `size == 2` branches in `ShipView` are dead code kept for possible future revival.
+- **All ships are 1-hex.** `ShipState.get_ship_size()` is deprecated and hardcoded to return 1; use `HexGrid.axial_to_world()` for positioning. The `size == 2` branches in `ShipView` are dead code kept for possible future revival. (`HexGrid.axial_to_edge_world()` is live — `ShipIndicatorModel` uses it to compute hex-face midpoints for the selection indicators.)
 
 ### Server Authority
 - All mutations guard with `if not is_server: push_error()` — never bypass this
@@ -158,7 +158,7 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 
 ### Legacy Code
 - `scripts/ui/planning_panel.gd` is legacy; `planning_phase_ui.gd` is the current version
-- `axial_to_edge_world()` in `hex_grid.gd` and the `size == 2` branch in `ShipView._update_position_from_state` are unused (see Hex Grid note).
+- The `size == 2` branch in `ShipView._update_position_from_state` is unused (all ships are 1-hex). Note: `HexGrid.axial_to_edge_world()` is now used by `ShipIndicatorModel` and is no longer dead (see Hex Grid note).
 
 ### SCV Audit
 Run the `scv-reviewer` agent as a **final step** before reporting any planned work as complete. Do not run it after each individual task or phase — only once at the very end, after all code changes are made and tests pass. Fix any violations it finds before finishing.

@@ -46,3 +46,17 @@ func test_point_of_sail_in_irons_when_facing_into_wind() -> void:
 func test_center_anchor_is_hex_center() -> void:
 	var m = Model.build_selected(Vector2i(3, -2), 0, 1, 0, 2, hex_grid)
 	assert_eq(m.center_anchor, hex_grid.axial_to_world(3, -2))
+
+func test_direction_dir_is_outward_unit_vector() -> void:
+	var m = Model.build_selected(Vector2i(0, 0), 0, 3, 4, 2, hex_grid)  # facing E(0)
+	assert_almost_eq(m.direction_dir.length(), 1.0, 0.001)
+	var expected = (hex_grid.axial_to_edge_world(0, 0, 0) - hex_grid.axial_to_world(0, 0)).normalized()
+	assert_almost_eq(m.direction_dir.x, expected.x, 0.001)
+	assert_almost_eq(m.direction_dir.z, expected.z, 0.001)
+
+func test_windward_dir_is_outward_unit_vector() -> void:
+	var m = Model.build_selected(Vector2i(0, 0), 0, 3, 4, 2, hex_grid)  # wind from NW(4)
+	assert_almost_eq(m.windward_dir.length(), 1.0, 0.001)
+	var expected = (hex_grid.axial_to_edge_world(0, 0, 4) - hex_grid.axial_to_world(0, 0)).normalized()
+	assert_almost_eq(m.windward_dir.x, expected.x, 0.001)
+	assert_almost_eq(m.windward_dir.z, expected.z, 0.001)

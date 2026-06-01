@@ -27,6 +27,7 @@ const POS_LABELS := {
 static func point_of_sail_label(wind_facing_code: String) -> String:
 	return POS_LABELS.get(wind_facing_code, "")
 
+## distance: camera-to-anchor world distance; factor: scale coefficient; min/max_world: output clamp (world units).
 static func clamp_scale(distance: float, factor: float, min_world: float, max_world: float) -> float:
 	return clampf(distance * factor, min_world, max_world)
 
@@ -49,7 +50,7 @@ static func _build(hex_position: Vector2i, facing: int, ship_speed: int, wind_di
 	m.direction_dir = (m.direction_anchor - center).normalized()
 
 	# Windward indicator anchored on the wind-facing face (= wind_direction); hidden when calm
-	m.windward_visible = wind_speed > 0
+	m.windward_visible = wind_speed > 0  # windward_anchor/dir are computed regardless; consumers must gate on windward_visible.
 	m.windward_anchor = hex_grid.axial_to_edge_world(q, r, wind_direction)
 	m.windward_dir = (m.windward_anchor - center).normalized()
 
