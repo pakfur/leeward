@@ -68,3 +68,6 @@ vendor/
 coverage/
 .cache/
 tmp/
+
+# Visual brainstorming companion
+.superpowers/
