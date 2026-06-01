@@ -29,6 +29,7 @@ var selected_actions: Dictionary = {}  # ship_id -> {action_type -> bool}
 var movement_client: MovementPlottingClient = null
 var hex_overlay: Node3D = null  # HexOverlay instance
 var submitted_paths: Dictionary = {}  # ship_id -> Array[PlotStep]
+var _hover_candidates: Dictionary = {}  # Vector2i hex -> int resulting_facing (server-provided)
 
 # Resolution playback
 var playback_controller: MovementResolutionPlaybackController = null
@@ -234,6 +235,10 @@ func _spawn_ship(ship_data: Dictionary) -> void:
 	Trace.trace_log("GameController", "Spawned ship: %s for player %d" % [ship_state.ship_name, ship_state.player_id])
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		_update_plotting_hover(event.position)
+		return
+
 	# Handle keyboard shortcuts
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_C:
@@ -276,6 +281,33 @@ func _get_hex_from_screen_pos(screen_pos: Vector2) -> Vector2i:
 
 	var world_pos = origin + direction * t
 	return hex_overlay.get_valid_hex_at_world_pos(world_pos, hex_map.get_hex_grid())
+
+func _update_plotting_hover(screen_pos: Vector2) -> void:
+	if not movement_client or not movement_client.is_plotting():
+		_clear_hover()
+		return
+	var hex = _get_hex_from_screen_pos(screen_pos)  # valid hex or (-99,-99)
+	if hex == Vector2i(-99, -99) or not _hover_candidates.has(hex):
+		_clear_hover()
+		return
+	var ship_state = GameState.get_ship(movement_client.active_ship_id)
+	if not ship_state or not hex_map or not GameState.environment:
+		_clear_hover()
+		return
+	var env = GameState.environment
+	var model = ShipIndicatorModel.build_hover(
+		hex, _hover_candidates[hex], ship_state.speed,
+		env.wind_direction, env.wind_speed, hex_map.get_hex_grid())
+	if ship_indicators:
+		ship_indicators.show_hover(model)
+	if indicator_overlay:
+		indicator_overlay.show_hover(model)
+
+func _clear_hover() -> void:
+	if ship_indicators:
+		ship_indicators.clear_hover()
+	if indicator_overlay:
+		indicator_overlay.clear_hover()
 
 func _handle_ship_selection(screen_pos: Vector2) -> void:
 	if not camera:
@@ -539,6 +571,7 @@ func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_va
 		var total_ma = GameState.ship_controller.get_movement_allowance(ship_id) if ship_state else remaining_ma_val
 		current_planning_ui.show_plotting_controls(ship_id, remaining_ma_val, total_ma)
 		_update_tacking_display(is_tacking)
+	_rebuild_hover_candidates(valid_hexes)
 
 func _on_hex_selected(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int, is_tacking: bool = false) -> void:
 	if hex_overlay and hex_map:
@@ -564,6 +597,7 @@ func _on_hex_selected(plotted_path: Array, valid_hexes: Variant, can_submit_val:
 	if current_planning_ui:
 		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
 		_update_tacking_display(is_tacking)
+	_rebuild_hover_candidates(valid_hexes)
 
 func _on_undo_complete(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int, is_tacking: bool = false) -> void:
 	if hex_overlay and hex_map:
@@ -589,8 +623,18 @@ func _on_undo_complete(plotted_path: Array, valid_hexes: Variant, can_submit_val
 	if current_planning_ui:
 		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
 		_update_tacking_display(is_tacking)
+	_rebuild_hover_candidates(valid_hexes)
+
+func _rebuild_hover_candidates(vnh) -> void:
+	_hover_candidates.clear()
+	if vnh == null:
+		return
+	for vm in (vnh as MovementTypes.ValidNextHexes).get_all_valid_moves():
+		_hover_candidates[vm.hex] = vm.metadata.resulting_facing
 
 func _on_plotting_cancelled(ship_id: String) -> void:
+	_hover_candidates.clear()
+	_clear_hover()
 	Trace.trace_log("GameController", "Plotting cancelled for ship %s" % ship_id)
 	if hex_overlay:
 		hex_overlay.clear_all()
@@ -599,6 +643,8 @@ func _on_plotting_cancelled(ship_id: String) -> void:
 		current_planning_ui.hide_plotting_controls()
 
 func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
+	_hover_candidates.clear()
+	_clear_hover()
 	Trace.trace_log("GameController", "Movement submitted for ship %s: %d steps" % [ship_id, final_path.size()])
 
 	# Store submitted path
