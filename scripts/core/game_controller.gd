@@ -274,9 +274,6 @@ func _handle_ship_selection(screen_pos: Vector2) -> void:
 	if result.is_empty():
 		# Click on empty space - deselect
 		if not selected_ship_id.is_empty():
-			var view = ship_views.get(selected_ship_id)
-			if view:
-				view.set_selected(false)
 			selected_ship_id = ""
 			if ship_status_panel:
 				ship_status_panel.visible = false
@@ -298,20 +295,7 @@ func _find_ship_view_from_collider(collider: Node) -> ShipView:
 	return null
 
 func _select_ship(ship_id: String) -> void:
-	# Deselect previous
-	if not selected_ship_id.is_empty() and ship_views.has(selected_ship_id):
-		ship_views[selected_ship_id].set_selected(false)
-
-	# Select new
 	selected_ship_id = ship_id
-	if ship_views.has(ship_id):
-		ship_views[ship_id].set_selected(true)
-
-	# Update status panel
-	if ship_status_panel:
-		var ship_state = GameState.get_ship(ship_id)
-		if ship_state:
-			ship_status_panel.show_ship_status_from_state(ship_state)
 
 func _center_camera_on_all_ships() -> void:
 	var all_ships = GameState.get_all_ships()

@@ -7,8 +7,6 @@ signal selected()
 
 var state_id: String = ""  # Reference to ShipState in GameState
 var model_node: Node3D
-var selection_indicator: MeshInstance3D
-
 # Wave interaction (visual only, not part of game state)
 var wave_calculator: WaveCalculator
 var base_position: Vector3  # Position without wave offset
@@ -16,7 +14,6 @@ var hex_grid_ref: HexGrid = null
 
 func _ready() -> void:
 	wave_calculator = WaveCalculator.new()
-	_create_selection_indicator()
 
 func _process(_delta: float) -> void:
 	# Visual update only - wave bobbing
@@ -75,6 +72,20 @@ func _create_ship_model(ship_size: int) -> void:
 		_create_1hex_model()
 	else:
 		_create_2hex_model()
+
+	_add_click_collision()
+
+func _add_click_collision() -> void:
+	"""Add a static body so the camera raycast in game_controller can pick this ship."""
+	var body := StaticBody3D.new()
+	body.name = "ClickBody"
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(1.2, 1.5, 1.8)
+	shape.shape = box
+	shape.position = Vector3(0, 0.4, 0)
+	body.add_child(shape)
+	add_child(body)
 
 func _create_1hex_model() -> void:
 	"""Create a small corvette-sized ship (1 hex, 1 mast)"""
@@ -162,30 +173,6 @@ func _create_2hex_model() -> void:
 	bow.position = Vector3(0, 0.50, -1.4)
 	bow.rotation_degrees = Vector3(-90, 0, 0)
 	model_node.add_child(bow)
-
-func _create_selection_indicator() -> void:
-	"""Create a selection indicator ring"""
-	selection_indicator = MeshInstance3D.new()
-	var torus_mesh = TorusMesh.new()
-	torus_mesh.inner_radius = 0.6
-	torus_mesh.outer_radius = 0.7
-	selection_indicator.mesh = torus_mesh
-
-	var material = StandardMaterial3D.new()
-	material.albedo_color = Color(1, 1, 0, 0.8)  # Yellow
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	selection_indicator.material_override = material
-
-	selection_indicator.position = Vector3(0, 0.05, 0)
-	selection_indicator.visible = false
-	add_child(selection_indicator)
-
-func set_selected(is_selected: bool) -> void:
-	"""Show/hide selection indicator"""
-	selection_indicator.visible = is_selected
-	# Note: Don't emit signal here - this is for programmatic selection updates
-	# The 'selected' signal should only be emitted by user interaction (3D clicks)
 
 func _update_wave_position() -> void:
 	"""Update ship position and rotation based on wave motion (visual only)"""
