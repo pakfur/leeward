@@ -30,6 +30,7 @@ var movement_client: MovementPlottingClient = null
 var hex_overlay: Node3D = null  # HexOverlay instance
 var submitted_paths: Dictionary = {}  # ship_id -> Array[PlotStep]
 var _hover_candidates: Dictionary = {}  # Vector2i hex -> int resulting_facing (server-provided)
+var _last_hover_hex: Vector2i = Vector2i(-99, -99)  # avoids re-raycasting when the hovered hex is unchanged
 
 # Resolution playback
 var playback_controller: MovementResolutionPlaybackController = null
@@ -284,9 +285,13 @@ func _get_hex_from_screen_pos(screen_pos: Vector2) -> Vector2i:
 
 func _update_plotting_hover(screen_pos: Vector2) -> void:
 	if not movement_client or not movement_client.is_plotting():
-		_clear_hover()
+		if _last_hover_hex != Vector2i(-99, -99):
+			_clear_hover()
 		return
 	var hex = _get_hex_from_screen_pos(screen_pos)  # valid hex or (-99,-99)
+	if hex == _last_hover_hex:
+		return  # same hex — nothing to update
+	_last_hover_hex = hex
 	if hex == Vector2i(-99, -99) or not _hover_candidates.has(hex):
 		_clear_hover()
 		return
@@ -304,6 +309,7 @@ func _update_plotting_hover(screen_pos: Vector2) -> void:
 		indicator_overlay.show_hover(model)
 
 func _clear_hover() -> void:
+	_last_hover_hex = Vector2i(-99, -99)
 	if ship_indicators:
 		ship_indicators.clear_hover()
 	if indicator_overlay:
@@ -571,7 +577,7 @@ func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_va
 		var total_ma = GameState.ship_controller.get_movement_allowance(ship_id) if ship_state else remaining_ma_val
 		current_planning_ui.show_plotting_controls(ship_id, remaining_ma_val, total_ma)
 		_update_tacking_display(is_tacking)
-	_rebuild_hover_candidates(valid_hexes)
+	_rebuild_hover_candidates(valid_hexes as MovementTypes.ValidNextHexes)
 
 func _on_hex_selected(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int, is_tacking: bool = false) -> void:
 	if hex_overlay and hex_map:
@@ -597,7 +603,7 @@ func _on_hex_selected(plotted_path: Array, valid_hexes: Variant, can_submit_val:
 	if current_planning_ui:
 		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
 		_update_tacking_display(is_tacking)
-	_rebuild_hover_candidates(valid_hexes)
+	_rebuild_hover_candidates(valid_hexes as MovementTypes.ValidNextHexes)
 
 func _on_undo_complete(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int, is_tacking: bool = false) -> void:
 	if hex_overlay and hex_map:
@@ -623,13 +629,13 @@ func _on_undo_complete(plotted_path: Array, valid_hexes: Variant, can_submit_val
 	if current_planning_ui:
 		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
 		_update_tacking_display(is_tacking)
-	_rebuild_hover_candidates(valid_hexes)
+	_rebuild_hover_candidates(valid_hexes as MovementTypes.ValidNextHexes)
 
-func _rebuild_hover_candidates(vnh) -> void:
+func _rebuild_hover_candidates(valid_hexes: MovementTypes.ValidNextHexes) -> void:
 	_hover_candidates.clear()
-	if vnh == null:
+	if valid_hexes == null:
 		return
-	for vm in (vnh as MovementTypes.ValidNextHexes).get_all_valid_moves():
+	for vm in valid_hexes.get_all_valid_moves():
 		_hover_candidates[vm.hex] = vm.metadata.resulting_facing
 
 func _on_plotting_cancelled(ship_id: String) -> void:
