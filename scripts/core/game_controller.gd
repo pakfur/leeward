@@ -293,11 +293,23 @@ func _handle_ship_selection(screen_pos: Vector2) -> void:
 		return
 
 	# Check if we hit a ship
-	var collider = result.collider
-	var ship_view = _find_ship_view_from_collider(collider)
+	var ship_view = _find_ship_view_from_collider(result.collider)
+	if not ship_view:
+		return
+	var ship_state = GameState.get_ship(ship_view.state_id)
+	if not ship_state:
+		return
 
-	if ship_view:
+	if ship_state.player_id == HUMAN_PLAYER_ID:
+		# Own ship: full selected-ship UI; status dialog stays hidden until info icon.
+		if camera and camera.has_method("focus_on_ship"):
+			camera.focus_on_ship(ship_view.global_position, ship_state.facing)
 		_select_ship(ship_view.state_id)
+	else:
+		# Enemy ship: read-only status dialog only, no indicators.
+		_deselect_ship()
+		if ship_status_panel:
+			ship_status_panel.show_ship_status_from_state(ship_state)
 
 func _find_ship_view_from_collider(collider: Node) -> ShipView:
 	var node = collider
