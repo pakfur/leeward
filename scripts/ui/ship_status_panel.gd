@@ -83,3 +83,11 @@ func _update_display() -> void:
 func _on_close_pressed() -> void:
 	visible = false
 	current_ship_state = null
+
+func toggle(ship_state: ShipState) -> void:
+	"""Toggle the panel for a ship: hide if already showing it, otherwise show it."""
+	if visible and current_ship_state == ship_state:
+		visible = false
+		current_ship_state = null
+	else:
+		show_ship_status_from_state(ship_state)

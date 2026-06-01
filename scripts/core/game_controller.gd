@@ -109,6 +109,13 @@ func _setup_indicators() -> void:
 	add_child(ship_indicators)
 	ship_indicators.setup(camera)
 
+	indicator_overlay = load("res://scripts/ui/indicator_overlay.gd").new()
+	indicator_overlay.name = "IndicatorOverlay"
+	if ui:
+		ui.add_child(indicator_overlay)
+	indicator_overlay.setup(camera)
+	indicator_overlay.info_toggled.connect(_on_info_toggled)
+
 func _setup_hex_coord_label() -> void:
 	hex_coord_label = Label.new()
 	hex_coord_label.name = "HexCoordLabel"
@@ -310,6 +317,12 @@ func _select_ship(ship_id: String) -> void:
 	selected_ship_id = ship_id
 	_show_selected_indicators(ship_id)
 
+func _on_info_toggled(ship_id: String) -> void:
+	if ship_status_panel and not ship_id.is_empty():
+		var ship_state = GameState.get_ship(ship_id)
+		if ship_state:
+			ship_status_panel.toggle(ship_state)
+
 func _show_selected_indicators(ship_id: String) -> void:
 	var ship_state = GameState.get_ship(ship_id)
 	if not ship_state or not hex_map or not GameState.environment:
@@ -320,11 +333,15 @@ func _show_selected_indicators(ship_id: String) -> void:
 		env.wind_direction, env.wind_speed, hex_map.get_hex_grid())
 	if ship_indicators:
 		ship_indicators.show_selected(model)
+	if indicator_overlay:
+		indicator_overlay.show_selected(model, ship_id)
 
 func _deselect_ship() -> void:
 	selected_ship_id = ""
 	if ship_indicators:
 		ship_indicators.clear_selected()
+	if indicator_overlay:
+		indicator_overlay.clear_selected()
 	if ship_status_panel:
 		ship_status_panel.visible = false
 
