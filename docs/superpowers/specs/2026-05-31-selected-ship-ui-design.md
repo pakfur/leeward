@@ -57,7 +57,7 @@ The view **only renders that response** and never recomputes legality:
 | Which hexes are legal next moves | server | membership test against the response's `valid_next_hexes` |
 | `resulting_facing` for a hovered candidate | server | `valid_next_hexes[..].metadata.resulting_facing` |
 | `ma_cost`, `can_submit`, `remaining_ma`, tacking/luffing | server | response payload |
-| Prospective hover speed | derived from the server-validated path (hex count) | response path |
+| Hover label speed | `ship_state.speed` (server state, constant during plotting) | field read |
 | Selected ship's facing / windward face | server state | `ship_state.facing` / `environment.wind_direction` |
 | Point-of-sail label word | `HexGrid.get_wind_facing()` — the **same shared helper the server uses** | pure call on authoritative state |
 
@@ -94,9 +94,11 @@ DTO fields (one model describes one indicator set — selected or hover):
 - `speed: int`, `point_of_sail: String` (`"In Irons"|"Close Hauled"|"Broad Reach"|"Running"`)
 - `opacity: float` (1.0 selected, ~0.6 hover)
 
-Builders:
+Builders (`speed` is always `ship_state.speed` — current ship speed, the same for selected and hover):
 - `build_selected(ship_state, environment, hex_grid) -> IndicatorModel`
-- `build_hover(hex: Vector2i, resulting_facing: int, prospective_speed: int, environment, hex_grid) -> IndicatorModel`
+- `build_hover(ship_state, hex: Vector2i, resulting_facing: int, environment, hex_grid) -> IndicatorModel`
+  — `speed` is `ship_state.speed` (the selected ship's current speed, constant during plotting);
+  only the direction face (`resulting_facing`) and point-of-sail differ from the selected model
 
 Logic:
 - Windward face index = `environment.wind_direction`; `windward_visible = environment.wind_speed > 0`.
@@ -199,8 +201,10 @@ shows the new ship's indicators (dialog hidden).
 - While `movement_client.is_plotting()`, handle `InputEventMouseMotion`: raycast cursor to the
   water plane → hex (reuse the `_get_hex_from_screen_pos` ray-plane pattern).
 - If the hex is a **server-provided legal next hex**, look up its candidate metadata
-  (`resulting_facing`, and prospective speed = plotted-path length to that hex) and call
-  `ShipIndicators.show_hover` + `IndicatorOverlay.show_hover` with `opacity ≈ 0.6`.
+  (`resulting_facing`) and call `ShipIndicators.show_hover` + `IndicatorOverlay.show_hover`
+  with `opacity ≈ 0.6`. The label's `Speed:` is the selected ship's `ship_state.speed`
+  (constant during plotting); only the direction arrow + point-of-sail reflect the hovered
+  candidate's `resulting_facing`.
 - If the cursor is not over a legal next hex, `clear_hover()`.
 - The currently valid candidates are cached from the latest plotting response. `movement_client`
   already receives `valid_next_hexes` (with metadata); expose a lookup
@@ -208,17 +212,13 @@ shows the new ship's indicators (dialog hidden).
 - Selected-ship indicators remain displayed independently of hover.
 - Hover clears on plotting submit/cancel and on selection change.
 
-**Open detail for review:** prospective hover `Speed` = number of hexes from origin to the
-hovered hex (the speed the ship would have if it ended there), derived from the server-validated
-path — not recomputed. Confirm this is the intended meaning (vs. e.g. remaining MA).
-
 ## 10. Removing the Old Highlight
 
 - Delete `selection_indicator`, `_create_selection_indicator()`, and the torus visibility logic
   from `ship_view.gd`.
-- `set_selected()` is no longer responsible for a torus; selection visuals come entirely from the
-  new controller. Keep `set_selected(bool)` as a no-op/state hook only if a caller still needs it,
-  otherwise remove and update callers in `game_controller`.
+- **Remove `set_selected()` entirely.** Update its callers in `game_controller`
+  (`_select_ship`, `_handle_ship_selection`) to drive the new indicator controller instead;
+  selection visuals come entirely from `ShipIndicators` / `IndicatorOverlay`.
 
 ## 11. Visual Spec (locked during brainstorming)
 
@@ -258,7 +258,7 @@ GUT unit tests on the pure builder — `test/unit/test_ship_indicator_model.gd`:
 - Point-of-sail mapping `L/C/B/R → In Irons/Close Hauled/Broad Reach/Running`.
 - Face anchor equals `HexGrid.axial_to_edge_world(...)`; normal points outward from hex center.
 - Clamp-scale boundaries (below MIN clamps to MIN; above MAX clamps to MAX; mid passes through).
-- `build_hover` uses `resulting_facing` for the direction face and `prospective_speed` for the label.
+- `build_hover` uses `resulting_facing` for the direction face and `ship_state.speed` (constant) for the label speed.
 
 Rendering, raycast picking, and `unproject` positioning are verified manually via the
 `godot-mcp` run + `game_get_errors` (zero warnings) and visual inspection, per project convention.
@@ -272,7 +272,7 @@ Rendering, raycast picking, and `unproject` positioning are verified manually vi
 - `test/unit/test_ship_indicator_model.gd`
 
 **Modified**
-- `scripts/view/ship_view.gd` — add collision body; remove highlight torus
+- `scripts/view/ship_view.gd` — add collision body; remove highlight torus and `set_selected()`
 - `scripts/core/game_controller.gd` — own/enemy click branching; drive indicators; wire info
   toggle; plotting-hover (mouse motion); clear on submit/cancel/deselect
 - `scripts/ui/ship_status_panel.gd` — add `toggle()`; remove auto-show coupling
