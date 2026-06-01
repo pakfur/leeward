@@ -62,12 +62,10 @@ func _apply(model: ShipIndicatorModel, wind_role: String, dir_role: String) -> v
 		return
 	var s := _scale_for(model.center_anchor)
 	# Direction arrow: tail at face, head outward (+dir)
-	_place_arrow(dir_mi, model.direction_anchor, model.direction_anchor + model.direction_dir * s, s, DIR_COLOR, model.opacity)
-	dir_mi.visible = true
+	dir_mi.visible = _place_arrow(dir_mi, model.direction_anchor, model.direction_anchor + model.direction_dir * s, s, DIR_COLOR, model.opacity)
 	# Windward arrow: head at face (inward), tail outward
 	if model.windward_visible:
-		_place_arrow(wind_mi, model.windward_anchor + model.windward_dir * s, model.windward_anchor, s, WIND_COLOR, model.opacity)
-		wind_mi.visible = true
+		wind_mi.visible = _place_arrow(wind_mi, model.windward_anchor + model.windward_dir * s, model.windward_anchor, s, WIND_COLOR, model.opacity)
 	else:
 		wind_mi.visible = false
 
@@ -77,19 +75,19 @@ func _scale_for(anchor: Vector3) -> float:
 		dist = _camera.global_position.distance_to(anchor)
 	return Model.clamp_scale(dist, scale_factor, min_world, max_world)
 
-func _place_arrow(mi: MeshInstance3D, tail: Vector3, head: Vector3, width_scale: float, color: Color, opacity: float) -> void:
+func _place_arrow(mi: MeshInstance3D, tail: Vector3, head: Vector3, width_scale: float, color: Color, opacity: float) -> bool:
 	var d := head - tail
 	d.y = 0.0
 	var length := d.length()
 	if length < 0.0001:
-		mi.visible = false
-		return
+		return false
 	var dir := d / length
 	mi.position = Vector3(tail.x, ARROW_Y, tail.z)
 	mi.rotation = Vector3(0, atan2(-dir.z, dir.x), 0)
 	mi.scale = Vector3(length, 1.0, width_scale)
 	var mat: StandardMaterial3D = mi.material_override
 	mat.albedo_color = Color(color.r, color.g, color.b, opacity)
+	return true
 
 func _make_material() -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
