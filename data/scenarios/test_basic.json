@@ -37,7 +37,7 @@
 	{
 	  "id": "enemy_ship",
 	  "player_id": 1,
-	  "ship_type": "corvette_24",
+	  "ship_type": "frigate_32",
 	  "position": {
 		"q": 8,
 		"r": 0

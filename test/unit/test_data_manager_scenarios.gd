@@ -63,7 +63,7 @@ func test_scenario_enemy_ship_values() -> void:
 	var ship = scenario["ships"][1]
 	assert_eq(ship["id"], "enemy_ship")
 	assert_eq(int(ship["player_id"]), 1)
-	assert_eq(ship["ship_type"], "corvette_24")
+	assert_eq(ship["ship_type"], "frigate_32")
 	assert_eq(int(ship["facing"]), 3)
 
 # --- Seed Validation ---

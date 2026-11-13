@@ -17,7 +17,7 @@ func test_ship_definitions_load_successfully() -> void:
 
 func test_expected_ship_ids_present() -> void:
 	assert_true(dm.ship_definitions.has("frigate_38"), "Should have frigate_38")
-	assert_true(dm.ship_definitions.has("corvette_24"), "Should have corvette_24")
+	assert_true(dm.ship_definitions.has("frigate_32"), "Should have frigate_32")
 	assert_true(dm.ship_definitions.has("ship_of_line_74"), "Should have ship_of_line_74")
 
 func test_ship_definition_count() -> void:
@@ -70,7 +70,7 @@ func test_frigate_38_draft() -> void:
 
 func test_frigate_38_freeboard() -> void:
 	var def = dm.get_ship_definition("frigate_38")
-	assert_eq(def.freeboard, 8)
+	assert_eq(def.freeboard, 6)
 
 func test_frigate_38_rigging_hp() -> void:
 	var def = dm.get_ship_definition("frigate_38")
@@ -96,19 +96,70 @@ func test_frigate_38_marine_count() -> void:
 	var def = dm.get_ship_definition("frigate_38")
 	assert_eq(def.marine_count, 2)
 
-# --- Corvette 24 Properties ---
+# --- Frigate 32 Properties ---
 
-func test_corvette_24_speed_type() -> void:
-	var def = dm.get_ship_definition("corvette_24")
-	assert_eq(def.speed_type, "C/F")
+func test_frigate_32_exists_with_chart_rigging() -> void:
+	var def = dm.get_ship_definition("frigate_32")
+	assert_not_null(def, "frigate_32 should exist")
+	assert_eq(def.rigging_hp, [4, 5, 5, 5] as Array[int])
 
-func test_corvette_24_class() -> void:
-	var def = dm.get_ship_definition("corvette_24")
-	assert_eq(def.ship_class, 5)
+func test_frigate_32_chart_values() -> void:
+	var def = dm.get_ship_definition("frigate_32")
+	assert_eq(def.speed_type, "F/S")
+	assert_eq(def.draft, 16)
+	assert_eq(def.hull_hp, [4, 4, 4, 5] as Array[int])
+	assert_eq(def.crew_count, [2, 2, 2, 3] as Array[int])
+	assert_eq(def.marine_count, 2)
+	assert_eq(def.gun_factors, {"lg": 4, "mg": 0, "cr": 2})
+	assert_eq(def.freeboard, 5)
+	assert_eq(def.lower_deck_modifier, -7)
+	assert_eq(def.ch_modifier, -2)
 
-func test_corvette_24_maneuverability() -> void:
+func test_corvette_24_removed() -> void:
 	var def = dm.get_ship_definition("corvette_24")
-	assert_eq(def.maneuverability, "D")
+	assert_null(def, "corvette_24 should no longer exist")
+	assert_engine_error("Ship definition not found", "Expected warning for missing ship ID")
+
+# --- Gun factors, costs ---
+
+func test_frigate_38_gun_factors() -> void:
+	var def = dm.get_ship_definition("frigate_38")
+	assert_eq(def.gun_factors, {"lg": 6, "mg": 0, "cr": 4})
+	assert_eq(def.ch_modifier, -2)
+	assert_eq(def.lower_deck_modifier, -7)
+
+func test_sol_74_chart_values() -> void:
+	var def = dm.get_ship_definition("ship_of_line_74")
+	assert_eq(def.ship_class, 2)
+	assert_eq(def.hull_hp, [8, 8, 9, 9] as Array[int])
+	assert_eq(def.gun_factors, {"lg": 17, "mg": 0, "cr": 1})
+	assert_eq(def.freeboard, 4)
+	assert_eq(def.lower_deck_modifier, -5)
+	assert_eq(def.crew_count, [6, 6, 6, 6] as Array[int])
+	assert_eq(def.marine_count, 5)
+
+func test_point_value_exact_match() -> void:
+	assert_eq(dm.get_ship_definition("frigate_38").point_value("D", 4), 38.0)
+	assert_eq(dm.get_ship_definition("ship_of_line_74").point_value("A", 3), 99.0)
+
+func test_point_value_nearest_morale() -> void:
+	assert_eq(dm.get_ship_definition("frigate_38").point_value("D", 6), 36.0)
+
+func test_point_value_unknown_quality_uses_row_minimum() -> void:
+	assert_eq(dm.get_ship_definition("frigate_38").point_value("G", 4), 36.0)
+
+func test_is_french_gunned() -> void:
+	assert_false(dm.get_ship_definition("frigate_38").is_french_gunned())
+	var fr = Ship.from_dict({"nationality": "French"})
+	assert_true(fr.is_french_gunned())
+
+func test_to_dict_roundtrip_new_fields() -> void:
+	var original = dm.get_ship_definition("frigate_38")
+	var restored = Ship.from_dict(original.to_dict())
+	assert_eq(restored.gun_factors, original.gun_factors)
+	assert_eq(restored.point_costs, original.point_costs)
+	assert_eq(restored.ch_modifier, original.ch_modifier)
+	assert_eq(restored.lower_deck_modifier, original.lower_deck_modifier)
 
 # --- Ship of the Line 74 Properties ---
 
@@ -131,8 +182,8 @@ func test_sol_74_rigging_hp() -> void:
 
 func test_sol_74_hull_hp() -> void:
 	var def = dm.get_ship_definition("ship_of_line_74")
-	assert_eq(def.hull_hp[0], 9)
-	assert_eq(def.hull_hp[3], 10)
+	assert_eq(def.hull_hp[0], 8)
+	assert_eq(def.hull_hp[3], 9)
 
 # --- Ship Helper Methods ---
 
@@ -142,7 +193,7 @@ func test_get_total_crew_frigate() -> void:
 
 func test_get_total_crew_sol() -> void:
 	var def = dm.get_ship_definition("ship_of_line_74")
-	assert_eq(def.get_total_crew(), 26, "SOL total crew: 6+6+7+7 = 26")
+	assert_eq(def.get_total_crew(), 24, "SOL total crew: 6*4 = 24")
 
 func test_get_total_rigging_hp_frigate() -> void:
 	var def = dm.get_ship_definition("frigate_38")
@@ -158,7 +209,7 @@ func test_get_total_rigging_hp_sol() -> void:
 
 func test_get_total_hull_hp_sol() -> void:
 	var def = dm.get_ship_definition("ship_of_line_74")
-	assert_eq(def.get_total_hull_hp(), 37, "SOL total hull HP: 9+9+9+10 = 37")
+	assert_eq(def.get_total_hull_hp(), 34, "SOL total hull HP: 8+8+9+9 = 34")
 
 # --- Gun Counting ---
 
@@ -167,10 +218,9 @@ func test_frigate_38_gun_count() -> void:
 	# 19 port + 19 starboard + 2 bow chasers + 2 stern chasers = 42
 	assert_eq(def.get_gun_count(), 42, "Frigate should have 42 total guns")
 
-func test_corvette_24_gun_count() -> void:
-	var def = dm.get_ship_definition("corvette_24")
-	# 12 port + 12 starboard = 24
-	assert_eq(def.get_gun_count(), 24, "Corvette should have 24 total guns")
+func test_frigate_32_gun_count_empty_armament() -> void:
+	var def = dm.get_ship_definition("frigate_32")
+	assert_eq(def.get_gun_count(), 0, "frigate_32 has no display armament")
 
 func test_sol_74_gun_count() -> void:
 	var def = dm.get_ship_definition("ship_of_line_74")

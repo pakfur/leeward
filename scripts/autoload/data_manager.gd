@@ -573,39 +573,27 @@ func _create_default_ships() -> void:
 	"""Create default ship definitions for testing"""
 	ship_definitions.clear()
 
-	# Create frigate_38
-	var frigate = Ship.new()
-	frigate.name = "38-gun Frigate"
-	frigate.nationality = "British"
-	frigate.rating = 38
-	frigate.ship_class = 4
-	frigate.maneuverability = "B"
-	frigate.speed_type = "F/F"
-	frigate.type = "Frigate"
-	frigate.draft = 12
-	frigate.freeboard = 8
-	frigate.rigging_hp = [5, 5, 6, 6]
-	frigate.hull_hp = [5, 5, 5, 6]
-	frigate.crew_count = [3, 3, 3, 3]
-	frigate.marine_count = 2
-	ship_definitions["frigate_38"] = frigate
-
-	# Create corvette_24
-	var corvette = Ship.new()
-	corvette.name = "24-gun Corvette"
-	corvette.nationality = "British"
-	corvette.rating = 24
-	corvette.ship_class = 5
-	corvette.maneuverability = "C"
-	corvette.speed_type = "C/F"
-	corvette.type = "Corvette"
-	corvette.draft = 10
-	corvette.freeboard = 6
-	corvette.rigging_hp = [3, 4, 4, 4]
-	corvette.hull_hp = [3, 4, 4, 4]
-	corvette.crew_count = [2, 2, 2, 2]
-	corvette.marine_count = 2
-	ship_definitions["corvette_24"] = corvette
+	var chart_rows := {
+		"frigate_38": {"name": "38-gun Frigate", "rating": 38, "class": 3, "maneuverability": "C",
+			"speed_type": "F/F", "draft": 18, "freeboard": 6, "rigging_hp": [5, 5, 6, 6],
+			"hull_hp": [5, 5, 5, 6], "crew_count": [3, 3, 3, 3], "marine_count": 2,
+			"gun_factors": {"lg": 6, "mg": 0, "cr": 4}, "ch_modifier": -2, "lower_deck_modifier": -7,
+			"point_costs": {"A3": 54, "B3": 48, "C3": 43, "C4": 42, "C5": 41, "D4": 38, "D5": 36}},
+		"frigate_32": {"name": "32-gun Frigate", "rating": 32, "class": 3, "maneuverability": "C",
+			"speed_type": "F/S", "draft": 16, "freeboard": 5, "rigging_hp": [4, 5, 5, 5],
+			"hull_hp": [4, 4, 4, 5], "crew_count": [2, 2, 2, 3], "marine_count": 2,
+			"gun_factors": {"lg": 4, "mg": 0, "cr": 2}, "ch_modifier": -2, "lower_deck_modifier": -7,
+			"point_costs": {"A3": 37, "B3": 33, "C3": 30, "C4": 29, "C5": 28, "D4": 26, "D5": 25}},
+		"ship_of_line_74": {"name": "74-gun Ship of the Line", "rating": 74, "class": 2, "maneuverability": "B",
+			"speed_type": "L/F", "draft": 22, "freeboard": 4, "rigging_hp": [7, 7, 7, 7],
+			"hull_hp": [8, 8, 9, 9], "crew_count": [6, 6, 6, 6], "marine_count": 5,
+			"gun_factors": {"lg": 17, "mg": 0, "cr": 1}, "ch_modifier": 0, "lower_deck_modifier": -5,
+			"point_costs": {"A3": 99, "B3": 88, "C3": 79, "C4": 77, "C5": 75, "D4": 71, "D5": 69}},
+	}
+	for ship_id in chart_rows:
+		var row: Dictionary = chart_rows[ship_id]
+		row["nationality"] = "British"
+		ship_definitions[ship_id] = Ship.from_dict(row)
 
 	Trace.trace_log("DataManager", "Created default ship definitions: %d ships" % ship_definitions.size())
 
@@ -645,7 +633,7 @@ func _create_default_scenario() -> Dictionary:
 			{
 				"id": "enemy_ship",
 				"player_id": 1,
-				"ship_type": "corvette_24",
+				"ship_type": "frigate_32",
 				"position": {"q": 20, "r": 15},
 				"facing": 3,
 				"sail_state": "MS",
