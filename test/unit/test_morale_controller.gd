@@ -162,3 +162,12 @@ func test_check_events_logged() -> void:
 	assert_eq(d["rating"], 4)
 	assert_false(d["passed"])
 	assert_eq(d["quality"], "E")
+
+
+func test_unrecognised_quality_fails_as_d() -> void:
+	var ship := _make_ship("odd", "Veteran", 4, 1)
+	_dice.queue([0])
+	controller.resolve_checks(PHASE)
+	assert_eq(ship.crew_quality, "E", "an unknown quality drops as if it were D")
+	assert_engine_error("ship odd has unrecognised crew quality 'Veteran'")
+	assert_false(ship.is_struck())

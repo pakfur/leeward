@@ -42,6 +42,10 @@ func _check(ship: ShipState, phase: int) -> void:
 	var failed_at_g: bool = not passed and ship.crew_quality == "G"
 	if not passed and not failed_at_g:
 		var index: int = QUALITY_ORDER.find(ship.crew_quality)
+		if index < 0:
+			push_warning("MoraleController: ship %s has unrecognised crew quality '%s'; treated as D" % [
+				ship_id, ship.crew_quality])
+			index = QUALITY_ORDER.find("D")
 		game_state.ship_controller.set_crew_quality(ship_id, QUALITY_ORDER[mini(index + 1, QUALITY_ORDER.size() - 1)])
 	game_state.turn_log.add(PhaseEvents.Type.MORALE_CHECK, phase, ship_id, {
 		"roll": roll, "rating": rating, "passed": passed, "quality": ship.crew_quality,
