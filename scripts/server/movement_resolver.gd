@@ -449,7 +449,12 @@ func _apply_collision(
 		rig_ev.detail = "rigging_loss=%d from sail_state=%s" % [rigging_loss, state_a.sail_state]
 		result_a.events.append(rig_ev)
 
-	var fouled: bool = roll_fouling(state_a, ship_map[ship_b_id])
+	# Only a free, unfouled pair can foul (as in DriftResolver._try_foul): a ship already fouled
+	# with a third ship, before or earlier in this resolution, keeps its partner and no roll is made.
+	var state_b: ShipState = ship_map[ship_b_id]
+	var either_fouled: bool = state_a.fouled_with != "" or state_b.fouled_with != "" \
+			or result_a.fouled_with != "" or result_b.fouled_with != ""
+	var fouled: bool = not either_fouled and roll_fouling(state_a, state_b)
 	if fouled:
 		result_a.fouled_with = ship_b_id
 		result_b.fouled_with = ship_a_id
@@ -727,6 +732,13 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			push_error("MovementResolver: No ship_controller available")
 
 func _apply_rigging_damage(ship_id: String, damage: int, sc: ShipStateController) -> void:
+	## Collision rigging loss follows the damage rules (dismasting sets NS and notes a morale
+	## check; the loss is logged). The direct fallback is only for resolvers built without one.
+	var damage_controller = game_state.get("damage_controller")
+	if damage_controller != null and game_state.get("turn_log") != null:
+		damage_controller.apply_hits(ship_id, damage, 0, 0, "other",
+				TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION)
+		return
 	var ship_state = game_state.get_ship(ship_id)
 	if not ship_state:
 		return
