@@ -51,6 +51,10 @@ var rng: RandomNumberGenerator = null
 # All die rolls (d10 is 0-9); built on rng
 var dice: Dice = null
 
+# Event log for the current turn, and finished logs by turn number
+var turn_log: PhaseEvents.PhaseLog = null
+var turn_logs: Dictionary = {}  # turn -> PhaseEvents.PhaseLog
+
 # State history tracking (indexed by turn number)
 var environment_history: Array[EnvironmentState] = []  # Historical environment states
 var ship_history: Dictionary = {}  # ship_id -> Array[ShipState] for historical ship states
@@ -74,6 +78,7 @@ func _initialize_server_controllers() -> void:
 	if rng == null:
 		rng = RandomNumberGenerator.new()
 	dice = Dice.new(rng)
+	turn_log = PhaseEvents.PhaseLog.new()
 	phase_controller = TurnPhaseController.new(self)
 	ship_controller = ShipStateController.new(self)
 	environment_controller = EnvironmentController.new(self)
@@ -121,6 +126,8 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	rng = RandomNumberGenerator.new()
 	rng.seed = seed_value
 	dice = Dice.new(rng)
+	turn_log = PhaseEvents.PhaseLog.new()
+	turn_logs.clear()
 	Trace.trace_log("GameState", "RNG seeded", seed_value)
 
 	# Clear any existing state history
