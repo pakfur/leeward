@@ -469,6 +469,24 @@ func _update_ship_from_data(ship: ShipState, data: Dictionary) -> void:
 		for hp in rigging_hp_data:
 			ship.rigging_current_hp.append(int(hp))
 	ship.hull_current_hp = data.get("hull_current_hp", ship.hull_current_hp)
-	ship.crew_count = data.get("crew_count", ship.crew_count)
-	ship.crew_morale = data.get("crew_morale", ship.crew_morale)
+	if data.has("crew_count"):
+		ship.crew_count = ShipState._int_array(data["crew_count"])
+	ship.marine_count = data.get("marine_count", ship.marine_count)
+	ship.crew_quality = data.get("crew_quality", ship.crew_quality)
+	ship.morale_rating = int(data.get("morale_rating", ship.morale_rating))
+	ship.status = int(data.get("status", ship.status)) as ShipState.Status
+	if data.has("guns_dismounted"):
+		ship.guns_dismounted = ShipState._int_array(data["guns_dismounted"])
+	if data.has("initial_broadside_fired"):
+		ship.initial_broadside_fired.clear()
+		for fired in data["initial_broadside_fired"]:
+			ship.initial_broadside_fired.append(bool(fired))
+	ship.sail_change = (data.get("sail_change", ship.sail_change) as Dictionary).duplicate(true)
+	ship.moved_this_turn = data.get("moved_this_turn", ship.moved_this_turn)
+	ship.pending_morale_checks = int(data.get("pending_morale_checks", ship.pending_morale_checks))
+	if data.has("morale_triggers_used"):
+		ship.morale_triggers_used.clear()
+		for trigger in data["morale_triggers_used"]:
+			ship.morale_triggers_used.append(str(trigger))
+	ship.unfoul_attempts = int(data.get("unfoul_attempts", ship.unfoul_attempts))
 	ship.plotted_actions = data.get("plotted_actions", ship.plotted_actions)

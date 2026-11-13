@@ -200,35 +200,163 @@ func repair_hull(ship_id: String, section: int, repair_amount: int) -> bool:
 
 ## Crew Management
 
-func set_crew_count(ship_id: String, count: int) -> bool:
-	"""SERVER ONLY: Set crew count"""
-	if not is_server:
-		push_error("ShipStateController: Cannot modify crew on client")
-		return false
-
-	var ship = game_state.get_ship(ship_id)
-	if not ship:
-		push_error("[Server] Ship not found: %s" % ship_id)
-		return false
-
-	ship.crew_count = max(0, count)
-	ship_state_changed.emit(ship_id)
-	return true
-
-func set_crew_morale(ship_id: String, morale: int) -> bool:
-	"""SERVER ONLY: Set crew morale"""
+func set_morale_rating(ship_id: String, morale: int) -> bool:
+	"""SERVER ONLY: Set crew morale rating"""
 	if not is_server:
 		push_error("ShipStateController: Cannot modify morale on client")
 		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.morale_rating = clampi(morale, 2, 5)
+	ship_state_changed.emit(ship_id)
+	return true
 
+func set_crew_quality(ship_id: String, quality: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify crew quality on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.crew_quality = quality
+	ship_state_changed.emit(ship_id)
+	return true
+
+func remove_crew_box(ship_id: String, marine: bool) -> int:
+	"""SERVER ONLY: Remove one crew box. Takes the preferred type, else the other.
+	Returns the sailor section emptied (0-3), 4 if marines emptied, -1 otherwise."""
+	if not is_server:
+		push_error("ShipStateController: Cannot modify crew on client")
+		return -1
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return -1
+	var emptied := -1
+	var section: int = _first_sailor_section(ship)
+	var take_marine: bool = ship.marine_count > 0 and (marine or section == -1)
+	if take_marine:
+		ship.marine_count -= 1
+		if ship.marine_count == 0:
+			emptied = 4
+	else:
+		if section != -1:
+			ship.crew_count[section] -= 1
+			if ship.crew_count[section] == 0:
+				emptied = section
+	ship_state_changed.emit(ship_id)
+	return emptied
+
+func _first_sailor_section(ship: ShipState) -> int:
+	for i in range(ship.crew_count.size()):
+		if ship.crew_count[i] > 0:
+			return i
+	return -1
+
+func note_morale_check(ship_id: String, trigger: String, count: int = 1) -> bool:
+	"""SERVER ONLY: Queue morale checks for a trigger. False if the trigger was already used."""
+	if not is_server:
+		push_error("ShipStateController: Cannot modify morale checks on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	if ship.morale_triggers_used.has(trigger):
+		return false
+	ship.morale_triggers_used.append(trigger)
+	ship.pending_morale_checks += count
+	ship_state_changed.emit(ship_id)
+	return true
+
+func clear_pending_morale_checks(ship_id: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify morale checks on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.pending_morale_checks = 0
+	ship_state_changed.emit(ship_id)
+	return true
+
+## Combat and turn-loop state
+
+func set_status(ship_id: String, status: ShipState.Status) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify status on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.status = status
+	ship_state_changed.emit(ship_id)
+	return true
+
+func add_guns_dismounted(ship_id: String, amount: int) -> bool:
+	"""SERVER ONLY: Add dismounted guns to both sides"""
+	if not is_server:
+		push_error("ShipStateController: Cannot modify guns on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	for side in [ShipState.PORT, ShipState.STARBOARD]:
+		ship.guns_dismounted[side] += amount
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_initial_broadside_fired(ship_id: String, side: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify broadside on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	if side != ShipState.PORT and side != ShipState.STARBOARD:
+		push_error("[Server] Invalid side: %d" % side)
+		return false
+	ship.initial_broadside_fired[side] = true
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_sail_change(ship_id: String, change: Dictionary) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify sail change on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.sail_change = change.duplicate(true)
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_moved_this_turn(ship_id: String, moved: bool) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify moved_this_turn on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.moved_this_turn = moved
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_unfoul_attempts(ship_id: String, attempts: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify unfoul attempts on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.unfoul_attempts = attempts
+	ship_state_changed.emit(ship_id)
+	return true
+
+func _server_ship(ship_id: String) -> ShipState:
 	var ship = game_state.get_ship(ship_id)
 	if not ship:
 		push_error("[Server] Ship not found: %s" % ship_id)
-		return false
-
-	ship.crew_morale = clamp(morale, 2, 5)
-	ship_state_changed.emit(ship_id)
-	return true
+	return ship
 
 ## Plotted Actions
 
@@ -265,6 +393,7 @@ func set_fouled_with(ship_id: String, fouled_with: String) -> bool:
 		push_error("[Server] Ship not found: %s" % ship_id)
 		return false
 	ship.fouled_with = fouled_with
+	ship.unfoul_attempts = 0
 	ship_state_changed.emit(ship_id)
 	return true
 

@@ -64,11 +64,11 @@ func _update_display() -> void:
 		hull_label.text = hull_text
 
 	if crew_label:
-		crew_label.text = "Crew: %d (%s)" % [s.crew_morale, s.crew_quality]
+		crew_label.text = "Crew: %d (%s)" % [s.morale_rating, s.crew_quality]
 
 	if morale_label:
 		var morale_names = ["", "", "Low", "Fair", "Good", "High"]
-		morale_label.text = "Morale: %s (%d)" % [morale_names[s.crew_morale] if s.crew_morale < morale_names.size() else "Unknown", s.crew_morale]
+		morale_label.text = "Morale: %s (%d)" % [morale_names[s.morale_rating] if s.morale_rating < morale_names.size() else "Unknown", s.morale_rating]
 
 	if rigging_label:
 		# Read-only query — OK from UI layer  SCV:ALLOW
