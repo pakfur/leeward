@@ -8,6 +8,7 @@ signal undo_all_pressed()
 signal submit_pressed()
 signal cancel_pressed()
 signal end_planning_pressed()
+signal sail_change_requested(ship_id: String, target: String)  ## target "" cancels the plotted order
 
 const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
 
@@ -26,12 +27,22 @@ const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
 @onready var cancel_button: Button = %CancelButton
 @onready var tacking_label: Label = %TackingLabel
 
+# Sail row
+@onready var sail_row: VBoxContainer = %SailRow
+@onready var sail_current_label: Label = %SailCurrentLabel
+@onready var sail_status_label: Label = %SailStatusLabel
+@onready var sail_buttons: VBoxContainer = %SailButtons
+@onready var sail_cancel_button: Button = %SailCancelButton
+@onready var sail_hint_label: Label = %SailHintLabel
+@onready var sail_error_label: Label = %SailErrorLabel
+
 # Track state
 var ship_list_items: Dictionary = {}  # ship_id -> ShipListItem
 var selected_ship_id: String = ""
 var action_states: Dictionary = {}  # ship_id -> {action_type -> bool}
 var submitted_ships: Dictionary = {}  # ship_id -> bool
 var total_player_ships: int = 0
+var ship_states: Dictionary = {}  # ship_id -> ShipState (read-only references)
 
 func _ready() -> void:
 	if undo_button:
@@ -45,6 +56,8 @@ func _ready() -> void:
 	if end_planning_button:
 		end_planning_button.pressed.connect(func(): end_planning_pressed.emit())
 		end_planning_button.disabled = true
+	if sail_cancel_button:
+		sail_cancel_button.pressed.connect(func(): _request_sail_change(""))
 
 func setup_for_player(player_ships: Array[ShipState]) -> void:
 	clear_ships()
@@ -58,6 +71,7 @@ func setup_for_player(player_ships: Array[ShipState]) -> void:
 		_select_ship(player_ships[0].ship_id)
 
 	_update_end_planning_state()
+	_update_instructions()
 
 func clear_ships() -> void:
 	for child in ship_list_container.get_children():
@@ -67,7 +81,9 @@ func clear_ships() -> void:
 	selected_ship_id = ""
 	action_states.clear()
 	submitted_ships.clear()
+	ship_states.clear()
 	total_player_ships = 0
+	_refresh_sail_row()
 
 func _add_ship_to_list(ship_state: ShipState) -> void:
 	var list_item = ShipListItem.instantiate()
@@ -89,7 +105,9 @@ func _add_ship_to_list(ship_state: ShipState) -> void:
 		"crew": false,
 		"maintenance": false
 	}
-	submitted_ships[ship_state.ship_id] = false
+	# Ships that cannot plot movement (fouled, struck, dismasted) need nothing more from the player
+	ship_states[ship_state.ship_id] = ship_state
+	submitted_ships[ship_state.ship_id] = not PlanningSailUi.can_plot_movement(ship_state)
 
 func _on_ship_item_selected(ship_id: String) -> void:
 	_select_ship(ship_id)
@@ -104,6 +122,8 @@ func _select_ship(ship_id: String) -> void:
 	selected_ship_id = ship_id
 	if ship_list_items.has(ship_id):
 		ship_list_items[ship_id].set_selected_state(true)
+	sail_error_label.visible = false
+	_refresh_sail_row()
 
 func _on_action_button_pressed(ship_id: String, action_type: String) -> void:
 	if not action_states.has(ship_id):
@@ -131,6 +151,7 @@ func get_action_state(ship_id: String, action_type: String) -> bool:
 func update_ship_display(ship_state: ShipState) -> void:
 	if ship_list_items.has(ship_state.ship_id):
 		ship_list_items[ship_state.ship_id].setup(ship_state)
+	_refresh_sail_row()
 
 func is_ship_submitted(ship_id: String) -> bool:
 	return submitted_ships.get(ship_id, false)
@@ -147,6 +168,52 @@ func get_submitted_count() -> int:
 		if submitted_ships[ship_id]:
 			count += 1
 	return count
+
+# ============================================================================
+# Sail Row
+# ============================================================================
+
+## Shows the server's answer to a sail request: "" refreshes the row, anything else is the reason.
+func show_sail_result(reason: String) -> void:
+	_refresh_sail_row()
+	sail_error_label.text = reason
+	sail_error_label.visible = reason != ""
+
+func _request_sail_change(target: String) -> void:
+	if selected_ship_id != "":
+		sail_change_requested.emit(selected_ship_id, target)
+
+func _refresh_sail_row() -> void:
+	if not sail_row:
+		return
+	var ship: ShipState = ship_states.get(selected_ship_id)
+	if ship == null:
+		sail_row.visible = false
+		return
+	var targets: Array = GameState.sail_controller.available_targets(selected_ship_id)
+	var costs := {}
+	for target in targets:
+		costs[target] = GameState.sail_controller.change_cost(selected_ship_id, target)
+	var row := PlanningSailUi.sail_row(ship, targets, costs)
+
+	sail_row.visible = row["mode"] != PlanningSailUi.Mode.NONE
+	sail_current_label.text = "Now: %s" % row["current"]
+	sail_status_label.text = row["text"]
+	sail_status_label.visible = row["text"] != ""
+	sail_hint_label.text = row["hint"]
+	sail_hint_label.visible = row["hint"] != ""
+	sail_cancel_button.visible = row["can_cancel"]
+	sail_error_label.visible = false
+
+	for child in sail_buttons.get_children():
+		sail_buttons.remove_child(child)
+		child.queue_free()
+	for entry in row["buttons"]:
+		var button := Button.new()
+		button.text = entry["text"]
+		var target: String = entry["target"]
+		button.pressed.connect(func(): _request_sail_change(target))
+		sail_buttons.add_child(button)
 
 # ============================================================================
 # Plotting Controls
@@ -235,7 +302,17 @@ func _update_instructions() -> void:
 	if not instructions_label:
 		return
 	if are_all_ships_submitted():
-		instructions_label.text = "All ships plotted. Press End Planning to proceed."
+		if get_submitted_count() > 0 and _unable_count() == total_player_ships:
+			instructions_label.text = "No ship can move this turn. Press End Planning to proceed."
+		else:
+			instructions_label.text = "All ships plotted. Press End Planning to proceed."
 	else:
 		var remaining = total_player_ships - get_submitted_count()
 		instructions_label.text = "%d ship(s) need movement plots. Click Movement to re-plot." % remaining
+
+func _unable_count() -> int:
+	var count := 0
+	for ship in ship_states.values():
+		if not PlanningSailUi.can_plot_movement(ship):
+			count += 1
+	return count

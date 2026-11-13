@@ -6,6 +6,7 @@ signal action_button_pressed(action_type: String)
 
 @onready var ship_icon: TextureRect = %ShipIcon
 @onready var ship_name_label: Label = %ShipNameLabel
+@onready var badge_label: Label = %BadgeLabel
 @onready var speed_label: Label = %SpeedLabel
 @onready var stats_label: Label = %StatsLabel
 @onready var movement_button: Button = %MovementButton
@@ -89,6 +90,16 @@ func _update_display() -> void:
 		var sails_str = "%s/%s" % [ship_state.sail_state, ship_state.rigging_current_hp]
 
 		stats_label.text = "Hull: %s  Crew: %s  Sails: %s" % [hull_str, crew_str, sails_str]
+
+	# Status badge (fouled / struck / dismasted) locks out movement plotting
+	var badge := PlanningSailUi.status_badge(ship_state)
+	if badge_label:
+		badge_label.text = badge
+		badge_label.visible = badge != ""
+	if movement_button:
+		var can_move := PlanningSailUi.can_plot_movement(ship_state)
+		movement_button.disabled = not can_move
+		movement_button.tooltip_text = "" if can_move else PlanningSailUi.movement_block_reason(ship_state)
 
 	# Ship icon
 	if ship_icon:

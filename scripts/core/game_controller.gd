@@ -464,6 +464,7 @@ func _enter_planning_phase() -> void:
 		current_planning_ui.submit_pressed.connect(_on_plotting_submit_pressed)
 		current_planning_ui.cancel_pressed.connect(_on_plotting_cancel_pressed)
 		current_planning_ui.end_planning_pressed.connect(_on_end_planning_pressed)
+		current_planning_ui.sail_change_requested.connect(_on_sail_change_requested)
 
 	# Load into context panel (must be done before setup to ensure @onready nodes are available)
 	if context_panel:
@@ -494,6 +495,15 @@ func _on_planning_ship_selected(ship_id: String) -> void:
 
 	# Select ship on map (highlight)
 	_select_ship(ship_id)
+
+func _on_sail_change_requested(ship_id: String, target: String) -> void:
+	# Single-player: plot player 0's sail change under the server guard  SCV:ALLOW
+	var reason := "Sail changes can only be ordered on the server"
+	if GameState.is_server and GameState.sail_controller:
+		reason = GameState.sail_controller.plot_sail_change(HUMAN_PLAYER_ID, ship_id, target)
+	Trace.trace_log("GameController", "Sail change %s -> '%s': %s" % [ship_id, target, reason if reason != "" else "accepted"])
+	if current_planning_ui:
+		current_planning_ui.show_sail_result(reason)
 
 func _on_planning_action_toggled(ship_id: String, action_type: String, active: bool) -> void:
 	Trace.trace_log("GameController", "Action '%s' toggled to %s for ship %s" % [action_type, active, ship_id])
