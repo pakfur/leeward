@@ -94,6 +94,15 @@ static func syncs_views(event: PhaseEvents.PhaseEvent) -> bool:
 	return event.type == PhaseEvents.Type.DAMAGE or event.type == PhaseEvents.Type.STRIKE
 
 
+## ship_id -> "<name> (yours)" / "<name> (enemy)". The suffix is always added so ships that
+## share a type name (scenarios do not name ships individually) stay distinguishable in the log.
+static func log_names(ships: Array) -> Dictionary:
+	var names := {}
+	for ship in ships:
+		names[ship.ship_id] = "%s (%s)" % [ship.ship_name, "yours" if ship.player_id == 0 else "enemy"]
+	return names
+
+
 ## Text of the most recent visible event, for the collapsed bar.
 static func latest_line(turn_log: PhaseEvents.PhaseLog, ship_names: Dictionary, limit: int = -1) -> String:
 	if turn_log == null:
@@ -299,10 +308,7 @@ func _signature_now() -> String:
 
 
 func _ship_names() -> Dictionary:
-	var names := {}
-	for ship in GameState.get_all_ships():
-		names[ship.ship_id] = ship.ship_name
-	return names
+	return log_names(GameState.get_all_ships())
 
 
 func _heading_label(text: String) -> Label:

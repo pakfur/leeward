@@ -199,3 +199,24 @@ func test_badges_for_fouled_struck_and_dismasted() -> void:
 	s.status = ShipState.Status.STRUCK
 	s.rigging_current_hp = [0, 0, 0, 0] as Array[int]
 	assert_eq(StatusPanel.badges(s), ["FOULED", "STRUCK", "DISMASTED"])
+
+
+# --- Ship names in log lines -------------------------------------------------------
+
+func test_log_names_tell_the_sides_apart() -> void:
+	var mine := _make_ship("s1")
+	var theirs := _make_ship("s2")
+	theirs.ship.player_id = 1
+	var names: Dictionary = LogPanel.log_names([mine, theirs])
+	assert_eq(names["s1"], "HMS Test (yours)")
+	assert_eq(names["s2"], "HMS Test (enemy)")
+
+
+func test_log_names_feed_event_text() -> void:
+	var mine := _make_ship("s1")
+	var theirs := _make_ship("s2")
+	theirs.ship.player_id = 1
+	var turn_log := PhaseEvents.PhaseLog.new()
+	turn_log.add(PhaseEvents.Type.STRIKE, COMBAT, "s2", {"reason": "morale"})
+	assert_eq(LogPanel.latest_line(turn_log, LogPanel.log_names([mine, theirs])),
+		"HMS Test (enemy) strikes (morale)")

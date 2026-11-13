@@ -123,3 +123,37 @@ func test_game_state_has_turn_log_and_start_new_game_replaces_it() -> void:
 	assert_not_null(GameState.turn_log)
 	assert_ne(GameState.turn_log, old)
 	assert_true(GameState.turn_logs.is_empty())
+
+
+func test_drift_renders_hexes_as_coordinates() -> void:
+	var log := PhaseEvents.PhaseLog.new()
+	var text := log.add(PhaseEvents.Type.DRIFT, 5, "s1", {
+		"roll": 6, "needed": 5, "modifier": 0, "drifted": true,
+		"from": {"q": 3, "r": -2}, "to": {"q": 2, "r": -2}}).to_text(NAMES)
+	assert_string_contains(text, "drifts from (3, -2) to (2, -2)")
+	assert_string_contains(text, "roll 6")
+	assert_string_contains(text, "needed 5")
+	assert_false(text.contains("{"), "no raw dictionary in: %s" % text)
+
+
+func test_blocked_drift_keeps_numbers_and_shows_position() -> void:
+	var log := PhaseEvents.PhaseLog.new()
+	var text := log.add(PhaseEvents.Type.DRIFT, 5, "s1", {
+		"roll": 7, "needed": 5, "modifier": 0, "drifted": false, "blocked": "map edge",
+		"from": {"q": 3, "r": -2}}).to_text(NAMES)
+	assert_string_contains(text, "roll 7")
+	assert_string_contains(text, "needed 5")
+	assert_string_contains(text, "blocked by map edge")
+	assert_string_contains(text, "(3, -2)")
+	assert_false(text.contains("{"), "no raw dictionary in: %s" % text)
+
+
+func test_failed_drift_roll_holds_position() -> void:
+	var log := PhaseEvents.PhaseLog.new()
+	var text := log.add(PhaseEvents.Type.DRIFT, 5, "s1", {
+		"roll": 2, "needed": 5, "modifier": 0, "drifted": false,
+		"from": {"q": 3, "r": -2}}).to_text(NAMES)
+	assert_string_contains(text, "holds position")
+	assert_string_contains(text, "roll 2")
+	assert_string_contains(text, "needed 5")
+	assert_false(text.contains("{"), "no raw dictionary in: %s" % text)

@@ -127,12 +127,27 @@ class PhaseEvent extends RefCounted:
 		return text
 
 	func _drift_text(who: String) -> String:
-		var result := "drifts" if data.get("drifted", false) else "holds position"
-		var text := "%s drift check: roll %s, needed %s: %s" % [
-			who, _val("roll"), _val("needed"), result]
-		if data.has("from") and data.has("to"):
-			text += " (%s → %s)" % [str(data["from"]), str(data["to"])]
+		var text := "%s drift check: roll %s, needed %s: " % [who, _val("roll"), _val("needed")]
+		var from_hex := _hex_text("from")
+		if data.get("drifted", false):
+			text += "drifts"
+			if from_hex != "" and data.has("to"):
+				text += " from %s to %s" % [from_hex, _hex_text("to")]
+			return text
+		if data.has("blocked"):
+			text += "blocked by %s, holds position" % data["blocked"]
+		else:
+			text += "holds position"
+		if from_hex != "":
+			text += " at %s" % from_hex
 		return text
+
+	## "(q, r)" for a {"q", "r"} dictionary stored under `key`, "" when absent or malformed.
+	func _hex_text(key: String) -> String:
+		var hex = data.get(key)
+		if hex is Dictionary and hex.has("q") and hex.has("r"):
+			return "(%d, %d)" % [int(hex["q"]), int(hex["r"])]
+		return ""
 
 	func _sail_text(who: String) -> String:
 		if data.has("cancelled"):
