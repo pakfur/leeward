@@ -31,6 +31,7 @@ func before_each() -> void:
 	# Seed all RNGs for determinism in tests
 	if not GameState.rng:
 		GameState.rng = RandomNumberGenerator.new()
+		GameState.dice = Dice.new(GameState.rng)
 	GameState.rng.seed = 100
 
 	var test_rng = RandomNumberGenerator.new()
@@ -132,13 +133,8 @@ func _run_one_turn(phase_controller: TurnPhaseController) -> void:
 	assert_eq(phase_controller.current_phase, TurnPhaseController.GamePhase.POST_COMBAT,
 		"Should be in POST_COMBAT after stubbed phases")
 
-	# POST_COMBAT → END_TURN (manual advance required)
-	phase_controller.advance_phase()
-	assert_eq(phase_controller.current_phase, TurnPhaseController.GamePhase.END_TURN,
-		"Should be in END_TURN")
-
-	# END_TURN → new turn → ENVIRONMENT (auto-advances) → PLANNING
-	phase_controller.advance_phase()
+	# POST_COMBAT waits for End Turn; no victory, so the next turn starts (ENVIRONMENT auto-advances)
+	phase_controller.player_end_turn(0)
 	assert_eq(phase_controller.current_phase, TurnPhaseController.GamePhase.PLANNING,
 		"Should be back in PLANNING for next turn")
 
@@ -253,6 +249,7 @@ func test_deterministic_resolution_with_same_seed() -> void:
 		# Deterministic seeds — same for both runs
 		if not GameState.rng:
 			GameState.rng = RandomNumberGenerator.new()
+			GameState.dice = Dice.new(GameState.rng)
 		GameState.rng.seed = 500
 
 		var test_rng = RandomNumberGenerator.new()
@@ -284,8 +281,7 @@ func test_deterministic_resolution_with_same_seed() -> void:
 				run_log.append(turn_data)
 
 			pc.on_playback_completed()
-			pc.advance_phase()  # POST_COMBAT → END_TURN
-			pc.advance_phase()  # END_TURN → new turn → ENVIRONMENT → PLANNING
+			pc.player_end_turn(0)  # POST_COMBAT → END_TURN → new turn → ENVIRONMENT → PLANNING
 
 		logs.append(run_log)
 

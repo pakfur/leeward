@@ -766,16 +766,15 @@ func _enter_post_combat_phase() -> void:
 	if not skip_post_combat_delay:
 		await get_tree().create_timer(2.0).timeout
 
-	# Single-player shortcut: advance phase under server guard  SCV:ALLOW
+	# Single-player shortcut: end the turn under server guard  SCV:ALLOW
 	if GameState.is_server and GameState.phase_controller:
-		GameState.phase_controller.advance_phase()
+		GameState.phase_controller.player_end_turn(0)
 	else:
 		push_warning("Client phase advance not yet implemented - needs network layer")
 
 func _end_turn() -> void:
-	# Single-player shortcut: advance phase under server guard  SCV:ALLOW
-	if GameState.is_server and GameState.phase_controller:
-		GameState.phase_controller.advance_phase()
+	# END_TURN advances itself on the server (next turn, or game over); nothing to do here
+	pass
 
 func _sync_all_views() -> void:
 	for ship_id in ship_views.keys():

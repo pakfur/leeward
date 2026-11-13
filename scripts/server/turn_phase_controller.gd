@@ -8,6 +8,7 @@ signal turn_changed(turn_number: int)
 signal resolution_log_ready(log: MovementTypes.ResolutionLog)
 signal fire_declaration_requested()
 signal combat_log_ready(log: PhaseEvents.PhaseLog)
+signal game_over(result: Dictionary)
 
 enum GamePhase {
 	SETUP,
@@ -34,6 +35,8 @@ var _pending_resolution_log: MovementTypes.ResolutionLog = null
 var combat_step: CombatStep = CombatStep.NONE
 var _fire_orders: Array = [[], []]  # per player: Array[GunneryTypes.FireOrder]
 var _fire_ready: Array[bool] = [false, false]
+## Set when END_TURN finds a victory: {"winner", "reason", "points", "turn"}. {} while the game runs.
+var game_result: Dictionary = {}
 
 # Reference to game state (authoritative on server)
 var game_state: Node = null
@@ -48,6 +51,11 @@ func start_new_game() -> void:
 		return
 
 	current_turn = 1
+	game_result = {}
+	combat_step = CombatStep.NONE
+	_fire_orders = [[], []]
+	_fire_ready = [false, false]
+	_pending_resolution_log = null
 	current_phase = GamePhase.SETUP  # Start in SETUP so advance_phase() enters ENVIRONMENT
 
 	Trace.trace_log("TurnPhase", "Game started - Turn: %d" % current_turn)
@@ -58,6 +66,8 @@ func advance_phase() -> void:
 	if not is_server:
 		push_error("TurnPhaseController: Cannot advance phase on client")
 		return
+	if not game_result.is_empty():
+		return  # Game over: the phase stays END_TURN
 
 	match current_phase:
 		GamePhase.SETUP:
@@ -79,7 +89,7 @@ func advance_phase() -> void:
 		GamePhase.MESSAGE_DELIVERY:
 			_enter_post_combat_phase()
 		GamePhase.POST_COMBAT:
-			_enter_end_turn_phase()
+			push_warning("TurnPhaseController: POST_COMBAT waits for player_end_turn(); advance_phase ignored")
 		GamePhase.END_TURN:
 			_start_new_turn()
 
@@ -123,6 +133,9 @@ func player_submit_plan(player_id: int) -> bool:
 	"""SERVER ONLY: Validate and accept player plan submission"""
 	if not is_server:
 		push_error("TurnPhaseController: Cannot submit plan on client")
+		return false
+
+	if not game_result.is_empty():
 		return false
 
 	if current_phase != GamePhase.PLANNING:
@@ -208,6 +221,8 @@ func player_submit_fire_orders(player_id: int, orders: Array) -> String:
 	if not is_server:
 		push_error("TurnPhaseController: Cannot submit fire orders on client")
 		return "fire orders can only be submitted on the server"
+	if not game_result.is_empty():
+		return "the game is over"
 	if current_phase != GamePhase.COMBAT_RESOLUTION or combat_step != CombatStep.DECLARE:
 		return "fire orders are not being accepted now"
 	if player_id < 0 or player_id >= _fire_ready.size():
@@ -287,23 +302,51 @@ func _enter_message_delivery_phase() -> void:
 	advance_phase()
 
 func _enter_post_combat_phase() -> void:
-	"""SERVER ONLY: Enter post combat phase"""
+	"""SERVER ONLY: Enter post combat phase and wait for the player's End Turn"""
 	current_phase = GamePhase.POST_COMBAT
 	phase_changed.emit(current_phase)
-	Trace.trace_log("TurnPhase", "Phase: POST_COMBAT - Player interaction required")
+	Trace.trace_log("TurnPhase", "Phase: POST_COMBAT - waiting for End Turn")
 	# TODO: Allow grappling/ungrappling, unfouling, fire fighting
-	# Server waits for manual advance
+
+func player_end_turn(player_id: int) -> bool:
+	"""SERVER ONLY: The human player ends the turn. Only valid in POST_COMBAT; the AI needs no call."""
+	if not is_server:
+		push_error("TurnPhaseController: Cannot end turn on client")
+		return false
+	if not game_result.is_empty() or current_phase != GamePhase.POST_COMBAT:
+		return false
+	if player_id != 0:
+		return false
+	Trace.trace_log("TurnPhase", "Player %d ended the turn" % player_id)
+	_enter_end_turn_phase()
+	return true
 
 func _enter_end_turn_phase() -> void:
-	"""SERVER ONLY: Enter end turn phase"""
+	"""SERVER ONLY: Enter end turn phase - stop with a result, or roll over to the next turn"""
 	current_phase = GamePhase.END_TURN
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: END_TURN")
-	# TODO: Check victory/defeat conditions
+
+	var result: Dictionary = game_state.victory_controller.check(current_turn)
+	if result.is_empty():
+		_start_new_turn()
+		return
+
+	game_result = result
+	game_state.turn_log.add(PhaseEvents.Type.VICTORY, current_phase, "",
+			{"winner": result["winner"], "reason": result["reason"]})
+	game_state.turn_logs[current_turn] = game_state.turn_log
+	Trace.trace_log("TurnPhase", "Game over", result)
+	game_over.emit(result)
 
 func _start_new_turn() -> void:
 	"""SERVER ONLY: Start a new turn"""
+	for ship: ShipState in game_state.get_all_ships():
+		game_state.ship_controller.clear_turn_flags(ship.ship_id)
+	game_state.turn_logs[current_turn] = game_state.turn_log
 	current_turn += 1
+	game_state.turn_log = PhaseEvents.PhaseLog.new()
+	game_state.turn_log.turn = current_turn
 	turn_changed.emit(current_turn)
 	Trace.trace_log("TurnPhase", "=== Turn %d ===" % current_turn)
 	# Directly enter environment phase (we're already inside advance_phase() call chain)

@@ -58,6 +58,7 @@ var sail_controller: SailController = null
 var drift_resolver: DriftResolver = null
 var fouling_controller: FoulingController = null
 var morale_controller: MoraleController = null
+var victory_controller: VictoryController = null
 
 # Event log for the current turn, and finished logs by turn number
 var turn_log: PhaseEvents.PhaseLog = null
@@ -94,7 +95,9 @@ func _initialize_server_controllers() -> void:
 	drift_resolver = DriftResolver.new(self)
 	fouling_controller = FoulingController.new(self)
 	morale_controller = MoraleController.new(self)
+	victory_controller = VictoryController.new(self)
 	turn_log = PhaseEvents.PhaseLog.new()
+	turn_log.turn = 1
 	phase_controller = TurnPhaseController.new(self)
 	ship_controller = ShipStateController.new(self)
 	environment_controller = EnvironmentController.new(self)
@@ -143,6 +146,7 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	rng.seed = seed_value
 	dice = Dice.new(rng)
 	turn_log = PhaseEvents.PhaseLog.new()
+	turn_log.turn = 1
 	turn_logs.clear()
 	Trace.trace_log("GameState", "RNG seeded", seed_value)
 

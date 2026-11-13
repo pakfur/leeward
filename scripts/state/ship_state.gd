@@ -51,6 +51,7 @@ var ship_type: String:
 @export var crew_count: Array[int] = [0, 0, 0, 0] # boxes in each of the 4 sailor sections
 @export var marine_count: int = 0 # number of "marines" 0-12
 @export var crew_quality: String = "B" # A=Elite, B=Veteran, C-D=Trained, E=Green, F-G=Demoralized
+@export var starting_crew_quality: String = "B" # crew quality when the game began; fixes the ship's victory-point value
 
 # Combat and turn-loop state (mutated only through ShipStateController)
 @export var status: Status = Status.ACTIVE
@@ -153,6 +154,7 @@ func serialize() -> Dictionary:
 		"hull_current_hp": hull_current_hp,
 		"morale_rating": morale_rating,
 		"crew_quality": crew_quality,
+		"starting_crew_quality": starting_crew_quality,
 		"crew_count": crew_count,
 		"marine_count": marine_count,
 		"status": int(status),
@@ -208,6 +210,7 @@ static func deserialize(data: Dictionary) -> ShipState:
 
 	state.morale_rating = int(data.get("morale_rating", data.get("crew_morale", 4)))
 	state.crew_quality = data.get("crew_quality", "B")
+	state.starting_crew_quality = data.get("starting_crew_quality", state.crew_quality)
 	var crew_count_data = data.get("crew_count", [0, 0, 0, 0])
 	state.crew_count.clear()
 	for ct in crew_count_data:
@@ -284,6 +287,7 @@ func initialize_from_scenario(data: Dictionary, ship_ref: Ship) -> void:
 	# Crew - counts come from the ship definition; quality and morale from the scenario
 	morale_rating = int(data.get("morale_rating", data.get("crew_morale", 4)))
 	crew_quality = DataManager._normalize_crew_quality(str(data.get("crew_quality", "B")))
+	starting_crew_quality = crew_quality
 	crew_count.clear()
 	marine_count = 0
 	if ship_ref:
