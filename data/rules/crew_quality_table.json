@@ -1,0 +1,10 @@
+{
+  "_doc": "Boarding Combat and Skill Factors (1997 chart p.109). sk = skill modifier (SK Mod.); bcf_sailor / bcf_marine = Boarding Combat Factors per crew box (S / M).",
+  "A": {"sk": -3, "bcf_sailor": 8, "bcf_marine": 10},
+  "B": {"sk": -2, "bcf_sailor": 7, "bcf_marine": 9},
+  "C": {"sk": -1, "bcf_sailor": 6, "bcf_marine": 8},
+  "D": {"sk": 0, "bcf_sailor": 5, "bcf_marine": 7},
+  "E": {"sk": 1, "bcf_sailor": 4, "bcf_marine": 6},
+  "F": {"sk": 2, "bcf_sailor": 3, "bcf_marine": 5},
+  "G": {"sk": 3, "bcf_sailor": 2, "bcf_marine": 4}
+}

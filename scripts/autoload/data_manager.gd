@@ -9,8 +9,10 @@ var turning_table: Dictionary = {}
 var ship_definitions: Dictionary = {}  # Dictionary[String, Ship]
 var bearing_off_table: Dictionary = {}
 var scenarios: Dictionary = {}
+var combat_tables: CombatTables = CombatTables.new()
 
 func _ready() -> void:
+	combat_tables.load_all()
 	Trace.trace_log("DataManager", "Initialized")
 
 func load_movement_allowance_table(file_path: String = "res://data/rules/movement_allowance.json") -> bool:
