@@ -172,7 +172,7 @@ func test_empty_orders_allowed() -> void:
 	_enter_combat()
 	assert_eq(pc.player_submit_fire_orders(0, []), "")
 	assert_eq(pc.combat_step, TurnPhaseController.CombatStep.RESOLVE, "AI already ready, so resolves")
-	assert_eq(_fire_events().size(), 0, "no FIRE events")
+	assert_eq(_fire_events().size(), 1, "only the AI's broadside fires (the player passed)")
 	assert_eq(_log_signals, 1, "log emitted, waiting for playback")
 	assert_eq(pc.current_phase, TurnPhaseController.GamePhase.COMBAT_RESOLUTION)
 
@@ -184,7 +184,7 @@ func test_resolve_then_playback_advances() -> void:
 	assert_eq(pc.player_submit_fire_orders(0, [_order()]), "")
 	assert_eq(pc.combat_step, TurnPhaseController.CombatStep.RESOLVE)
 	assert_lt(_boxes(b), before, "target lost boxes")
-	assert_eq(_fire_events().size(), 1)
+	assert_eq(_fire_events().size(), 2, "player's broadside plus the AI's reply")
 	pc.on_combat_playback_completed()
 	assert_eq(pc.combat_step, TurnPhaseController.CombatStep.NONE)
 	assert_eq(pc.current_phase, TurnPhaseController.GamePhase.POST_COMBAT)
