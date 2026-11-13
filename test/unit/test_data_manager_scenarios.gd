@@ -147,6 +147,17 @@ func test_shipped_scenarios_have_unique_ship_ids() -> void:
 			assert_false(seen.has(ship["id"]), "%s: ship id %s is unique" % [file_name, ship["id"]])
 			seen[ship["id"]] = true
 
+func test_shipped_scenarios_have_no_stacked_ships() -> void:
+	var scenarios := _shipped_scenarios()
+	assert_gt(scenarios.size(), 0, "found the shipped scenarios")
+	for file_name in scenarios:
+		var occupied := {}
+		for ship in scenarios[file_name]["ships"]:
+			var hex := Vector2i(int(ship["position"]["q"]), int(ship["position"]["r"]))
+			assert_false(occupied.has(hex), "%s: %s starts on %s, already taken by %s" % [
+				file_name, ship["id"], hex, occupied.get(hex, "")])
+			occupied[hex] = ship["id"]
+
 func test_shipped_scenarios_have_a_turn_limit() -> void:
 	var scenarios := _shipped_scenarios()
 	for file_name in ["test_basic.json", "test_fleet.json"]:

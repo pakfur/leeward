@@ -1,6 +1,6 @@
 {
-  "name": "Test Scenario - Four Ships",
-  "description": "Basic test scenario with four opposing ships for development testing",
+  "name": "Test Scenario - Six Ships",
+  "description": "Basic test scenario with six ships (two player, four enemy) for development testing",
   "seed": 42,
   "wind_direction": 0,
   "wind_speed": 2,
@@ -105,7 +105,7 @@
 	  "ship_type": "frigate_32",
 	  "position": {
 		"q": 8,
-		"r": 0
+		"r": 1
 	  },
 	  "facing": 3,
 	  "speed": 0,

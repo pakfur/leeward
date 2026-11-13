@@ -248,3 +248,17 @@ func test_add_ship_rejects_duplicate_id() -> void:
 	assert_eq(GameState.ships.size(), 1, "one entry in ships")
 	assert_same(GameState.ships["ss_ship"], state, "the first ship is kept")
 	assert_eq(GameState.ships_by_player[1], ["ss_ship"], "one entry in ships_by_player")
+
+
+func test_add_ship_rejects_ship_on_occupied_hex() -> void:
+	var stacked := _make_state({"id": "ss_other", "position": {"q": 1, "r": 1}})
+	assert_false(GameState.add_ship(stacked), "a ship starting on an occupied hex is rejected")
+	assert_push_error("ship 'ss_other' starts on (1, 1), already occupied by 'ss_ship'")
+	assert_false(GameState.ships.has("ss_other"), "not added to ships")
+	assert_eq(GameState.ships_by_player[1], ["ss_ship"], "not added to ships_by_player")
+
+
+func test_add_ship_accepts_ship_on_free_hex() -> void:
+	var other := _make_state({"id": "ss_other", "position": {"q": 2, "r": 1}})
+	assert_true(GameState.add_ship(other))
+	assert_eq(GameState.ships.size(), 2)
