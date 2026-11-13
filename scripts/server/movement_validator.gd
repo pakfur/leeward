@@ -331,7 +331,8 @@ func _get_min_forward_for_pivot(
 
 
 func _lookup_ma(speed_type: String, wind_speed: int, wind_facing: String, sail_state: String, rigging_quality: int) -> int:
-	if wind_facing == "L" or rigging_quality <= 0:
+	# Luffing, dismasted or calm (wind speed 0, outside the table): no movement allowance
+	if wind_facing == "L" or rigging_quality <= 0 or wind_speed <= 0:
 		return 0
 	return DataManager.get_movement_allowance(
 		speed_type, wind_speed, wind_facing, sail_state.to_lower(), rigging_quality

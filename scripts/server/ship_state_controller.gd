@@ -35,6 +35,8 @@ func get_movement_allowance(ship_id: String) -> int:
 
 	var spd_type = ship.ship.speed_type if ship.ship else "F/F"
 	var wind_speed = game_state.environment.wind_speed if game_state.environment else 2
+	if wind_speed <= 0:
+		return 0  # calm: the table starts at wind speed 1
 	var ma = DataManager.get_movement_allowance(
 		spd_type,
 		wind_speed,

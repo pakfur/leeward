@@ -285,6 +285,45 @@ func test_sail_change_and_drift_appear_in_turn_log() -> void:
 	assert_true(p0_drifted, "the stationary ship drifts in wind speed 2")
 
 
+func test_calm_turn_plays_through_to_next_planning() -> void:
+	var p0 := _make_ship("p0", 0, Vector2i(5, 5), 0, "B")
+	var ai := _make_ship("ai", 1, Vector2i(20, 5), 3, "C")
+	var p0_start := [p0.hex_position, p0.facing]
+	var ai_start := [ai.hex_position, ai.facing]
+	_start({"wind_speed": 0})
+	assert_eq(GameState.environment.wind_speed, 0, "precondition: still calm after the first wind roll")
+	assert_eq(pc.current_phase, PHASES.PLANNING, "planning reached (the AI plotted at MA 0)")
+	assert_eq(GameState.ship_controller.get_movement_allowance("p0"), 0, "MA is 0 in a calm")
+
+	# The player plots like the planning UI does: start a session, submit the empty path
+	var mpc: MovementPlottingController = GameState.movement_plotting_controller
+	var started = mpc.handle_start_plotting(0, "p0", "calm_start")
+	assert_true(started is MovementTypes.PlottingStartedResponse, "plotting starts at MA 0")
+	if started is MovementTypes.PlottingStartedResponse:
+		assert_eq(started.remaining_ma, 0)
+		var submitted = mpc.handle_submit_movement(started.session_id, started.session_version, "calm_submit")
+		assert_true(submitted is MovementTypes.MovementSubmittedResponse, "an empty path is accepted")
+
+	# Next turn's wind rolls: 2d10 = 10 for speed and for direction, so the calm holds
+	var dice := ScriptedDice.new()
+	dice.queue([5, 5, 5, 5])
+	GameState.dice = dice
+	var turn := pc.current_turn
+	assert_true(_play_turn(_hold_fire), "the calm turn plays through")
+	assert_eq(_stalls, [] as Array[String], "no stalls")
+	assert_eq(pc.current_phase, PHASES.PLANNING, "back in PLANNING")
+	assert_eq(pc.current_turn, turn + 1, "next turn")
+	assert_eq(dice.remaining(), 0, "only the wind was rolled")
+	assert_eq([p0.hex_position, p0.facing], p0_start, "the player's ship did not move")
+	# The AI may use the one pivot the rules allow at MA 0 (a pivot enters the neighbouring hex
+	# in the new facing); it makes no forward move.
+	var one_pivot: Array = [ai_start]
+	for new_facing in [(int(ai_start[1]) + 5) % 6, (int(ai_start[1]) + 1) % 6]:
+		one_pivot.append([ai_start[0] + HexGrid.DIRECTIONS[new_facing], new_facing])
+	assert_has(one_pivot, [ai.hex_position, ai.facing], "the AI ship made at most its MA-0 pivot")
+	assert_eq(GameState.turn_logs[turn].of_type(PhaseEvents.Type.DRIFT).size(), 0, "no drift in a calm")
+
+
 func test_ai_engages_in_every_wind_direction() -> void:
 	var rows: Array[String] = []
 	var engaged_count := 0
