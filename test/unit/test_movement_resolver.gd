@@ -599,20 +599,50 @@ func test_dismasted_ships_cannot_foul() -> void:
 		assert_false(fouled, "Dismasted ship should never foul (seed=%d)" % _i)
 
 
-func test_fouling_roll_50_percent() -> void:
+## Collision fouling (1997 Collision Resolution chart): d10 0-9 from the resolver's own rng,
+## fouled on 6+, +1 per ship at MS, +2 per ship at PS, nothing for FS; no drifting penalty.
+func _fouls_at_roll(sail_a: String, sail_b: String, die: int) -> bool:
 	var state_a = _make_ship_state(Vector2i(5, 5), 0, 1, "C", "ship_a")
 	var state_b = _make_ship_state(Vector2i(5, 6), 3, 1, "C", "ship_b")
+	state_a.sail_state = sail_a
+	state_b.sail_state = sail_b
+	# Find a seed whose first randi_range(0, 9) is the wanted die value.
+	for seed_val in range(1000):
+		var probe := RandomNumberGenerator.new()
+		probe.seed = seed_val
+		if probe.randi_range(0, 9) == die:
+			rng.seed = seed_val
+			return resolver.roll_fouling(state_a, state_b)
+	fail_test("No seed produces die %d" % die)
+	return false
 
-	var fouled_count: int = 0
-	var trials: int = 1000
-	for i in range(trials):
+
+func test_collision_fouling_both_fs_needs_6_or_more() -> void:
+	for die in range(10):
+		assert_eq(_fouls_at_roll("FS", "FS", die), die >= 6, "FS/FS die %d" % die)
+
+
+func test_collision_fouling_both_ms_needs_4_or_more() -> void:
+	for die in range(10):
+		assert_eq(_fouls_at_roll("MS", "MS", die), die >= 4, "MS/MS die %d" % die)
+
+
+func test_collision_fouling_ps_counts_two_each() -> void:
+	assert_true(_fouls_at_roll("PS", "FS", 4), "PS+FS: 4+2 = 6")
+	assert_false(_fouls_at_roll("PS", "FS", 3), "PS+FS: 3+2 = 5")
+	assert_true(_fouls_at_roll("PS", "PS", 2), "PS+PS: 2+4 = 6")
+
+
+func test_collision_fouling_dismasted_never_fouls() -> void:
+	var state_a = _make_ship_state(Vector2i(5, 5), 0, 1, "C", "ship_a")
+	var state_b = _make_ship_state(Vector2i(5, 6), 3, 1, "C", "ship_b")
+	state_b.sail_state = "PS"
+	var dismasted: Array[int] = [0, 0, 0, 0]
+	state_b.rigging_current_hp = dismasted
+	state_a.sail_state = "PS"
+	for i in range(20):
 		rng.seed = i
-		if resolver.roll_fouling(state_a, state_b):
-			fouled_count += 1
-
-	var ratio: float = float(fouled_count) / float(trials)
-	assert_true(ratio > 0.4 and ratio < 0.6,
-		"Fouling should be ~50%%, got %.1f%%" % (ratio * 100))
+		assert_false(resolver.roll_fouling(state_a, state_b), "seed %d" % i)
 
 
 # ===========================================================================
