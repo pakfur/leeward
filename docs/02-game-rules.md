@@ -1,3 +1,5 @@
+> **Note:** gunnery targets are declared after movement (see 4.0), not in planning (2.2.10 is replaced). Combat rules are defined by the 1997 Close Action tables; see `docs/superpowers/specs/2026-11-13-playable-turn-loop-design.md`.
+
 
 
 ## Board and Setup
@@ -61,7 +63,7 @@
 	 2.2.7 Plan crew reorganization, including reallocating sailors, allocating between sails and gunnery
 	 2.2.8 Perform repairs, rigging, spars, hull, above and below the waterline. 
 	 2.2.9 Allocate crew firefighting, reallocating crew to fight any fires
-	 2.2.10 Gunnery and Marine fire, select targets, select which guns to fire, ammunition type, hull or rigging
+	 2.2.10 (Replaced) Gunnery targets are NOT declared in the planning phase. Targets, aim and ammunition are declared after movement resolves, as the first step of COMBAT RESOLUTION (4.0). Marine fire is not yet implemented.
 	 2.2.11 send messsages between ships (using flags)
    2.3 Some plotted actions may take multiple turns to complete, and require allocated crew to complete
    2.4 Player submits all plotted actions
@@ -77,19 +79,20 @@
   3.4 Update the Map
 
 4. == COMBAT RESOLUTION PHASE
-  4.1 Resolve Gunnery and Marine fire for guns plotted in 2.2.10. Visually update the UI for dramatic effect
+  4.0 Declare fire: after movement, both sides secretly and simultaneously choose targets, aim (hull/rigging) and ammunition for each broadside. Skipped when no ship has a target in arc.
+  4.1 Resolve Gunnery and Marine fire for the orders declared in 4.0 (all fire is simultaneous). Visually update the UI for dramatic effect
   4.2 Resolve boarding attacks
   4.3 Resolve any critical hits, "man the pumps"
   4.4 Update the map
 
 5. == DRIFT CALCULATION PHASE 
-  5.1 Resolve "drifting" or "fouling" for dismast4ed ships, or rammed ships
+  5.1 Resolve "drifting" or "fouling" for stopped ships (did not move, collided, fouled or dismasted). Drift comes before unfouling and sail changes.
   5.2 Update ship position and status
 
 6. == STATUS ADJUSTMENT
   6.1 Resolve exploding ships (based on combat damage 4.1)
   6.2 Resolve sinking ships (based on hull damage from 4.1)
-  6.3 Update sail state according to 2.2.5
+  6.3 Update sail state according to 2.2.5 (unfouling rolls, 9.4 automatic in the current build, are made first in this phase, before sail changes)
   6.4 Resolve any repairs started with 2.2.8
   6.5 Resolve any crew reorginization plotted with 2.2.7
   6.6 Resolve any anchors changes with 2.2.2
@@ -97,7 +100,7 @@
   6.8 Resolve any multi-turn plotted actions
 
 7. == MORALE CHECKS
-  7.1 Update crew morale state
+  7.1 Update crew morale state: roll all checks noted this turn; failures lower crew quality, and a ship already at the lowest quality strikes
 
 8. == Message Delivery 
   8.1 Messages from other ships flags (2.5) delivered and displayed 

@@ -1,3 +1,5 @@
+> **Non-canonical early notes.** Combat rules are defined by the 1997 Close Action tables; see `docs/superpowers/specs/2026-11-13-playable-turn-loop-design.md`.
+
 # Leeward - Naval Combat Mechanics
 
 ## Combat Overview

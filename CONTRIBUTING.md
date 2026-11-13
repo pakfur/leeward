@@ -36,8 +36,10 @@ Tests use the [GUT](https://github.com/bitwes/Gut) framework vendored at `addons
 ```bash
 make test                # run everything headless
 make test-verbose        # detailed output
-make test-file F=test/unit/test_movement_validator.gd    # single file
+make test-file F=test/unit/test_movement_validator.gd    # single file (currently runs the whole suite)
 ```
+
+The vendored `addons/gut/gut_loader.gd` has a one-line local patch (reads `exclude_addons` with `get_setting(..., true)`, because Godot 4.6 no longer defines it); keep it when updating GUT. `make import` also prints `SCRIPT ERROR`s from the GUT editor plugin — harmless noise. `make test-file` currently runs the whole suite.
 
 Test files live in `test/unit/`, named `test_*.gd`, extending `GutTest`. Use `before_all()` / `before_each()` for setup. Run `make test` before opening a PR.
 
@@ -49,7 +51,7 @@ Test files live in `test/unit/`, named `test_*.gd`, extending `GutTest`. Use `be
 - **Server authority.** All state mutations happen in `scripts/server/` controllers, guarded by `if not is_server: push_error(...)`. Views and UI never mutate game state.
 - **State-Controller-View split.** `scripts/state/` is pure data (immutable `Ship`, mutable `ShipState`), `scripts/server/` owns logic, `scripts/view/` + `scripts/ui/` only render.
 - **Hex grid.** Axial `(q, r)` with pointy-top orientation. Direction numbering: 0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE. All ships are 1-hex — `ShipState.get_ship_size()` is deprecated, hardcoded to 1.
-- **Rule-table lookup keys are strings**, including `wind_speed` and `rigging_quality`. Wind facing `"L"` (luffing) always returns 0.
+- **Rule-table lookup keys are strings**, including `wind_speed` and `rigging_quality` (the rigging *level*: number of rigging sections still holding boxes, 1–4). Wind facing `"L"` (luffing) always returns 0.
 
 ## Submitting changes
 
@@ -129,7 +131,7 @@ Invoke with `/skill-name` in a Claude Code session:
 | Skill | Invocation | Purpose |
 |-------|------------|---------|
 | `phase-implementer` | `/phase-implementer` | Implement a stubbed turn phase following SCV patterns |
-| `validate-rule-table` | `/validate-rule-table` | Validate JSON rule table syntax and key consistency |
+| `validate-rule-table` | `/validate-rule-table` | Validate JSON rule table syntax and key consistency (`validate.py`; `validate_combat.py` for the combat tables) |
 | `scenario-creator` | `/scenario-creator` | Create a new scenario JSON file with valid ship placements |
 | `gen-test` | `/gen-test` | Generate a GUT test file for a GDScript source file |
 | `godot-gdscript-patterns` | Auto (Claude-invoked) | Godot 4 GDScript patterns reference |

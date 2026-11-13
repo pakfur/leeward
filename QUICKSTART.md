@@ -21,7 +21,7 @@
 
 ### What You Should See
 - A 30x30 hex grid with ocean tiles
-- Two ships: a British frigate (left) and a corvette (right)
+- Two ships: a British 38-gun frigate (left) and a 32-gun frigate (right)
 - Wind compass in the top-right showing wind direction
 - Game info panel in the bottom-left showing turn and phase
 - Console output showing phase transitions
