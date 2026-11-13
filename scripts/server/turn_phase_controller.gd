@@ -262,7 +262,8 @@ func _enter_status_adjustment_phase() -> void:
 	current_phase = GamePhase.STATUS_ADJUSTMENT
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: STATUS_ADJUSTMENT")
-	# TODO (later task): unfouling attempts go here, before sail changes advance
+	if game_state.fouling_controller:
+		game_state.fouling_controller.resolve_unfouling(current_phase)
 	if game_state.sail_controller:
 		game_state.sail_controller.advance_changes(current_phase)
 	# TODO: Resolve explosions, sinking, repairs, crew reorg, anchors
