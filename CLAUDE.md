@@ -104,7 +104,7 @@ Managed by `TurnPhaseController`. All phases do real work except MESSAGE_DELIVER
 - **POST_COMBAT**: waits for the player to press End Turn (`player_end_turn(0)`); `advance_phase()` is ignored here. No timer.
 - **END_TURN**: `victory_controller.check(turn)`. A non-empty result is stored in `phase_controller.game_result`, `game_over` is emitted, and the loop stops (phase stays END_TURN, `advance_phase`/submits are refused). Otherwise flags are cleared and the next turn begins.
 
-Every phase appends typed events to `GameState.turn_log` (`PhaseEvents.PhaseLog`); finished turns are kept in `GameState.turn_logs[turn]`. The UI renders these as the combat log.
+The gunnery resolver, damage, drift, fouling, morale and sail controllers append typed events to `GameState.turn_log` (`PhaseEvents.PhaseLog`), and `TurnPhaseController` adds the VICTORY event at END_TURN; environment, planning and movement log no events; finished turns are kept in `GameState.turn_logs[turn]`. The UI renders these as the combat log.
 
 When changing a phase method, invoke the `phase-implementer` skill (`.claude/skills/phase-implementer/`). It codifies the SCV pattern (server-authority guard, `game_state.dice`, automatic state-history snapshots, GUT test template).
 
@@ -112,7 +112,7 @@ Other project skills: `scenario-creator` (create scenario JSONs), `gen-test` (sc
 
 ### Server Objects on GameState (created in `_initialize_server_controllers()`)
 
-All take `game_state` in `_init` and reach collaborators through it. Names are exact:
+All except `dice` (takes the RNG) and `fire_geometry` (takes a `HexGrid`) take `game_state` in `_init` and reach collaborators through it. Names are exact. `stub_ai` predates the turn-loop work (it now also submits fire orders):
 
 - `dice` (`Dice`): the only source of randomness (see Dice below).
 - `fire_geometry` (`FireGeometry`, `scripts/core/`): pure geometry — `bearing_side` (which broadside covers a hex, or -1), `rake_type`, `has_line_of_sight`, `broadside_hexes`.
@@ -129,7 +129,7 @@ All take `game_state` in `_init` and reach collaborators through it. Names are e
 
 ### Dice
 
-`Dice` (`scripts/server/dice.gd`) wraps `GameState.rng`: `d6()` is 1–6, `d10()` is **0–9** (as on the 1997 charts), `two_d6()`, `two_d10()` is **0–18**. **All randomness goes through `game_state.dice`** — never call `randi()`/`rng` directly in game logic. `ScriptedDice` (`test/unit/scripted_dice.gd`, a `Dice` subclass) returns queued values (`queue([...])`; `two_*` pop two) so tests can fix rolls.
+`Dice` (`scripts/server/dice.gd`) wraps `GameState.rng`: `d6()` is 1–6, `d10()` is **0–9** (as on the 1997 charts), `two_d6()`, `two_d10()` is **0–18**. **New game logic must roll through `game_state.dice`** — never call `randi()` or `rng` directly. Known, accepted exception: `MovementResolver` still rolls directly from its `rng` property (`rng.randi_range`/`rng.randf`; it uses `game_state.rng` unless an explicit RNG is set), and `EnvironmentController` still passes `game_state.rng` into `_update_weather`. `ScriptedDice` (`test/unit/scripted_dice.gd`, a `Dice` subclass) returns queued values (`queue([...])`; `two_*` pop two) so tests can fix rolls.
 
 ### Movement Plotting Protocol
 
@@ -193,7 +193,7 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 
 ### Sides, Arcs and Rake
 - Side indices: `ShipState.PORT = 0`, `ShipState.STARBOARD = 1`. Starboard is `facing + 1` / `facing + 2`; port is `facing − 1` / `facing − 2` (mod 6).
-- **Broadside arc**: the 60° wedge centred on the beam, directions `facing ± 1` and `facing ± 2` inclusive, out to range 15. Ahead/astern are blind; no chase guns.
+- **Broadside arc**: the 60° wedge centred on the beam, out to range 15. `FireGeometry.bearing_side` is an angle test (60°–120° off the bow, with a 0.5° tolerance), which corresponds to the hex rows of directions `facing ± 1` and `facing ± 2`. Ahead/astern are blind; no chase guns.
 - **Rake**: target within 5 hexes and the firer strictly inside the target's bow or stern 60° wedge (within 30° of the line ahead/astern; the boundary does not count). Stern rake doubles crew hits.
 - Fire orders: per broadside one target, aim `low`/`high`, ammo `round` (range 15) or `dismantling` (range 7). Ranges 10–15 are high only. Two targets (one per side) = −12 on each shot.
 

@@ -130,7 +130,7 @@ Invoke with `/skill-name` in a Claude Code session:
 
 | Skill | Invocation | Purpose |
 |-------|------------|---------|
-| `phase-implementer` | `/phase-implementer` | Implement a stubbed turn phase following SCV patterns |
+| `phase-implementer` | `/phase-implementer` | Implement or change a turn phase following SCV patterns (only MESSAGE_DELIVERY is still a stub) |
 | `validate-rule-table` | `/validate-rule-table` | Validate JSON rule table syntax and key consistency (`validate.py`; `validate_combat.py` for the combat tables) |
 | `scenario-creator` | `/scenario-creator` | Create a new scenario JSON file with valid ship placements |
 | `gen-test` | `/gen-test` | Generate a GUT test file for a GDScript source file |

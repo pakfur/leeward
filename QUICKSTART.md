@@ -77,14 +77,14 @@
 
 1. **ENVIRONMENT** - Wind updates (auto)
 2. **PLANNING** - Plot actions for your ships (manual)
-3. **MOVEMENT_RESOLUTION** - Ships move (auto, currently stubbed)
-4. **COMBAT_RESOLUTION** - Combat resolved (auto, currently stubbed)
-5. **DRIFT_CALCULATION** - Drift calculated (auto, currently stubbed)
-6. **STATUS_ADJUSTMENT** - Status updated (auto, currently stubbed)
-7. **MORALE_CHECK** - Morale checked (auto, currently stubbed)
-8. **MESSAGE_DELIVERY** - Messages delivered (auto, currently stubbed)
-9. **POST_COMBAT** - Final actions (auto-advances after 2s)
-10. **END_TURN** - Turn ends, new turn begins
+3. **MOVEMENT_RESOLUTION** - Ships move (auto, played back on the map)
+4. **COMBAT_RESOLUTION** - If any ship has a target, you declare fire orders (target, aim, ammunition per broadside) and the AI does too; all fire then resolves at once (skipped when nobody has a shot)
+5. **DRIFT_CALCULATION** - Stopped ships may drift downwind (auto)
+6. **STATUS_ADJUSTMENT** - Unfouling rolls and sail changes complete (auto)
+7. **MORALE_CHECK** - Morale checks; ships may strike (auto)
+8. **MESSAGE_DELIVERY** - Not implemented yet (auto-advances)
+9. **POST_COMBAT** - Review the combat log, then press End Turn
+10. **END_TURN** - Victory check: the game ends when a side has struck or the turn limit is reached; otherwise the next turn begins
 
 ## Troubleshooting
 
@@ -102,9 +102,8 @@
 - The panel only appears during the PLANNING phase
 
 **Movement doesn't execute:**
-- Movement resolution is currently stubbed (Phase 1)
-- Ships will remain in their starting positions
-- This will be implemented in Phase 2
+- Movement only happens after you plot a path for each ship and press End Planning
+- Ships with no plotted path stay put (and may drift if the wind is up)
 
 ## Console Output
 
