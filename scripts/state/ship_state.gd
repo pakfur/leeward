@@ -102,6 +102,21 @@ func rigging_level() -> int:
 			level += 1
 	return level
 
+func max_sail_state() -> String:
+	## Heaviest sail the remaining rigging can carry: 4 sections PS, 3 MS, 2-1 FS, 0 NS
+	match rigging_level():
+		4: return "PS"
+		3: return "MS"
+		0: return "NS"
+		_: return "FS"
+
+func movement_sail_state() -> String:
+	## Sail state the movement table is read at: the lower of carried and max sail.
+	## A ship carrying more sail than its rigging allows keeps sail_state unchanged.
+	var carried := SAIL_ORDER.find(sail_state.to_upper())
+	var limit := SAIL_ORDER.find(max_sail_state())
+	return SAIL_ORDER[mini(carried, limit)] if carried >= 0 else "NS"
+
 func total_crew_boxes() -> int:
 	var total := marine_count
 	for boxes in crew_count:
@@ -173,9 +188,9 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.tacking = data.get("tacking", false)
 	state.fouled_with = data.get("fouled_with", "")
 	state.collision_this_turn = data.get("collision_this_turn", false)
-	state.min_ma = data.get("min_ma")
-	state.max_ma = data.get("max_ma")
-	state.towing = data.get("towing")
+	state.min_ma = int(data.get("min_ma", 0))
+	state.max_ma = int(data.get("max_ma", 0))
+	state.towing = bool(data.get("towing", false))
 	state.acceleration = data.get("acceleration", 0)
 	state.sail_state = data.get("sail_state", "MS")
 

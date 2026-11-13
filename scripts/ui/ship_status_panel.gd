@@ -73,7 +73,7 @@ func _update_display() -> void:
 	if rigging_label:
 		# Read-only query — OK from UI layer  SCV:ALLOW
 		var rq = GameState.ship_controller.get_rigging_quality(s.ship_id) if GameState.ship_controller else 4
-		rigging_label.text = "Rigging: %d/4" % rq
+		rigging_label.text = "Rigging: %d/4 sections (max sail %s)" % [rq, s.max_sail_state()]
 
 	if ma_label:
 		# Read-only query — OK from UI layer  SCV:ALLOW

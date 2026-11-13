@@ -20,6 +20,14 @@ EXPECTED_FACINGS = {"C", "B", "R"}
 VALID_WIND_SPEEDS = {"1", "2", "3", "4"}
 VALID_RIGGING_QUALITIES = {"1", "2", "3", "4"}
 VALID_SAIL_STATES = {"fs", "ms", "ps", "ns"}
+# Rigging level = number of rigging sections still holding boxes. The chart
+# (docs/movement_1.jpeg) offers fs/ms/ps at 4 sections, fs/ms at 3, fs only at 2 and 1.
+SAIL_STATES_BY_RIGGING_LEVEL = {
+    "4": {"fs", "ms", "ps"},
+    "3": {"fs", "ms"},
+    "2": {"fs"},
+    "1": {"fs"},
+}
 
 
 class Report:
@@ -147,6 +155,12 @@ def _validate_sail_states(speed_type, facing, ws, rq, sail_states, report):
     for ss in sorted(extra):
         report.err(f"{speed_type}.{facing}.{ws}.{rq}.{ss}",
                    "sail_state key must be one of 'fs','ms','ps','ns' (lowercase)")
+
+    expected = SAIL_STATES_BY_RIGGING_LEVEL.get(rq)
+    if expected is not None and set(sail_states.keys()) != expected:
+        report.err(f"{speed_type}.{facing}.{ws}.{rq}",
+                   f"sail_state keys must be exactly {sorted(expected)} at rigging level {rq}, "
+                   f"got {sorted(sail_states.keys())}")
 
     for ss, value in sail_states.items():
         if ss not in VALID_SAIL_STATES:

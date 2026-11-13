@@ -108,7 +108,7 @@ func _build_plotting_state(
 	ps.speed_last_turn = ship_state.speed
 	ps.maneuverability = ship_state.ship.maneuverability.to_lower() if ship_state.ship else "a"
 	ps.speed_type = ship_state.ship.speed_type if ship_state.ship else "F/F"
-	ps.sail_state = ship_state.sail_state
+	ps.sail_state = ship_state.movement_sail_state()
 	ps.rigging_quality = game_state.ship_controller.get_rigging_quality(ship_state.ship_id)
 
 	var accel = DataManager.get_speed_change("acceleration", ps.maneuverability)
@@ -331,7 +331,7 @@ func _get_min_forward_for_pivot(
 
 
 func _lookup_ma(speed_type: String, wind_speed: int, wind_facing: String, sail_state: String, rigging_quality: int) -> int:
-	if wind_facing == "L":
+	if wind_facing == "L" or rigging_quality <= 0:
 		return 0
 	return DataManager.get_movement_allowance(
 		speed_type, wind_speed, wind_facing, sail_state.to_lower(), rigging_quality

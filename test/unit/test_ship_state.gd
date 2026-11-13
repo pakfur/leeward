@@ -74,6 +74,34 @@ func test_rigging_level_counts_sections_with_boxes() -> void:
 	assert_true(state.is_dismasted())
 
 
+func test_max_and_movement_sail_state_follow_rigging_level() -> void:
+	state.sail_state = "PS"
+	state.rigging_current_hp = [0, 5, 6, 6] as Array[int]
+	assert_eq(state.max_sail_state(), "MS")
+	assert_eq(state.movement_sail_state(), "MS")
+	assert_eq(state.sail_state, "PS", "carried sail is not forced down")
+	state.rigging_current_hp = [0, 0, 6, 6] as Array[int]
+	assert_eq(state.max_sail_state(), "FS")
+	state.rigging_current_hp = [0, 0, 0, 6] as Array[int]
+	assert_eq(state.max_sail_state(), "FS")
+	state.rigging_current_hp = [0, 0, 0, 0] as Array[int]
+	assert_eq(state.max_sail_state(), "NS")
+	assert_eq(state.movement_sail_state(), "NS")
+
+
+func test_movement_sail_state_uses_lower_of_carried_and_max() -> void:
+	state.rigging_current_hp = [5, 5, 6, 6] as Array[int]
+	state.sail_state = "FS"
+	assert_eq(state.movement_sail_state(), "FS")
+	state.sail_state = "NS"
+	assert_eq(state.movement_sail_state(), "NS")
+
+
+func test_controller_rigging_quality_is_section_count() -> void:
+	state.rigging_current_hp = [0, 5, 6, 6] as Array[int]
+	assert_eq(GameState.ship_controller.get_rigging_quality(state.ship_id), 3)
+
+
 func test_sections_able_to_fire_excludes_sail_change_and_empty() -> void:
 	state.crew_count = [0, 3, 3, 3] as Array[int]
 	state.sail_change = {"target": "FS", "turns_left": 2, "sections": [3]}

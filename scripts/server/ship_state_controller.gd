@@ -14,31 +14,11 @@ func _init(state: Node = null) -> void:
 ## Computed Properties
 
 func get_rigging_quality(ship_id: String) -> int:
+	## Rigging level: number of rigging sections that still have boxes (0-4)
 	var ship = game_state.get_ship(ship_id)
-	if not ship or not ship.ship:
+	if not ship:
 		return 4
-
-	var max_hp_array = ship.ship.rigging_hp
-	var total_max = 0
-	var total_current = 0
-
-	for i in range(4):
-		total_max += max_hp_array[i] if i < max_hp_array.size() else 0
-		total_current += ship.rigging_current_hp[i]
-
-	if total_max == 0:
-		return 4
-
-	var hp_percentage = float(total_current) / float(total_max)
-
-	if hp_percentage >= 0.85:
-		return 4
-	elif hp_percentage >= 0.60:
-		return 3
-	elif hp_percentage >= 0.35:
-		return 2
-	else:
-		return 1
+	return ship.rigging_level()
 
 func get_movement_allowance(ship_id: String) -> int:
 	var ship = game_state.get_ship(ship_id)
@@ -49,14 +29,17 @@ func get_movement_allowance(ship_id: String) -> int:
 	var hex_grid = HexGrid.new()
 	var wind_facing = hex_grid.get_wind_facing(ship.facing, wind_dir)
 
-	var spd_type = ship.ship.speed_type if ship.ship else "F/F"
 	var rigging_quality = get_rigging_quality(ship_id)
+	if rigging_quality == 0:
+		return 0  # dismasted: never consult the table
+
+	var spd_type = ship.ship.speed_type if ship.ship else "F/F"
 	var wind_speed = game_state.environment.wind_speed if game_state.environment else 2
 	var ma = DataManager.get_movement_allowance(
 		spd_type,
 		wind_speed,
 		wind_facing,
-		ship.sail_state,
+		ship.movement_sail_state(),
 		rigging_quality
 	)
 
