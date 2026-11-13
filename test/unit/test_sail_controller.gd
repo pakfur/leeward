@@ -73,6 +73,13 @@ func test_available_targets_at_ps_with_level_3() -> void:
 	assert_eq(ctrl.available_targets("sail_ship"), ["MS"] as Array[String])
 
 
+func test_available_targets_at_ps_with_level_2_offers_downward_step() -> void:
+	ship.rigging_current_hp = [0, 0, 6, 6] as Array[int]
+	ship.sail_state = "PS"
+	assert_eq(ship.rigging_level(), 2)
+	assert_eq(ctrl.available_targets("sail_ship"), ["MS"] as Array[String])
+
+
 func test_available_targets_empty_when_struck() -> void:
 	ship.status = ShipState.Status.STRUCK
 	assert_eq(ctrl.available_targets("sail_ship"), [] as Array[String])

@@ -24,7 +24,7 @@ func available_targets(ship_id: String) -> Array[String]:
 	if current < 0:
 		return result
 	for idx in [current - 1, current + 1]:
-		if idx >= 0 and idx < ShipState.SAIL_ORDER.size() and idx <= limit:
+		if idx >= 0 and idx < ShipState.SAIL_ORDER.size() and (idx < current or idx <= limit):
 			result.append(ShipState.SAIL_ORDER[idx])
 	return result
 
