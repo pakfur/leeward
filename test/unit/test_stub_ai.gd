@@ -323,6 +323,34 @@ func test_ai_closes_distance() -> void:
 	assert_lt(end, start, "AI should be closer after three turns (start %d, end %d)" % [start, end])
 
 
+func test_ai_turns_back_toward_enemy_astern() -> void:
+	# Wind from the east (0), speed 2. AI faces SE (1); the enemy lies due west.
+	var player = _make_ship("p1", 0, Vector2i(0, 0), 3, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(12, 0), 1, 2)
+	_add_ship(player)
+	_add_ship(ai)
+	var rng = RandomNumberGenerator.new()
+	rng.seed = 7
+	var resolver = MovementResolver.new(GameState, rng)
+	var best := 12
+	for turn in range(8):
+		stub_ai.plot_all_ai_ships()
+		var ships: Array[ShipState] = [player, ai]
+		var log = resolver.run(ships, env)
+		resolver.apply_results(log, ships)
+		best = mini(best, hex_grid.hex_distance(ai.hex_position.x, ai.hex_position.y, 0, 0))
+	assert_lt(best, 12, "AI facing away must come round and close within 8 turns")
+
+
+func test_engaged_ship_with_no_better_option_does_not_move() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 2)
+	var enemy = _make_ship("p1", 0, HexGrid.DIRECTIONS[1], 3, 0)
+	_add_ship(ai)
+	_add_ship(enemy)
+	stub_ai.plot_all_ai_ships()
+	assert_eq(ai.plotted_actions.movement.size(), 0, "Already broadside at range 1: hold")
+
+
 func test_engage_with_no_enemy_plots_nothing() -> void:
 	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 3, 2)
 	_add_ship(ai)

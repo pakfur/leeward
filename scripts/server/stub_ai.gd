@@ -191,6 +191,7 @@ func _strategy_engage(
 	var current_facing := ship_state.facing
 	var current_valid := started.valid_next_hexes
 	var current_version := version
+	var can_submit := started.can_submit
 
 	while current_valid and current_valid.has_any_moves():
 		var stay_score := _score_position(current_hex, current_facing, enemy.hex_position, occupied)
@@ -201,7 +202,9 @@ func _strategy_engage(
 			if best == null or _option_beats(move, move_score, best, best_score, current_facing):
 				best = move
 				best_score = move_score
-		if best_score <= stay_score:
+		# An engaged ship holds position unless an option is strictly better; otherwise it keeps
+		# way on and works round toward the enemy, even through a lower-scoring step.
+		if can_submit and stay_score > 0 and best_score <= stay_score:
 			break
 
 		var response := controller.handle_select_hex(session_id, current_version, best.hex, _next_request_id())
@@ -210,6 +213,7 @@ func _strategy_engage(
 		var selected := response as MovementTypes.HexSelectedResponse
 		current_version = selected.session_version
 		current_valid = selected.valid_next_hexes
+		can_submit = selected.can_submit
 		current_hex = best.hex
 		current_facing = best.metadata.resulting_facing
 
@@ -232,8 +236,9 @@ func _nearest_enemy(ship_state: ShipState) -> ShipState:
 	return nearest
 
 
-## 1000 - range when the enemy lies in a broadside arc, within range 5 with clear line of sight;
-## otherwise the negative distance to the enemy.
+## Engaged (enemy in a broadside arc, range <= 5, clear line of sight): 1000 - range, always > 0.
+## Otherwise -(2 * distance + misalignment), where misalignment is the number of 60 degree steps
+## between the facing and the direction from `hex` toward the enemy.
 func _score_position(hex: Vector2i, facing: int, enemy_hex: Vector2i, occupied: Dictionary) -> int:
 	var geometry: FireGeometry = game_state.fire_geometry
 	var distance := geometry.hex_grid.hex_distance(hex.x, hex.y, enemy_hex.x, enemy_hex.y)
@@ -241,7 +246,12 @@ func _score_position(hex: Vector2i, facing: int, enemy_hex: Vector2i, occupied: 
 			and geometry.bearing_side(hex, facing, enemy_hex) != -1 \
 			and geometry.has_line_of_sight(hex, enemy_hex, occupied):
 		return FIRING_POSITION_BASE - distance
-	return -distance
+	var misalignment := 0
+	if hex != enemy_hex:
+		var toward := geometry.hex_grid.get_facing_direction(hex.x, hex.y, enemy_hex.x, enemy_hex.y)
+		var steps := absi(facing - toward) % 6
+		misalignment = mini(steps, 6 - steps)
+	return -(2 * distance + misalignment)
 
 
 ## Higher score wins; ties keep the current facing, then lowest q, then lowest r.
