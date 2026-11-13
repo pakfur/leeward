@@ -425,9 +425,7 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 	_deselect_ship()
 	_hover_candidates.clear()
 	_clear_hover()
-	if hex_overlay:
-		hex_overlay.clear_arcs()
-	fire_panel = null
+	_close_fire_panel()
 	Trace.trace_log("GameController", "Phase changed to: %s" % GameState.get_phase_name())
 
 	match phase:
@@ -801,8 +799,7 @@ func _on_fire_declaration_requested() -> void:
 	if panel.setup(ship_ids) == 0:
 		# Nothing to declare: submit an empty order set and show nothing.
 		Trace.trace_log("GameController", "No eligible shots for player 0 - submitting empty fire orders")
-		fire_panel = null
-		panel.queue_free()
+		_close_fire_panel()
 		_submit_fire_orders([])
 		return
 	if camera and camera.has_method("focus_on_ship"):
@@ -813,15 +810,26 @@ func _on_fire_declaration_requested() -> void:
 
 
 func _on_fire_pressed(orders: Array) -> void:
+	var panel := fire_panel
+	if panel:
+		panel.fire_button.disabled = true  # no double submit while the server decides
 	var reason := _submit_fire_orders(orders)
-	if fire_panel == null:
-		return
 	if reason != "":
-		fire_panel.show_error(reason)
-	else:
-		fire_panel.show_submitted()
-		if hex_overlay:
-			hex_overlay.clear_arcs()
+		# Rejected: the panel stays open (re-enabled) with the reason.
+		if is_instance_valid(panel) and panel == fire_panel:
+			panel.show_error(reason)
+		return
+	# Accepted: the declare step is over, so the panel must not stay interactive.
+	_close_fire_panel()
+
+
+## Remove the fire panel (if any) and its arcs. Safe to call on any path out of the declare step.
+func _close_fire_panel() -> void:
+	if hex_overlay:
+		hex_overlay.clear_arcs()
+	if fire_panel and is_instance_valid(fire_panel):
+		fire_panel.queue_free()
+	fire_panel = null
 
 
 ## Returns "" when the server accepted the orders, otherwise its rejection reason.
@@ -857,8 +865,7 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 func _on_combat_log_ready(_log: PhaseEvents.PhaseLog) -> void:
 	# TEMPORARY (Task 21 replaces this with the combat log panel and paced playback):
 	# show the resolved state at once and tell the phase controller playback is finished.
-	if hex_overlay:
-		hex_overlay.clear_arcs()
+	_close_fire_panel()
 	_sync_all_views()
 	# Intentional view->controller callback so the turn keeps cycling  SCV:ALLOW
 	if GameState.phase_controller:
