@@ -254,7 +254,7 @@ func _enter_drift_calculation_phase() -> void:
 	current_phase = GamePhase.DRIFT_CALCULATION
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: DRIFT_CALCULATION")
-	# TODO: Resolve drifting/fouling
+	game_state.drift_resolver.resolve(GamePhase.DRIFT_CALCULATION)
 	advance_phase()
 
 func _enter_status_adjustment_phase() -> void:

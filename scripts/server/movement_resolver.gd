@@ -449,7 +449,7 @@ func _apply_collision(
 		rig_ev.detail = "rigging_loss=%d from sail_state=%s" % [rigging_loss, state_a.sail_state]
 		result_a.events.append(rig_ev)
 
-	var fouled: bool = _roll_fouling(state_a, ship_map[ship_b_id])
+	var fouled: bool = roll_fouling(state_a, ship_map[ship_b_id])
 	if fouled:
 		result_a.fouled_with = ship_b_id
 		result_b.fouled_with = ship_a_id
@@ -477,10 +477,22 @@ func _collision_rigging_loss(ship_state: ShipState) -> int:
 	return 0
 
 
-func _roll_fouling(ship_a: ShipState, ship_b: ShipState) -> bool:
+## Fouling roll after a collision or a blocked drift. True when the two ships foul.
+## Collision (drifting == false): unchanged legacy roll - one draw from the resolver's own RNG
+## (`rng.randf() <= 0.5`), no modifiers; a dismasted ship never fouls.
+## Drifting (Close Action 1997 chart): d10 from game_state.dice, fouled on 6+, with the drifting
+## ship -1, +1 per ship at MS and +2 per ship at PS. A dismasted ship never fouls (no die drawn).
+func roll_fouling(ship_a: ShipState, ship_b: ShipState, drifting: bool = false) -> bool:
 	if _is_dismasted(ship_a) or _is_dismasted(ship_b):
 		return false
-	return rng.randf() <= 0.5
+	if not drifting:
+		return rng.randf() <= 0.5
+	var modifier: int = -1
+	for ship_state in [ship_a, ship_b]:
+		match ship_state.sail_state.to_upper():
+			"MS": modifier += 1
+			"PS": modifier += 2
+	return game_state.dice.d10() + modifier >= 6
 
 
 func _is_dismasted(ship_state: ShipState) -> bool:
@@ -691,6 +703,7 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			continue
 		var sid = ship_state.ship_id
 		if sc:
+			sc.set_moved_this_turn(sid, _count_hexes_moved(result) > 0)
 			sc.set_ship_position(sid, result.final_hex)
 			sc.set_ship_facing(sid, result.final_facing)
 			if result.immobilized:

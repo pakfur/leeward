@@ -7,6 +7,9 @@ extends RefCounted
 ##   "hold"    — submit immediately with empty path (default)
 ##   "forward" — move straight ahead, consuming all available MA
 
+## Plotting errors for ships that legitimately cannot move; the AI skips them without error.
+const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_STRUCK", "SHIP_DISMASTED"]
+
 var game_state: Node = null
 var _request_counter: int = 0
 
@@ -58,6 +61,9 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 
 	if start_response is MovementTypes.PlottingErrorResponse:
 		var err := start_response as MovementTypes.PlottingErrorResponse
+		if err.error_code in LOCKED_ERROR_CODES:
+			Trace.trace_log("StubAI", "ship cannot move, skipped", {"ship_id": ship_id, "reason": err.error_code})
+			return
 		push_error("StubAI: start_plotting failed for %s: %s" % [ship_id, err.message])
 		Trace.trace_log("StubAI", "start_plotting FAILED", {"ship_id": ship_id, "error": err.error_code})
 		return

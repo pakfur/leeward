@@ -595,7 +595,7 @@ func test_dismasted_ships_cannot_foul() -> void:
 
 	for _i in range(20):
 		rng.seed = _i
-		var fouled = resolver._roll_fouling(state_a, state_b)
+		var fouled = resolver.roll_fouling(state_a, state_b)
 		assert_false(fouled, "Dismasted ship should never foul (seed=%d)" % _i)
 
 
@@ -607,7 +607,7 @@ func test_fouling_roll_50_percent() -> void:
 	var trials: int = 1000
 	for i in range(trials):
 		rng.seed = i
-		if resolver._roll_fouling(state_a, state_b):
+		if resolver.roll_fouling(state_a, state_b):
 			fouled_count += 1
 
 	var ratio: float = float(fouled_count) / float(trials)
@@ -1011,3 +1011,21 @@ func test_bearing_off_pivot_legal_roll_fails_causes_collision() -> void:
 	assert_false(has_pivot_denied, "Pivot should be legal (enough forward hexes)")
 	assert_true(has_bearoff_roll, "Should have attempted bearing-off roll")
 	assert_true(has_collision, "Failed bearing-off roll should result in collision")
+
+
+# ===========================================================================
+# moved_this_turn
+# ===========================================================================
+
+func test_apply_results_sets_moved_this_turn() -> void:
+	var mover = _make_ship_state(Vector2i(5, 5), 0, 3, "C", "mover")
+	var idle = _make_ship_state(Vector2i(5, 9), 0, 3, "C", "idle")
+	_plot_straight(mover, 2)
+	idle.moved_this_turn = true  # stale flag must be overwritten
+	var ships: Array[ShipState] = [mover, idle]
+
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+
+	assert_true(mover.moved_this_turn, "Ship that advanced has moved_this_turn")
+	assert_false(idle.moved_this_turn, "Ship with no plot has moved_this_turn false")
