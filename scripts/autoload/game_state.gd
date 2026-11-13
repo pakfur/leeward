@@ -208,8 +208,12 @@ func get_phase_name() -> String:
 
 ## Ship Management Functions
 
-func add_ship(ship_state: ShipState) -> void:
+func add_ship(ship_state: ShipState) -> bool:
 	## Add a ship to the state container. Used by both server (setup) and client (sync).  SCV:ALLOW
+	## A ship whose id is already present is rejected (returns false) and not added.
+	if ships.has(ship_state.ship_id):
+		push_error("GameState: duplicate ship id '%s' rejected" % ship_state.ship_id)
+		return false
 	ships[ship_state.ship_id] = ship_state
 
 	# Track by player
@@ -218,6 +222,7 @@ func add_ship(ship_state: ShipState) -> void:
 	ships_by_player[ship_state.player_id].append(ship_state.ship_id)
 
 	Trace.trace_log("GameState", "Added ship %s (player %d)" % [ship_state.ship_id, ship_state.player_id])
+	return true
 
 func remove_ship(ship_id: String) -> void:
 	## Remove a ship from the state container. Used by both server and client.  SCV:ALLOW

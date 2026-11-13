@@ -67,7 +67,7 @@
 	  "crew_morale": 4
 	},
 	{
-	  "id": "enemy_ship_1",
+	  "id": "enemy_ship_2",
 	  "player_id": 1,
 	  "ship_type": "frigate_32",
 	  "position": {
@@ -83,7 +83,7 @@
 	  "crew_morale": 4
 	},
 	{
-	  "id": "enemy_ship_2",
+	  "id": "enemy_ship_3",
 	  "player_id": 1,
 	  "ship_type": "frigate_32",
 	  "position": {
@@ -99,7 +99,7 @@
 	  "crew_morale": 4
 	},
 	{
-	  "id": "enemy_ship_3",
+	  "id": "enemy_ship_4",
 	  "player_id": 1,
 	  "ship_type": "frigate_32",
 	  "position": {

@@ -126,3 +126,23 @@ func test_default_scenario_has_valid_structure() -> void:
 	assert_true(scenario.has("ships"), "Default scenario should have ships")
 	assert_eq(scenario["ships"].size(), 2, "Default scenario should have 2 ships")
 	assert_engine_error("Scenario not found")
+
+# --- Every shipped scenario ---
+
+func _shipped_scenarios() -> Dictionary:
+	var result := {}
+	var dir := DirAccess.open("res://data/scenarios")
+	for file_name in dir.get_files():
+		if file_name.ends_with(".json"):
+			var text := FileAccess.get_file_as_string("res://data/scenarios/" + file_name)
+			result[file_name] = JSON.parse_string(text)
+	return result
+
+func test_shipped_scenarios_have_unique_ship_ids() -> void:
+	var scenarios := _shipped_scenarios()
+	assert_gt(scenarios.size(), 0, "found the shipped scenarios")
+	for file_name in scenarios:
+		var seen := {}
+		for ship in scenarios[file_name]["ships"]:
+			assert_false(seen.has(ship["id"]), "%s: ship id %s is unique" % [file_name, ship["id"]])
+			seen[ship["id"]] = true

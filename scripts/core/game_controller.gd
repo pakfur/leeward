@@ -246,8 +246,9 @@ func _spawn_ship(ship_data: Dictionary) -> void:
 	var ship_state = ShipState.new()
 	ship_state.initialize_from_scenario(ship_data, ship_ref)
 
-	# Add state to GameState
-	GameState.add_ship(ship_state)
+	# Add state to GameState (a duplicate id is rejected there, with an error naming it)
+	if not GameState.add_ship(ship_state):
+		return
 
 	# Create ship view (presentation only)
 	var ship_view = ShipView.new()

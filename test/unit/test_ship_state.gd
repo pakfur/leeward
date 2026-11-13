@@ -229,3 +229,14 @@ func test_mutators_unknown_ship_return_false() -> void:
 	var c := GameState.ship_controller
 	assert_false(c.set_status("nope", ShipState.Status.STRUCK))
 	assert_push_error("Ship not found")
+
+
+# --- GameState.add_ship ---
+
+func test_add_ship_rejects_duplicate_id() -> void:
+	var duplicate := _make_state({})
+	assert_false(GameState.add_ship(duplicate), "a second ship with the same id is rejected")
+	assert_push_error("ss_ship")
+	assert_eq(GameState.ships.size(), 1, "one entry in ships")
+	assert_same(GameState.ships["ss_ship"], state, "the first ship is kept")
+	assert_eq(GameState.ships_by_player[1], ["ss_ship"], "one entry in ships_by_player")
