@@ -131,6 +131,7 @@ func test_frigate_38_gun_factors() -> void:
 func test_sol_74_chart_values() -> void:
 	var def = dm.get_ship_definition("ship_of_line_74")
 	assert_eq(def.ship_class, 2)
+	assert_eq(def.draft, 22)
 	assert_eq(def.hull_hp, [8, 8, 9, 9] as Array[int])
 	assert_eq(def.gun_factors, {"lg": 17, "mg": 0, "cr": 1})
 	assert_eq(def.freeboard, 4)
