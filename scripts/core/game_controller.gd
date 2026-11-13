@@ -14,10 +14,14 @@ extends Node
 const PlanningPhaseUI = preload("res://scenes/ui/planning_phase_ui.tscn")
 const FireDeclarationPanelScene = preload("res://scenes/ui/fire_declaration_panel.tscn")
 const CombatLogPanelScene = preload("res://scenes/ui/combat_log_panel.tscn")
+const GameOverPanelScene = preload("res://scenes/ui/game_over_panel.tscn")
 const OceanViewScript = preload("res://scripts/view/ocean_view.gd")
 var current_planning_ui: Control = null
 var fire_panel: Control = null  # FireDeclarationPanel while fire orders are being declared
 var combat_log_panel: CombatLogPanel = null
+var end_turn_panel: Control = null  # context-panel content while waiting in POST_COMBAT
+var end_turn_button: Button = null
+var game_over_panel: GameOverPanel = null  # modal result card; non-null once the game has ended
 var _combat_playback_active: bool = false  # true from combat_log_ready until playback finishes
 var _combat_playback_skip: bool = false
 const COMBAT_REVEAL_SECONDS := 0.6
@@ -50,8 +54,11 @@ var playback_controller: MovementResolutionPlaybackController = null
 var hex_coord_label: Label = null
 var hex_coords_enabled: bool = false
 
-# When true, POST_COMBAT auto-advances immediately instead of awaiting 2-second timer
+# When true, POST_COMBAT ends the turn automatically instead of waiting for the End Turn button
 var skip_post_combat_delay: bool = false
+
+## The player left the finished game; the scene manager returns to scenario selection.
+signal back_to_scenarios_requested()
 
 func _ready() -> void:
 	Trace.trace_log("GameController", "GameController ready")
@@ -85,6 +92,7 @@ func _ready() -> void:
 		GameState.phase_controller.resolution_log_ready.connect(_on_resolution_log_ready)
 		GameState.phase_controller.fire_declaration_requested.connect(_on_fire_declaration_requested)
 		GameState.phase_controller.combat_log_ready.connect(_on_combat_log_ready)
+		GameState.phase_controller.game_over.connect(_on_game_over)
 
 	# Set up OceanView for water shader updates
 	if GameState.environment_controller and hex_map:
@@ -259,6 +267,8 @@ func _spawn_ship(ship_data: Dictionary) -> void:
 	Trace.trace_log("GameController", "Spawned ship: %s for player %d" % [ship_state.ship_name, ship_state.player_id])
 
 func _unhandled_input(event: InputEvent) -> void:
+	if game_over_panel:
+		return  # the result card is modal: nothing reaches the map
 	if event is InputEventMouseMotion:
 		_update_plotting_hover(event.position)
 		return
@@ -267,6 +277,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if _combat_playback_active and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
 			_skip_combat_playback()
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER] and _end_turn_available():
+			_on_end_turn_pressed()
 			get_viewport().set_input_as_handled()
 			return
 		if event.keycode == KEY_C:
@@ -443,6 +457,8 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 	_hover_candidates.clear()
 	_clear_hover()
 	_close_fire_panel()
+	if phase != GameState.GamePhase.POST_COMBAT:
+		_clear_end_turn_ui()
 	Trace.trace_log("GameController", "Phase changed to: %s" % GameState.get_phase_name())
 
 	match phase:
@@ -453,8 +469,6 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 		GameState.GamePhase.POST_COMBAT:
 			_sync_all_views()  # drift and other late phases move ships without their own playback
 			_enter_post_combat_phase()
-		GameState.GamePhase.END_TURN:
-			_end_turn()
 
 func _enter_planning_phase() -> void:
 	Trace.trace_log("GameController", "Entering planning phase for player 0")
@@ -942,19 +956,103 @@ func _finish_combat_playback() -> void:
 	phase_controller.on_combat_playback_completed()
 
 func _enter_post_combat_phase() -> void:
+	if skip_post_combat_delay:
+		_request_end_turn()
+		return
 	Trace.trace_log("GameController", "Post-combat phase - waiting for player to end turn")
-	if not skip_post_combat_delay:
-		await get_tree().create_timer(2.0).timeout
+	if combat_log_panel:
+		combat_log_panel.set_expanded(true)  # let the player review the turn
+	_show_end_turn_ui()
 
+
+func _show_end_turn_ui() -> void:
+	var box := VBoxContainer.new()
+	box.name = "EndTurnPanel"
+	box.add_theme_constant_override("separation", 12)
+	var hint := Label.new()
+	hint.text = "Review the combat log, then end the turn."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(hint)
+	var button := Button.new()
+	button.name = "EndTurnButton"
+	button.text = "End Turn"
+	button.custom_minimum_size = Vector2(0, 40)
+	button.focus_mode = Control.FOCUS_NONE  # Space/Enter are handled once, in _unhandled_input
+	button.pressed.connect(_on_end_turn_pressed)
+	box.add_child(button)
+	if context_panel:
+		context_panel.set_context_title("Turn %d complete" % GameState.phase_controller.current_turn)
+		context_panel.set_context_content(box)
+	else:
+		add_child(box)
+	current_planning_ui = null  # freed by the context panel; the next turn builds a fresh one
+	end_turn_panel = box
+	end_turn_button = button
+
+
+func _clear_end_turn_ui() -> void:
+	if end_turn_panel and is_instance_valid(end_turn_panel):
+		end_turn_panel.queue_free()
+	end_turn_panel = null
+	end_turn_button = null
+
+
+## The End Turn key shortcut only applies while the button is showing and no combat playback is
+## running (that playback owns Space/Enter as its skip keys).
+func _end_turn_available() -> bool:
+	return end_turn_button != null and is_instance_valid(end_turn_button) \
+			and not end_turn_button.disabled and not _combat_playback_active
+
+
+func _on_end_turn_pressed() -> void:
+	if end_turn_button:
+		end_turn_button.disabled = true  # one press per turn
+	_request_end_turn()
+
+
+func _request_end_turn() -> void:
 	# Single-player shortcut: end the turn under server guard  SCV:ALLOW
 	if GameState.is_server and GameState.phase_controller:
-		GameState.phase_controller.player_end_turn(0)
+		GameState.phase_controller.player_end_turn(HUMAN_PLAYER_ID)
 	else:
 		push_warning("Client phase advance not yet implemented - needs network layer")
 
-func _end_turn() -> void:
-	# END_TURN advances itself on the server (next turn, or game over); nothing to do here
-	pass
+
+# ============================================================================
+# Game Over
+# ============================================================================
+
+func _on_game_over(result: Dictionary) -> void:
+	Trace.trace_log("GameController", "Game over", result)
+	_close_fire_panel()
+	_clear_end_turn_ui()
+	_deselect_ship()
+	_sync_all_views()
+	if movement_client and movement_client.is_plotting():
+		movement_client.cancel()
+	if hex_overlay:
+		hex_overlay.clear_everything()
+	current_planning_ui = null
+	if context_panel:
+		var done := Label.new()
+		done.text = "The battle is over."
+		context_panel.set_context_title("Game over")
+		context_panel.set_context_content(done)  # also frees any leftover planning controls
+	game_over_panel = GameOverPanelScene.instantiate()
+	if ui:
+		ui.add_child(game_over_panel)
+	else:
+		add_child(game_over_panel)
+	game_over_panel.show_result(result, GameState.get_all_ships())
+	game_over_panel.back_requested.connect(_on_back_to_scenarios)
+
+
+func _on_back_to_scenarios() -> void:
+	if back_to_scenarios_requested.get_connections().is_empty():
+		# Started on its own (e.g. `make play`) with no scene manager above: restart from the menus.
+		get_tree().change_scene_to_file("res://scenes/main.tscn")
+		return
+	back_to_scenarios_requested.emit()
 
 func _sync_all_views() -> void:
 	for ship_id in ship_views.keys():
