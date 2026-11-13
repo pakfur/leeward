@@ -100,16 +100,21 @@ func _add_duel_ships() -> void:
 	_make_ship("p1", 1, HexGrid.DIRECTIONS[1], 3, "E")
 
 
-func _start(scenario_overrides: Dictionary = {}) -> void:
+## With `default_resolver` the movement resolver is wired as in the game
+## (GameState._initialize_server_controllers: no RNG of its own, so it rolls from GameState.rng).
+func _start(scenario_overrides: Dictionary = {}, default_resolver: bool = false) -> void:
 	var scenario := {
 		"name": "battle_test", "wind_direction": 0, "wind_speed": 2, "sea_state": 1,
 		"seed": 11, "turn_limit": MAX_TURNS,
 	}
 	scenario.merge(scenario_overrides, true)
-	# The resolver has its own RNG, as in test_game_loop.gd
-	var resolver_rng := RandomNumberGenerator.new()
-	resolver_rng.seed = 200
-	GameState.movement_resolver = MovementResolver.new(GameState, resolver_rng)
+	if default_resolver:
+		GameState.movement_resolver = MovementResolver.new(GameState)
+	else:
+		# The resolver has its own RNG, as in test_game_loop.gd
+		var resolver_rng := RandomNumberGenerator.new()
+		resolver_rng.seed = 200
+		GameState.movement_resolver = MovementResolver.new(GameState, resolver_rng)
 	GameState.start_new_game(scenario)
 
 
@@ -197,10 +202,10 @@ func _boxes_ok(ship: ShipState) -> bool:
 	return ship.marine_count >= 0
 
 
-func _run_duel() -> void:
+func _run_duel(default_resolver: bool = false) -> void:
 	_reset_game()
 	_add_duel_ships()
-	_start()
+	_start({}, default_resolver)
 	_play_battle(_best_shot_orders)
 
 
@@ -229,6 +234,18 @@ func test_battle_is_deterministic() -> void:
 	assert_false(first_result.is_empty(), "first run finished")
 
 	_run_duel()
+	assert_eq(pc.game_result, first_result, "same game_result")
+	assert_eq(_log_dicts(), first_logs, "same turn logs, event for event")
+
+
+func test_battle_is_deterministic_with_the_game_resolver_wiring() -> void:
+	_run_duel(true)
+	assert_eq(_stalls, [] as Array[String], "no stalls")
+	var first_result := pc.game_result.duplicate(true)
+	var first_logs := _log_dicts()
+	assert_false(first_result.is_empty(), "first run finished")
+
+	_run_duel(true)
 	assert_eq(pc.game_result, first_result, "same game_result")
 	assert_eq(_log_dicts(), first_logs, "same turn logs, event for event")
 
