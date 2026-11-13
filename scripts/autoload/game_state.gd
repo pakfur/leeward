@@ -50,6 +50,8 @@ var ships_by_player: Dictionary = {0: [], 1: []}  # player_id -> Array[ship_id]
 var rng: RandomNumberGenerator = null
 # All die rolls (d10 is 0-9); built on rng
 var dice: Dice = null
+var fire_geometry: FireGeometry = null
+var gunnery_calculator: GunneryCalculator = null
 
 # Event log for the current turn, and finished logs by turn number
 var turn_log: PhaseEvents.PhaseLog = null
@@ -78,6 +80,8 @@ func _initialize_server_controllers() -> void:
 	if rng == null:
 		rng = RandomNumberGenerator.new()
 	dice = Dice.new(rng)
+	fire_geometry = FireGeometry.new(HexGrid.new())
+	gunnery_calculator = GunneryCalculator.new(self)
 	turn_log = PhaseEvents.PhaseLog.new()
 	phase_controller = TurnPhaseController.new(self)
 	ship_controller = ShipStateController.new(self)
