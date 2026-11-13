@@ -210,9 +210,17 @@ func test_simple_mutators() -> void:
 	assert_true(c.set_crew_quality("ss_ship", "C"))
 	assert_eq(state.crew_quality, "C")
 	assert_true(c.set_morale_rating("ss_ship", 9))
-	assert_eq(state.morale_rating, 5)
+	assert_eq(state.morale_rating, 6, "clamped to the rulebook maximum 6")
 	assert_true(c.set_unfoul_attempts("ss_ship", 2))
 	assert_eq(state.unfoul_attempts, 2)
+
+
+func test_morale_rating_range_is_2_to_6() -> void:
+	var c := GameState.ship_controller
+	c.set_morale_rating("ss_ship", 6)
+	assert_eq(state.morale_rating, 6, "6 is a legal rating")
+	c.set_morale_rating("ss_ship", 1)
+	assert_eq(state.morale_rating, 2, "clamped to the minimum 2")
 
 
 func test_set_fouled_with_resets_unfoul_attempts() -> void:

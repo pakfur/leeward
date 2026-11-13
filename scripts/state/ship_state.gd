@@ -47,7 +47,7 @@ var ship_type: String:
 @export var hull_current_hp: Array[int] = [0, 0, 0, 0]
 
 # Crew
-@export var morale_rating: int = 4  # 2-5
+@export var morale_rating: int = 4  # 2-6 (higher is worse)
 @export var crew_count: Array[int] = [0, 0, 0, 0] # boxes in each of the 4 sailor sections
 @export var marine_count: int = 0 # number of "marines" 0-12
 @export var crew_quality: String = "B" # A=Elite, B=Veteran, C-D=Trained, E=Green, F-G=Demoralized

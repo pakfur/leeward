@@ -84,7 +84,7 @@
 7. **MORALE_CHECK** - Morale checks; ships may strike (auto)
 8. **MESSAGE_DELIVERY** - Not implemented yet (auto-advances)
 9. **POST_COMBAT** - Review the combat log, then press End Turn
-10. **END_TURN** - Victory check: the game ends when a side has struck or the turn limit is reached; otherwise the next turn begins
+10. **END_TURN** - Victory check: the game ends when every ship of one side has struck or the turn limit is reached; otherwise the next turn begins
 
 ## Troubleshooting
 

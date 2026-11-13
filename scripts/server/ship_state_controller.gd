@@ -193,7 +193,7 @@ func set_morale_rating(ship_id: String, morale: int) -> bool:
 	var ship = _server_ship(ship_id)
 	if not ship:
 		return false
-	ship.morale_rating = clampi(morale, 2, 5)
+	ship.morale_rating = clampi(morale, 2, 6)
 	ship_state_changed.emit(ship_id)
 	return true
 

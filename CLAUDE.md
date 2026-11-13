@@ -114,7 +114,7 @@ Other project skills: `scenario-creator` (create scenario JSONs), `gen-test` (sc
 
 All except `dice` (takes the RNG) and `fire_geometry` (takes a `HexGrid`) take `game_state` in `_init` and reach collaborators through it. Names are exact. `stub_ai` predates the turn-loop work (it now also submits fire orders):
 
-- `dice` (`Dice`): the only source of randomness (see Dice below).
+- `dice` (`Dice`): the default source of randomness for game logic (see Dice below).
 - `fire_geometry` (`FireGeometry`, `scripts/core/`): pure geometry — `bearing_side` (which broadside covers a hex, or -1), `rake_type`, `has_line_of_sight`, `broadside_hexes`.
 - `gunnery_calculator` (`GunneryCalculator`): pure queries, no dice, no mutation — `preview(order, two_targets)` gives a `ShotPreview` (modified gunfire number + modifier breakdown), `eligible_shots`, `any_eligible_shot`, `validate_orders`. Types in `gunnery_types.gd` (`FireOrder`, `ShotPreview`; aims `low`/`high`, ammo `round`/`dismantling`).
 - `gunnery_resolver` (`GunneryResolver`): rolls and applies a set of `FireOrder`s simultaneously, logging each shot.
