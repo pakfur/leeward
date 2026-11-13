@@ -103,6 +103,7 @@ func _resolve_shot(shot: Dictionary, phase: int) -> void:
 
 		var furled: bool = sail_state == SAIL_NS and not target_dismasted
 		if furled:
+			@warning_ignore("integer_division")
 			var half := rigging / 2
 			if rigging % 2 == 1 and game_state.dice.d6() <= 3:
 				half += 1
