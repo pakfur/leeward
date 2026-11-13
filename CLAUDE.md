@@ -147,7 +147,7 @@ Session-based async system in `MovementPlottingController`/`MovementPlottingSess
 
 - Speed types: `L/F`, `L/S`, `L/VS`, `F/F`, `F/S`, `F/VS`, `C/F`, `C/S`, `C/VS`
 - Wind facings: `C` (close-hauled), `B` (broad reach), `R` (reach), `L` (luffing — always returns 0)
-- Wind speed: `1`–`4` (string keys)
+- Wind speed: `1`–`4` (string keys). Wind speed 0 (calm) is not in the table: `ShipStateController.get_movement_allowance` and `MovementValidator._lookup_ma` return 0 before the lookup.
 - Rigging level: `1`–`4` = number of rigging sections that still have boxes (see Rigging level rule)
 - Sail states: `fs` (fighting), `ms` (maneuvering), `ps` (plain), `ns` (no sail)
 
@@ -217,7 +217,7 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 
 ### Environment RNG
 - `EnvironmentController` manages RNG seed for determinism
-- Wind changes use 2d10 rolls; high rolls revert wind toward original direction
+- Wind changes use 2d10 rolls; a 16+ steps the wind one step back toward the scenario's starting speed and direction (`EnvironmentState.original_wind_speed` / `original_wind_direction`, set in `initialize_from_scenario`; direction the shorter way round)
 
 ### Movement Allowance Lookup
 - All keys are **strings** (including wind_speed and rigging_quality)
