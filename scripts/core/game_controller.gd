@@ -13,9 +13,14 @@ extends Node
 # Planning phase UI
 const PlanningPhaseUI = preload("res://scenes/ui/planning_phase_ui.tscn")
 const FireDeclarationPanelScene = preload("res://scenes/ui/fire_declaration_panel.tscn")
+const CombatLogPanelScene = preload("res://scenes/ui/combat_log_panel.tscn")
 const OceanViewScript = preload("res://scripts/view/ocean_view.gd")
 var current_planning_ui: Control = null
 var fire_panel: Control = null  # FireDeclarationPanel while fire orders are being declared
+var combat_log_panel: CombatLogPanel = null
+var _combat_playback_active: bool = false  # true from combat_log_ready until playback finishes
+var _combat_playback_skip: bool = false
+const COMBAT_REVEAL_SECONDS := 0.6
 
 # Fire arc overlay colours (port / starboard broadsides)
 const ARC_COLOR_PORT := Color(0.95, 0.35, 0.2, 0.2)
@@ -88,6 +93,8 @@ func _ready() -> void:
 		add_child(ocean_view)
 		ocean_view.update_water_shader()
 
+	_setup_combat_log_panel()
+
 	# Initialize hex overlay
 	_setup_hex_overlay()
 	_setup_indicators()
@@ -105,6 +112,12 @@ func _ready() -> void:
 
 	# Start the game
 	GameState.start_new_game(scenario)
+
+func _setup_combat_log_panel() -> void:
+	combat_log_panel = CombatLogPanelScene.instantiate()
+	if ui:
+		ui.add_child(combat_log_panel)
+		combat_log_panel.skip_requested.connect(_skip_combat_playback)
 
 func _setup_hex_overlay() -> void:
 	var overlay_script = load("res://scripts/view/hex_overlay.gd")
@@ -252,6 +265,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# Handle keyboard shortcuts
 	if event is InputEventKey and event.pressed and not event.echo:
+		if _combat_playback_active and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
+			_skip_combat_playback()
+			get_viewport().set_input_as_handled()
+			return
 		if event.keycode == KEY_C:
 			_center_camera_on_all_ships()
 			get_viewport().set_input_as_handled()
@@ -434,6 +451,7 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 		GameState.GamePhase.MOVEMENT_RESOLUTION:
 			_resolve_movement()
 		GameState.GamePhase.POST_COMBAT:
+			_sync_all_views()  # drift and other late phases move ships without their own playback
 			_enter_post_combat_phase()
 		GameState.GamePhase.END_TURN:
 			_end_turn()
@@ -872,14 +890,56 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 
 
 @warning_ignore("shadowed_global_identifier")
-func _on_combat_log_ready(_log: PhaseEvents.PhaseLog) -> void:
-	# TEMPORARY (Task 21 replaces this with the combat log panel and paced playback):
-	# show the resolved state at once and tell the phase controller playback is finished.
+func _on_combat_log_ready(log: PhaseEvents.PhaseLog) -> void:
 	_close_fire_panel()
+	if _combat_playback_active:
+		return  # already playing this exchange
+	_combat_playback_active = true
+	_combat_playback_skip = false
+	_play_combat_log(log)
+
+
+## Reveal the combat events one at a time (skippable), syncing views as damage is read,
+## then tell the phase controller playback is finished.
+func _play_combat_log(combat_log: PhaseEvents.PhaseLog) -> void:
+	var instant := skip_post_combat_delay or combat_log_panel == null
+	if combat_log_panel:
+		combat_log_panel.set_expanded(true)
+	if not instant:
+		for ev in CombatLogPanel.playback_events(combat_log):
+			if _combat_playback_skip:
+				break
+			combat_log_panel.set_reveal_limit(combat_log.events.find(ev) + 1)
+			if CombatLogPanel.syncs_views(ev):
+				_sync_all_views()
+			var waited := 0.0
+			while waited < COMBAT_REVEAL_SECONDS and not _combat_playback_skip:
+				await get_tree().process_frame
+				waited += get_process_delta_time()
+	if combat_log_panel:
+		combat_log_panel.clear_reveal_limit()
 	_sync_all_views()
+	_finish_combat_playback()
+
+
+func _skip_combat_playback() -> void:
+	if _combat_playback_active:
+		_combat_playback_skip = true
+
+
+func _finish_combat_playback() -> void:
+	if not _combat_playback_active:
+		return
+	_combat_playback_active = false
+	var phase_controller = GameState.phase_controller
+	if phase_controller == null:
+		return
+	# The phase may have moved on (or the game ended) while we were revealing lines.
+	if phase_controller.current_phase != TurnPhaseController.GamePhase.COMBAT_RESOLUTION \
+			or phase_controller.combat_step != TurnPhaseController.CombatStep.RESOLVE:
+		return
 	# Intentional view->controller callback so the turn keeps cycling  SCV:ALLOW
-	if GameState.phase_controller:
-		GameState.phase_controller.on_combat_playback_completed()
+	phase_controller.on_combat_playback_completed()
 
 func _enter_post_combat_phase() -> void:
 	Trace.trace_log("GameController", "Post-combat phase - waiting for player to end turn")
@@ -902,6 +962,8 @@ func _sync_all_views() -> void:
 		var ship_state = GameState.get_ship(ship_id)
 		if ship_state and ship_view and hex_map:
 			ship_view.sync_to_state(ship_state, hex_map.get_hex_grid())
+	if ship_status_panel:
+		ship_status_panel.refresh()
 
 func _toggle_developer_ui() -> void:
 	if developer_ui:

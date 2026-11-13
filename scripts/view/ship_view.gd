@@ -11,6 +11,7 @@ var model_node: Node3D
 var wave_calculator: WaveCalculator
 var base_position: Vector3  # Position without wave offset
 var hex_grid_ref: HexGrid = null
+var _struck_flag: MeshInstance3D = null  # white flag shown while the ship is struck
 
 func _ready() -> void:
 	wave_calculator = WaveCalculator.new()
@@ -41,6 +42,43 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 
 	# Update rotation
 	_update_rotation_from_state(ship_state)
+
+	# Struck ships look different (flag + desaturated)
+	_update_struck_visual(ship_state.is_struck())
+
+func _update_struck_visual(struck: bool) -> void:
+	"""Show a white flag and desaturate the model while the ship is struck; undo it otherwise."""
+	if model_node == null or struck == (_struck_flag != null):
+		return
+	for child in model_node.get_children():
+		var mesh := child as MeshInstance3D
+		if mesh == null or mesh == _struck_flag:
+			continue
+		var material := mesh.material_override as StandardMaterial3D
+		if material == null:
+			continue
+		if struck:
+			material.set_meta("unstruck_color", material.albedo_color)
+			var gray := material.albedo_color.get_luminance()
+			material.albedo_color = material.albedo_color.lerp(Color(gray, gray, gray), 0.8)
+		elif material.has_meta("unstruck_color"):
+			material.albedo_color = material.get_meta("unstruck_color")
+	if struck:
+		_struck_flag = MeshInstance3D.new()
+		_struck_flag.name = "StruckFlag"
+		var flag_mesh := BoxMesh.new()
+		flag_mesh.size = Vector3(0.04, 0.35, 0.5)
+		_struck_flag.mesh = flag_mesh
+		var flag_material := StandardMaterial3D.new()
+		flag_material.albedo_color = Color(1, 1, 1)
+		flag_material.emission_enabled = true
+		flag_material.emission = Color(0.9, 0.9, 0.9)
+		_struck_flag.material_override = flag_material
+		_struck_flag.position = Vector3(0, 1.3, 0.3)
+		model_node.add_child(_struck_flag)
+	else:
+		_struck_flag.queue_free()
+		_struck_flag = null
 
 func _update_position_from_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	"""Calculate and set position based on ship state"""
