@@ -556,6 +556,7 @@ func _on_planning_action_toggled(ship_id: String, action_type: String, active: b
 				if hex_overlay:
 					hex_overlay.clear_submitted_path(ship_id)
 				if GameState.is_server:
+					# Single-player shortcut: clear the old plot under the server guard  SCV:ALLOW
 					GameState.ship_controller.clear_plotted_actions(ship_id)
 				Trace.trace_log("GameController", "Re-plotting ship %s — cleared previous submission" % ship_id)
 

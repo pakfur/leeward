@@ -182,6 +182,9 @@ func _enter_movement_resolution_phase() -> void:
 func on_playback_completed() -> void:
 	"""Called by the view layer after resolution playback finishes.
 	Applies results to state and advances to the next phase."""
+	if not is_server:
+		push_error("TurnPhaseController: Cannot complete movement playback on client")
+		return
 	if current_phase != GamePhase.MOVEMENT_RESOLUTION:
 		push_error("TurnPhaseController: on_playback_completed called outside MOVEMENT_RESOLUTION")
 		return
@@ -258,6 +261,9 @@ func _resolve_combat() -> void:
 
 func on_combat_playback_completed() -> void:
 	"""Called by the view layer after combat playback finishes. Advances past combat."""
+	if not is_server:
+		push_error("TurnPhaseController: Cannot complete combat playback on client")
+		return
 	if current_phase != GamePhase.COMBAT_RESOLUTION or combat_step != CombatStep.RESOLVE:
 		push_error("TurnPhaseController: on_combat_playback_completed called outside combat RESOLVE")
 		return

@@ -227,6 +227,31 @@ func test_combat_playback_outside_resolve_is_ignored() -> void:
 	assert_eq(pc.current_phase, TurnPhaseController.GamePhase.COMBAT_RESOLUTION)
 
 
+func test_combat_playback_completed_rejected_on_client() -> void:
+	_setup_adjacent()
+	_enter_combat()
+	pc.player_submit_fire_orders(0, [])
+	assert_eq(pc.combat_step, TurnPhaseController.CombatStep.RESOLVE)
+	pc.is_server = false
+	pc.on_combat_playback_completed()
+	pc.is_server = true
+	assert_push_error("Cannot complete combat playback on client")
+	assert_eq(pc.current_phase, TurnPhaseController.GamePhase.COMBAT_RESOLUTION)
+	assert_eq(pc.combat_step, TurnPhaseController.CombatStep.RESOLVE)
+
+
+func test_movement_playback_completed_rejected_on_client() -> void:
+	_setup_adjacent()
+	var hex_before: Vector2i = a.hex_position
+	pc.current_phase = TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
+	pc.is_server = false
+	pc.on_playback_completed()
+	pc.is_server = true
+	assert_push_error("Cannot complete movement playback on client")
+	assert_eq(pc.current_phase, TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION)
+	assert_eq(a.hex_position, hex_before)
+
+
 func test_serialize_includes_combat_step() -> void:
 	_setup_adjacent()
 	_enter_combat()
