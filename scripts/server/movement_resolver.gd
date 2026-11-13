@@ -670,6 +670,9 @@ func _get_luffing_facing(_ship_state: ShipState, environment: EnvironmentState) 
 
 
 func _get_plotted_steps(ship_state: ShipState) -> Array:
+	## Fouled and struck ships cannot move: any plot is ignored (defence behind the plotting check).
+	if ship_state.fouled_with != "" or ship_state.is_struck():
+		return []
 	return ship_state.plotted_actions.get("movement", [])
 
 

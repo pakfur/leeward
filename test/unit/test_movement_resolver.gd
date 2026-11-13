@@ -646,6 +646,36 @@ func test_collision_fouling_dismasted_never_fouls() -> void:
 
 
 # ===========================================================================
+# Movement lock: fouled and struck ships ignore plotted movement
+# ===========================================================================
+
+func test_fouled_ship_ignores_plotted_movement() -> void:
+	var state = _make_ship_state()
+	state.fouled_with = "other"
+	_plot_straight(state, 3)
+	var ships: Array[ShipState] = [state]
+	var log = resolver.run(ships, env)
+	var result = log.get_result("test_ship_1")
+	assert_eq(result.final_hex, Vector2i(5, 5), "Fouled ship stays in place")
+	resolver.apply_results(log, ships)
+	assert_eq(state.hex_position, Vector2i(5, 5))
+	assert_false(state.moved_this_turn, "Fouled ship did not move")
+
+
+func test_struck_ship_ignores_plotted_movement() -> void:
+	var state = _make_ship_state()
+	state.status = ShipState.Status.STRUCK
+	_plot_straight(state, 3)
+	var ships: Array[ShipState] = [state]
+	var log = resolver.run(ships, env)
+	var result = log.get_result("test_ship_1")
+	assert_eq(result.final_hex, Vector2i(5, 5), "Struck ship stays in place")
+	resolver.apply_results(log, ships)
+	assert_eq(state.hex_position, Vector2i(5, 5))
+	assert_false(state.moved_this_turn, "Struck ship did not move")
+
+
+# ===========================================================================
 # Bearing off
 # ===========================================================================
 
