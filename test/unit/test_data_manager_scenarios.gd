@@ -146,3 +146,10 @@ func test_shipped_scenarios_have_unique_ship_ids() -> void:
 		for ship in scenarios[file_name]["ships"]:
 			assert_false(seen.has(ship["id"]), "%s: ship id %s is unique" % [file_name, ship["id"]])
 			seen[ship["id"]] = true
+
+func test_shipped_scenarios_have_a_turn_limit() -> void:
+	var scenarios := _shipped_scenarios()
+	for file_name in ["test_basic.json", "test_fleet.json"]:
+		assert_true(scenarios.has(file_name), "%s is shipped" % file_name)
+		if scenarios.has(file_name):
+			assert_gt(int(scenarios[file_name].get("turn_limit", 0)), 0, "%s has a positive turn_limit" % file_name)
