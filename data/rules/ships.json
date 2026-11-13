@@ -1,194 +1,194 @@
 {
   "frigate_38": {
-    "name": "38-gun Frigate",
-    "nationality": "British",
-    "rating": 38,
-    "class": 3,
-    "maneuverability": "C",
-    "speed_type": "F/F",
-    "type": "Frigate",
-    "speed": "Slow",
-    "draft": 18,
-    "freeboard": 6,
-    "rigging_hp": [
-      5,
-      5,
-      6,
-      6
-    ],
-    "hull_hp": [
-      5,
-      5,
-      5,
-      6
-    ],
-    "crew_count": [
-      3,
-      3,
-      3,
-      3
-    ],
-    "marine_count": 2,
-    "crew_quality": "B",
-    "armament": {
-      "long_guns": {
-        "main_deck_port": {
-          "count": 19,
-          "size": 18
-        },
-        "main_deck_starboard": {
-          "count": 19,
-          "size": 18
-        }
-      },
-      "bow_chasers": {
-        "count": 2,
-        "size": 9
-      },
-      "stern_chasers": {
-        "count": 2,
-        "size": 9
-      }
-    },
-    "gun_factors": {
-      "lg": 6,
-      "mg": 0,
-      "cr": 4
-    },
-    "ch_modifier": -2,
-    "lower_deck_modifier": -7,
-    "point_costs": {
-      "A3": 54,
-      "B3": 48,
-      "C3": 43,
-      "C4": 42,
-      "C5": 41,
-      "D4": 38,
-      "D5": 36
-    }
+	"name": "38-gun Frigate",
+	"nationality": "British",
+	"rating": 38,
+	"class": 3,
+	"maneuverability": "C",
+	"speed_type": "F/F",
+	"type": "Frigate",
+	"speed": "Slow",
+	"draft": 18,
+	"freeboard": 6,
+	"rigging_hp": [
+	  5,
+	  5,
+	  6,
+	  6
+	],
+	"hull_hp": [
+	  5,
+	  5,
+	  5,
+	  6
+	],
+	"crew_count": [
+	  3,
+	  3,
+	  3,
+	  3
+	],
+	"marine_count": 2,
+	"crew_quality": "B",
+	"armament": {
+	  "long_guns": {
+		"main_deck_port": {
+		  "count": 19,
+		  "size": 18
+		},
+		"main_deck_starboard": {
+		  "count": 19,
+		  "size": 18
+		}
+	  },
+	  "bow_chasers": {
+		"count": 2,
+		"size": 9
+	  },
+	  "stern_chasers": {
+		"count": 2,
+		"size": 9
+	  }
+	},
+	"gun_factors": {
+	  "lg": 6,
+	  "mg": 0,
+	  "cr": 4
+	},
+	"ch_modifier": -2,
+	"lower_deck_modifier": -7,
+	"point_costs": {
+	  "A3": 54,
+	  "B3": 48,
+	  "C3": 43,
+	  "C4": 42,
+	  "C5": 41,
+	  "D4": 38,
+	  "D5": 36
+	}
   },
   "frigate_32": {
-    "name": "32-gun Frigate",
-    "nationality": "British",
-    "rating": 32,
-    "class": 3,
-    "maneuverability": "C",
-    "speed_type": "F/S",
-    "type": "Frigate",
-    "speed": "Slow",
-    "draft": 16,
-    "freeboard": 5,
-    "rigging_hp": [
-      4,
-      5,
-      5,
-      5
-    ],
-    "hull_hp": [
-      4,
-      4,
-      4,
-      5
-    ],
-    "crew_count": [
-      2,
-      2,
-      2,
-      3
-    ],
-    "marine_count": 2,
-    "crew_quality": "B",
-    "armament": {},
-    "gun_factors": {
-      "lg": 4,
-      "mg": 0,
-      "cr": 2
-    },
-    "ch_modifier": -2,
-    "lower_deck_modifier": -7,
-    "point_costs": {
-      "A3": 37,
-      "B3": 33,
-      "C3": 30,
-      "C4": 29,
-      "C5": 28,
-      "D4": 26,
-      "D5": 25
-    }
+	"name": "32-gun Frigate",
+	"nationality": "British",
+	"rating": 32,
+	"class": 3,
+	"maneuverability": "C",
+	"speed_type": "F/S",
+	"type": "Frigate",
+	"speed": "Slow",
+	"draft": 16,
+	"freeboard": 5,
+	"rigging_hp": [
+	  4,
+	  5,
+	  5,
+	  5
+	],
+	"hull_hp": [
+	  4,
+	  4,
+	  4,
+	  5
+	],
+	"crew_count": [
+	  2,
+	  2,
+	  2,
+	  3
+	],
+	"marine_count": 2,
+	"crew_quality": "B",
+	"armament": {},
+	"gun_factors": {
+	  "lg": 4,
+	  "mg": 0,
+	  "cr": 2
+	},
+	"ch_modifier": -2,
+	"lower_deck_modifier": -7,
+	"point_costs": {
+	  "A3": 37,
+	  "B3": 33,
+	  "C3": 30,
+	  "C4": 29,
+	  "C5": 28,
+	  "D4": 26,
+	  "D5": 25
+	}
   },
   "ship_of_line_74": {
-    "name": "74-gun Ship of the Line",
-    "nationality": "British",
-    "rating": 74,
-    "class": 2,
-    "maneuverability": "B",
-    "speed_type": "L/F",
-    "type": "SOL",
-    "draft": 22,
-    "freeboard": 4,
-    "rigging_hp": [
-      7,
-      7,
-      7,
-      7
-    ],
-    "hull_hp": [
-      8,
-      8,
-      9,
-      9
-    ],
-    "crew_count": [
-      6,
-      6,
-      6,
-      6
-    ],
-    "marine_count": 5,
-    "crew_quality": "B",
-    "armament": {
-      "long_guns": {
-        "lower_deck_port": {
-          "count": 14,
-          "size": 32
-        },
-        "lower_deck_starboard": {
-          "count": 14,
-          "size": 32
-        },
-        "main_deck_port": {
-          "count": 14,
-          "size": 18
-        },
-        "main_deck_starboard": {
-          "count": 14,
-          "size": 18
-        },
-        "gun_deck_port": {
-          "count": 14,
-          "size": 12
-        },
-        "gun_deck_starboard": {
-          "count": 14,
-          "size": 12
-        }
-      }
-    },
-    "gun_factors": {
-      "lg": 17,
-      "mg": 0,
-      "cr": 1
-    },
-    "ch_modifier": 0,
-    "lower_deck_modifier": -5,
-    "point_costs": {
-      "A3": 99,
-      "B3": 88,
-      "C3": 79,
-      "C4": 77,
-      "C5": 75,
-      "D4": 71,
-      "D5": 69
-    }
+	"name": "74-gun Ship of the Line",
+	"nationality": "British",
+	"rating": 74,
+	"class": 2,
+	"maneuverability": "B",
+	"speed_type": "L/F",
+	"type": "SOL",
+	"draft": 22,
+	"freeboard": 4,
+	"rigging_hp": [
+	  7,
+	  7,
+	  7,
+	  7
+	],
+	"hull_hp": [
+	  8,
+	  8,
+	  9,
+	  9
+	],
+	"crew_count": [
+	  6,
+	  6,
+	  6,
+	  6
+	],
+	"marine_count": 5,
+	"crew_quality": "B",
+	"armament": {
+	  "long_guns": {
+		"lower_deck_port": {
+		  "count": 14,
+		  "size": 32
+		},
+		"lower_deck_starboard": {
+		  "count": 14,
+		  "size": 32
+		},
+		"main_deck_port": {
+		  "count": 14,
+		  "size": 18
+		},
+		"main_deck_starboard": {
+		  "count": 14,
+		  "size": 18
+		},
+		"gun_deck_port": {
+		  "count": 14,
+		  "size": 12
+		},
+		"gun_deck_starboard": {
+		  "count": 14,
+		  "size": 12
+		}
+	  }
+	},
+	"gun_factors": {
+	  "lg": 17,
+	  "mg": 0,
+	  "cr": 1
+	},
+	"ch_modifier": 0,
+	"lower_deck_modifier": -5,
+	"point_costs": {
+	  "A3": 99,
+	  "B3": 88,
+	  "C3": 79,
+	  "C4": 77,
+	  "C5": 75,
+	  "D4": 71,
+	  "D5": 69
+	}
   }
 }
