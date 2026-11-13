@@ -155,6 +155,17 @@ func test_plot_consumed_even_when_cleared_after_movement() -> void:
 	assert_eq(ship.sail_change.get("target"), "FS")
 
 
+func test_replotting_movement_keeps_sail_order() -> void:
+	# GameController clears only the movement plot when the player re-plots a ship
+	ctrl.plot_sail_change(0, "sail_ship", "FS")
+	GameState.ship_controller.set_plotted_movement("sail_ship", [{"hex": {"q": 1, "r": 0}, "facing": 0}])
+	GameState.ship_controller.set_plotted_movement("sail_ship", [])
+	assert_eq(ship.plotted_actions["movement"], [], "the old movement plot is gone")
+	assert_eq(ship.plotted_actions["sail_change"], "FS", "the sail order survives the re-plot")
+	ctrl.begin_plotted_changes()
+	assert_eq(ship.sail_change.get("target"), "FS", "and the change still starts")
+
+
 func test_empty_target_clears_plot() -> void:
 	ctrl.plot_sail_change(0, "sail_ship", "FS")
 	assert_eq(ctrl.plot_sail_change(0, "sail_ship", ""), "")
