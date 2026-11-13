@@ -48,6 +48,8 @@ var ships_by_player: Dictionary = {0: [], 1: []}  # player_id -> Array[ship_id]
 
 # Shared seeded RNG — seeded from scenario on game start; all controllers share this instance
 var rng: RandomNumberGenerator = null
+# All die rolls (d10 is 0-9); built on rng
+var dice: Dice = null
 
 # State history tracking (indexed by turn number)
 var environment_history: Array[EnvironmentState] = []  # Historical environment states
@@ -69,6 +71,9 @@ func _ready() -> void:
 
 func _initialize_server_controllers() -> void:
 	"""Initialize server-side controllers - SERVER ONLY"""
+	if rng == null:
+		rng = RandomNumberGenerator.new()
+	dice = Dice.new(rng)
 	phase_controller = TurnPhaseController.new(self)
 	ship_controller = ShipStateController.new(self)
 	environment_controller = EnvironmentController.new(self)
@@ -115,6 +120,7 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	var seed_value: int = scenario_data.get("seed", 0)
 	rng = RandomNumberGenerator.new()
 	rng.seed = seed_value
+	dice = Dice.new(rng)
 	Trace.trace_log("GameState", "RNG seeded", seed_value)
 
 	# Clear any existing state history
