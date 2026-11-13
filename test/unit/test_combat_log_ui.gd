@@ -39,35 +39,83 @@ func test_phase_heading_names_turn_and_phase() -> void:
 	assert_eq(LogPanel.phase_heading(1, DRIFT), "Turn 1 — Drift Calculation")
 
 
-func test_group_events_groups_consecutive_same_phase_under_one_heading() -> void:
-	var turn_log := _log_with([
+func test_entries_add_a_heading_when_the_phase_changes() -> void:
+	var log := _log_with([
 		[PhaseEvents.Type.FIRE, COMBAT, "a", {"bgn": 5}],
 		[PhaseEvents.Type.DAMAGE, COMBAT, "b", {"hull": 1}],
 		[PhaseEvents.Type.DRIFT, DRIFT, "a", {}],
 	])
-	var groups: Array = LogPanel.group_events(turn_log, {"a": "Alpha", "b": "Bravo"})
-	assert_eq(groups.size(), 2)
-	assert_eq(groups[0]["heading"], "Turn 2 — Combat Resolution")
-	assert_eq(groups[0]["lines"].size(), 2)
-	assert_string_contains(groups[0]["lines"][1], "Bravo takes")
-	assert_eq(groups[1]["heading"], "Turn 2 — Drift Calculation")
-	assert_eq(groups[1]["lines"].size(), 1)
+	var list: Array = LogPanel.entries(log, 0, 3, -1, {"a": "Alpha", "b": "Bravo"})
+	assert_eq(list.size(), 5)  # heading, 2 lines, heading, 1 line
+	assert_true(list[0]["heading"])
+	assert_eq(list[0]["text"], "Turn 2 — Combat Resolution")
+	assert_false(list[1]["heading"])
+	assert_string_contains(list[2]["text"], "Bravo takes")
+	assert_true(list[3]["heading"])
+	assert_eq(list[3]["text"], "Turn 2 — Drift Calculation")
 
 
-func test_group_events_respects_reveal_limit() -> void:
-	var turn_log := _log_with([
+func test_entries_continue_a_phase_without_repeating_the_heading() -> void:
+	var log := _log_with([
 		[PhaseEvents.Type.FIRE, COMBAT, "a"],
 		[PhaseEvents.Type.DAMAGE, COMBAT, "b"],
-		[PhaseEvents.Type.DRIFT, DRIFT, "a"],
 	])
-	var groups: Array = LogPanel.group_events(turn_log, {}, 1)
-	assert_eq(groups.size(), 1)
-	assert_eq(groups[0]["lines"].size(), 1)
+	var list: Array = LogPanel.entries(log, 1, 2, COMBAT, {})
+	assert_eq(list.size(), 1)
+	assert_false(list[0]["heading"])
 
 
-func test_group_events_empty_log_gives_no_groups() -> void:
-	assert_eq(LogPanel.group_events(PhaseEvents.PhaseLog.new(), {}).size(), 0)
-	assert_eq(LogPanel.group_events(null, {}).size(), 0)
+func test_entries_clamp_range_and_tolerate_null() -> void:
+	var log := _log_with([[PhaseEvents.Type.FIRE, COMBAT, "a"]])
+	assert_eq(LogPanel.entries(log, 0, 99, -1, {}).size(), 2)
+	assert_eq(LogPanel.entries(log, 1, 1, -1, {}).size(), 0)
+	assert_eq(LogPanel.entries(null, 0, 3, -1, {}).size(), 0)
+
+
+func test_plan_window_keeps_the_most_recent_ten_turns() -> void:
+	var available := {}
+	for turn in range(1, 15):
+		available[turn] = 3
+	var plan: Dictionary = LogPanel.plan_update({}, available)
+	assert_eq(plan["window"], range(5, 15))
+	assert_true(plan["truncated"])
+	assert_eq(plan["append"].size(), 10)
+	assert_eq(plan["append"][5], 3)
+
+
+func test_plan_not_truncated_with_few_turns() -> void:
+	var plan: Dictionary = LogPanel.plan_update({}, {1: 2, 2: 0})
+	assert_false(plan["truncated"])
+	assert_eq(plan["window"], [1, 2])
+
+
+func test_plan_appends_only_the_new_lines_of_the_current_turn() -> void:
+	var plan: Dictionary = LogPanel.plan_update({1: 4, 2: 3}, {1: 4, 2: 5})
+	assert_eq(plan["append"], {2: 2})
+	assert_eq(plan["drop"], [])
+
+
+func test_plan_drops_sections_that_left_the_window() -> void:
+	var built := {}
+	var available := {}
+	for turn in range(1, 12):
+		built[turn] = 1
+		available[turn] = 1
+	var plan: Dictionary = LogPanel.plan_update(built, available)
+	assert_eq(plan["drop"], [1])
+	assert_eq(plan["append"], {})
+
+
+func test_plan_with_nothing_new_requests_no_work() -> void:
+	var plan: Dictionary = LogPanel.plan_update({1: 2}, {1: 2})
+	assert_eq(plan["append"], {})
+	assert_eq(plan["drop"], [])
+
+
+func test_list_is_only_built_while_expanded_and_dirty() -> void:
+	assert_false(LogPanel.needs_build(false, true))
+	assert_false(LogPanel.needs_build(true, false))
+	assert_true(LogPanel.needs_build(true, true))
 
 
 func test_playback_events_are_only_combat_resolution_events() -> void:

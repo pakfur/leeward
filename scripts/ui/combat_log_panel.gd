@@ -11,6 +11,7 @@ signal skip_requested()
 
 const EXPANDED_HEIGHT := 260.0
 const BAR_HEIGHT := 34.0
+const MAX_TURNS_SHOWN := 10  # most recent turns kept in the list
 
 var _toggle_button: Button
 var _latest_label: Label
@@ -19,6 +20,9 @@ var _list: VBoxContainer
 var _expanded: bool = false
 var _reveal_limit: int = -1  # -1: show every event of the current turn
 var _signature: String = ""
+var _dirty: bool = false  # list is behind the logs (set while collapsed)
+var _sections: Dictionary = {}  # turn -> {"box": VBoxContainer, "count": int, "last_phase": int, "log": PhaseLog}
+var _earlier_label: Label
 
 
 # --- Pure presentation helpers (unit tested) ---------------------------------
@@ -30,21 +34,48 @@ static func phase_heading(turn: int, phase: int) -> String:
 	return "Turn %d — %s" % [turn, phase_name.replace("_", " ").capitalize()]
 
 
-## Consecutive events of the same phase share a group: [{"heading": String, "lines": Array[String]}].
-## `limit` (>= 0) shows only the first N events of the log.
-static func group_events(turn_log: PhaseEvents.PhaseLog, ship_names: Dictionary, limit: int = -1) -> Array:
-	var groups: Array = []
+## Display entries for events [from_index, to_index) of a turn log: {"heading": bool, "text": String}.
+## A heading entry precedes the first event and every event whose phase differs from the previous
+## one (`last_phase` is the phase of the event before from_index, -1 for none).
+static func entries(turn_log: PhaseEvents.PhaseLog, from_index: int, to_index: int,
+		last_phase: int, ship_names: Dictionary) -> Array:
+	var result: Array = []
 	if turn_log == null:
-		return groups
-	var shown: int = turn_log.events.size() if limit < 0 else mini(limit, turn_log.events.size())
-	var last_phase := -1
-	for i in range(shown):
+		return result
+	var stop := mini(to_index, turn_log.events.size())
+	for i in range(maxi(from_index, 0), stop):
 		var ev := turn_log.events[i]
-		if groups.is_empty() or ev.phase != last_phase:
-			groups.append({"heading": phase_heading(turn_log.turn, ev.phase), "lines": [] as Array[String]})
+		if ev.phase != last_phase:
+			result.append({"heading": true, "text": phase_heading(turn_log.turn, ev.phase)})
 			last_phase = ev.phase
-		groups[groups.size() - 1]["lines"].append(ev.to_text(ship_names))
-	return groups
+		result.append({"heading": false, "text": ev.to_text(ship_names)})
+	return result
+
+
+## What the list must do to match the logs. `built` and `available` map turn -> number of events
+## rendered / currently showable. Returns {"window": turns to show (most recent max_turns, ascending),
+## "drop": built turns outside the window, "append": {turn: number of new events},
+## "truncated": whether older turns were left out}.
+static func plan_update(built: Dictionary, available: Dictionary, max_turns: int = MAX_TURNS_SHOWN) -> Dictionary:
+	var turns := available.keys()
+	turns.sort()
+	var window: Array = turns.slice(maxi(turns.size() - max_turns, 0))
+	var drop: Array = []
+	for turn in built.keys():
+		if not window.has(turn):
+			drop.append(turn)
+	drop.sort()
+	var append := {}
+	for turn in window:
+		var extra: int = available[turn] - built.get(turn, 0)
+		if extra > 0:
+			append[turn] = extra
+	return {"window": window, "drop": drop, "append": append, "truncated": turns.size() > window.size()}
+
+
+## The list is only rebuilt while visible; otherwise it is just marked dirty.
+static func needs_build(expanded: bool, dirty: bool) -> bool:
+	return expanded and dirty
 
 
 ## The events the combat playback reveals one at a time: everything logged in COMBAT_RESOLUTION.
@@ -116,6 +147,9 @@ func _ready() -> void:
 	_list = VBoxContainer.new()
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_scroll.add_child(_list)
+	_earlier_label = _line_label("Earlier turns not shown")
+	_earlier_label.visible = false
+	_list.add_child(_earlier_label)
 
 	GameState.phase_changed.connect(_on_state_event)
 	GameState.turn_changed.connect(_on_state_event)
@@ -146,6 +180,8 @@ func set_expanded(expanded: bool) -> void:
 		_toggle_button.text = "Log ▼" if expanded else "Log ▲"
 		_apply_height()
 		if expanded:
+			if needs_build(true, _dirty):
+				_update_list(_logs_by_turn())
 			_scroll_to_end()
 
 
@@ -171,46 +207,95 @@ func refresh() -> void:
 	if _list == null:
 		return
 	_signature = _signature_now()
-	var names := _ship_names()
-	# Latest event overall: a fresh turn's log is empty, so fall back to the previous turn's.
-	var logs := _logs_in_order()
-	_latest_label.text = "No events yet"
-	for i in range(logs.size() - 1, -1, -1):
-		var limit: int = _reveal_limit if logs[i] == GameState.turn_log else -1
-		if logs[i].events.size() > 0 and limit != 0:
-			_latest_label.text = latest_line(logs[i], names, limit)
-			break
+	var by_turn := _logs_by_turn()
+	_update_latest_label(by_turn)
+	_dirty = true
+	if needs_build(_expanded, _dirty):
+		_update_list(by_turn)
 
-	for child in _list.get_children():
-		child.queue_free()
-	for entry in _logs_in_order():
-		var limit: int = _reveal_limit if entry == GameState.turn_log else -1
-		for group in group_events(entry, names, limit):
-			_list.add_child(_heading_label(group["heading"]))
-			for line in group["lines"]:
-				_list.add_child(_line_label(line))
+
+## Bring the list up to date: build new turns, append new lines, drop turns that left the window.
+func _update_list(by_turn: Dictionary) -> void:
+	_dirty = false
+	var names := _ship_names()
+	var available := {}
+	for turn in by_turn.keys():
+		var turn_log: PhaseEvents.PhaseLog = by_turn[turn]
+		var shown: int = turn_log.events.size()
+		if turn_log == GameState.turn_log and _reveal_limit >= 0:
+			shown = mini(_reveal_limit, shown)
+		available[turn] = shown
+		var section: Dictionary = _sections.get(turn, {})
+		# A different log object (new game) or fewer visible events than rendered: rebuild that section.
+		if not section.is_empty() and (section["log"] != turn_log or section["count"] > shown):
+			_remove_section(turn)
+	# Sections for turns the logs no longer contain (new game) go too.
+	for turn in _sections.keys():
+		if not by_turn.has(turn):
+			_remove_section(turn)
+
+	var built := {}
+	for turn in _sections.keys():
+		built[turn] = _sections[turn]["count"]
+	var plan := plan_update(built, available)
+	for turn in plan["drop"]:
+		_remove_section(turn)
+	_earlier_label.visible = plan["truncated"]
+	for turn in plan["window"]:
+		if not _sections.has(turn):
+			var box := VBoxContainer.new()
+			_list.add_child(box)
+			_sections[turn] = {"box": box, "count": 0, "last_phase": -1, "log": by_turn[turn]}
+		var extra: int = plan["append"].get(turn, 0)
+		if extra > 0:
+			_append_events(_sections[turn], by_turn[turn], extra, names)
 	if _expanded:
 		_scroll_to_end()
 
 
-func _logs_in_order() -> Array:
+func _append_events(section: Dictionary, turn_log: PhaseEvents.PhaseLog, extra: int, names: Dictionary) -> void:
+	var from_index: int = section["count"]
+	var to_index := from_index + extra
+	for entry in entries(turn_log, from_index, to_index, section["last_phase"], names):
+		section["box"].add_child(_heading_label(entry["text"]) if entry["heading"] else _line_label(entry["text"]))
+	section["count"] = to_index
+	section["last_phase"] = turn_log.events[to_index - 1].phase
+
+
+func _remove_section(turn: int) -> void:
+	var section: Dictionary = _sections[turn]
+	section["box"].queue_free()
+	_sections.erase(turn)
+
+
+func _update_latest_label(by_turn: Dictionary) -> void:
+	# Latest event overall: a fresh turn's log is empty, so fall back to the previous turn's.
+	var names := _ship_names()
+	var turns := by_turn.keys()
+	turns.sort()
+	_latest_label.text = "No events yet"
+	for i in range(turns.size() - 1, -1, -1):
+		var turn_log: PhaseEvents.PhaseLog = by_turn[turns[i]]
+		var limit: int = _reveal_limit if turn_log == GameState.turn_log else -1
+		if turn_log.events.size() > 0 and limit != 0:
+			_latest_label.text = latest_line(turn_log, names, limit)
+			break
+
+
+func _logs_by_turn() -> Dictionary:
 	var by_turn: Dictionary = {}
 	for turn in GameState.turn_logs.keys():
 		by_turn[turn] = GameState.turn_logs[turn]
 	if GameState.turn_log:
 		by_turn[GameState.turn_log.turn] = GameState.turn_log
-	var turns := by_turn.keys()
-	turns.sort()
-	var result: Array = []
-	for turn in turns:
-		result.append(by_turn[turn])
-	return result
+	return by_turn
 
 
 func _signature_now() -> String:
 	var count := GameState.turn_log.events.size() if GameState.turn_log else 0
 	var turn := GameState.turn_log.turn if GameState.turn_log else 0
-	return "%d:%d:%d" % [turn, count, GameState.turn_logs.size()]
+	var id := GameState.turn_log.get_instance_id() if GameState.turn_log else 0
+	return "%d:%d:%d:%d" % [turn, count, GameState.turn_logs.size(), id]
 
 
 func _ship_names() -> Dictionary:
