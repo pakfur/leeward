@@ -14,12 +14,18 @@ const COLOR_VALID = Color(0.2, 0.8, 0.2, 0.35)     # Green, semi-transparent
 const COLOR_PLOTTED = Color(0.2, 0.4, 0.9, 0.45)    # Blue, semi-transparent
 const COLOR_SUBMITTED = Color(0.5, 0.5, 0.5, 0.25)  # Gray, dimmed
 const COLOR_BLOCKED = Color(0.8, 0.2, 0.2, 0.35)    # Red, semi-transparent
+const COLOR_TARGET = Color(1.0, 0.9, 0.2, 0.5)      # Yellow, chosen fire targets
 
 # Child nodes for each layer
 var valid_hexes_node: Node3D = null
 var plotted_path_node: Node3D = null
 var submitted_paths_node: Node3D = null
 var blocked_hexes_node: Node3D = null
+var arcs_node: Node3D = null
+var targets_node: Node3D = null
+
+## Grid used to place arc hexes; set by the owner (show_arc takes only hexes and a colour).
+var arc_grid: HexGrid = null
 
 # Track current valid hex positions for click detection
 var _valid_hex_positions: Array[Vector2i] = []
@@ -29,6 +35,8 @@ var _valid_material: StandardMaterial3D = null
 var _plotted_material: StandardMaterial3D = null
 var _submitted_material: StandardMaterial3D = null
 var _blocked_material: StandardMaterial3D = null
+var _arc_materials: Dictionary = {}  # Color -> StandardMaterial3D
+var _target_material: StandardMaterial3D = null
 
 
 func _ready() -> void:
@@ -48,10 +56,20 @@ func _ready() -> void:
 	blocked_hexes_node.name = "BlockedHexes"
 	add_child(blocked_hexes_node)
 
+	arcs_node = Node3D.new()
+	arcs_node.name = "Arcs"
+	add_child(arcs_node)
+
+	targets_node = Node3D.new()
+	targets_node.name = "TargetHighlights"
+	add_child(targets_node)
+
 	_valid_material = _create_material(COLOR_VALID)
 	_plotted_material = _create_material(COLOR_PLOTTED)
 	_submitted_material = _create_material(COLOR_SUBMITTED)
 	_blocked_material = _create_material(COLOR_BLOCKED)
+	_target_material = _create_material(COLOR_TARGET)
+	_target_material.render_priority = 2
 
 
 func show_valid_hexes(hexes: Array, hex_grid: HexGrid) -> void:
@@ -92,6 +110,32 @@ func show_blocked_hexes(hex_positions: Array[Vector2i], hex_grid: HexGrid) -> vo
 		_add_hex_mesh(blocked_hexes_node, world_pos, hex_grid.hex_size, _blocked_material)
 
 
+## Draw a translucent fire arc (one broadside). Arcs accumulate until clear_arcs().
+func show_arc(hexes: Array[Vector2i], color: Color) -> void:
+	if arc_grid == null or arcs_node == null:
+		return
+	if not _arc_materials.has(color):
+		_arc_materials[color] = _create_material(color)
+	for hex_pos in hexes:
+		var world_pos = arc_grid.axial_to_world(hex_pos.x, hex_pos.y)
+		_add_hex_mesh(arcs_node, world_pos, arc_grid.hex_size, _arc_materials[color])
+
+
+## Highlight the hexes of the currently chosen fire targets.
+func show_target_highlights(hexes: Array[Vector2i]) -> void:
+	_clear_children(targets_node)
+	if arc_grid == null or targets_node == null:
+		return
+	for hex_pos in hexes:
+		var world_pos = arc_grid.axial_to_world(hex_pos.x, hex_pos.y)
+		_add_hex_mesh(targets_node, world_pos, arc_grid.hex_size, _target_material)
+
+
+func clear_arcs() -> void:
+	_clear_children(arcs_node)
+	_clear_children(targets_node)
+
+
 func clear_valid_hexes() -> void:
 	_clear_children(valid_hexes_node)
 	_valid_hex_positions.clear()
@@ -124,6 +168,7 @@ func clear_everything() -> void:
 	clear_valid_hexes()
 	clear_plotted_path()
 	clear_blocked_hexes()
+	clear_arcs()
 	_clear_children(submitted_paths_node)
 
 

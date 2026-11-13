@@ -12,8 +12,14 @@ extends Node
 
 # Planning phase UI
 const PlanningPhaseUI = preload("res://scenes/ui/planning_phase_ui.tscn")
+const FireDeclarationPanelScene = preload("res://scenes/ui/fire_declaration_panel.tscn")
 const OceanViewScript = preload("res://scripts/view/ocean_view.gd")
 var current_planning_ui: Control = null
+var fire_panel: Control = null  # FireDeclarationPanel while fire orders are being declared
+
+# Fire arc overlay colours (port / starboard broadsides)
+const ARC_COLOR_PORT := Color(0.95, 0.35, 0.2, 0.2)
+const ARC_COLOR_STARBOARD := Color(0.2, 0.85, 0.35, 0.25)
 
 # Views (presentation layer)
 var ship_views: Dictionary = {}  # ship_id -> ShipView
@@ -72,6 +78,8 @@ func _ready() -> void:
 	# Connect resolution log signal for playback
 	if GameState.phase_controller:
 		GameState.phase_controller.resolution_log_ready.connect(_on_resolution_log_ready)
+		GameState.phase_controller.fire_declaration_requested.connect(_on_fire_declaration_requested)
+		GameState.phase_controller.combat_log_ready.connect(_on_combat_log_ready)
 
 	# Set up OceanView for water shader updates
 	if GameState.environment_controller and hex_map:
@@ -104,6 +112,8 @@ func _setup_hex_overlay() -> void:
 	hex_overlay.set_script(overlay_script)
 	hex_overlay.name = "HexOverlay"
 	add_child(hex_overlay)
+	if hex_map:
+		hex_overlay.arc_grid = hex_map.get_hex_grid()
 
 func _setup_indicators() -> void:
 	ship_indicators = load("res://scripts/view/ship_indicators.gd").new()
@@ -415,6 +425,9 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 	_deselect_ship()
 	_hover_candidates.clear()
 	_clear_hover()
+	if hex_overlay:
+		hex_overlay.clear_arcs()
+	fire_panel = null
 	Trace.trace_log("GameController", "Phase changed to: %s" % GameState.get_phase_name())
 
 	match phase:
@@ -760,6 +773,96 @@ func _on_playback_completed() -> void:
 		GameState.phase_controller.on_playback_completed()
 
 	_sync_all_views()
+
+# ============================================================================
+# Fire Declaration (COMBAT_RESOLUTION, DECLARE step)
+# ============================================================================
+
+func _on_fire_declaration_requested() -> void:
+	var player_ships := GameState.get_player_ships(HUMAN_PLAYER_ID)
+	var ship_ids: Array = []
+	for ship in player_ships:
+		ship_ids.append(ship.ship_id)
+
+	var panel: Control = FireDeclarationPanelScene.instantiate()
+	# The context panel parents the new content and frees the old; the cached planning UI is
+	# among the freed nodes, so drop the reference and let the next turn build a fresh one.
+	if context_panel:
+		context_panel.set_context_title("Fire Orders")
+		context_panel.set_context_content(panel)
+	else:
+		add_child(panel)
+	current_planning_ui = null
+	fire_panel = panel
+	panel.fire_pressed.connect(_on_fire_pressed)
+	panel.ship_focused.connect(_refresh_fire_overlay)
+	panel.selection_changed.connect(_refresh_fire_overlay)
+
+	if panel.setup(ship_ids) == 0:
+		# Nothing to declare: submit an empty order set and show nothing.
+		Trace.trace_log("GameController", "No eligible shots for player 0 - submitting empty fire orders")
+		fire_panel = null
+		panel.queue_free()
+		_submit_fire_orders([])
+		return
+	if camera and camera.has_method("focus_on_ship"):
+		var focused = GameState.get_ship(panel.get_focused_ship())
+		var view = ship_views.get(panel.get_focused_ship())
+		if focused and view:
+			camera.focus_on_ship(view.global_position, focused.facing)
+
+
+func _on_fire_pressed(orders: Array) -> void:
+	var reason := _submit_fire_orders(orders)
+	if fire_panel == null:
+		return
+	if reason != "":
+		fire_panel.show_error(reason)
+	else:
+		fire_panel.show_submitted()
+		if hex_overlay:
+			hex_overlay.clear_arcs()
+
+
+## Returns "" when the server accepted the orders, otherwise its rejection reason.
+func _submit_fire_orders(orders: Array) -> String:
+	# Single-player: submit player 0's orders under the server guard  SCV:ALLOW
+	if GameState.is_server and GameState.phase_controller:
+		return GameState.phase_controller.player_submit_fire_orders(HUMAN_PLAYER_ID, orders)
+	push_warning("Client fire submission not yet implemented - needs network layer")
+	return "fire orders can only be submitted on the server"
+
+
+func _refresh_fire_overlay(ship_id: String) -> void:
+	if not hex_overlay or not fire_panel or not GameState.fire_geometry:
+		return
+	var ship_state := GameState.get_ship(ship_id)
+	if ship_state == null:
+		return
+	hex_overlay.clear_arcs()
+	var geometry: FireGeometry = GameState.fire_geometry
+	hex_overlay.show_arc(geometry.broadside_hexes(ship_state.hex_position, ship_state.facing,
+		ShipState.PORT, FireGeometry.MAX_RANGE), ARC_COLOR_PORT)
+	hex_overlay.show_arc(geometry.broadside_hexes(ship_state.hex_position, ship_state.facing,
+		ShipState.STARBOARD, FireGeometry.MAX_RANGE), ARC_COLOR_STARBOARD)
+	var target_hexes: Array[Vector2i] = []
+	for target_id in fire_panel.get_target_ids(ship_id):
+		var target := GameState.get_ship(target_id)
+		if target:
+			target_hexes.append(target.hex_position)
+	hex_overlay.show_target_highlights(target_hexes)
+
+
+@warning_ignore("shadowed_global_identifier")
+func _on_combat_log_ready(_log: PhaseEvents.PhaseLog) -> void:
+	# TEMPORARY (Task 21 replaces this with the combat log panel and paced playback):
+	# show the resolved state at once and tell the phase controller playback is finished.
+	if hex_overlay:
+		hex_overlay.clear_arcs()
+	_sync_all_views()
+	# Intentional view->controller callback so the turn keeps cycling  SCV:ALLOW
+	if GameState.phase_controller:
+		GameState.phase_controller.on_combat_playback_completed()
 
 func _enter_post_combat_phase() -> void:
 	Trace.trace_log("GameController", "Post-combat phase - waiting for player to end turn")
