@@ -274,7 +274,8 @@ func _enter_morale_check_phase() -> void:
 	current_phase = GamePhase.MORALE_CHECK
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: MORALE_CHECK")
-	# TODO: Update crew morale
+	if game_state.morale_controller:
+		game_state.morale_controller.resolve_checks(current_phase)
 	advance_phase()
 
 func _enter_message_delivery_phase() -> void:

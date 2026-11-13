@@ -57,6 +57,7 @@ var gunnery_resolver: GunneryResolver = null
 var sail_controller: SailController = null
 var drift_resolver: DriftResolver = null
 var fouling_controller: FoulingController = null
+var morale_controller: MoraleController = null
 
 # Event log for the current turn, and finished logs by turn number
 var turn_log: PhaseEvents.PhaseLog = null
@@ -92,6 +93,7 @@ func _initialize_server_controllers() -> void:
 	sail_controller = SailController.new(self)
 	drift_resolver = DriftResolver.new(self)
 	fouling_controller = FoulingController.new(self)
+	morale_controller = MoraleController.new(self)
 	turn_log = PhaseEvents.PhaseLog.new()
 	phase_controller = TurnPhaseController.new(self)
 	ship_controller = ShipStateController.new(self)

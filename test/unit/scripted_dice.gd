@@ -11,6 +11,9 @@ func _init() -> void:
 func queue(values: Array) -> void:
 	_queue.append_array(values)
 
+func remaining() -> int:
+	return _queue.size()
+
 func _next() -> int:
 	if _queue.is_empty():
 		push_error("ScriptedDice: roll requested but queue is empty")
