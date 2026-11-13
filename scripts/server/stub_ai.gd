@@ -30,6 +30,14 @@ func plot_all_ai_ships() -> void:
 		_plot_ship(ship_state, controller, strategy)
 
 
+## Declare fire for the AI side (player 1). Placeholder: always holds fire.
+func submit_fire_orders() -> void:
+	assert(game_state.is_server, "StubAI: Must only run on server")
+	var reason: String = game_state.phase_controller.player_submit_fire_orders(1, [])
+	if reason != "":
+		push_error("StubAI: fire orders rejected: %s" % reason)
+
+
 func _get_ai_ships() -> Array[ShipState]:
 	var result: Array[ShipState] = []
 	for ship_state in game_state.get_all_ships():
