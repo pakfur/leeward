@@ -151,6 +151,10 @@ func _enter_movement_resolution_phase() -> void:
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: MOVEMENT_RESOLUTION")
 
+	# Plotted sail changes start now, before movement resolution clears the plots
+	if game_state.sail_controller:
+		game_state.sail_controller.begin_plotted_changes()
+
 	if game_state.movement_resolver and game_state.environment:
 		var all_ships = game_state.get_all_ships()
 		@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
@@ -258,6 +262,9 @@ func _enter_status_adjustment_phase() -> void:
 	current_phase = GamePhase.STATUS_ADJUSTMENT
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: STATUS_ADJUSTMENT")
+	# TODO (later task): unfouling attempts go here, before sail changes advance
+	if game_state.sail_controller:
+		game_state.sail_controller.advance_changes(current_phase)
 	# TODO: Resolve explosions, sinking, repairs, crew reorg, anchors
 	advance_phase()
 

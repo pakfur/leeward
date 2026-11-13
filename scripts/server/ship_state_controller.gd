@@ -394,6 +394,18 @@ func set_plotted_movement(ship_id: String, movement_commands: Array) -> bool:
 	Trace.trace_log("ShipState", "Ship %s plotted movement: %s" % [ship_id, movement_commands])
 	return true
 
+func set_plotted_sail_change(ship_id: String, target: String) -> bool:
+	## Plot (or, with "", clear) an optional sail-change order for this turn
+	if not is_server:
+		push_error("ShipStateController: Cannot plot sail change on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.plotted_actions["sail_change"] = target
+	ship_state_changed.emit(ship_id)
+	return true
+
 func clear_plotted_actions(ship_id: String) -> bool:
 	if not is_server:
 		push_error("ShipStateController: Cannot clear plot on client")
