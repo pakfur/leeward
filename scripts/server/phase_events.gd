@@ -48,8 +48,6 @@ const STRIKE_REASONS := {
 	"morale": "the crew's morale broke",
 }
 
-const DRIFT_BLOCKERS := {"map edge": "the map edge", "ship": "another ship"}
-
 const VICTORY_REASONS := {
 	"all struck": "every ship of one side has struck",
 	"turn limit": "turn limit reached",
@@ -161,11 +159,10 @@ class PhaseEvent extends RefCounted:
 				return "%s strikes her colours (%s)" % [who,
 					PhaseEvents.STRIKE_REASONS.get(str(data.get("reason", "")), str(data.get("reason", "cause unknown")))]
 			Type.DRIFT:
-				return _drift_text(who)
+				return _drift_text(who, other)
 			Type.FOULED:
-				if data.get("cause", "") == "collision":
-					return "%s and %s are fouled together" % [who, other]
-				return "%s drifts into %s; the two ships are fouled" % [who, other]
+				# Collision fouling. A drift that fouls says so on its own DRIFT line.
+				return "%s and %s are fouled together" % [who, other]
 			Type.COLLISION:
 				var at := _hex_text("hex")
 				return "%s collides with %s%s" % [who, other, " at " + at if at != "" else ""]
@@ -278,23 +275,34 @@ class PhaseEvent extends RefCounted:
 			text += "; crew quality drops to %s" % data["quality"]
 		return text
 
-	func _drift_text(who: String) -> String:
+	## One line per drift, telling the whole outcome: drifted, held by the roll, or blocked (by the
+	## map edge, by the ship in its way — fouling it or not — or by its fouled partner).
+	func _drift_text(who: String, other: String) -> String:
 		var from_hex := _hex_text("from")
-		var text := ""
+		var at := " at %s" % from_hex if from_hex != "" else ""
+		var dice := "rolled %s, needed %s" % [_roll_text(), _val("needed")]
 		if data.get("drifted", false):
-			text = "%s drifts downwind" % who
+			var text := "%s drifts downwind" % who
 			if from_hex != "" and data.has("to"):
 				text += " from %s to %s" % [from_hex, _hex_text("to")]
-		elif data.has("blocked"):
-			var blocker: String = PhaseEvents.DRIFT_BLOCKERS.get(str(data["blocked"]), str(data["blocked"]))
-			text = "%s would drift but is blocked by %s, holds position" % [who, blocker]
-			if from_hex != "":
-				text += " at %s" % from_hex
-		else:
-			text = "%s holds position" % who
-			if from_hex != "":
-				text += " at %s" % from_hex
-		return text + " (drift roll %s, needed %s)" % [_roll_text(), _val("needed")]
+			return text + " (drift roll %s, needed %s)" % [_roll_text(), _val("needed")]
+		if not data.has("blocked"):
+			return "%s holds position%s (drift roll %s, needed %s)" % [who, at, _roll_text(), _val("needed")]
+		match str(data["blocked"]):
+			"map edge":
+				return "%s would drift (%s) but is at the edge of the map and holds position%s" % [who, dice, at]
+			"ship":
+				if target_id == "":
+					return "%s would drift (%s) but another ship is in the way; holds position%s" % [who, dice, at]
+				if data.get("fouled", false):
+					return "%s drifts onto %s (%s) but cannot pass; the two ships are fouled together" % [
+						who, other, dice]
+				return "%s would drift onto %s (%s) but is blocked and holds position%s" % [who, other, dice, at]
+			"partner":
+				var partner := other if target_id != "" else "its fouled partner"
+				return "%s would drift (%s) but is held back by %s, fouled alongside, and holds position%s" % [
+					who, dice, partner, at]
+		return "%s would drift (%s) but is blocked and holds position%s" % [who, dice, at]
 
 	func _unfoul_text(who: String, other: String) -> String:
 		# Either ship's success frees the pair, so a failure never claims the pair stays fouled.

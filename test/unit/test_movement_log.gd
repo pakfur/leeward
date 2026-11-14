@@ -117,9 +117,10 @@ func test_failed_escape_from_irons_is_logged() -> void:
 	assert_eq(turn_log.events[0].to_text({"a": "Alpha"}), "Alpha is still in irons")
 
 
-func test_drift_fouling_text_is_unchanged() -> void:
+func test_fouled_text_names_both_ships() -> void:
+	# A drift that fouls says so on its DRIFT line; FOULED reads the same whatever its cause.
 	var ev := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.FOULED, 5, "a", {}, "b")
-	assert_eq(ev.to_text({"a": "Alpha", "b": "Bravo"}), "Alpha drifts into Bravo; the two ships are fouled")
+	assert_eq(ev.to_text({"a": "Alpha", "b": "Bravo"}), "Alpha and Bravo are fouled together")
 
 
 func test_log_headings_name_movement_and_weather() -> void:

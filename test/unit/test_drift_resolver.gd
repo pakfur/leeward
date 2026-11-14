@@ -194,10 +194,14 @@ func test_blocked_by_ship_no_drift_and_may_foul() -> void:
 	assert_eq(events.size(), 1)
 	assert_false(events[0].data["drifted"])
 	assert_eq(events[0].data["blocked"], "ship")
-	var fouled := GameState.turn_log.of_type(PhaseEvents.Type.FOULED)
-	assert_eq(fouled.size(), 1)
-	assert_eq(fouled[0].ship_id, "a")
-	assert_eq(fouled[0].target_id, "b")
+	assert_eq(events[0].target_id, "b", "the drift names the ship in the way")
+	assert_true(events[0].data["fouled"], "the fouling outcome rides on the drift line")
+	assert_eq(GameState.turn_log.of_type(PhaseEvents.Type.FOULED).size(), 0,
+		"no separate fouled line to contradict the drift line")
+	var text: String = events[0].to_text({"a": "Topaze", "b": "HMS Lively"})
+	assert_string_contains(text, "Topaze drifts onto HMS Lively (rolled 9")
+	assert_string_contains(text, "but cannot pass; the two ships are fouled together")
+	assert_false(text.contains("holds position"), text)
 
 
 func test_blocked_by_ship_low_fouling_roll_does_not_foul() -> void:
@@ -208,6 +212,13 @@ func test_blocked_by_ship_low_fouling_roll_does_not_foul() -> void:
 	resolver.resolve(PHASE)
 	assert_eq(drifter.fouled_with, "")
 	assert_eq(GameState.turn_log.of_type(PhaseEvents.Type.FOULED).size(), 0)
+	var ev: PhaseEvents.PhaseEvent = _drift_events()[0]
+	assert_eq(ev.target_id, "b")
+	assert_false(ev.data["fouled"])
+	var text := ev.to_text({"a": "Topaze", "b": "HMS Lively"})
+	assert_string_contains(text, "Topaze would drift onto HMS Lively (rolled 9")
+	assert_string_contains(text, "but is blocked and holds position")
+	assert_false(text.contains("fouled"), text)
 
 
 func test_fouling_roll_modifiers() -> void:
@@ -238,6 +249,10 @@ func test_blocked_by_dismasted_ship_no_fouling_roll() -> void:
 	assert_eq(drifter.hex_position, Vector2i(5, 5))
 	assert_eq(drifter.fouled_with, "")
 	assert_eq(GameState.turn_log.of_type(PhaseEvents.Type.FOULED).size(), 0)
+	var ev: PhaseEvents.PhaseEvent = _drift_events()[0]
+	assert_eq(ev.target_id, "b")
+	assert_false(ev.data.has("fouled"), "no fouling roll, no fouling outcome")
+	assert_string_contains(ev.to_text({}), "a would drift onto b")
 
 
 func test_drift_blocked_at_map_edge() -> void:
@@ -249,6 +264,8 @@ func test_drift_blocked_at_map_edge() -> void:
 	var events := _drift_events()
 	assert_false(events[0].data["drifted"])
 	assert_eq(events[0].data["blocked"], "map edge")
+	assert_eq(events[0].target_id, "")
+	assert_string_contains(events[0].to_text({}), "is at the edge of the map and holds position")
 
 
 func test_no_map_bounds_means_nothing_out_of_bounds() -> void:
@@ -309,6 +326,14 @@ func test_fouled_pair_blocked_member_holds_both() -> void:
 	assert_eq(a.hex_position, Vector2i(5, 5))
 	assert_eq(b.hex_position, Vector2i(4, 5))
 	assert_eq(blocker.fouled_with, "", "A pair does not foul a third ship")
+	var by_ship := {}
+	for ev in _drift_events():
+		by_ship[ev.ship_id] = ev
+	assert_eq(by_ship["b"].data["blocked"], "ship")
+	assert_eq(by_ship["b"].target_id, "c", "b is the member with a ship in its way")
+	assert_eq(by_ship["a"].data["blocked"], "partner")
+	assert_eq(by_ship["a"].target_id, "b", "a is held by its fouled partner")
+	assert_string_contains(by_ship["a"].to_text({}), "held back by b")
 
 
 # --- plotting lock -----------------------------------------------------------

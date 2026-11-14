@@ -168,7 +168,7 @@ func test_strike_fouled_and_unfoul_sentences() -> void:
 	assert_eq(log.add(PhaseEvents.Type.STRIKE, 4, "s1", {"reason": "no crew"}).to_text(NAMES),
 		"Surprise strikes her colours (no crew left)")
 	assert_eq(log.add(PhaseEvents.Type.FOULED, 5, "s1", {}, "s2").to_text(NAMES),
-		"Surprise drifts into Renard; the two ships are fouled")
+		"Surprise and Renard are fouled together")
 	assert_eq(log.add(PhaseEvents.Type.UNFOUL, 6, "s1",
 		{"roll": 3, "modifier": 1, "needed": 8, "success": true}, "s2").to_text(NAMES),
 		"Surprise cuts free (rolled 3 +1, needed 8 or less) — Surprise and Renard are no longer fouled")
@@ -230,11 +230,28 @@ func test_blocked_drift_keeps_numbers_and_shows_position() -> void:
 	var text := log.add(PhaseEvents.Type.DRIFT, 5, "s1", {
 		"roll": 7, "needed": 5, "modifier": 0, "drifted": false, "blocked": "map edge",
 		"from": {"q": 3, "r": -2}}).to_text(NAMES)
-	assert_string_contains(text, "roll 7")
+	assert_string_contains(text, "rolled 7")
 	assert_string_contains(text, "needed 5")
-	assert_string_contains(text, "blocked by the map edge")
+	assert_string_contains(text, "is at the edge of the map and holds position")
 	assert_string_contains(text, "(3, -2)")
 	assert_false(text.contains("{"), "no raw dictionary in: %s" % text)
+
+
+func test_drift_blocked_by_ship_that_fouls_is_one_outcome() -> void:
+	var log := PhaseEvents.PhaseLog.new()
+	var text := log.add(PhaseEvents.Type.DRIFT, 5, "s1", {
+		"roll": 7, "needed": 5, "modifier": 0, "drifted": false, "blocked": "ship", "fouled": true,
+		"from": {"q": 3, "r": -2}}, "s2").to_text(NAMES)
+	assert_eq(text, "Surprise drifts onto Renard (rolled 7, needed 5) but cannot pass; the two ships are fouled together")
+
+
+func test_drift_blocked_by_ship_without_fouling_holds_position() -> void:
+	var log := PhaseEvents.PhaseLog.new()
+	var text := log.add(PhaseEvents.Type.DRIFT, 5, "s1", {
+		"roll": 7, "needed": 5, "modifier": 1, "drifted": false, "blocked": "ship", "fouled": false,
+		"from": {"q": 3, "r": -2}}, "s2").to_text(NAMES)
+	assert_eq(text, "Surprise would drift onto Renard (rolled 7 +1, needed 5) but is blocked and holds position at (3, -2)")
+	assert_false(text.contains("fouled"), text)
 
 
 func test_failed_drift_roll_holds_position() -> void:
