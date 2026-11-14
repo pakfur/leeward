@@ -52,9 +52,13 @@ func _ready() -> void:
 
 	add_theme_stylebox_override("panel", normal_style)
 
-	# Connect button signals
+	# Connect button signals. Crew and Maintenance orders belong to a later milestone: hidden.
 	if movement_button:
 		movement_button.pressed.connect(_on_movement_pressed)
+	if crew_button:
+		crew_button.visible = false
+	if maintenance_button:
+		maintenance_button.visible = false
 	if crew_button:
 		crew_button.pressed.connect(_on_crew_pressed)
 	if maintenance_button:
@@ -77,19 +81,13 @@ func _update_display() -> void:
 
 	# Speed
 	if speed_label:
-		speed_label.text = "Spd: %d" % ship_state.speed
+		speed_label.text = "Speed %d" % ship_state.speed
+		speed_label.tooltip_text = "Speed last turn"
 
-	# Stats line: "Hull: 8/8/8 Crew: 200/4 Sails: MS/4"
+	# Detail lines: hull and rigging per section, sail by name, crew quality and morale
 	if stats_label:
-		var hull_str = "%d/%d/%d" % [
-			ship_state.hull_current_hp[0],
-			ship_state.hull_current_hp[1],
-			ship_state.hull_current_hp[2]
-		]
-		var crew_str = "%s/%d" % [ship_state.crew_quality, ship_state.morale_rating]
-		var sails_str = "%s/%s" % [ship_state.sail_state, ship_state.rigging_current_hp]
-
-		stats_label.text = "Hull: %s  Crew: %s  Sails: %s" % [hull_str, crew_str, sails_str]
+		var lines := PlanningText.card_lines(ship_state)
+		stats_label.text = "\n".join(lines)
 
 	# Status badge (fouled / struck / dismasted) locks out movement plotting
 	var badge := PlanningSailUi.status_badge(ship_state)
@@ -124,7 +122,7 @@ func set_submitted_state(submitted: bool) -> void:
 	is_submitted = submitted
 	_apply_panel_style()
 	if ship_name_label and submitted:
-		ship_name_label.text = ship_state.ship_name + " [OK]" if ship_state else ship_name_label.text
+		ship_name_label.text = ship_state.ship_name + " — orders given" if ship_state else ship_name_label.text
 	elif ship_name_label and ship_state:
 		ship_name_label.text = ship_state.ship_name
 

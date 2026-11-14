@@ -49,6 +49,8 @@ var hex_overlay: Node3D = null  # HexOverlay instance
 var submitted_paths: Dictionary = {}  # ship_id -> Array[PlotStep]
 var _hover_candidates: Dictionary = {}  # Vector2i hex -> int resulting_facing (server-provided)
 var _last_hover_hex: Vector2i = Vector2i(-99, -99)  # avoids re-raycasting when the hovered hex is unchanged
+var _collision_names: Dictionary = {}  # offered hex -> name of the ship already in it
+var _path_collision_text: String = ""  # warning when the plotted path enters another ship's hex
 
 # Resolution playback
 var playback_controller: MovementResolutionPlaybackController = null
@@ -337,6 +339,7 @@ func _update_plotting_hover(screen_pos: Vector2) -> void:
 	if hex == _last_hover_hex:
 		return  # same hex — nothing to update
 	_last_hover_hex = hex
+	_show_collision_warning(hex)
 	if hex == Vector2i(-99, -99) or not _hover_candidates.has(hex):
 		_clear_hover()
 		return
@@ -628,55 +631,45 @@ func _on_plotting_cancel_pressed() -> void:
 
 func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_val: int, is_tacking: bool = false) -> void:
 	Trace.trace_log("GameController", "Plotting started for ship %s" % ship_id)
+	# Plotting one of our ships: a status panel left open for another ship would compete with it.
+	if ship_status_panel:
+		ship_status_panel.hide_unless_showing(ship_id)
+	var vnh = valid_hexes as MovementTypes.ValidNextHexes
+	_update_collision_hexes(vnh, [])
+	var ship_state = GameState.get_ship(ship_id)
 	if hex_overlay and hex_map:
 		var hex_grid = hex_map.get_hex_grid()
-		var vnh = valid_hexes as MovementTypes.ValidNextHexes
-		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid)
+		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid, _collision_names.keys())
 
 		# Show blocked directions as red overlays
-		var ship_state = GameState.get_ship(ship_id)
 		if ship_state:
 			var blocked = _calculate_blocked_hexes(vnh, ship_state.hex_position, ship_state.facing, hex_grid)
 			hex_overlay.show_blocked_hexes(blocked, hex_grid)
 
 	if current_planning_ui:
-		var ship_state = GameState.get_ship(ship_id)
-		var total_ma = GameState.ship_controller.get_movement_allowance(ship_id) if ship_state else remaining_ma_val
-		current_planning_ui.show_plotting_controls(ship_id, remaining_ma_val, total_ma)
+		# Read-only queries for the "limited by acceleration" note  SCV:ALLOW
+		var table_ma: int = GameState.ship_controller.get_movement_allowance(ship_id) if ship_state else remaining_ma_val
+		var speed_last_turn: int = ship_state.speed if ship_state else 0
+		var accel := 0
+		if ship_state and ship_state.ship:
+			accel = DataManager.get_speed_change("acceleration", ship_state.ship.maneuverability.to_lower())
+		current_planning_ui.show_plotting_controls(ship_id, remaining_ma_val, table_ma, speed_last_turn, accel)
 		_update_tacking_display(is_tacking)
-	_rebuild_hover_candidates(valid_hexes as MovementTypes.ValidNextHexes)
+	_rebuild_hover_candidates(vnh)
+	_show_collision_warning(_last_hover_hex)
 
 func _on_hex_selected(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int, is_tacking: bool = false) -> void:
-	if hex_overlay and hex_map:
-		var hex_grid = hex_map.get_hex_grid()
-		var vnh = valid_hexes as MovementTypes.ValidNextHexes
-		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid)
-		hex_overlay.show_plotted_path(plotted_path, hex_grid)
-
-		# Show blocked directions from current position
-		var current_hex: Vector2i
-		var current_facing: int
-		if plotted_path.size() > 0:
-			var last_step = plotted_path[-1]
-			current_hex = last_step.hex
-			current_facing = last_step.facing
-		else:
-			var ship_state = GameState.get_ship(movement_client.active_ship_id)
-			current_hex = ship_state.hex_position
-			current_facing = ship_state.facing
-		var blocked = _calculate_blocked_hexes(vnh, current_hex, current_facing, hex_grid)
-		hex_overlay.show_blocked_hexes(blocked, hex_grid)
-
-	if current_planning_ui:
-		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
-		_update_tacking_display(is_tacking)
-	_rebuild_hover_candidates(valid_hexes as MovementTypes.ValidNextHexes)
+	_show_plot_step(plotted_path, valid_hexes as MovementTypes.ValidNextHexes, can_submit_val, remaining_ma_val, is_tacking)
 
 func _on_undo_complete(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int, is_tacking: bool = false) -> void:
+	_show_plot_step(plotted_path, valid_hexes as MovementTypes.ValidNextHexes, can_submit_val, remaining_ma_val, is_tacking)
+
+## Redraw the offered hexes, the plotted path and the readout after a step or an undo.
+func _show_plot_step(plotted_path: Array, vnh: MovementTypes.ValidNextHexes, can_submit_val: bool, remaining_ma_val: int, is_tacking: bool) -> void:
+	_update_collision_hexes(vnh, plotted_path)
 	if hex_overlay and hex_map:
 		var hex_grid = hex_map.get_hex_grid()
-		var vnh = valid_hexes as MovementTypes.ValidNextHexes
-		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid)
+		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid, _collision_names.keys())
 		hex_overlay.show_plotted_path(plotted_path, hex_grid)
 
 		# Show blocked directions from current position
@@ -696,7 +689,36 @@ func _on_undo_complete(plotted_path: Array, valid_hexes: Variant, can_submit_val
 	if current_planning_ui:
 		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
 		_update_tacking_display(is_tacking)
-	_rebuild_hover_candidates(valid_hexes as MovementTypes.ValidNextHexes)
+	_rebuild_hover_candidates(vnh)
+	_show_collision_warning(_last_hover_hex)
+
+## Which offered hexes hold another ship, and whether the plotted path already enters one.
+func _update_collision_hexes(vnh: MovementTypes.ValidNextHexes, plotted_path: Array) -> void:
+	var active_id: String = movement_client.active_ship_id if movement_client else ""
+	var ships: Array = GameState.get_all_ships()
+	var offered: Array = []
+	if vnh:
+		for vm in vnh.get_all_valid_moves():
+			offered.append(vm.hex)
+	_collision_names = PlanningText.occupied_hexes(offered, ships, active_id)
+	_path_collision_text = ""
+	var path_hexes: Array = []
+	for step in plotted_path:
+		path_hexes.append(step.hex)
+	var on_path := PlanningText.occupied_hexes(path_hexes, ships, active_id)
+	for hex in path_hexes:
+		if on_path.has(hex):
+			_path_collision_text = PlanningText.collision_text(on_path[hex])
+			break
+
+## The plotting area's warning: the hovered hex's, otherwise the plotted path's ("" hides it).
+func _show_collision_warning(hover_hex: Vector2i) -> void:
+	if not current_planning_ui:
+		return
+	var text := _path_collision_text
+	if _collision_names.has(hover_hex):
+		text = PlanningText.collision_text(_collision_names[hover_hex])
+	current_planning_ui.set_collision_warning(text)
 
 func _rebuild_hover_candidates(valid_hexes: MovementTypes.ValidNextHexes) -> void:
 	_hover_candidates.clear()
@@ -707,6 +729,8 @@ func _rebuild_hover_candidates(valid_hexes: MovementTypes.ValidNextHexes) -> voi
 
 func _on_plotting_cancelled(ship_id: String) -> void:
 	_hover_candidates.clear()
+	_collision_names.clear()
+	_path_collision_text = ""
 	_clear_hover()
 	Trace.trace_log("GameController", "Plotting cancelled for ship %s" % ship_id)
 	if hex_overlay:
@@ -717,6 +741,8 @@ func _on_plotting_cancelled(ship_id: String) -> void:
 
 func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
 	_hover_candidates.clear()
+	_collision_names.clear()
+	_path_collision_text = ""
 	_clear_hover()
 	Trace.trace_log("GameController", "Movement submitted for ship %s: %d steps" % [ship_id, final_path.size()])
 
@@ -900,12 +926,10 @@ func _show_combat_panel(lines: Array[String]) -> void:
 		var label := Label.new()
 		label.text = lines[i]
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		if i > 0:
-			label.add_theme_font_size_override("font_size", 12)
 		box.add_child(label)
 	var hint := Label.new()
 	hint.text = "The combat log below shows each shot."
-	hint.add_theme_font_size_override("font_size", 10)
+	hint.theme_type_variation = &"SecondaryLabel"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(hint)
 	if context_panel:
@@ -1069,10 +1093,20 @@ func _show_end_turn_ui() -> void:
 	hint.text = "Review the combat log, then end the turn."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(hint)
+	# Every phase keeps its main button pinned at the bottom of the side panel.
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(spacer)
+	box.add_child(HSeparator.new())
+	var key_hint := Label.new()
+	key_hint.text = "Space or Enter also ends the turn."
+	key_hint.theme_type_variation = &"SecondaryLabel"
+	key_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(key_hint)
 	var button := Button.new()
 	button.name = "EndTurnButton"
 	button.text = "End Turn"
-	button.custom_minimum_size = Vector2(0, 40)
+	button.custom_minimum_size = Vector2(0, 44)
 	button.focus_mode = Control.FOCUS_NONE  # Space/Enter are handled once, in _unhandled_input
 	button.pressed.connect(_on_end_turn_pressed)
 	box.add_child(button)

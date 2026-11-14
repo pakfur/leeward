@@ -11,21 +11,29 @@ const SAIL_NAMES := {
 }
 
 const HINT := "Sections changing sail cannot serve the guns."
+const CHOOSE_TEXT := "No change ordered. Choose one, or keep this sail."
+const ORDERED_TEXT := "Ordered: %s. Press it again to cancel."
 
 enum Mode { NONE, PROGRESS, ORDERED, CHOOSE }
 
 
-static func sail_name(code: String) -> String:
+## The sail's name alone ("Fighting sail"); unknown codes pass through.
+static func sail_label(code: String) -> String:
 	var upper := code.to_upper()
-	return "%s (%s)" % [SAIL_NAMES.get(upper, upper), upper]
+	return SAIL_NAMES.get(upper, upper)
+
+
+static func sail_name(code: String) -> String:
+	return sail_label(code)
 
 
 static func plural(count: int, noun: String) -> String:
 	return "%d %s%s" % [count, noun, "" if count == 1 else "s"]
 
 
+## "Fighting sail — 1 turn, 1 section"
 static func target_button_text(target: String, cost: Dictionary) -> String:
-	return "→ %s (%s, %s)" % [target, plural(cost.get("turns", 0), "turn"), plural(cost.get("sections", 0), "section")]
+	return "%s — %s, %s" % [sail_label(target), plural(cost.get("turns", 0), "turn"), plural(cost.get("sections", 0), "section")]
 
 
 static func status_badge(ship: ShipState) -> String:
@@ -51,36 +59,36 @@ static func movement_block_reason(ship: ShipState) -> String:
 
 
 static func sail_row(ship: ShipState, targets: Array, costs: Dictionary) -> Dictionary:
-	## Returns {mode, current, text, hint, buttons: [{target, text}], can_cancel}.
+	## Returns {mode, current, text, hint, buttons: [{target, text, pressed}]}.
 	## `targets` is SailController.available_targets; `costs` maps target -> change_cost dict.
+	## The choices keep their place once one is ordered: the ordered one is shown pressed and
+	## pressing it again cancels the order (the status text says so).
 	var row := {
 		"mode": Mode.NONE,
-		"current": sail_name(ship.sail_state),
+		"current": sail_label(ship.sail_state),
 		"text": "",
 		"hint": "",
 		"buttons": [],
-		"can_cancel": false,
 	}
 	if ship.is_struck():
 		return row
 	if not ship.sail_change.is_empty():
 		row["mode"] = Mode.PROGRESS
 		row["text"] = "Changing to %s — %s left" % [
-			ship.sail_change.get("target", "?"),
+			sail_label(ship.sail_change.get("target", "?")),
 			plural(ship.sail_change.get("turns_left", 0), "turn")]
 		row["hint"] = HINT
 		return row
 	var ordered: String = ship.plotted_actions.get("sail_change", "")
-	if ordered != "":
-		row["mode"] = Mode.ORDERED
-		row["text"] = "Ordered: → %s" % ordered
-		row["can_cancel"] = true
-		row["hint"] = HINT
+	if targets.is_empty() and ordered == "":
 		return row
-	if targets.is_empty():
-		return row
-	row["mode"] = Mode.CHOOSE
-	for target in targets:
-		row["buttons"].append({"target": target, "text": target_button_text(target, costs.get(target, {}))})
+	var choices: Array = targets.duplicate()
+	if ordered != "" and not choices.has(ordered):
+		choices.append(ordered)
+	row["mode"] = Mode.ORDERED if ordered != "" else Mode.CHOOSE
+	row["text"] = ORDERED_TEXT % sail_label(ordered) if ordered != "" else CHOOSE_TEXT
+	for target in choices:
+		row["buttons"].append({"target": target, "text": target_button_text(target, costs.get(target, {})),
+			"pressed": target == ordered})
 	row["hint"] = HINT
 	return row

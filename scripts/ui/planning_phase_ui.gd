@@ -26,13 +26,14 @@ const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
 @onready var submit_button: Button = %SubmitButton
 @onready var cancel_button: Button = %CancelButton
 @onready var tacking_label: Label = %TackingLabel
+@onready var ma_limit_label: Label = %MALimitLabel
+@onready var collision_label: Label = %CollisionLabel
 
 # Sail row
 @onready var sail_row: VBoxContainer = %SailRow
 @onready var sail_current_label: Label = %SailCurrentLabel
 @onready var sail_status_label: Label = %SailStatusLabel
 @onready var sail_buttons: VBoxContainer = %SailButtons
-@onready var sail_cancel_button: Button = %SailCancelButton
 @onready var sail_hint_label: Label = %SailHintLabel
 @onready var sail_error_label: Label = %SailErrorLabel
 
@@ -43,6 +44,7 @@ var action_states: Dictionary = {}  # ship_id -> {action_type -> bool}
 var submitted_ships: Dictionary = {}  # ship_id -> bool
 var total_player_ships: int = 0
 var ship_states: Dictionary = {}  # ship_id -> ShipState (read-only references)
+var _plot_max: int = 0  # most the plotting ship can spend this turn; fixed for the plot
 
 func _ready() -> void:
 	if undo_button:
@@ -56,8 +58,6 @@ func _ready() -> void:
 	if end_planning_button:
 		end_planning_button.pressed.connect(func(): end_planning_pressed.emit())
 		end_planning_button.disabled = true
-	if sail_cancel_button:
-		sail_cancel_button.pressed.connect(func(): _request_sail_change(""))
 
 func setup_for_player(player_ships: Array[ShipState]) -> void:
 	clear_ships()
@@ -202,40 +202,65 @@ func _refresh_sail_row() -> void:
 	sail_status_label.visible = row["text"] != ""
 	sail_hint_label.text = row["hint"]
 	sail_hint_label.visible = row["hint"] != ""
-	sail_cancel_button.visible = row["can_cancel"]
 	sail_error_label.visible = false
 
+	# The choices keep their places: the ordered one is shown pressed, pressing it again cancels.
 	for child in sail_buttons.get_children():
 		sail_buttons.remove_child(child)
 		child.queue_free()
 	for entry in row["buttons"]:
 		var button := Button.new()
-		button.text = entry["text"]
+		var ordered: bool = entry["pressed"]
+		button.text = ("● " if ordered else "○ ") + entry["text"]
+		button.toggle_mode = true
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.focus_mode = Control.FOCUS_NONE
+		button.set_pressed_no_signal(ordered)
+		button.tooltip_text = "Press again to cancel this order" if ordered else "Order this sail change"
 		var target: String = entry["target"]
-		button.pressed.connect(func(): _request_sail_change(target))
+		button.pressed.connect(func(): _request_sail_change("" if ordered else target))
 		sail_buttons.add_child(button)
 
 # ============================================================================
 # Plotting Controls
 # ============================================================================
 
-func show_plotting_controls(_ship_id: String, remaining_ma_val: int, total_ma: int) -> void:
+## `remaining_ma_val` is the session's movement at the start of the plot (the most this ship can
+## spend this turn, after acceleration limits); `table_ma` is what wind and sail alone would allow.
+func show_plotting_controls(_ship_id: String, remaining_ma_val: int, table_ma: int,
+		speed_last_turn: int = 0, acceleration: int = 0) -> void:
+	_plot_max = remaining_ma_val
 	if plotting_controls:
 		plotting_controls.visible = true
-		_update_ma_display(remaining_ma_val, total_ma)
+		_update_ma_display(remaining_ma_val)
 		_update_path_display([])
 		_update_button_states(true, false)
+		set_collision_warning("")
+		var note := PlanningText.movement_limit_note(table_ma, _plot_max, speed_last_turn, acceleration)
+		if ma_limit_label:
+			ma_limit_label.text = note
+			ma_limit_label.visible = note != ""
+		if ma_label:
+			ma_label.tooltip_text = note if note != "" else "The most this ship can move this turn."
 
 func hide_plotting_controls() -> void:
 	if plotting_controls:
 		plotting_controls.visible = false
 	if tacking_label:
 		tacking_label.visible = false
+	set_collision_warning("")
 
 func update_plotting_state(plotted_path_arr: Array, remaining_ma_val: int, can_submit_val: bool) -> void:
-	_update_ma_display(remaining_ma_val, remaining_ma_val + plotted_path_arr.size())
+	_plot_max = maxi(_plot_max, remaining_ma_val)
+	_update_ma_display(remaining_ma_val)
 	_update_path_display(plotted_path_arr)
 	_update_button_states(not plotted_path_arr.is_empty(), can_submit_val)
+
+## "" hides the warning.
+func set_collision_warning(text: String) -> void:
+	if collision_label:
+		collision_label.text = text
+		collision_label.visible = text != ""
 
 func update_tacking_state(is_tacking: bool, probability: float) -> void:
 	if not tacking_label:
@@ -266,9 +291,9 @@ func deactivate_movement_button(ship_id: String) -> void:
 		if ship_list_items.has(ship_id):
 			ship_list_items[ship_id].set_action_button_state("movement", false)
 
-func _update_ma_display(remaining: int, total: int) -> void:
+func _update_ma_display(remaining: int) -> void:
 	if ma_label:
-		ma_label.text = "Movement: %d/%d remaining" % [remaining, total]
+		ma_label.text = PlanningText.movement_line(remaining, _plot_max)
 
 func _update_path_display(path: Array) -> void:
 	if not path_label:
@@ -301,14 +326,8 @@ func _update_end_planning_state() -> void:
 func _update_instructions() -> void:
 	if not instructions_label:
 		return
-	if are_all_ships_submitted():
-		if get_submitted_count() > 0 and _unable_count() == total_player_ships:
-			instructions_label.text = "No ship can move this turn. Press End Planning to proceed."
-		else:
-			instructions_label.text = "All ships plotted. Press End Planning to proceed."
-	else:
-		var remaining = total_player_ships - get_submitted_count()
-		instructions_label.text = "%d ship(s) need movement plots. Click Movement to re-plot." % remaining
+	instructions_label.text = PlanningText.instructions(
+		total_player_ships - get_submitted_count(), total_player_ships, _unable_count())
 
 func _unable_count() -> int:
 	var count := 0

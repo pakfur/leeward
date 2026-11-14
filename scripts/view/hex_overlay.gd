@@ -15,6 +15,7 @@ const COLOR_PLOTTED = Color(0.2, 0.4, 0.9, 0.45)    # Blue, semi-transparent
 const COLOR_SUBMITTED = Color(0.5, 0.5, 0.5, 0.25)  # Gray, dimmed
 const COLOR_BLOCKED = Color(0.8, 0.2, 0.2, 0.35)    # Red, semi-transparent
 const COLOR_TARGET = Color(1.0, 0.9, 0.2, 0.5)      # Yellow, chosen fire targets
+const COLOR_COLLISION = Color(1.0, 0.5, 0.0, 0.6)   # Orange, an offered hex that holds another ship
 
 # Child nodes for each layer
 var valid_hexes_node: Node3D = null
@@ -37,6 +38,7 @@ var _submitted_material: StandardMaterial3D = null
 var _blocked_material: StandardMaterial3D = null
 var _arc_materials: Dictionary = {}  # Color -> StandardMaterial3D
 var _target_material: StandardMaterial3D = null
+var _collision_material: StandardMaterial3D = null
 
 
 func _ready() -> void:
@@ -70,9 +72,11 @@ func _ready() -> void:
 	_blocked_material = _create_material(COLOR_BLOCKED)
 	_target_material = _create_material(COLOR_TARGET)
 	_target_material.render_priority = 2
+	_collision_material = _create_material(COLOR_COLLISION)
 
 
-func show_valid_hexes(hexes: Array, hex_grid: HexGrid) -> void:
+## Offered moves in green; any listed in `collision_hexes` (they hold another ship) in orange.
+func show_valid_hexes(hexes: Array, hex_grid: HexGrid, collision_hexes: Array = []) -> void:
 	clear_valid_hexes()
 	_valid_hex_positions.clear()
 
@@ -80,7 +84,8 @@ func show_valid_hexes(hexes: Array, hex_grid: HexGrid) -> void:
 		var hex_pos: Vector2i = valid_move.hex
 		_valid_hex_positions.append(hex_pos)
 		var world_pos = hex_grid.axial_to_world(hex_pos.x, hex_pos.y)
-		_add_hex_mesh(valid_hexes_node, world_pos, hex_grid.hex_size, _valid_material)
+		var material := _collision_material if collision_hexes.has(hex_pos) else _valid_material
+		_add_hex_mesh(valid_hexes_node, world_pos, hex_grid.hex_size, material)
 
 
 func show_plotted_path(steps: Array, hex_grid: HexGrid) -> void:
