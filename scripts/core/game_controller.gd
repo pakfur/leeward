@@ -20,7 +20,9 @@ const OceanViewScript = preload("res://scripts/view/ocean_view.gd")
 const PauseMenuScript = preload("res://scripts/ui/pause_menu.gd")
 var current_planning_ui: Control = null
 var fire_panel: Control = null  # FireDeclarationPanel while fire orders are being declared
-var combat_panel: Control = null  # "Combat" context content while combat resolves / plays back
+var combat_panel: Control = null  # "Movement" / "Combat" context content while a phase plays back
+## Movement playback has no skip: the panel must not offer one (combat playback does, in its log).
+const MOVEMENT_PLAYBACK_SKIPPABLE := false
 var combat_log_panel: CombatLogPanel = null
 var end_turn_panel: Control = null  # context-panel content while waiting in POST_COMBAT
 var end_turn_button: Button = null
@@ -583,6 +585,7 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 		GameState.GamePhase.PLANNING:
 			_enter_planning_phase()
 		GameState.GamePhase.MOVEMENT_RESOLUTION:
+			_show_movement_panel()
 			_resolve_movement()
 		GameState.GamePhase.POST_COMBAT:
 			_sync_all_views()  # drift and other late phases move ships without their own playback
@@ -1063,21 +1066,41 @@ func _no_shot_lines(own_ships: Array) -> Array[String]:
 
 ## Context-panel content titled "Combat" while the exchange resolves and plays back.
 func _show_combat_panel(lines: Array[String]) -> void:
+	_show_phase_panel("Combat", "CombatPanel", lines, "The combat log below shows each shot.")
+
+
+## Lines for the "Movement" panel shown while ships animate; a skip is offered only if one exists.
+static func movement_panel_lines(skippable: bool) -> Array[String]:
+	var lines: Array[String] = ["Ships are moving…"]
+	if skippable:
+		lines.append("Space or click the log to skip")
+	return lines
+
+
+## Context-panel content titled "Movement" while movement plays back: no planning controls.
+func _show_movement_panel() -> void:
+	_show_phase_panel("Movement", "MovementPanel", movement_panel_lines(MOVEMENT_PLAYBACK_SKIPPABLE), "")
+
+
+## Replace the context panel's content with read-only lines (plus an optional secondary hint).
+## The planning UI it held is freed with it, so the next planning phase builds a fresh one.
+func _show_phase_panel(title: String, node_name: String, lines: Array[String], hint_text: String) -> void:
 	var box := VBoxContainer.new()
-	box.name = "CombatPanel"
+	box.name = node_name
 	box.add_theme_constant_override("separation", 8)
 	for i in range(lines.size()):
 		var label := Label.new()
 		label.text = lines[i]
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		box.add_child(label)
-	var hint := Label.new()
-	hint.text = "The combat log below shows each shot."
-	hint.theme_type_variation = &"SecondaryLabel"
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	box.add_child(hint)
+	if hint_text != "":
+		var hint := Label.new()
+		hint.text = hint_text
+		hint.theme_type_variation = &"SecondaryLabel"
+		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		box.add_child(hint)
 	if context_panel:
-		context_panel.set_context_title("Combat")
+		context_panel.set_context_title(title)
 		context_panel.set_context_content(box)
 	else:
 		add_child(box)
