@@ -1,8 +1,10 @@
 extends Control
 ## PauseMenu - In-game menu opened with Escape (or the corner Menu button): Resume, or Leave game
-## after a confirm step. While it is open its backdrop takes every mouse event, so nothing reaches
-## the map; the game controller also ignores its keys. Presentation only: leaving is the
-## controller's job, on leave_confirmed. (View layer.)
+## after a confirm step. While it is open the game controller pauses the scene tree (playback and
+## animation hold), so this menu runs with PROCESS_MODE_ALWAYS. Its backdrop takes every mouse
+## event and it swallows every key while open (Escape closes it); no button takes keyboard focus,
+## so Space/Enter never press Resume. Presentation only: leaving is the controller's job, on
+## leave_confirmed. (View layer.)
 
 signal leave_confirmed()
 signal closed()
@@ -35,6 +37,7 @@ static func escape_action(menu_open: bool, game_over: bool) -> String:
 func _init() -> void:
 	name = "PauseMenu"
 	visible = false
+	process_mode = Node.PROCESS_MODE_ALWAYS  # works while the game behind it is paused
 	mouse_filter = Control.MOUSE_FILTER_STOP  # the backdrop swallows clicks, drags and the wheel
 	z_index = 100  # above the side panel (50) and the log bar (20), for drawing and for clicks
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -100,6 +103,7 @@ func _button(parent: Container, text: String) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.custom_minimum_size = Vector2(0, 40)
+	b.focus_mode = Control.FOCUS_NONE  # mouse only: Space/Enter must not press a button
 	parent.add_child(b)
 	return b
 
@@ -112,7 +116,6 @@ func is_open() -> bool:
 func open() -> void:
 	_show_confirm(false)
 	visible = true
-	resume_button.grab_focus.call_deferred()
 
 
 func close() -> void:
@@ -126,5 +129,19 @@ func close() -> void:
 func _show_confirm(on: bool) -> void:
 	_main_box.visible = not on
 	confirm_box.visible = on
-	if visible:
-		(stay_button if on else resume_button).grab_focus.call_deferred()
+
+
+## While open, every key stops here: Escape closes the menu, the rest (Space, Enter, map and
+## debug keys) do nothing. Returns whether the key was taken.
+func swallows_key(event: InputEvent) -> bool:
+	if not visible or not event is InputEventKey:
+		return false
+	var key := event as InputEventKey
+	if key.pressed and not key.echo and key.keycode == KEY_ESCAPE:
+		close()
+	return true
+
+
+func _input(event: InputEvent) -> void:
+	if swallows_key(event):
+		get_viewport().set_input_as_handled()

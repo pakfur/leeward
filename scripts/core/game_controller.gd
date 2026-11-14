@@ -29,7 +29,7 @@ var _combat_playback_active: bool = false  # true from combat_log_ready until pl
 var _combat_playback_skip: bool = false
 var pause_menu: Control = null  # PauseMenu: Escape / the corner Menu button
 var menu_button: Button = null  # discreet corner button that opens the pause menu
-var _leave_pending: bool = false  # leaving once the running combat playback has stopped
+var _leaving: bool = false  # Leave game confirmed: playback is abandoned, nothing advances the game
 const COMBAT_REVEAL_SECONDS := 0.6
 
 const NO_SHOT_HEADLINE := "No broadside bears on an enemy this turn."
@@ -176,6 +176,7 @@ func _setup_pause_menu() -> void:
 	menu_button.pressed.connect(_open_pause_menu)
 	pause_menu = PauseMenuScript.new()
 	pause_menu.leave_confirmed.connect(_leave_game)
+	pause_menu.closed.connect(_set_paused.bind(false))
 	if ui:
 		ui.add_child(menu_button)
 		ui.add_child(pause_menu)
@@ -189,22 +190,44 @@ func _open_pause_menu() -> void:
 		return
 	_clear_hover()
 	pause_menu.open()
+	_set_paused(true)
+
+
+## The pause menu pauses the scene tree: ship animation tweens, movement playback waits, the
+## paced combat reveal and every pausable node's _process/input hold until it closes. (The
+## pause menu itself runs with PROCESS_MODE_ALWAYS.) View-level only: no game state changes.
+func _set_paused(on: bool) -> void:
+	if is_inside_tree():
+		get_tree().paused = on
+
+
+func _exit_tree() -> void:
+	_set_paused(false)  # never leave the next scene paused
 
 
 func is_pause_menu_open() -> bool:
 	return pause_menu != null and pause_menu.is_open()
 
 
-## Leave the game in progress for scenario selection, the way the game-over card does. A running
-## combat playback is stopped first (it must not tell the server it finished).
+## Leave the game in progress for scenario selection, the way the game-over card does, on one
+## confirmation in every state. Any running movement or combat playback is abandoned first: it
+## must never tell the server it finished, so the game does not advance any further.
 func _leave_game() -> void:
+	if _leaving:
+		return
+	_leaving = true
 	Trace.trace_log("GameController", "Leaving the game in progress")
 	if movement_client and movement_client.is_plotting():
 		movement_client.cancel()
-	if _combat_playback_active:
-		_leave_pending = true
-		_combat_playback_skip = true
-		return
+	_combat_playback_active = false
+	_combat_playback_skip = true
+	if playback_controller:
+		if playback_controller.playback_completed.is_connected(_on_playback_completed):
+			playback_controller.playback_completed.disconnect(_on_playback_completed)
+		playback_controller.abort()
+		playback_controller.queue_free()
+		playback_controller = null
+	_set_paused(false)
 	_on_back_to_scenarios()
 
 
@@ -970,6 +993,8 @@ func _on_resolution_log_ready(log: MovementTypes.ResolutionLog) -> void:
 
 
 func _on_playback_completed() -> void:
+	if _leaving:
+		return
 	Trace.trace_log("GameController", "[Playback] Playback complete, applying results and advancing")
 
 	# Clean up playback controller
@@ -1153,15 +1178,22 @@ func _play_combat_log(combat_log: PhaseEvents.PhaseLog) -> void:
 		combat_log_panel.set_skip_hint(not instant)
 	if not instant:
 		for ev in CombatLogPanel.playback_events(combat_log):
-			if _combat_playback_skip or _leave_pending:
+			if _combat_playback_skip or _leaving:
 				break
 			combat_log_panel.set_reveal_limit(combat_log.events.find(ev) + 1)
 			if CombatLogPanel.syncs_views(ev):
 				_sync_all_views()
 			var waited := 0.0
-			while waited < COMBAT_REVEAL_SECONDS and not _combat_playback_skip:
+			# process_frame fires even while the tree is paused, so paused frames are not counted:
+			# the pause menu holds the reveal.
+			while (waited < COMBAT_REVEAL_SECONDS or _tree_paused()) and not _combat_playback_skip:
 				await get_tree().process_frame
-				waited += get_process_delta_time()
+				if _leaving or not is_inside_tree():
+					return  # the game was left: touch nothing, report nothing
+				if not _tree_paused():
+					waited += get_process_delta_time()
+	if _leaving:
+		return
 	if combat_log_panel:
 		combat_log_panel.clear_reveal_limit()
 		combat_log_panel.set_skip_hint(false)
@@ -1174,7 +1206,14 @@ func _skip_combat_playback() -> void:
 		_combat_playback_skip = true
 
 
+func _tree_paused() -> bool:
+	return is_inside_tree() and get_tree().paused
+
+
 func _finish_combat_playback() -> void:
+	if _leaving:
+		_combat_playback_active = false
+		return
 	if not _combat_playback_active:
 		return
 	_combat_playback_active = false
