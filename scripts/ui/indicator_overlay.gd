@@ -183,7 +183,7 @@ func _update_info_button() -> void:
 			_info_btn.visible = false
 			return
 		centers.append(_camera.unproject_position(p))
-	var rect := info_button_rect(centers, _sel_model.facing, _info_btn.get_combined_minimum_size())
+	var rect := info_button_rect(centers, _sel_model.heading, _info_btn.get_combined_minimum_size())
 	if rect.size == Vector2.ZERO:
 		_info_btn.visible = false
 		return

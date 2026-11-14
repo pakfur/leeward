@@ -167,8 +167,10 @@ func _setup_pause_menu() -> void:
 	menu_button.tooltip_text = "Pause menu (Esc)"
 	menu_button.theme_type_variation = &"SecondaryButton"
 	menu_button.focus_mode = Control.FOCUS_NONE
-	menu_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 8)
+	# Bottom-right: clear of the minimap (top right), the side panel (left) and the log bar.
+	menu_button.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 10)
 	menu_button.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	menu_button.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	menu_button.pressed.connect(_open_pause_menu)
 	pause_menu = PauseMenuScript.new()
 	pause_menu.leave_confirmed.connect(_leave_game)

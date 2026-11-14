@@ -63,7 +63,7 @@ func test_windward_dir_is_outward_unit_vector() -> void:
 
 func test_model_carries_facing_and_the_six_neighbour_centres() -> void:
 	var m = Model.build_selected(Vector2i(2, 1), 4, 3, 0, 2, hex_grid)
-	assert_eq(m.facing, 4)
+	assert_eq(m.heading, 4)
 	assert_eq(m.neighbor_anchors.size(), 6)
 	for d in range(6):
 		var n := hex_grid.get_neighbor(2, 1, d)

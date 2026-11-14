@@ -56,3 +56,9 @@ func test_reopening_after_a_cancelled_leave_starts_on_the_first_page() -> void:
 	menu.close()
 	menu.open()
 	assert_false(menu.confirm_box.visible)
+
+
+func test_draws_and_takes_clicks_above_the_side_panel_and_log() -> void:
+	# ContextPanel uses z_index 50, the log bar 20: the menu must sit over both.
+	assert_gt(menu.z_index, 50)
+	assert_eq(menu.mouse_filter, Control.MOUSE_FILTER_STOP)

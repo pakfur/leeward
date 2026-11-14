@@ -36,6 +36,7 @@ func _init() -> void:
 	name = "PauseMenu"
 	visible = false
 	mouse_filter = Control.MOUSE_FILTER_STOP  # the backdrop swallows clicks, drags and the wheel
+	z_index = 100  # above the side panel (50) and the log bar (20), for drawing and for clicks
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 
 	var backdrop := ColorRect.new()
