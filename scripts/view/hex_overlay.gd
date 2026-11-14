@@ -14,7 +14,11 @@ const COLOR_VALID = Color(0.2, 0.8, 0.2, 0.35)     # Green, semi-transparent
 const COLOR_PLOTTED = Color(0.2, 0.4, 0.9, 0.45)    # Blue, semi-transparent
 const COLOR_SUBMITTED = Color(0.5, 0.5, 0.5, 0.25)  # Gray, dimmed
 const COLOR_BLOCKED = Color(0.8, 0.2, 0.2, 0.35)    # Red, semi-transparent
-const COLOR_TARGET = Color(1.0, 0.9, 0.2, 0.5)      # Yellow, chosen fire targets
+const COLOR_TARGET = Color(1.0, 0.95, 0.25, 1.0)    # Bright yellow outline, chosen fire targets
+## Target outline band (fractions of hex_size, measured to the corners): on the hex's own edge,
+## outside the arc rim and clear of the middle, where the ship, its owner ring and pennant stay seen.
+const TARGET_RING_OUTER = 1.04
+const TARGET_RING_INNER = 0.92
 const COLOR_COLLISION = Color(1.0, 0.5, 0.0, 0.6)   # Orange, an offered hex that holds another ship
 
 # Child nodes for each layer
@@ -71,7 +75,7 @@ func _ready() -> void:
 	_submitted_material = _create_material(COLOR_SUBMITTED)
 	_blocked_material = _create_material(COLOR_BLOCKED)
 	_target_material = _create_material(COLOR_TARGET)
-	_target_material.render_priority = 2
+	_target_material.render_priority = 0  # beneath owner rings (1) where the two meet
 	_collision_material = _create_material(COLOR_COLLISION)
 
 
@@ -163,14 +167,21 @@ func _create_hex_ring_mesh(outer: float, inner: float) -> ArrayMesh:
 	return mesh
 
 
-## Highlight the hexes of the currently chosen fire targets.
+## Outline the hexes of the currently chosen fire targets: an opaque ring on the hex edge, never a
+## fill, so the target ship and its owner marker remain visible inside it.
 func show_target_highlights(hexes: Array[Vector2i]) -> void:
 	_clear_children(targets_node)
 	if arc_grid == null or targets_node == null:
 		return
 	for hex_pos in hexes:
 		var world_pos = arc_grid.axial_to_world(hex_pos.x, hex_pos.y)
-		_add_hex_mesh(targets_node, world_pos, arc_grid.hex_size, _target_material)
+		var ring := MeshInstance3D.new()
+		ring.name = "TargetRing"
+		ring.mesh = _create_hex_ring_mesh(arc_grid.hex_size * TARGET_RING_OUTER,
+				arc_grid.hex_size * TARGET_RING_INNER)
+		ring.material_override = _target_material
+		ring.position = Vector3(world_pos.x, OVERLAY_Y, world_pos.z)
+		targets_node.add_child(ring)
 
 
 func clear_arcs() -> void:
