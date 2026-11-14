@@ -13,6 +13,18 @@ var base_position: Vector3  # Position without wave offset
 var hex_grid_ref: HexGrid = null
 var _struck_flag: MeshInstance3D = null  # white flag shown while the ship is struck
 
+## Owner colours, shared with the minimap: green = the human player's ships, red = the enemy's.
+const PLAYER_COLOR := Color(0.183, 0.927, 0.479)
+const ENEMY_COLOR := Color(1.0, 0.3, 0.3)
+const HUMAN_PLAYER_ID := 0
+var _owner_ring: MeshInstance3D = null   # coloured ring on the water around the ship
+var _owner_pennant: MeshInstance3D = null  # coloured pennant at the masthead (hidden when struck)
+var _owner_player_id: int = -1
+
+static func owner_color(player_id: int) -> Color:
+	"""Owner colour for a player id (matches the minimap ship icons)."""
+	return PLAYER_COLOR if player_id == HUMAN_PLAYER_ID else ENEMY_COLOR
+
 func _ready() -> void:
 	wave_calculator = WaveCalculator.new()
 
@@ -43,8 +55,50 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	# Update rotation
 	_update_rotation_from_state(ship_state)
 
-	# Struck ships look different (flag + desaturated)
+	# Owner marker (ring + pennant) in the owner's colour
+	_update_owner_marker(ship_state.player_id)
+
+	# Struck ships look different (flag + desaturated); the ring keeps the owner's colour
 	_update_struck_visual(ship_state.is_struck())
+	if _owner_pennant:
+		_owner_pennant.visible = not ship_state.is_struck()
+
+func _update_owner_marker(player_id: int) -> void:
+	"""Create (once) or recolour the owner ring and pennant for player_id."""
+	if model_node == null or player_id == _owner_player_id:
+		return
+	_owner_player_id = player_id
+	var color := owner_color(player_id)
+	if _owner_ring == null:
+		_owner_ring = MeshInstance3D.new()
+		_owner_ring.name = "OwnerRing"
+		var ring := TorusMesh.new()
+		ring.inner_radius = 0.68
+		ring.outer_radius = 0.82
+		ring.rings = 48
+		_owner_ring.mesh = ring
+		_owner_ring.scale = Vector3(1.0, 0.15, 1.0)  # flatten onto the water
+		_owner_ring.position = Vector3(0, 0.12, 0)
+		var ring_material := StandardMaterial3D.new()
+		ring_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		ring_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		ring_material.no_depth_test = true  # stays visible over wave crests at any zoom
+		ring_material.render_priority = 1
+		_owner_ring.material_override = ring_material
+		add_child(_owner_ring)  # on the ship root, not the model: it does not tilt with the hull
+	(_owner_ring.material_override as StandardMaterial3D).albedo_color = Color(color.r, color.g, color.b, 0.9)
+	if _owner_pennant == null:
+		_owner_pennant = MeshInstance3D.new()
+		_owner_pennant.name = "OwnerPennant"
+		var pennant := BoxMesh.new()
+		pennant.size = Vector3(0.03, 0.22, 0.45)
+		_owner_pennant.mesh = pennant
+		_owner_pennant.position = Vector3(0, 1.4, 0.24)  # masthead, streaming aft
+		var pennant_material := StandardMaterial3D.new()
+		pennant_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_owner_pennant.material_override = pennant_material
+		model_node.add_child(_owner_pennant)
+	(_owner_pennant.material_override as StandardMaterial3D).albedo_color = color
 
 func _update_struck_visual(struck: bool) -> void:
 	"""Show a white flag and desaturate the model while the ship is struck; undo it otherwise."""
@@ -52,7 +106,7 @@ func _update_struck_visual(struck: bool) -> void:
 		return
 	for child in model_node.get_children():
 		var mesh := child as MeshInstance3D
-		if mesh == null or mesh == _struck_flag:
+		if mesh == null or mesh == _struck_flag or mesh == _owner_pennant:
 			continue
 		var material := mesh.material_override as StandardMaterial3D
 		if material == null:
@@ -96,7 +150,9 @@ func _update_position_from_state(ship_state: ShipState, hex_grid: HexGrid) -> vo
 
 func _update_rotation_from_state(ship_state: ShipState) -> void:
 	"""Update the 3D rotation based on state"""
-	# Each hex face is 60 degrees, facing 0 is east
+	# Each hex face is 60 degrees, facing 0 is east. The model's bow is local -Z; a Y rotation
+	# of -(60f + 90) degrees points it along HexGrid.DIRECTIONS[f] in world space
+	# (f=0 -> +X/east, f=1 -> south-east), which reads correctly with the north-up camera.
 	var angle_deg = -ship_state.facing * 60.0 - 90.0
 	if model_node:
 		model_node.rotation_degrees = Vector3(0, angle_deg, 0)
@@ -214,7 +270,8 @@ func _create_2hex_model() -> void:
 
 func _update_wave_position() -> void:
 	"""Update ship position and rotation based on wave motion (visual only)"""
-	if wave_calculator == null or base_position == Vector3.ZERO:
+	if wave_calculator == null:
+		position = base_position
 		return
 
 	var current_time = Time.get_ticks_msec() / 1000.0
