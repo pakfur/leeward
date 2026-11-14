@@ -2,7 +2,9 @@ extends Control
 ## ContextPanel - Collapsible left-side panel for context-sensitive UI
 ## Displays different content based on game state/context
 
-@export var panel_width_percent: float = 0.2  # 20% of screen width
+## Logical width (the UI is laid out at 1080 px tall and scaled, so this holds at any window size).
+## The combat log bar starts just right of it (CombatLogPanel offset_left).
+@export var panel_width: float = 460.0
 @export var collapsed_width: float = 10.0  # Width when collapsed (narrow strip)
 @export var animation_duration: float = 0.3  # Seconds for expand/collapse animation
 
@@ -39,6 +41,7 @@ func _ready() -> void:
 	is_expanded = true
 	current_width = expanded_width
 	set_deferred("size:x", current_width)
+	panel_container.custom_minimum_size.x = current_width
 	panel_container.set_deferred("size:x", current_width)
 
 	Trace.trace_log("UI", "ContextPanel initialized: expanded_width=%f, collapsed_width=%f" % [expanded_width, collapsed_width])
@@ -58,7 +61,7 @@ func _create_collapsed_button() -> void:
 func _update_panel_size() -> void:
 	"""Update panel size based on screen dimensions"""
 	var screen_size = get_viewport_rect().size
-	expanded_width = screen_size.x * panel_width_percent
+	expanded_width = panel_width
 
 	# Set full height for the control
 	set_deferred("size:y", screen_size.y)

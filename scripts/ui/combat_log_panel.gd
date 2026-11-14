@@ -10,7 +10,7 @@ extends PanelContainer
 signal skip_requested()
 
 const EXPANDED_HEIGHT := 260.0
-const BAR_HEIGHT := 34.0
+const BAR_HEIGHT := 42.0
 const MAX_TURNS_SHOWN := 10  # most recent turns kept in the list
 
 var _toggle_button: Button
@@ -145,8 +145,8 @@ func _ready() -> void:
 	anchor_right = 1.0
 	anchor_top = 1.0
 	anchor_bottom = 1.0
-	offset_left = 400.0
-	offset_right = -440.0
+	offset_left = 480.0  # clear of the context panel (24% of 1920)
+	offset_right = -480.0  # clear of the ship status panel
 	offset_bottom = -10.0
 	_apply_height()
 

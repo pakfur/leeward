@@ -131,7 +131,7 @@ func _ready() -> void:
 
 	_points_note_label = Label.new()
 	_points_note_label.name = "PointsNoteLabel"
-	_points_note_label.add_theme_font_size_override("font_size", 11)
+	_points_note_label.theme_type_variation = &"SecondaryLabel"
 	_points_note_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_points_note_label.custom_minimum_size = Vector2(PANEL_SIZE.x - 48, 0)
 	box.add_child(_points_note_label)
