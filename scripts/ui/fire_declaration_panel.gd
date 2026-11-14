@@ -2,10 +2,11 @@ extends Control
 ## FireDeclarationPanel - Context-panel UI for declaring broadside fire during COMBAT_RESOLUTION.
 ##
 ## Lists each own ship that has at least one eligible shot. Each broadside (port/starboard) gets
-## a target list ("Hold fire" first and selected by default), an aim toggle and an ammunition
-## toggle. Every change re-queries GunneryCalculator.preview (a pure query) so the displayed
-## modified gunfire numbers and modifier breakdown are always current. The panel never mutates
-## game state: pressing Fire only emits the assembled order dictionaries for the controller.
+## an always-visible list of target rows (best target first and selected by default, "Hold fire"
+## last), an aim toggle and an ammunition toggle, each with the reason when it is locked. Every
+## change re-queries GunneryCalculator.preview (a pure query) so the displayed numbers and the
+## breakdown are always current. No popups. The panel never mutates game state: pressing the
+## main button only emits the assembled order dictionaries for the controller.
 
 signal fire_pressed(orders: Array)
 ## A ship row was chosen (the controller draws that ship's arcs).
@@ -14,7 +15,20 @@ signal ship_focused(ship_id: String)
 signal selection_changed(ship_id: String)
 
 const SIDE_NAMES := ["Port", "Starboard"]
-const SEPARATOR := " · "
+const SEPARATOR := " — "
+## Arc overlay colours, by side (port, starboard). The section headers show the same colour.
+const ARC_COLORS := [Color(0.95, 0.35, 0.2, 0.2), Color(0.2, 0.85, 0.35, 0.25)]
+const HIGH_ONLY_NOTE := "Range %d+: must fire high"
+const DISMANTLING_NOTE := "Dismantling shot reaches %d hexes"
+const D6_NOTE := "A d6 is added when you fire; higher is better."
+
+## Calculator refusal reasons (GunneryCalculator.preview) -> plain words for the "Combat" panel.
+const NO_SHOT_ARC := "out of both broadside arcs"
+const NO_SHOT_RANGE := "out of range"
+const NO_SHOT_LOS := "line of sight blocked"
+const NO_SHOT_CREW := "no crew to serve the guns"
+const NO_SHOT_STRUCK := "struck"
+const NO_SHOT_NO_ENEMY := "no enemy afloat"
 
 @onready var ship_list_container: VBoxContainer = %ShipListContainer
 @onready var error_label: Label = %ErrorLabel
@@ -22,7 +36,8 @@ const SEPARATOR := " · "
 @onready var instructions_label: Label = %InstructionsLabel
 
 ## ship_id -> {"name": String, "header": Button, "shots": {side: Array[ShotPreview]},
-##             "sides": {side: {"target_id","aim","ammo"}}, "widgets": {side: Dictionary}}
+##             "sides": {side: {"target_id","aim","ammo","want_high","want_dismantling"}},
+##             "widgets": {side: Dictionary}}
 var _ships: Dictionary = {}
 var _ship_order: Array[String] = []
 var _focused_ship_id: String = ""
@@ -34,14 +49,13 @@ var _building: bool = false
 # Pure presentation helpers (unit tested)
 # ============================================================================
 
-## "<name> — range N · [bow|stern rake] · [initial broadside] · <modified number>"
+## "<name> — range N — gunfire M[ — stern rake][ — initial broadside]"
 static func option_text(target_name: String, preview: GunneryTypes.ShotPreview) -> String:
-	var parts: Array[String] = ["%s — range %d" % [target_name, preview.range_hexes]]
+	var parts: Array[String] = [target_name, "range %d" % preview.range_hexes, "gunfire %d" % preview.mgn]
 	if preview.rake != "":
 		parts.append("%s rake" % preview.rake)
 	if preview.initial_broadside:
 		parts.append("initial broadside")
-	parts.append(str(preview.mgn))
 	return SEPARATOR.join(parts)
 
 
@@ -49,10 +63,29 @@ static func option_text(target_name: String, preview: GunneryTypes.ShotPreview) 
 static func modifier_lines(preview: GunneryTypes.ShotPreview) -> Array[String]:
 	var lines: Array[String] = []
 	for m in preview.modifiers:
-		var key := str(m.get("name", "?"))
-		var label: String = PhaseEvents.MODIFIER_LABELS.get(key, key.replace("_", " "))
-		lines.append("%s %+d" % [label, int(m.get("value", 0))])
+		lines.append("%s %+d" % [PhaseEvents.modifier_label(str(m.get("name", "?"))), int(m.get("value", 0))])
 	return lines
+
+
+## "Base 18, initial broadside +4 = 22. A d6 is added when you fire; higher is better."
+static func breakdown_text(preview: GunneryTypes.ShotPreview) -> String:
+	var lines := modifier_lines(preview)
+	var sum := "Base %d" % preview.bgn
+	if not lines.is_empty():
+		sum += ", %s = %d" % [", ".join(lines), preview.mgn]
+	return "%s. %s" % [sum, D6_NOTE]
+
+
+## What the main button does: "Fire 1 broadside" / "Fire 2 broadsides" / "Hold all fire".
+static func fire_button_text(order_count: int) -> String:
+	if order_count <= 0:
+		return "Hold all fire"
+	return "Fire %d broadside%s" % [order_count, "" if order_count == 1 else "s"]
+
+
+## Radio-style marker so the chosen row is obvious at a glance.
+static func row_marker(chosen: bool) -> String:
+	return "● " if chosen else "○ "
 
 
 static func dismantling_allowed(range_hexes: int) -> bool:
@@ -62,6 +95,64 @@ static func dismantling_allowed(range_hexes: int) -> bool:
 ## High fire is forced when the range only allows it.
 static func effective_aim(wanted_aim: String, high_only: bool) -> String:
 	return GunneryTypes.AIM_HIGH if high_only else wanted_aim
+
+
+## Dismantling only when the player asked for it and the range allows it; roundshot otherwise.
+static func effective_ammo(want_dismantling: bool, range_hexes: int) -> String:
+	return GunneryTypes.AMMO_DISMANTLING if want_dismantling and dismantling_allowed(range_hexes) \
+		else GunneryTypes.AMMO_ROUND
+
+
+## Why "High fire" is locked on, "" when the player may choose.
+static func aim_note(high_only: bool) -> String:
+	return HIGH_ONLY_NOTE % GunneryCalculator.HIGH_ONLY_RANGE if high_only else ""
+
+
+## Why "Dismantling" is unavailable, "" when it may be chosen. Says so when the player's choice
+## is being replaced by roundshot for this target.
+static func dismantling_note(range_hexes: int, want_dismantling: bool) -> String:
+	if dismantling_allowed(range_hexes):
+		return ""
+	var note := DISMANTLING_NOTE % GunneryCalculator.MAX_DISMANTLING_RANGE
+	return note + " — roundshot this time" if want_dismantling else note
+
+
+## Target rows in display order: highest modified gunfire number first, then nearest, then name.
+## Each entry is {"target_id", "mgn", "range", "name"}; returns a sorted copy.
+static func rank_targets(entries: Array) -> Array:
+	var sorted := entries.duplicate()
+	sorted.sort_custom(func(x: Dictionary, y: Dictionary) -> bool:
+		if int(x["mgn"]) != int(y["mgn"]):
+			return int(x["mgn"]) > int(y["mgn"])
+		if int(x["range"]) != int(y["range"]):
+			return int(x["range"]) < int(y["range"])
+		return str(x["name"]) < str(y["name"]))
+	return sorted
+
+
+## The main reason a ship cannot fire at its nearest enemy, in plain words, from the calculator's
+## refusal reasons for each broadside. A reason other than "not in the arc" wins (it means the
+## target IS in that broadside's arc). Empty `reasons` means there is no enemy to shoot at.
+static func no_shot_reason(reasons: Array) -> String:
+	if reasons.is_empty():
+		return NO_SHOT_NO_ENEMY
+	var chosen := ""
+	for r in reasons:
+		var text := str(r)
+		if not text.contains("arc"):
+			chosen = text
+			break
+	if chosen == "":
+		return NO_SHOT_ARC
+	if chosen.contains("struck"):
+		return NO_SHOT_STRUCK
+	if chosen.contains("line of sight"):
+		return NO_SHOT_LOS
+	if chosen.contains("sailor") or chosen.contains("crew"):
+		return NO_SHOT_CREW
+	if chosen.contains("range"):
+		return NO_SHOT_RANGE
+	return chosen
 
 
 ## Order dictionaries (FireOrder.to_dict()) for one ship, in side order. Sides on hold fire
@@ -114,6 +205,7 @@ func setup(ship_ids: Array) -> int:
 	_building = false
 	for ship_id in _ship_order:
 		_refresh_ship(ship_id)
+	_update_fire_button()
 	if not _ship_order.is_empty():
 		focus_ship(_ship_order[0])
 	return _ship_order.size()
@@ -151,6 +243,27 @@ func get_all_orders() -> Array:
 	return orders
 
 
+## Choose a broadside's target ("" holds fire). Same effect as clicking that row.
+func select_target(ship_id: String, side: int, target_id: String) -> void:
+	if not _ships.has(ship_id) or not _ships[ship_id]["sides"].has(side):
+		return
+	_ships[ship_id]["sides"][side]["target_id"] = target_id
+	_on_side_changed(ship_id, side)
+
+
+## Ask for high fire / dismantling shot on a broadside. Same effect as pressing the toggles.
+func set_want_high(ship_id: String, side: int, on: bool) -> void:
+	if _ships.has(ship_id) and _ships[ship_id]["sides"].has(side):
+		_ships[ship_id]["sides"][side]["want_high"] = on
+		_on_side_changed(ship_id, side)
+
+
+func set_want_dismantling(ship_id: String, side: int, on: bool) -> void:
+	if _ships.has(ship_id) and _ships[ship_id]["sides"].has(side):
+		_ships[ship_id]["sides"][side]["want_dismantling"] = on
+		_on_side_changed(ship_id, side)
+
+
 func show_error(message: String) -> void:
 	error_label.text = message
 	error_label.visible = message != ""
@@ -166,7 +279,8 @@ func show_submitted() -> void:
 	for ship_id in _ship_order:
 		for side in _ships[ship_id]["widgets"]:
 			var w: Dictionary = _ships[ship_id]["widgets"][side]
-			w["options"].disabled = true
+			for button: Button in w["targets"].values():
+				button.disabled = true
 			w["high"].disabled = true
 			w["dismantling"].disabled = true
 
@@ -180,8 +294,8 @@ func _clear() -> void:
 	_group = ButtonGroup.new()
 	error_label.visible = false
 	fire_button.disabled = false
-	fire_button.text = "Fire"
-	instructions_label.text = "Choose a target for each broadside, or hold fire."
+	fire_button.text = fire_button_text(0)
+	instructions_label.text = "Each broadside starts on its best target. Pick another row, or Hold fire."
 
 
 func _add_ship(ship_state: ShipState, shots_by_side: Dictionary) -> void:
@@ -203,135 +317,178 @@ func _add_ship(ship_state: ShipState, shots_by_side: Dictionary) -> void:
 	_ships[ship_id] = entry
 	_ship_order.append(ship_id)
 
+	var names := CombatLogPanel.log_names(GameState.get_all_ships())
 	for side in [ShipState.PORT, ShipState.STARBOARD]:
 		if not shots_by_side.has(side):
 			continue
-		entry["sides"][side] = {"target_id": "", "aim": GunneryTypes.AIM_LOW,
-			"ammo": GunneryTypes.AMMO_ROUND}
-		entry["widgets"][side] = _build_side(box, ship_id, side, shots_by_side[side])
+		# Rank with the defaults the server would preview (low unless forced, roundshot).
+		var ranked_entries: Array = []
+		for shot: GunneryTypes.ShotPreview in shots_by_side[side]:
+			var target_id := shot.order.target_id
+			ranked_entries.append({"target_id": target_id, "mgn": shot.mgn,
+				"range": shot.range_hexes, "name": str(names.get(target_id, target_id))})
+		var ranked := rank_targets(ranked_entries)
+		entry["sides"][side] = {"target_id": str(ranked[0]["target_id"]), "aim": GunneryTypes.AIM_LOW,
+			"ammo": GunneryTypes.AMMO_ROUND, "want_high": false, "want_dismantling": false}
+		entry["widgets"][side] = _build_side(box, ship_id, side, ranked)
 	box.add_child(HSeparator.new())
 
 
-func _build_side(parent: VBoxContainer, ship_id: String, side: int, shots: Array) -> Dictionary:
+func _build_side(parent: VBoxContainer, ship_id: String, side: int, ranked: Array) -> Dictionary:
+	var title := HBoxContainer.new()
+	title.add_theme_constant_override("separation", 6)
+	var swatch := ColorRect.new()
+	swatch.name = "ArcSwatch"
+	var arc_color: Color = ARC_COLORS[side]
+	swatch.color = Color(arc_color.r, arc_color.g, arc_color.b, 1.0)
+	swatch.custom_minimum_size = Vector2(14, 14)
+	swatch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	title.add_child(swatch)
 	var label := Label.new()
 	label.text = "%s broadside" % SIDE_NAMES[side]
 	label.add_theme_font_size_override("font_size", 12)
-	parent.add_child(label)
+	title.add_child(label)
+	parent.add_child(title)
 
-	var options := OptionButton.new()
-	options.fit_to_longest_item = false
-	options.clip_text = true
-	options.add_item("Hold fire")
-	options.set_item_metadata(0, "")
-	for shot in shots:
-		options.add_item(GameState.get_ship(shot.order.target_id).ship_name)
-		options.set_item_metadata(options.item_count - 1, shot.order.target_id)
-	options.select(0)
-	parent.add_child(options)
-
-	var toggles := HBoxContainer.new()
-	var high := CheckButton.new()
-	high.text = "High fire"
-	high.add_theme_font_size_override("font_size", 11)
-	var dismantling := CheckButton.new()
-	dismantling.text = "Dismantling"
-	dismantling.add_theme_font_size_override("font_size", 11)
-	toggles.add_child(high)
-	toggles.add_child(dismantling)
-	parent.add_child(toggles)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 2)
+	parent.add_child(rows)
+	var group := ButtonGroup.new()
+	var targets := {}
+	for row in ranked:
+		targets[str(row["target_id"])] = _target_row(rows, group, ship_id, side, str(row["target_id"]))
+	targets[""] = _target_row(rows, group, ship_id, side, "")
 
 	var breakdown := Label.new()
 	breakdown.add_theme_font_size_override("font_size", 10)
 	breakdown.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	parent.add_child(breakdown)
 
-	var changed := func(_arg = null): _on_side_changed(ship_id, side)
-	options.item_selected.connect(changed)
-	high.toggled.connect(changed)
-	dismantling.toggled.connect(changed)
-	return {"options": options, "high": high, "dismantling": dismantling, "breakdown": breakdown}
+	var high := _toggle_row(parent, "High fire")
+	var dismantling := _toggle_row(parent, "Dismantling")
+	high["button"].toggled.connect(func(on: bool): set_want_high(ship_id, side, on))
+	dismantling["button"].toggled.connect(func(on: bool): set_want_dismantling(ship_id, side, on))
+	return {"targets": targets, "rows": ranked, "high": high["button"], "high_note": high["note"],
+		"dismantling": dismantling["button"], "dismantling_note": dismantling["note"],
+		"breakdown": breakdown}
+
+
+func _target_row(parent: VBoxContainer, group: ButtonGroup, ship_id: String, side: int,
+		target_id: String) -> Button:
+	var button := Button.new()
+	button.toggle_mode = true
+	button.button_group = group
+	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	button.add_theme_font_size_override("font_size", 11)
+	button.focus_mode = Control.FOCUS_NONE
+	button.pressed.connect(func(): select_target(ship_id, side, target_id))
+	parent.add_child(button)
+	return button
+
+
+func _toggle_row(parent: VBoxContainer, text: String) -> Dictionary:
+	var row := HBoxContainer.new()
+	var button := CheckButton.new()
+	button.text = text
+	button.add_theme_font_size_override("font_size", 11)
+	button.focus_mode = Control.FOCUS_NONE
+	row.add_child(button)
+	var note := Label.new()
+	note.add_theme_font_size_override("font_size", 10)
+	note.add_theme_color_override("font_color", Color(0.95, 0.8, 0.45))
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	note.custom_minimum_size = Vector2(80, 0)
+	row.add_child(note)
+	parent.add_child(row)
+	return {"button": button, "note": note}
 
 
 # ============================================================================
 # Reacting to changes
 # ============================================================================
 
-func _on_side_changed(ship_id: String, side: int) -> void:
+func _on_side_changed(ship_id: String, _side: int) -> void:
 	if _building:
 		return
-	var entry: Dictionary = _ships[ship_id]
-	var widgets: Dictionary = entry["widgets"][side]
-	var selected: int = widgets["options"].selected
-	entry["sides"][side]["target_id"] = str(widgets["options"].get_item_metadata(selected))
-	entry["sides"][side]["ammo"] = GunneryTypes.AMMO_DISMANTLING if widgets["dismantling"].button_pressed \
-		else GunneryTypes.AMMO_ROUND
-	entry["sides"][side]["aim"] = GunneryTypes.AIM_HIGH if widgets["high"].button_pressed \
-		else GunneryTypes.AIM_LOW
 	_refresh_ship(ship_id)
+	_update_fire_button()
 	error_label.visible = false
 	selection_changed.emit(ship_id)
 
 
-## Re-query previews for every broadside of a ship and refresh texts, toggles and breakdowns.
+func _update_fire_button() -> void:
+	if fire_button.text != "Orders submitted":
+		fire_button.text = fire_button_text(get_all_orders().size())
+
+
+## Re-query previews for every broadside of a ship and refresh rows, toggles, notes and breakdowns.
+## The player's wishes (want_high, want_dismantling) are kept apart from what the order will
+## actually be, so a forced high aim or a roundshot fallback never sticks to another target.
 func _refresh_ship(ship_id: String) -> void:
 	var entry: Dictionary = _ships[ship_id]
 	var sides: Dictionary = entry["sides"]
+	var names := CombatLogPanel.log_names(GameState.get_all_ships())
 	for side in sides:
 		var state: Dictionary = sides[side]
 		var widgets: Dictionary = entry["widgets"][side]
-		var options: OptionButton = widgets["options"]
-		# Splitting fire across both broadsides costs the two-target modifier on each shot.
+		# Firing both broadsides costs the two-target modifier on each shot.
 		var two_targets := false
 		for other_side in sides:
 			if other_side != side and sides[other_side]["target_id"] != "":
 				two_targets = true
 
-		# Selected shot first, so the toggles reflect its range before item texts are built.
-		var selected_preview: GunneryTypes.ShotPreview = null
-		if state["target_id"] != "":
-			selected_preview = _preview_for(ship_id, side, state["target_id"], state["ammo"], two_targets)
-			if state["ammo"] == GunneryTypes.AMMO_DISMANTLING and not dismantling_allowed(selected_preview.range_hexes):
-				state["ammo"] = GunneryTypes.AMMO_ROUND
-				selected_preview = _preview_for(ship_id, side, state["target_id"], state["ammo"], two_targets)
+		for target_id: String in widgets["targets"]:
+			var button: Button = widgets["targets"][target_id]
+			var chosen: bool = target_id == state["target_id"]
+			button.set_pressed_no_signal(chosen)
+			var text := "Hold fire"
+			if target_id != "":
+				var row_preview := _preview_for(ship_id, side, target_id, state["want_dismantling"], two_targets)
+				text = option_text(str(names.get(target_id, target_id)), row_preview)
+			button.text = row_marker(chosen) + text
 
-		for i in range(1, options.item_count):
-			var target_id: String = options.get_item_metadata(i)
-			var p := _preview_for(ship_id, side, target_id, state["ammo"], two_targets)
-			options.set_item_text(i, option_text(GameState.get_ship(target_id).ship_name, p))
-
-		var holding := selected_preview == null
+		var holding: bool = state["target_id"] == ""
 		var high: CheckButton = widgets["high"]
 		var dismantling: CheckButton = widgets["dismantling"]
-		high.disabled = holding or selected_preview.high_only
-		high.set_pressed_no_signal(not holding and
-			effective_aim(state["aim"], selected_preview.high_only) == GunneryTypes.AIM_HIGH)
-		if not holding:
-			state["aim"] = effective_aim(state["aim"], selected_preview.high_only)
-		dismantling.disabled = holding or not dismantling_allowed(selected_preview.range_hexes)
-		dismantling.set_pressed_no_signal(not holding and state["ammo"] == GunneryTypes.AMMO_DISMANTLING)
-
 		var breakdown: Label = widgets["breakdown"]
 		if holding:
-			breakdown.text = ""
-		else:
-			var lines := modifier_lines(selected_preview)
-			breakdown.text = "Basic %d, modified %d\n%s" % [selected_preview.bgn, selected_preview.mgn,
-				"\n".join(lines)] if not lines.is_empty() else \
-				"Basic %d, modified %d" % [selected_preview.bgn, selected_preview.mgn]
+			state["aim"] = GunneryTypes.AIM_LOW
+			state["ammo"] = GunneryTypes.AMMO_ROUND
+			high.disabled = true
+			high.set_pressed_no_signal(state["want_high"])
+			dismantling.disabled = true
+			dismantling.set_pressed_no_signal(state["want_dismantling"])
+			widgets["high_note"].text = ""
+			widgets["dismantling_note"].text = ""
+			breakdown.text = "This broadside holds fire."
+			continue
+
+		var p := _preview_for(ship_id, side, state["target_id"], state["want_dismantling"], two_targets)
+		state["ammo"] = effective_ammo(state["want_dismantling"], p.range_hexes)
+		var wanted_aim := GunneryTypes.AIM_HIGH if state["want_high"] else GunneryTypes.AIM_LOW
+		state["aim"] = effective_aim(wanted_aim, p.high_only)
+		high.disabled = p.high_only
+		high.set_pressed_no_signal(state["aim"] == GunneryTypes.AIM_HIGH)
+		widgets["high_note"].text = aim_note(p.high_only)
+		dismantling.disabled = not dismantling_allowed(p.range_hexes)
+		dismantling.set_pressed_no_signal(state["ammo"] == GunneryTypes.AMMO_DISMANTLING)
+		widgets["dismantling_note"].text = dismantling_note(p.range_hexes, state["want_dismantling"])
+		breakdown.text = breakdown_text(p)
 
 
-## Preview a shot; if the requested ammunition cannot fire (dismantling beyond range 7),
-## fall back to roundshot so the row still shows a number.
-func _preview_for(ship_id: String, side: int, target_id: String, ammo: String,
+## Preview a shot with the ammunition the order would actually carry at that target's range.
+func _preview_for(ship_id: String, side: int, target_id: String, want_dismantling: bool,
 		two_targets: bool) -> GunneryTypes.ShotPreview:
 	var order := GunneryTypes.FireOrder.new()
 	order.ship_id = ship_id
 	order.side = side
 	order.target_id = target_id
-	order.ammo = ammo
+	order.ammo = GunneryTypes.AMMO_ROUND
 	var p: GunneryTypes.ShotPreview = GameState.gunnery_calculator.preview(order, two_targets)
-	if not p.can_fire and ammo == GunneryTypes.AMMO_DISMANTLING:
-		order.ammo = GunneryTypes.AMMO_ROUND
+	if want_dismantling and dismantling_allowed(p.range_hexes):
+		order.ammo = GunneryTypes.AMMO_DISMANTLING
 		p = GameState.gunnery_calculator.preview(order, two_targets)
 	return p
 

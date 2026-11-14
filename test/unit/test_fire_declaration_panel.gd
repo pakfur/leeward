@@ -16,23 +16,80 @@ func _preview(range_hexes: int, mgn: int, rake: String = "", initial: bool = fal
 	return p
 
 
-func test_option_text_shows_name_range_and_number() -> void:
-	var text: String = FirePanel.option_text("HMS Enemy", _preview(4, 11))
-	assert_eq(text, "HMS Enemy — range 4 · 11")
+func test_option_text_labels_range_and_gunfire() -> void:
+	var text: String = FirePanel.option_text("32-gun Frigate (enemy)", _preview(10, 4))
+	assert_eq(text, "32-gun Frigate (enemy) — range 10 — gunfire 4")
 
 
 func test_option_text_includes_rake_and_initial_broadside_tags() -> void:
 	var text: String = FirePanel.option_text("Foe", _preview(2, 14, "stern", true))
-	assert_string_contains(text, "range 2")
-	assert_string_contains(text, "stern rake")
-	assert_string_contains(text, "initial broadside")
-	assert_true(text.ends_with("14"))
+	assert_eq(text, "Foe — range 2 — gunfire 14 — stern rake — initial broadside")
 
 
 func test_option_text_without_tags_has_no_stray_separator() -> void:
 	var text: String = FirePanel.option_text("Foe", _preview(6, 3))
-	assert_false(text.contains("· ·"))
+	assert_false(text.ends_with("— "))
 	assert_false(text.contains("rake"))
+
+
+func test_breakdown_text_in_plain_words() -> void:
+	var p := _preview(2, 22)
+	p.bgn = 18
+	p.modifiers = [{"name": "initial_broadside", "value": 4}]
+	assert_eq(FirePanel.breakdown_text(p),
+		"Base 18, initial broadside +4 = 22. A d6 is added when you fire; higher is better.")
+	var plain := _preview(9, 5)
+	plain.bgn = 5
+	assert_eq(FirePanel.breakdown_text(plain), "Base 5. A d6 is added when you fire; higher is better.")
+
+
+func test_fire_button_text_always_says_what_it_does() -> void:
+	assert_eq(FirePanel.fire_button_text(0), "Hold all fire")
+	assert_eq(FirePanel.fire_button_text(1), "Fire 1 broadside")
+	assert_eq(FirePanel.fire_button_text(2), "Fire 2 broadsides")
+
+
+func test_locked_toggles_explain_why() -> void:
+	assert_eq(FirePanel.aim_note(true), "Range 10+: must fire high")
+	assert_eq(FirePanel.aim_note(false), "")
+	assert_eq(FirePanel.dismantling_note(7, true), "")
+	assert_eq(FirePanel.dismantling_note(8, false), "Dismantling shot reaches 7 hexes")
+	assert_string_contains(FirePanel.dismantling_note(8, true), "roundshot")
+
+
+func test_effective_ammo_falls_back_without_forgetting_the_wish() -> void:
+	assert_eq(FirePanel.effective_ammo(true, 5), "dismantling")
+	assert_eq(FirePanel.effective_ammo(true, 9), "round", "beyond 7 hexes: roundshot")
+	assert_eq(FirePanel.effective_ammo(true, 5), "dismantling", "back in range: dismantling again")
+	assert_eq(FirePanel.effective_ammo(false, 5), "round")
+
+
+func test_rank_targets_best_number_then_nearest_then_name() -> void:
+	var ranked: Array = FirePanel.rank_targets([
+		{"target_id": "far", "mgn": 10, "range": 8, "name": "B"},
+		{"target_id": "best", "mgn": 14, "range": 9, "name": "Z"},
+		{"target_id": "near", "mgn": 10, "range": 3, "name": "C"},
+		{"target_id": "tie", "mgn": 10, "range": 3, "name": "A"},
+	])
+	var ids: Array = ranked.map(func(e): return e["target_id"])
+	assert_eq(ids, ["best", "tie", "near", "far"])
+
+
+func test_no_shot_reason_maps_calculator_reasons_to_plain_words() -> void:
+	var arc := "target is not in that broadside's arc"
+	assert_eq(FirePanel.no_shot_reason([arc, arc]), "out of both broadside arcs")
+	assert_eq(FirePanel.no_shot_reason([arc, "target is out of range (16 hexes, maximum 15)"]), "out of range")
+	assert_eq(FirePanel.no_shot_reason(["no line of sight to target", arc]), "line of sight blocked")
+	assert_eq(FirePanel.no_shot_reason(["no sailor sections able to fire", "no sailor sections able to fire"]),
+		"no crew to serve the guns")
+	assert_eq(FirePanel.no_shot_reason(["a struck ship cannot fire or be fired on"]), "struck")
+	assert_eq(FirePanel.no_shot_reason(["no gunnery factor at this range"]), "out of range")
+	assert_eq(FirePanel.no_shot_reason([]), "no enemy afloat")
+
+
+func test_arc_colors_one_per_side() -> void:
+	assert_eq(FirePanel.ARC_COLORS.size(), 2)
+	assert_ne(FirePanel.ARC_COLORS[0], FirePanel.ARC_COLORS[1])
 
 
 func test_modifier_lines_use_labels_and_signed_values() -> void:
