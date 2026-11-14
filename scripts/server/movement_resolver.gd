@@ -709,6 +709,8 @@ func _wind_direction() -> int:
 @warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) -> void:
 	var sc = game_state.ship_controller if game_state else null
+	if game_state and game_state.get("turn_log") != null:
+		log_outcomes(log, ships, game_state.turn_log)  # before the plots are cleared
 	for ship_state in ships:
 		var result = log.get_result(ship_state.ship_id)
 		if result == null:
@@ -758,3 +760,45 @@ func _count_hexes_moved(result: MovementTypes.ShipResolutionResult) -> int:
 		if ev.event_type == MovementTypes.ResolutionEventType.MOVE and ev.from_hex != ev.to_hex:
 			count += 1
 	return count
+
+
+## Name what happened to each ship in the turn log, in ship order: a failed tack or a ship left in
+## irons, a collision (logged for the ship that ran into the other), movement cut short of the plot,
+## and fouling (once per pair). Reads each ship's plot, so call it before the plots are cleared.
+@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
+func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], turn_log: PhaseEvents.PhaseLog) -> void:
+	var phase := TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
+	var fouled_logged := {}
+	for ship_state in ships:
+		var sid := ship_state.ship_id
+		var result: MovementTypes.ShipResolutionResult = log.get_result(sid)
+		if result == null:
+			continue
+		if result.tacking_failed:
+			turn_log.add(PhaseEvents.Type.IN_IRONS, phase, sid, {"cause": "tack"})
+		elif result.immobilized:
+			turn_log.add(PhaseEvents.Type.IN_IRONS, phase, sid, {"cause": "irons"})
+		for ev in result.events:
+			if ev.event_type == MovementTypes.ResolutionEventType.COLLISION and ev.detail.begins_with("collided with"):
+				var at := _collision_hex(log, result.collided_with, ev)
+				turn_log.add(PhaseEvents.Type.COLLISION, phase, sid, {"hex": {"q": at.x, "r": at.y}},
+					result.collided_with)
+		var planned: int = _get_plotted_steps(ship_state).size()
+		if not result.tacking_failed and planned > 0 and _count_hexes_moved(result) < planned:
+			turn_log.add(PhaseEvents.Type.STOPPED_SHORT, phase, sid,
+				{"moved": _count_hexes_moved(result), "planned": planned})
+		if result.fouled_with != "" and not fouled_logged.has(sid):
+			turn_log.add(PhaseEvents.Type.FOULED, phase, sid, {"cause": "collision"}, result.fouled_with)
+			fouled_logged[sid] = true
+			fouled_logged[result.fouled_with] = true
+
+
+## Where the other ship lay when this one ran into it (its own collision event), else where this ship was.
+@warning_ignore("shadowed_global_identifier")
+func _collision_hex(log: MovementTypes.ResolutionLog, other_id: String, ev: MovementTypes.ResolutionEvent) -> Vector2i:
+	var other: MovementTypes.ShipResolutionResult = log.get_result(other_id)
+	if other:
+		for other_ev in other.events:
+			if other_ev.event_type == MovementTypes.ResolutionEventType.COLLISION and other_ev.impulse == ev.impulse:
+				return other_ev.from_hex
+	return ev.to_hex

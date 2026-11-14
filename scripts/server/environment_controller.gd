@@ -28,9 +28,12 @@ func tick_environment(env_state: EnvironmentState, _turn_number: int) -> void:
 	if not is_server:
 		return
 
+	var from_speed := env_state.wind_speed
+	var from_direction := env_state.wind_direction
 	_update_wind_speed(env_state)
 	_update_wind_direction(env_state)
 	_update_weather(env_state, game_state.rng)
+	_log_wind_change(env_state, from_speed, from_direction)
 
 	environment_updated.emit()
 
@@ -88,6 +91,18 @@ func _update_wind_direction(env_state: EnvironmentState) -> void:
 			env_state.wind_direction = (env_state.wind_direction - 1 + 6) % 6
 	if env_state.wind_direction != temp_wind_direction:
 		Trace.trace_log("Environment", "Wind direction changed from %d to %d" % [temp_wind_direction, env_state.wind_direction])
+
+## A WIND line in the turn log whenever the wind changes direction or speed.
+func _log_wind_change(env_state: EnvironmentState, from_speed: int, from_direction: int) -> void:
+	if env_state.wind_speed == from_speed and env_state.wind_direction == from_direction:
+		return
+	if game_state.get("turn_log") == null:
+		return
+	game_state.turn_log.add(PhaseEvents.Type.WIND, TurnPhaseController.GamePhase.ENVIRONMENT, "", {
+		"from_direction": from_direction, "to_direction": env_state.wind_direction,
+		"from_speed": from_speed, "to_speed": env_state.wind_speed,
+		"speed_name": env_state.get_wind_speed_name(),
+	})
 
 func _update_weather(_env_state: EnvironmentState, _rng: RandomNumberGenerator) -> void:
 	pass

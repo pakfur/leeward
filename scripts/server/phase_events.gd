@@ -9,6 +9,7 @@ extends RefCounted
 enum Type {
 	FIRE, DAMAGE, GUNS_DISMOUNTED, MORALE_NOTED, MORALE_CHECK, STRIKE,
 	DRIFT, FOULED, UNFOUL, SAIL_CHANGE, VICTORY, HOLD_FIRE,
+	COLLISION, STOPPED_SHORT, IN_IRONS, WIND,
 }
 
 const MODIFIER_LABELS := {
@@ -55,6 +56,14 @@ const VICTORY_REASONS := {
 }
 
 const ORDINALS := ["first", "second", "third", "fourth", "fifth"]
+
+
+## Wind directions by index, as EnvironmentState numbers them (0 = E, 1 = SE ... 5 = NE).
+const WIND_DIRECTION_WORDS := ["east", "south-east", "south-west", "west", "north-west", "north-east"]
+
+
+static func wind_direction_word(direction: int) -> String:
+	return WIND_DIRECTION_WORDS[direction] if direction >= 0 and direction < WIND_DIRECTION_WORDS.size() else "?"
 
 
 ## Display label for a gunnery modifier id ("initial_broadside" -> "initial broadside").
@@ -154,7 +163,20 @@ class PhaseEvent extends RefCounted:
 			Type.DRIFT:
 				return _drift_text(who)
 			Type.FOULED:
+				if data.get("cause", "") == "collision":
+					return "%s and %s are fouled together" % [who, other]
 				return "%s drifts into %s; the two ships are fouled" % [who, other]
+			Type.COLLISION:
+				var at := _hex_text("hex")
+				return "%s collides with %s%s" % [who, other, " at " + at if at != "" else ""]
+			Type.STOPPED_SHORT:
+				return "%s stops short of its plotted course" % who
+			Type.IN_IRONS:
+				if data.get("cause", "") == "tack":
+					return "%s misses stays and is in irons" % who
+				return "%s is still in irons" % who
+			Type.WIND:
+				return _wind_text()
 			Type.UNFOUL:
 				return _unfoul_text(who, other)
 			Type.SAIL_CHANGE:
@@ -289,6 +311,28 @@ class PhaseEvent extends RefCounted:
 			return "%s is now at %s" % [who, PhaseEvents.sail_name(to)]
 		return "%s begins changing sail %s → %s (%s)" % [who, _val("from"), _val("to"),
 			PhaseEvents.plural(turns, "turn")]
+
+	## "The wind veers to west", "The wind freshens to 3 (fresh)", or both in one line.
+	func _wind_text() -> String:
+		var parts := PackedStringArray()
+		if data.has("from_direction") and data.has("to_direction"):
+			var from_dir := int(data["from_direction"])
+			var to_dir := int(data["to_direction"])
+			if from_dir != to_dir:
+				# Directions number clockwise (0 = E, 1 = SE ...): clockwise is veering.
+				var steps := (to_dir - from_dir + 6) % 6
+				var verb := "veers" if steps < 3 else ("backs" if steps > 3 else "shifts")
+				parts.append("%s to %s" % [verb, PhaseEvents.wind_direction_word(to_dir)])
+		if data.has("from_speed") and data.has("to_speed"):
+			var from_speed := int(data["from_speed"])
+			var to_speed := int(data["to_speed"])
+			if from_speed != to_speed:
+				var speed_name := str(data.get("speed_name", "")).to_lower()
+				parts.append("%s to %d%s" % ["freshens" if to_speed > from_speed else "eases", to_speed,
+					" (%s)" % speed_name if speed_name != "" else ""])
+		if parts.is_empty():
+			return "The wind holds steady"
+		return "The wind " + " and ".join(parts)
 
 	func _victory_text() -> String:
 		var reason: String = PhaseEvents.VICTORY_REASONS.get(str(data.get("reason", "")), str(data.get("reason", "")))

@@ -146,3 +146,33 @@ func test_original_wind_set_from_scenario_and_serialized() -> void:
 	var copy := EnvironmentState.deserialize(env.serialize())
 	assert_eq(copy.original_wind_speed, 3)
 	assert_eq(copy.original_wind_direction, 4)
+
+# --- Wind changes are logged in ENVIRONMENT ---
+
+func _tick_logged(env: EnvironmentState, rolls: Array) -> PhaseEvents.PhaseLog:
+	var saved_log := GameState.turn_log
+	var turn_log := PhaseEvents.PhaseLog.new()
+	GameState.turn_log = turn_log
+	_dice.queue(rolls)
+	_ctrl.tick_environment(env, 2)
+	GameState.turn_log = saved_log
+	return turn_log
+
+func test_wind_shift_and_freshening_are_logged() -> void:
+	var env := _env(2, 2, "steady", "oceanic")
+	var turn_log := _tick_logged(env, [0, 1, 7, 0, 1, 7])  # speed +1, direction +1 (SW -> W)
+	var winds := turn_log.of_type(PhaseEvents.Type.WIND)
+	assert_eq(winds.size(), 1)
+	assert_eq(winds[0].phase, TurnPhaseController.GamePhase.ENVIRONMENT)
+	assert_eq(winds[0].to_text({}), "The wind veers to west and freshens to 3 (fresh)")
+
+func test_wind_backing_and_easing_are_logged() -> void:
+	var env := _env(2, 2, "steady", "oceanic")
+	var turn_log := _tick_logged(env, [0, 1, 2, 0, 1, 2])  # speed -1, direction -1 (SW -> SE)
+	assert_eq(turn_log.of_type(PhaseEvents.Type.WIND)[0].to_text({}),
+		"The wind backs to south-east and eases to 1 (light)")
+
+func test_steady_wind_logs_nothing() -> void:
+	var env := _env(2, 2, "steady", "oceanic")
+	var turn_log := _tick_logged(env, [5, 5, 5, 5])
+	assert_eq(turn_log.events.size(), 0)

@@ -33,8 +33,17 @@ const SKIP_HINT := "Space or click to skip"
 
 # --- Pure presentation helpers (unit tested) ---------------------------------
 
-## "Turn 3 — Combat Resolution"
+## Phases whose log heading is a plain word rather than the phase name.
+const PHASE_HEADINGS := {
+	TurnPhaseController.GamePhase.ENVIRONMENT: "Weather",
+	TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION: "Movement",
+}
+
+
+## "Turn 3 — Combat Resolution", "Turn 3 — Movement"
 static func phase_heading(turn: int, phase: int) -> String:
+	if PHASE_HEADINGS.has(phase):
+		return "Turn %d — %s" % [turn, PHASE_HEADINGS[phase]]
 	var keys := TurnPhaseController.GamePhase.keys()
 	var phase_name: String = keys[phase] if phase >= 0 and phase < keys.size() else "Unknown"
 	return "Turn %d — %s" % [turn, phase_name.replace("_", " ").capitalize()]
