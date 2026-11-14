@@ -9,6 +9,10 @@ signal turn_changed(turn_number: int)
 @warning_ignore("unused_signal")  # Part of the state API; emitted once multiplayer readiness is wired
 signal player_ready(player_id: int)
 signal state_synced()  # Emitted when state is synced from server
+## A new game has been set up from `scenario` (active_scenario, ships and environment are the new
+## game's). Views that depend on the scenario configure themselves here, never in _ready(): the
+## game scene's nodes are ready before the game starts and would see the previous game's data.
+signal game_started(scenario: Dictionary)
 
 enum GamePhase {
 	SETUP,
@@ -168,6 +172,8 @@ func start_new_game(scenario_data: Dictionary) -> void:
 		environment.get_wind_speed_name(),
 		environment.wind_speed
 	])
+
+	game_started.emit(active_scenario)
 
 	# Start the game via phase controller
 	if phase_controller:

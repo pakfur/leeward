@@ -36,15 +36,11 @@ func _ready() -> void:
 	# Find camera reference
 	_find_camera()
 
-	# Connect to GameState
+	# Connect to GameState. The scenario, bounds and ships are taken when the game starts: at
+	# _ready GameState still holds the previous game (or nothing, on the first game).
 	GameState.phase_changed.connect(_on_phase_changed)
 	GameState.turn_changed.connect(_on_turn_changed)
-
-	# Initialize from scenario
-	_load_scenario_config()
-
-	# Create initial ship icons
-	_refresh_ship_icons()
+	GameState.game_started.connect(configure_for_scenario)
 
 	# Set z-index below DevUI
 	z_index = 10
@@ -61,14 +57,12 @@ func _find_camera() -> void:
 		else:
 			push_warning("MiniMap: No camera found")
 
-func _load_scenario_config() -> void:
-	"""Load minimap configuration from active scenario"""
-	if GameState.active_scenario.is_empty():
-		return
-
-	# Load map bounds from scenario
-	var scenario_bounds = GameState.active_scenario.get("map_bounds", {})
-	if scenario_bounds.has("width") and scenario_bounds.has("height"):
+## Build the minimap for the game being started (GameState.game_started). Every game is set up
+## from its own scenario alone, so the first and every later game look the same.
+func configure_for_scenario(scenario: Dictionary) -> void:
+	map_bounds = Vector2(100, 100)
+	var scenario_bounds = scenario.get("map_bounds", {})
+	if scenario_bounds is Dictionary and scenario_bounds.has("width") and scenario_bounds.has("height"):
 		map_bounds = Vector2(scenario_bounds.width, scenario_bounds.height)
 
 	# Calculate world size (hex grid dimensions)
@@ -78,19 +72,16 @@ func _load_scenario_config() -> void:
 		map_bounds.y * 1.5
 	)
 
-	# Load minimap texture if specified
-	var minimap_texture_path = GameState.active_scenario.get("minimap_texture", "")
+	# The scenario's minimap texture if it names one; otherwise no texture, so the panel's own
+	# dark translucent background shows.
+	var minimap_texture_path: String = str(scenario.get("minimap_texture", ""))
 	if minimap_texture_path != "" and ResourceLoader.exists(minimap_texture_path):
 		background.texture = load(minimap_texture_path)
 	else:
-		# Use placeholder blue
-		_create_placeholder_texture()
+		background.texture = null
 
-func _create_placeholder_texture() -> void:
-	"""Create a simple blue placeholder texture"""
-	var img = Image.create(512, 512, false, Image.FORMAT_RGB8)
-	img.fill(Color(0.476, 0.669, 0.968, 1.0))  # Ocean blue
-	background.texture = ImageTexture.create_from_image(img)
+	_refresh_ship_icons()
+	Trace.trace_log("MiniMap", "Configured for scenario: bounds=%s, texture=%s" % [map_bounds, background.texture != null])
 
 func _update_minimap_transform() -> void:
 	"""Update minimap size and position based on screen size"""

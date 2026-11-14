@@ -107,7 +107,9 @@ func _ready() -> void:
 		var ocean_view = OceanViewScript.new(GameState, hex_map)
 		ocean_view.connect_to_controller(GameState.environment_controller)
 		add_child(ocean_view)
-		ocean_view.update_water_shader()
+		# Not updated here: GameState.environment is still the previous game's until the game
+		# starts. OceanView updates on game_started and on every environment change.
+		GameState.game_started.connect(ocean_view.update_water_shader.unbind(1))
 
 	_setup_combat_log_panel()
 
