@@ -26,6 +26,80 @@ const MODIFIER_LABELS := {
 
 const SIDE_NAMES := ["port", "starboard"]
 
+## The human player's id (single-player: player 0); VICTORY text is written from their side.
+const HUMAN_PLAYER := 0
+
+const SAIL_NAMES := {
+	"FS": "fighting sail", "MS": "maneuvering sail", "PS": "plain sail", "NS": "no sail",
+}
+
+const SAIL_CANCEL_REASONS := {
+	"not available": "that sail is not available now",
+	"no crew": "not enough crew to work the sails",
+	"crew lost": "the crew working the sails were lost",
+	"struck": "the ship has struck",
+	"dismasted": "the ship is dismasted",
+}
+
+const STRIKE_REASONS := {
+	"hull destroyed": "hull destroyed",
+	"no crew": "no crew left",
+	"morale": "the crew's morale broke",
+}
+
+const DRIFT_BLOCKERS := {"map edge": "the map edge", "ship": "another ship"}
+
+const VICTORY_REASONS := {
+	"all struck": "every ship of one side has struck",
+	"turn limit": "turn limit reached",
+}
+
+const ORDINALS := ["first", "second", "third", "fourth", "fifth"]
+
+
+## Display label for a gunnery modifier id ("initial_broadside" -> "initial broadside").
+static func modifier_label(modifier_id: String) -> String:
+	return MODIFIER_LABELS.get(modifier_id, modifier_id.replace("_", " "))
+
+
+## "1 turn" / "2 turns"; `many` defaults to `one` + "s".
+static func plural(count: int, one: String, many: String = "") -> String:
+	return "%d %s" % [count, one if count == 1 else (many if many != "" else one + "s")]
+
+
+static func times_text(count: int) -> String:
+	match count:
+		1:
+			return "once"
+		2:
+			return "twice"
+	return "%d times" % count
+
+
+## "fighting sail (FS)" for a sail-state code; unknown codes are shown as given.
+static func sail_name(code: String) -> String:
+	var key := code.to_upper()
+	return "%s (%s)" % [SAIL_NAMES[key], key] if SAIL_NAMES.has(key) else (code if code != "" else "?")
+
+
+## Plain words for a morale trigger id (hull_1..3, crew_0..3, crew_4, dismasted, raked_dismasted_tN).
+static func morale_trigger_text(trigger: String) -> String:
+	if trigger == "dismasted":
+		return "dismasted"
+	if trigger.begins_with("raked_dismasted"):
+		return "raked while dismasted"
+	if trigger == "crew_4":
+		return "all marines lost"
+	if trigger.begins_with("hull_") and trigger.substr(5).is_valid_int():
+		return "%s hull section lost" % _ordinal(int(trigger.substr(5)) - 1)
+	if trigger.begins_with("crew_") and trigger.substr(5).is_valid_int():
+		return "%s crew section lost" % _ordinal(int(trigger.substr(5)))
+	return "heavy damage"
+
+
+static func _ordinal(index: int) -> String:
+	return ORDINALS[index] if index >= 0 and index < ORDINALS.size() else "a"
+
 
 ## A single logged event. `data` is type-specific (rolls, modifiers, amounts).
 class PhaseEvent extends RefCounted:
@@ -52,95 +126,150 @@ class PhaseEvent extends RefCounted:
 			"data": data.duplicate(true),
 		}
 
-	## One readable line. Missing data keys are skipped, never an error.
+	## One readable line in plain English, numbers kept. Missing data keys are skipped, never
+	## an error; raw ids, roll arrays and zero amounts are never shown.
 	func to_text(ship_names: Dictionary) -> String:
 		var who := _name(ship_names, ship_id)
 		var other := _name(ship_names, target_id)
 		match type:
 			Type.FIRE:
 				return _fire_text(who, other)
+			Type.HOLD_FIRE:
+				return "%s holds fire." % who
 			Type.DAMAGE:
-				return "%s takes %s" % [who, _damage_summary()]
+				return _damage_text(who)
 			Type.GUNS_DISMOUNTED:
-				return "%s has %s guns dismounted" % [who, _val("amount")]
+				var guns := int(data.get("amount", 0))
+				return "%s has %s dismounted on each broadside" % [
+					who, PhaseEvents.plural(guns, "gun") if data.has("amount") else "guns"]
 			Type.MORALE_NOTED:
-				return "%s notes morale trigger %s (count %s)" % [
-					who, _val("trigger"), _val("count")]
+				var times := "" if int(data.get("count", 1)) <= 1 else " %s" % PhaseEvents.times_text(int(data["count"]))
+				return "%s must check morale%s (%s)" % [who, times,
+					PhaseEvents.morale_trigger_text(str(data.get("trigger", "")))]
 			Type.MORALE_CHECK:
-				var passed := "passed" if data.get("passed", false) else "failed"
-				return "%s morale check: roll %s vs rating %s (quality %s): %s" % [
-					who, _val("roll"), _val("rating"), _val("quality"), passed]
+				return _morale_check_text(who)
 			Type.STRIKE:
-				return "%s strikes (%s)" % [who, _val("reason")]
+				return "%s strikes her colours (%s)" % [who,
+					PhaseEvents.STRIKE_REASONS.get(str(data.get("reason", "")), str(data.get("reason", "cause unknown")))]
 			Type.DRIFT:
 				return _drift_text(who)
 			Type.FOULED:
-				return "%s is fouled with %s" % [who, other]
+				return "%s drifts into %s; the two ships are fouled" % [who, other]
 			Type.UNFOUL:
-				var result := "frees itself" if data.get("success", false) else "stays fouled"
-				return "%s tries to unfoul from %s: roll %s %+d, needed %s: %s" % [
-					who, other, _val("roll"), int(data.get("modifier", 0)),
-					_val("needed"), result]
+				return _unfoul_text(who, other)
 			Type.SAIL_CHANGE:
 				return _sail_text(who)
 			Type.VICTORY:
-				return "Victory: side %s (%s)" % [_val("winner"), _val("reason")]
+				return _victory_text()
 		return "%s: event %d" % [who, type]
 
 	func _fire_text(who: String, other: String) -> String:
-		var parts := PackedStringArray()
-		parts.append("BGN %s" % _val("bgn"))
-		for m in data.get("modifiers", []):
-			var label: String = PhaseEvents.MODIFIER_LABELS.get(m.get("name", ""),
-				str(m.get("name", "?")).replace("_", " "))
-			parts.append("%+d %s" % [int(m.get("value", 0)), label])
-		var calc := " ".join(parts)
-		if data.has("mgn"):
-			calc += " = %s" % _val("mgn")
 		var side_idx := int(data.get("side", -1))
 		var side := ""
 		if side_idx >= 0 and side_idx < PhaseEvents.SIDE_NAMES.size():
 			side = " " + PhaseEvents.SIDE_NAMES[side_idx]
-		var aim := ", %s" % data["aim"] if data.has("aim") else ""
-		var ammo := ""
+		var setup := PackedStringArray()
+		if data.has("range"):
+			setup.append("range %s" % _val("range"))
+		if data.has("aim"):
+			setup.append(str(data["aim"]))
 		if data.has("ammo"):
-			ammo = ", roundshot" if data["ammo"] == "round" else ", %s" % data["ammo"]
-		var text := "%s fires%s at %s, range %s%s%s: %s" % [
-			who, side, other, _val("range"), aim, ammo, calc]
-		text += ", d6 %s" % _val("d6")
-		if data.has("fgn"):
-			text += " → %s" % _val("fgn")
+			setup.append("roundshot" if data["ammo"] == GunneryTypes.AMMO_ROUND else "dismantling shot")
 		var rake := str(data.get("rake", ""))
 		if rake != "":
-			text += " (%s rake)" % rake
-		text += ": " + _damage_summary()
-		return text
+			setup.append("%s rake" % rake)
+		var text := "%s fires%s at %s" % [who, side, other]
+		if not setup.is_empty():
+			text += ", " + ", ".join(setup)
 
-	func _damage_summary() -> String:
+		var calc := PackedStringArray()
+		if data.has("bgn"):
+			calc.append("base %s" % _val("bgn"))
+		var modifiers: Array = data.get("modifiers", [])
+		for m in modifiers:
+			calc.append("%s %+d" % [PhaseEvents.modifier_label(str(m.get("name", "?"))), int(m.get("value", 0))])
+		var sum := ", ".join(calc)
+		if data.has("mgn") and not modifiers.is_empty():
+			sum += " = %s" % _val("mgn")
+		if data.has("d6"):
+			sum += ("" if sum == "" else ", ") + "d6 %s" % _val("d6")
+		if data.has("fgn"):
+			sum += " → %s" % _val("fgn")
+		if sum != "":
+			text += " — " + sum
+		return text + ": " + _hits_text(["rigging", "hull", "crew"], {}, "no damage")
+
+	## "2 rigging, 1 hull" for the non-zero amounts among `keys`; `fallback` when all are zero.
+	func _hits_text(keys: Array, units: Dictionary, fallback: String) -> String:
 		var parts := PackedStringArray()
-		parts.append("%s rigging" % _val("rigging", "0"))
-		parts.append("%s hull" % _val("hull", "0"))
-		parts.append("%s crew" % _val("crew", "0"))
-		var text := ", ".join(parts)
-		if data.has("crew_rolls"):
-			text += " (crew rolls %s)" % str(data["crew_rolls"])
+		for key in keys:
+			var amount := int(data.get(key, 0))
+			if amount <= 0:
+				continue
+			if units.has(key):
+				parts.append(PhaseEvents.plural(amount, units[key][0], units[key][1]))
+			else:
+				parts.append("%d %s" % [amount, key])
+		return ", ".join(parts) if not parts.is_empty() else fallback
+
+	func _damage_text(who: String) -> String:
+		var units := {
+			"rigging": ["rigging box", "rigging boxes"],
+			"hull": ["hull box", "hull boxes"],
+			"sailors_lost": ["sailor", "sailors"],
+			"marines_lost": ["marine", "marines"],
+			"crew": ["crew", "crew"],
+		}
+		var keys: Array = ["rigging", "hull"]
+		if data.has("sailors_lost") or data.has("marines_lost"):
+			keys.append_array(["sailors_lost", "marines_lost"])
+		else:
+			keys.append("crew")
+		var hits := _hits_text(keys, units, "")
+		if hits == "":
+			return "%s takes no damage" % who
+		return "%s loses %s" % [who, hits]
+
+	func _morale_check_text(who: String) -> String:
+		var text := "%s morale check: rolled %s, needed %s" % [who, _val("roll"), _val("rating")]
+		if not data.has("passed"):
+			return text
+		if data["passed"]:
+			return text + " — passes"
+		text += " — fails"
+		if data.has("quality"):
+			text += "; crew quality drops to %s" % data["quality"]
 		return text
 
 	func _drift_text(who: String) -> String:
-		var text := "%s drift check: roll %s, needed %s: " % [who, _val("roll"), _val("needed")]
 		var from_hex := _hex_text("from")
+		var text := ""
 		if data.get("drifted", false):
-			text += "drifts"
+			text = "%s drifts downwind" % who
 			if from_hex != "" and data.has("to"):
 				text += " from %s to %s" % [from_hex, _hex_text("to")]
-			return text
-		if data.has("blocked"):
-			text += "blocked by %s, holds position" % data["blocked"]
+		elif data.has("blocked"):
+			var blocker: String = PhaseEvents.DRIFT_BLOCKERS.get(str(data["blocked"]), str(data["blocked"]))
+			text = "%s would drift but is blocked by %s, holds position" % [who, blocker]
+			if from_hex != "":
+				text += " at %s" % from_hex
 		else:
-			text += "holds position"
-		if from_hex != "":
-			text += " at %s" % from_hex
+			text = "%s holds position" % who
+			if from_hex != "":
+				text += " at %s" % from_hex
+		return text + " (drift roll %s, needed %s)" % [_roll_text(), _val("needed")]
+
+	func _unfoul_text(who: String, other: String) -> String:
+		var text := "%s tries to cut free of %s: rolled %s, needed %s or less" % [
+			who, other, _roll_text(), _val("needed")]
+		if data.has("success"):
+			text += " — frees herself" if data["success"] else " — stays fouled"
 		return text
+
+	## "6", or "6 +1" when a modifier applies.
+	func _roll_text() -> String:
+		var modifier := int(data.get("modifier", 0))
+		return _val("roll") if modifier == 0 else "%s %+d" % [_val("roll"), modifier]
 
 	## "(q, r)" for a {"q", "r"} dictionary stored under `key`, "" when absent or malformed.
 	func _hex_text(key: String) -> String:
@@ -150,12 +279,28 @@ class PhaseEvent extends RefCounted:
 		return ""
 
 	func _sail_text(who: String) -> String:
+		var to := str(data.get("to", ""))
 		if data.has("cancelled"):
-			return "%s sail change cancelled (%s)" % [who, data["cancelled"]]
-		var text := "%s sail change %s → %s" % [who, _val("from"), _val("to")]
-		if data.has("turns_left"):
-			text += ", %s turns left" % _val("turns_left")
-		return text
+			var reason: String = PhaseEvents.SAIL_CANCEL_REASONS.get(str(data["cancelled"]), str(data["cancelled"]))
+			var change := " to %s" % PhaseEvents.sail_name(to) if to != "" else ""
+			return "%s: sail change%s cancelled: %s" % [who, change, reason]
+		var turns := int(data.get("turns_left", 0))
+		if turns <= 0:
+			return "%s is now at %s" % [who, PhaseEvents.sail_name(to)]
+		return "%s begins changing sail %s → %s (%s)" % [who, _val("from"), _val("to"),
+			PhaseEvents.plural(turns, "turn")]
+
+	func _victory_text() -> String:
+		var reason: String = PhaseEvents.VICTORY_REASONS.get(str(data.get("reason", "")), str(data.get("reason", "")))
+		var suffix := " (%s)" % reason if reason != "" else ""
+		if not data.has("winner"):
+			return "The battle is over" + suffix
+		match int(data["winner"]):
+			PhaseEvents.HUMAN_PLAYER:
+				return "Victory: you" + suffix
+			-1:
+				return "Draw" + suffix
+		return "Victory: the enemy" + suffix
 
 	func _val(key: String, fallback: String = "?") -> String:
 		return str(data[key]) if data.has(key) else fallback

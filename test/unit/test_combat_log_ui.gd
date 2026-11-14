@@ -50,7 +50,7 @@ func test_entries_add_a_heading_when_the_phase_changes() -> void:
 	assert_true(list[0]["heading"])
 	assert_eq(list[0]["text"], "Turn 2 — Combat Resolution")
 	assert_false(list[1]["heading"])
-	assert_string_contains(list[2]["text"], "Bravo takes")
+	assert_string_contains(list[2]["text"], "Bravo loses 1 hull box")
 	assert_true(list[3]["heading"])
 	assert_eq(list[3]["text"], "Turn 2 — Drift Calculation")
 
@@ -143,7 +143,7 @@ func test_view_sync_only_after_damage_or_strike() -> void:
 func test_latest_line_is_last_event_text_or_placeholder() -> void:
 	assert_eq(LogPanel.latest_line(null, {}), "No events yet")
 	var turn_log := _log_with([[PhaseEvents.Type.DAMAGE, COMBAT, "b", {"hull": 2}]])
-	assert_string_contains(LogPanel.latest_line(turn_log, {"b": "Bravo"}), "Bravo takes")
+	assert_string_contains(LogPanel.latest_line(turn_log, {"b": "Bravo"}), "Bravo loses 2 hull boxes")
 
 
 # --- Status helpers ---------------------------------------------------------
@@ -219,4 +219,4 @@ func test_log_names_feed_event_text() -> void:
 	var turn_log := PhaseEvents.PhaseLog.new()
 	turn_log.add(PhaseEvents.Type.STRIKE, COMBAT, "s2", {"reason": "morale"})
 	assert_eq(LogPanel.latest_line(turn_log, LogPanel.log_names([mine, theirs])),
-		"HMS Test (enemy) strikes (morale)")
+		"HMS Test (enemy) strikes her colours (the crew's morale broke)")
