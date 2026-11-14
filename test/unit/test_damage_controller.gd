@@ -168,6 +168,32 @@ func test_damage_event_records_applied_amounts() -> void:
 	assert_eq(events[0].data["hull"], 2)
 	assert_eq(events[0].data["crew"], 1)
 	assert_eq(events[0].data["crew_rolls"], [1])
+	assert_eq(events[0].data["sailors_lost"] + events[0].data["marines_lost"], 1)
+
+
+func test_damage_event_splits_crew_loss_into_sailors_and_marines() -> void:
+	var sailors_before := 0
+	for c in ship.crew_count:
+		sailors_before += c
+	var marines_before := ship.marine_count
+	_dice.queue([1, 6, 1, 6])
+	_hit(0, 0, 4, "gunfire_at_hull")
+	var ev: PhaseEvents.PhaseEvent = GameState.turn_log.of_type(PhaseEvents.Type.DAMAGE)[0]
+	var sailors_after := 0
+	for c in ship.crew_count:
+		sailors_after += c
+	assert_eq(ev.data["sailors_lost"], sailors_before - sailors_after)
+	assert_eq(ev.data["marines_lost"], marines_before - ship.marine_count)
+	assert_eq(ev.data["sailors_lost"] + ev.data["marines_lost"], 4)
+	assert_gt(ev.data["sailors_lost"], 0, "some sailors lost")
+	assert_gt(ev.data["marines_lost"], 0, "some marines lost")
+
+
+func test_damage_event_without_crew_hits_loses_nobody() -> void:
+	_hit(2, 0, 0)
+	var ev: PhaseEvents.PhaseEvent = GameState.turn_log.of_type(PhaseEvents.Type.DAMAGE)[0]
+	assert_eq(ev.data["sailors_lost"], 0)
+	assert_eq(ev.data["marines_lost"], 0)
 
 
 func test_guns_and_morale_events() -> void:

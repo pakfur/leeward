@@ -28,12 +28,16 @@ func apply_hits(ship_id: String, rigging: int, hull: int, crew: int, crew_cause:
 	var rigging_applied := _apply_rigging(ship, ship_id, rigging, phase, struck_before)
 	var hull_applied := _apply_hull(ship, ship_id, hull, phase, struck_before)
 	var crew_rolls: Array = []
+	var marines_before := ship.marine_count
 	var crew_applied := _apply_crew(ship, ship_id, crew, crew_cause, phase, struck_before, crew_rolls)
+	var marines_lost := marines_before - ship.marine_count
 
 	game_state.turn_log.add(PhaseEvents.Type.DAMAGE, phase, ship_id, {
 		"rigging": rigging_applied,
 		"hull": hull_applied,
 		"crew": crew_applied,
+		"sailors_lost": crew_applied - marines_lost,
+		"marines_lost": marines_lost,
 		"crew_rolls": crew_rolls,
 	}, source_id)
 

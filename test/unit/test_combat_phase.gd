@@ -260,3 +260,49 @@ func test_serialize_includes_combat_step() -> void:
 	pc.combat_step = TurnPhaseController.CombatStep.NONE
 	pc.apply_phase_state(data)
 	assert_eq(pc.combat_step, TurnPhaseController.CombatStep.DECLARE)
+
+
+func _hold_events() -> Array:
+	return GameState.turn_log.of_type(PhaseEvents.Type.HOLD_FIRE)
+
+
+func test_hold_fire_logged_for_a_ship_with_a_shot_and_no_order() -> void:
+	_setup_adjacent()
+	_enter_combat()
+	assert_eq(pc.player_submit_fire_orders(0, []), "")
+	var holds := _hold_events()
+	assert_eq(holds.size(), 1, "only the player held fire (the AI fired)")
+	assert_eq(holds[0].ship_id, "a_ship")
+	assert_eq(holds[0].phase, TurnPhaseController.GamePhase.COMBAT_RESOLUTION)
+	assert_eq(GameState.turn_log.events[0], holds[0], "the hold is the first line of the exchange")
+
+
+func test_no_hold_fire_when_the_ship_fires() -> void:
+	_setup_adjacent()
+	_enter_combat()
+	assert_eq(pc.player_submit_fire_orders(0, [_order()]), "")
+	assert_eq(_hold_events().size(), 0)
+
+
+func test_hold_fire_for_both_players_in_ship_id_order() -> void:
+	_setup_adjacent()
+	pc.current_phase = TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
+	var saved_ai := GameState.stub_ai
+	GameState.stub_ai = null
+	pc.on_playback_completed()
+	GameState.stub_ai = saved_ai
+	assert_eq(pc.player_submit_fire_orders(1, []), "")
+	assert_eq(pc.player_submit_fire_orders(0, []), "")
+	var holds := _hold_events()
+	assert_eq(holds.size(), 2)
+	assert_eq(holds[0].ship_id, "a_ship")
+	assert_eq(holds[1].ship_id, "b_ship")
+
+
+func test_no_hold_fire_for_a_ship_without_a_shot() -> void:
+	_setup_adjacent()
+	var c := _make_ship("c_ship", 0, Vector2i(30, 0), 0)  # far from everyone
+	_enter_combat()
+	assert_eq(pc.player_submit_fire_orders(0, []), "")
+	for ev in _hold_events():
+		assert_ne(ev.ship_id, c.ship_id, "a ship with nothing to shoot at does not 'hold fire'")

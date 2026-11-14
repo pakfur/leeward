@@ -255,9 +255,28 @@ func _resolve_combat() -> void:
 	var all_orders: Array[GunneryTypes.FireOrder] = []
 	for player_orders in _fire_orders:
 		all_orders.append_array(player_orders)
+	_log_held_fire(all_orders)
 	game_state.gunnery_resolver.resolve(all_orders, GamePhase.COMBAT_RESOLUTION)
 	Trace.trace_log("TurnPhase", "COMBAT_RESOLUTION resolved", {"orders": all_orders.size()})
 	combat_log_ready.emit(game_state.turn_log)
+
+func _log_held_fire(orders: Array[GunneryTypes.FireOrder]) -> void:
+	"""SERVER ONLY: Log HOLD_FIRE for every ship (both players, ascending ship_id) that had an
+	eligible shot but was given no fire order. Runs before resolution, so eligibility reflects
+	the state the orders were declared against."""
+	var ordered := {}
+	for order in orders:
+		ordered[order.ship_id] = true
+	var ids: Array = []
+	for ship: ShipState in game_state.get_all_ships():
+		ids.append(ship.ship_id)
+	ids.sort()
+	for ship_id: String in ids:
+		if ordered.has(ship_id):
+			continue
+		if game_state.gunnery_calculator.eligible_shots(ship_id).is_empty():
+			continue
+		game_state.turn_log.add(PhaseEvents.Type.HOLD_FIRE, GamePhase.COMBAT_RESOLUTION, ship_id)
 
 func on_combat_playback_completed() -> void:
 	"""Called by the view layer after combat playback finishes. Advances past combat."""
