@@ -41,6 +41,8 @@ var ship_views: Dictionary = {}  # ship_id -> ShipView
 var selected_ship_id: String = ""
 var ship_indicators: Node3D = null     # ShipIndicators
 var indicator_overlay: Control = null  # IndicatorOverlay
+var status_overlay: ShipStatusOverlay = null  # graphic status over the selected / hovered ship
+var _mouse_pos: Vector2 = Vector2(-1, -1)  # last mouse position seen (viewport coordinates)
 const HUMAN_PLAYER_ID := 0
 
 # Planning phase state (client-side)
@@ -165,6 +167,14 @@ func _setup_indicators() -> void:
 	indicator_overlay.map_rect_provider = _map_safe_rect  # labels stay clear of the side panel
 	indicator_overlay.info_toggled.connect(_on_info_toggled)
 
+	status_overlay = ShipStatusOverlay.new()
+	status_overlay.name = "ShipStatusOverlay"
+	if ui:
+		ui.add_child(status_overlay)
+		ui.move_child(status_overlay, indicator_overlay.get_index())  # under the labels and panels
+	status_overlay.setup(camera)
+	status_overlay.map_rect_provider = _map_safe_rect
+
 ## The corner Menu button and the pause menu (added last so it draws over every other panel).
 func _setup_pause_menu() -> void:
 	menu_button = Button.new()
@@ -242,6 +252,9 @@ func _leave_game() -> void:
 
 ## Escape opens and closes the pause menu; _input so a focused button cannot swallow it.
 func _input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		_mouse_pos = event.position  # every motion, also over panels: the hover status follows it
+		return
 	if not (event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE):
 		return
 	if not pause_menu:
@@ -279,6 +292,7 @@ func _on_hex_labels_toggled(enabled: bool) -> void:
 		hex_map.set_hex_labels_visible(enabled)
 
 func _process(_delta: float) -> void:
+	_update_status_hover()
 	if not hex_coords_enabled or not hex_coord_label or not camera or not hex_map:
 		return
 
@@ -504,10 +518,44 @@ func _handle_ship_selection(screen_pos: Vector2) -> void:
 			return
 		_select_ship(ship_view.state_id)
 	else:
-		# Enemy ship: read-only status dialog only, no indicators.
+		# Enemy ship: its status stays up over it until something else is clicked; no indicators.
 		_deselect_ship()
-		if ship_status_panel:
-			ship_status_panel.show_ship_status_from_state(ship_state)
+		_pin_status(ship_view.state_id)
+
+## The ship under `screen_pos`, or null.
+func _ship_view_at(screen_pos: Vector2) -> ShipView:
+	if not camera or not hex_map:
+		return null
+	var from = camera.project_ray_origin(screen_pos)
+	var to = from + camera.project_ray_normal(screen_pos) * 1000.0
+	var query = PhysicsRayQueryParameters3D.create(from, to)
+	var result = hex_map.get_world_3d().direct_space_state.intersect_ray(query)
+	if result.is_empty():
+		return null
+	return _find_ship_view_from_collider(result.collider)
+
+## Tell the status overlay which ship the mouse rests on (none while it is over a panel, the
+## pause menu or the result card); the overlay applies the hover delay.
+func _update_status_hover() -> void:
+	if not status_overlay:
+		return
+	# No status over the map while a course is being plotted: it would cover offered hexes.
+	status_overlay.set_suppressed(movement_client != null and movement_client.is_plotting())
+	var ship_view: ShipView = null
+	if not game_over_panel and not is_pause_menu_open() \
+			and get_viewport().gui_get_hovered_control() == null:
+		ship_view = _ship_view_at(_mouse_pos)
+	var ship_state: ShipState = GameState.get_ship(ship_view.state_id) if ship_view else null
+	if ship_state:
+		status_overlay.set_hover_target(ship_state.ship_id, ship_state, ship_view)
+	else:
+		status_overlay.set_hover_target("", null, null)
+
+## Keep the graphic status up over a ship (ours when selected, an enemy when clicked).
+func _pin_status(ship_id: String) -> void:
+	var ship_state = GameState.get_ship(ship_id)
+	if status_overlay and ship_state and ship_views.has(ship_id):
+		status_overlay.pin(ship_id, ship_state, ship_views[ship_id])
 
 func _find_ship_view_from_collider(collider: Node) -> ShipView:
 	var node = collider
@@ -526,6 +574,7 @@ func _select_ship(ship_id: String) -> void:
 
 	selected_ship_id = ship_id
 	_show_selected_indicators(ship_id)
+	_pin_status(ship_id)
 
 func _on_info_toggled(ship_id: String) -> void:
 	if ship_status_panel and not ship_id.is_empty():
@@ -552,6 +601,8 @@ func _deselect_ship() -> void:
 		ship_indicators.clear_selected()
 	if indicator_overlay:
 		indicator_overlay.clear_selected()
+	if status_overlay:
+		status_overlay.unpin()
 	if ship_status_panel:
 		ship_status_panel.visible = false
 
