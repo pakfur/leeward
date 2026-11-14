@@ -13,11 +13,13 @@ extends Node
 # Planning phase UI
 const PlanningPhaseUI = preload("res://scenes/ui/planning_phase_ui.tscn")
 const FireDeclarationPanelScene = preload("res://scenes/ui/fire_declaration_panel.tscn")
+const FirePanelScript = preload("res://scripts/ui/fire_declaration_panel.gd")
 const CombatLogPanelScene = preload("res://scenes/ui/combat_log_panel.tscn")
 const GameOverPanelScene = preload("res://scenes/ui/game_over_panel.tscn")
 const OceanViewScript = preload("res://scripts/view/ocean_view.gd")
 var current_planning_ui: Control = null
 var fire_panel: Control = null  # FireDeclarationPanel while fire orders are being declared
+var combat_panel: Control = null  # "Combat" context content while combat resolves / plays back
 var combat_log_panel: CombatLogPanel = null
 var end_turn_panel: Control = null  # context-panel content while waiting in POST_COMBAT
 var end_turn_button: Button = null
@@ -26,9 +28,10 @@ var _combat_playback_active: bool = false  # true from combat_log_ready until pl
 var _combat_playback_skip: bool = false
 const COMBAT_REVEAL_SECONDS := 0.6
 
-# Fire arc overlay colours (port / starboard broadsides)
-const ARC_COLOR_PORT := Color(0.95, 0.35, 0.2, 0.2)
-const ARC_COLOR_STARBOARD := Color(0.2, 0.85, 0.35, 0.25)
+# Fire arc overlay colours (port / starboard broadsides); the fire panel's headers use the same
+const ARC_COLOR_PORT: Color = FirePanelScript.ARC_COLORS[ShipState.PORT]
+const ARC_COLOR_STARBOARD: Color = FirePanelScript.ARC_COLORS[ShipState.STARBOARD]
+const NO_SHOT_HEADLINE := "No broadside bears on an enemy this turn."
 
 # Views (presentation layer)
 var ship_views: Dictionary = {}  # ship_id -> ShipView
@@ -477,6 +480,9 @@ func _enter_planning_phase() -> void:
 	if hex_overlay:
 		hex_overlay.clear_everything()
 	submitted_paths.clear()
+	combat_panel = null  # freed below when the planning UI takes the context panel
+	if combat_log_panel:
+		combat_log_panel.auto_expand(false)  # the map is what matters while plotting
 
 	# Get player ships
 	var player_0_ships = GameState.get_player_ships(0)
@@ -842,15 +848,73 @@ func _on_fire_declaration_requested() -> void:
 	panel.selection_changed.connect(_refresh_fire_overlay)
 
 	if panel.setup(ship_ids) == 0:
-		# Nothing to declare: submit an empty order set and show nothing.
+		# Nothing to declare (only the enemy has a shot): explain why, then pass.
 		Trace.trace_log("GameController", "No eligible shots for player 0 - submitting empty fire orders")
 		_close_fire_panel()
+		_show_combat_panel(_no_shot_lines(player_ships))
 		_submit_fire_orders([])
 		return
-	if camera and camera.has_method("pan_to_if_needed"):
-		var view = ship_views.get(panel.get_focused_ship())
-		if view:
-			camera.pan_to_if_needed(view.global_position)
+	if combat_log_panel:
+		combat_log_panel.auto_expand(false)  # keep the arcs and targets visible
+	# setup() focused the first ship, which drew its arcs and framed it with its targets.
+
+
+## "No broadside bears..." plus one "<ship>: <main reason>" line per own ship, the reason taken
+## from the calculator's preview against that ship's nearest enemy.
+func _no_shot_lines(own_ships: Array) -> Array[String]:
+	var lines: Array[String] = [NO_SHOT_HEADLINE]
+	var calculator: GunneryCalculator = GameState.gunnery_calculator
+	var grid: HexGrid = GameState.fire_geometry.hex_grid if GameState.fire_geometry else null
+	for ship: ShipState in own_ships:
+		var reasons: Array = []
+		if ship.is_struck():
+			reasons = ["a struck ship cannot fire or be fired on"]
+		else:
+			var nearest: ShipState = null
+			var best := 1 << 30
+			for other: ShipState in GameState.get_all_ships():
+				if other.player_id == ship.player_id or other.is_struck() or grid == null:
+					continue
+				var d := grid.hex_distance(ship.hex_position.x, ship.hex_position.y,
+					other.hex_position.x, other.hex_position.y)
+				if d < best or (d == best and other.ship_id < nearest.ship_id):
+					best = d
+					nearest = other
+			if nearest and calculator:
+				for side in [ShipState.PORT, ShipState.STARBOARD]:
+					var order := GunneryTypes.FireOrder.new()
+					order.ship_id = ship.ship_id
+					order.side = side
+					order.target_id = nearest.ship_id
+					reasons.append(calculator.preview(order).reason)
+		lines.append("%s: %s" % [ship.ship_name, FirePanelScript.no_shot_reason(reasons)])
+	return lines
+
+
+## Context-panel content titled "Combat" while the exchange resolves and plays back.
+func _show_combat_panel(lines: Array[String]) -> void:
+	var box := VBoxContainer.new()
+	box.name = "CombatPanel"
+	box.add_theme_constant_override("separation", 8)
+	for i in range(lines.size()):
+		var label := Label.new()
+		label.text = lines[i]
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		if i > 0:
+			label.add_theme_font_size_override("font_size", 12)
+		box.add_child(label)
+	var hint := Label.new()
+	hint.text = "The combat log below shows each shot."
+	hint.add_theme_font_size_override("font_size", 10)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(hint)
+	if context_panel:
+		context_panel.set_context_title("Combat")
+		context_panel.set_context_content(box)
+	else:
+		add_child(box)
+	current_planning_ui = null
+	combat_panel = box
 
 
 func _on_fire_pressed(orders: Array) -> void:
@@ -865,6 +929,8 @@ func _on_fire_pressed(orders: Array) -> void:
 		return
 	# Accepted: the declare step is over, so the panel must not stay interactive.
 	_close_fire_panel()
+	var lines: Array[String] = ["Your orders: %s." % FirePanelScript.fire_button_text(orders.size())]
+	_show_combat_panel(lines)
 
 
 ## Remove the fire panel (if any) and its arcs. Safe to call on any path out of the declare step.
@@ -903,6 +969,32 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 		if target:
 			target_hexes.append(target.hex_position)
 	hex_overlay.show_target_highlights(target_hexes)
+	_frame_fire_view(ship_state, target_hexes)
+
+
+## Pan (zooming out only if both cannot fit) so the firing ship and its chosen targets are on
+## screen, clear of the side panels. Never rotates the camera.
+func _frame_fire_view(ship_state: ShipState, target_hexes: Array[Vector2i]) -> void:
+	if not camera or not camera.has_method("frame_points_if_needed") or not hex_map:
+		return
+	var grid: HexGrid = hex_map.get_hex_grid()
+	var points: Array[Vector3] = [grid.axial_to_world(ship_state.hex_position.x, ship_state.hex_position.y)]
+	for hex in target_hexes:
+		points.append(grid.axial_to_world(hex.x, hex.y))
+	camera.frame_points_if_needed(points, _map_safe_rect())
+
+
+## The part of the viewport not covered by the context panel (left) or the log bar (bottom).
+func _map_safe_rect() -> Rect2:
+	var rect := get_viewport().get_visible_rect()
+	var left := 0.0
+	# The ContextPanel control spans the screen; its PanelContainer is the visible strip.
+	if context_panel and context_panel.visible and context_panel.get("panel_container"):
+		left = minf(context_panel.panel_container.get_global_rect().end.x, rect.size.x * 0.5)
+	var bottom := CombatLogPanel.BAR_HEIGHT + 20.0
+	if combat_log_panel and combat_log_panel.is_expanded():
+		bottom = rect.size.y - combat_log_panel.get_global_rect().position.y + 10.0
+	return Rect2(rect.position.x + left, rect.position.y, rect.size.x - left, rect.size.y - bottom)
 
 
 @warning_ignore("shadowed_global_identifier")
@@ -920,7 +1012,8 @@ func _on_combat_log_ready(log: PhaseEvents.PhaseLog) -> void:
 func _play_combat_log(combat_log: PhaseEvents.PhaseLog) -> void:
 	var instant := skip_post_combat_delay or combat_log_panel == null
 	if combat_log_panel:
-		combat_log_panel.set_expanded(true)
+		combat_log_panel.auto_expand(true)
+		combat_log_panel.set_skip_hint(not instant)
 	if not instant:
 		for ev in CombatLogPanel.playback_events(combat_log):
 			if _combat_playback_skip:
@@ -934,6 +1027,7 @@ func _play_combat_log(combat_log: PhaseEvents.PhaseLog) -> void:
 				waited += get_process_delta_time()
 	if combat_log_panel:
 		combat_log_panel.clear_reveal_limit()
+		combat_log_panel.set_skip_hint(false)
 	_sync_all_views()
 	_finish_combat_playback()
 
@@ -963,7 +1057,7 @@ func _enter_post_combat_phase() -> void:
 		return
 	Trace.trace_log("GameController", "Post-combat phase - waiting for player to end turn")
 	if combat_log_panel:
-		combat_log_panel.set_expanded(true)  # let the player review the turn
+		combat_log_panel.auto_expand(true)  # let the player review the turn
 	_show_end_turn_ui()
 
 
@@ -990,6 +1084,7 @@ func _show_end_turn_ui() -> void:
 	current_planning_ui = null  # freed by the context panel; the next turn builds a fresh one
 	end_turn_panel = box
 	end_turn_button = button
+	combat_panel = null  # freed by the context panel
 
 
 func _clear_end_turn_ui() -> void:
@@ -1047,6 +1142,21 @@ func _on_game_over(result: Dictionary) -> void:
 		add_child(game_over_panel)
 	game_over_panel.show_result(result, GameState.get_all_ships())
 	game_over_panel.back_requested.connect(_on_back_to_scenarios)
+	_frame_final_position.call_deferred()
+
+
+## Keep the final position in view below the result card (which sits at the upper centre).
+func _frame_final_position() -> void:
+	if not camera or not camera.has_method("frame_points_if_needed") or not game_over_panel:
+		return
+	var points: Array[Vector3] = []
+	for view in ship_views.values():
+		points.append(view.global_position)
+	var safe := _map_safe_rect()
+	var card_bottom := game_over_panel.get_global_rect().end.y + 10.0
+	if card_bottom < safe.end.y - 80.0:
+		safe = Rect2(safe.position.x, card_bottom, safe.size.x, safe.end.y - card_bottom)
+	camera.frame_points_if_needed(points, safe, 40.0)
 
 
 func _on_back_to_scenarios() -> void:
