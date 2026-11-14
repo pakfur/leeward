@@ -19,6 +19,8 @@ const COLOR_TARGET = Color(1.0, 0.95, 0.25, 1.0)    # Bright yellow outline, cho
 ## outside the arc rim and clear of the middle, where the ship, its owner ring and pennant stay seen.
 const TARGET_RING_OUTER = 1.04
 const TARGET_RING_INNER = 0.92
+const ARC_RENDER_PRIORITY = 1  # above the transparent ocean (priority 0)
+const TARGET_RENDER_PRIORITY = 2
 const COLOR_COLLISION = Color(1.0, 0.5, 0.0, 0.6)   # Orange, an offered hex that holds another ship
 
 # Child nodes for each layer
@@ -75,7 +77,8 @@ func _ready() -> void:
 	_submitted_material = _create_material(COLOR_SUBMITTED)
 	_blocked_material = _create_material(COLOR_BLOCKED)
 	_target_material = _create_material(COLOR_TARGET)
-	_target_material.render_priority = 0  # beneath owner rings (1) where the two meet
+	# Draw order: ocean (0) < arcs and plotting hexes (1) < target outline (2) < owner rings (3, ShipView).
+	_target_material.render_priority = TARGET_RENDER_PRIORITY
 	_collision_material = _create_material(COLOR_COLLISION)
 
 
@@ -140,7 +143,9 @@ func show_arc(hexes: Array[Vector2i], side: int) -> void:
 
 func _arc_material(color: Color) -> StandardMaterial3D:
 	if not _arc_materials.has(color):
-		_arc_materials[color] = _create_material(color)
+		var mat := _create_material(color)
+		mat.render_priority = ARC_RENDER_PRIORITY  # beneath the target outline
+		_arc_materials[color] = mat
 	return _arc_materials[color]
 
 

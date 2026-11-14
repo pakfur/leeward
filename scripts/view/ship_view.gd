@@ -17,6 +17,8 @@ var _struck_flag: MeshInstance3D = null  # white flag shown while the ship is st
 const PLAYER_COLOR := Color(0.183, 0.927, 0.479)
 const ENEMY_COLOR := Color(1.0, 0.3, 0.3)
 const HUMAN_PLAYER_ID := 0
+## Above the fire arcs and the target outline drawn by HexOverlay, so the owner always shows.
+const OWNER_RING_RENDER_PRIORITY := 3
 var _owner_ring: MeshInstance3D = null   # coloured ring on the water around the ship
 var _owner_pennant: MeshInstance3D = null  # coloured pennant at the masthead (hidden when struck)
 var _owner_player_id: int = -1
@@ -83,7 +85,7 @@ func _update_owner_marker(player_id: int) -> void:
 		ring_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		ring_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		ring_material.no_depth_test = true  # stays visible over wave crests at any zoom
-		ring_material.render_priority = 1
+		ring_material.render_priority = OWNER_RING_RENDER_PRIORITY
 		_owner_ring.material_override = ring_material
 		add_child(_owner_ring)  # on the ship root, not the model: it does not tilt with the hull
 	(_owner_ring.material_override as StandardMaterial3D).albedo_color = Color(color.r, color.g, color.b, 0.9)

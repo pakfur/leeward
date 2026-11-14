@@ -27,11 +27,16 @@ func test_target_highlight_is_a_ring_not_a_filled_hex() -> void:
 	assert_gt(nearest, 0.75, "the ring leaves the hex centre open (nearest vertex %.2f)" % nearest)
 
 
-func test_target_ring_draws_beneath_the_owner_ring() -> void:
+func test_target_ring_draws_over_the_arcs_and_beneath_the_owner_ring() -> void:
+	overlay.show_arc([Vector2i(0, 0)] as Array[Vector2i], ShipState.PORT)
 	overlay.show_target_highlights([Vector2i(0, 0)] as Array[Vector2i])
 	var ring: MeshInstance3D = overlay.targets_node.get_child(0)
-	var mat: StandardMaterial3D = ring.material_override
-	assert_lt(mat.render_priority, 1, "owner rings (priority 1) draw over the target ring")
+	var target_priority: int = (ring.material_override as StandardMaterial3D).render_priority
+	for arc_mesh in overlay.arcs_node.get_children():
+		var arc_priority: int = (arc_mesh.material_override as StandardMaterial3D).render_priority
+		assert_gt(target_priority, arc_priority, "the outline is not hidden under the arc fill or rim")
+		assert_gt(arc_priority, 0, "arcs stay above the transparent ocean (priority 0)")
+	assert_lt(target_priority, ShipView.OWNER_RING_RENDER_PRIORITY, "owner rings draw over the outline")
 
 
 func test_target_colour_is_distinct_from_both_broadsides() -> void:
