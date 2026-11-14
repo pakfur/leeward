@@ -81,9 +81,12 @@ static func speed_line(speed: int) -> String:
 	return "Speed last turn: %d %s" % [speed, "hex" if speed == 1 else "hexes"]
 
 
-## "Movement allowance this turn: 5", or why the ship cannot move at all.
+## Before movement: "Movement allowance this turn: 5", or why the ship cannot move at all.
+## After movement has resolved this turn (`moved` >= 0): "Moved 4 hexes this turn".
 ## `partner_name` names the ship it is fouled with (used only when fouled).
-static func movement_line(s: ShipState, allowance: int, partner_name: String = "") -> String:
+static func movement_line(s: ShipState, allowance: int, partner_name: String = "", moved: int = -1) -> String:
+	if moved >= 0:
+		return "Moved %d %s this turn" % [moved, "hex" if moved == 1 else "hexes"]
 	if s.is_struck():
 		return "Cannot move (struck)"
 	if s.is_dismasted():
@@ -91,6 +94,12 @@ static func movement_line(s: ShipState, allowance: int, partner_name: String = "
 	if s.fouled_with != "":
 		return "Cannot move (fouled with %s)" % (partner_name if partner_name != "" else s.fouled_with)
 	return "Movement allowance this turn: %d" % allowance
+
+
+## Movement has been resolved this turn from combat until the turn ends (the ship's speed then
+## holds the hexes it moved); before that the allowance is what the ship may still spend.
+static func movement_resolved(phase: int) -> bool:
+	return phase >= TurnPhaseController.GamePhase.COMBAT_RESOLUTION
 
 
 static func crew_quality_line(quality: String) -> String:
@@ -167,6 +176,8 @@ func _update_display() -> void:
 
 	if speed_label:
 		speed_label.text = speed_line(s.speed)
+		# Once movement has resolved, speed holds this turn's hexes: the movement line says so.
+		speed_label.visible = not movement_resolved(GameState.current_phase)
 
 	if sail_state_label:
 		sail_state_label.text = sail_line(s)
@@ -202,7 +213,8 @@ func _update_display() -> void:
 		# Read-only queries — OK from UI layer  SCV:ALLOW
 		var ma = GameState.ship_controller.get_movement_allowance(s.ship_id) if GameState.ship_controller else 0
 		var partner: ShipState = GameState.get_ship(s.fouled_with) if s.fouled_with != "" else null
-		ma_label.text = movement_line(s, ma, partner.ship_name if partner else "")
+		var moved: int = s.speed if movement_resolved(GameState.current_phase) else -1
+		ma_label.text = movement_line(s, ma, partner.ship_name if partner else "", moved)
 
 func _on_close_pressed() -> void:
 	visible = false

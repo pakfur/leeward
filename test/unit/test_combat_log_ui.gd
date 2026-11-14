@@ -233,6 +233,23 @@ func test_movement_line_says_why_a_ship_cannot_move() -> void:
 	assert_eq(StatusPanel.movement_line(s, 5), "Cannot move (struck)")
 
 
+func test_movement_line_after_movement_says_how_far_the_ship_moved() -> void:
+	var s := _make_ship()
+	assert_eq(StatusPanel.movement_line(s, 0, "", 4), "Moved 4 hexes this turn")
+	assert_eq(StatusPanel.movement_line(s, 0, "", 1), "Moved 1 hex this turn")
+	assert_eq(StatusPanel.movement_line(s, 0, "", 0), "Moved 0 hexes this turn")
+
+
+func test_movement_has_resolved_from_combat_until_the_turn_ends() -> void:
+	var P := TurnPhaseController.GamePhase
+	assert_false(StatusPanel.movement_resolved(P.PLANNING))
+	assert_false(StatusPanel.movement_resolved(P.MOVEMENT_RESOLUTION))
+	assert_false(StatusPanel.movement_resolved(P.ENVIRONMENT))
+	assert_true(StatusPanel.movement_resolved(P.COMBAT_RESOLUTION))
+	assert_true(StatusPanel.movement_resolved(P.POST_COMBAT))
+	assert_true(StatusPanel.movement_resolved(P.END_TURN))
+
+
 # --- Ship names in log lines -------------------------------------------------------
 
 func test_log_names_tell_the_sides_apart() -> void:
