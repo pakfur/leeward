@@ -259,6 +259,8 @@ class PhaseEvent extends RefCounted:
 		if data["passed"]:
 			return text + " — passes"
 		text += " — fails"
+		if data.get("breaks", false):
+			return text + "; the crew will not fight on"
 		if data.has("quality"):
 			text += "; crew quality drops to %s" % data["quality"]
 		return text

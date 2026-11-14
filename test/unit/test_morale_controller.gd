@@ -101,6 +101,18 @@ func test_failure_at_g_strikes_with_morale_reason() -> void:
 	assert_eq(strikes[0].data["reason"], "morale")
 
 
+func test_failure_at_g_says_the_crew_will_not_fight_on() -> void:
+	_make_ship("a", "G", 4, 1)
+	_dice.queue([0])
+	controller.resolve_checks(PHASE)
+	var check: PhaseEvents.PhaseEvent = GameState.turn_log.of_type(PhaseEvents.Type.MORALE_CHECK)[0]
+	var text := check.to_text({"a": "Alpha"})
+	assert_eq(text, "Alpha morale check: rolled 0, needed 4 — fails; the crew will not fight on")
+	assert_false(text.contains("drops"), "no drop is claimed for a crew already at G")
+	var events := GameState.turn_log.events
+	assert_eq(events[events.size() - 1].type, PhaseEvents.Type.STRIKE, "the STRIKE line follows")
+
+
 func test_f_fails_to_g_then_strikes() -> void:
 	var ship := _make_ship("a", "F", 4, 2)
 	_dice.queue([0, 0])

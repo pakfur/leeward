@@ -47,8 +47,11 @@ func _check(ship: ShipState, phase: int) -> void:
 				ship_id, ship.crew_quality])
 			index = QUALITY_ORDER.find("D")
 		game_state.ship_controller.set_crew_quality(ship_id, QUALITY_ORDER[mini(index + 1, QUALITY_ORDER.size() - 1)])
-	game_state.turn_log.add(PhaseEvents.Type.MORALE_CHECK, phase, ship_id, {
-		"roll": roll, "rating": rating, "passed": passed, "quality": ship.crew_quality,
-	})
+	var data := {"roll": roll, "rating": rating, "passed": passed}
+	if failed_at_g:
+		data["breaks"] = true  # already at G: no quality left to lose, the ship strikes
+	else:
+		data["quality"] = ship.crew_quality
+	game_state.turn_log.add(PhaseEvents.Type.MORALE_CHECK, phase, ship_id, data)
 	if failed_at_g:
 		game_state.damage_controller.strike(ship_id, "morale", phase)
