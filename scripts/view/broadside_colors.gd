@@ -6,7 +6,7 @@ extends RefCounted
 
 const PORT := Color(0.98, 0.55, 0.1)  # orange
 const STARBOARD := Color(0.25, 0.9, 0.4)  # green
-const FILL_ALPHA := 0.3
+const FILL_ALPHA := 0.45
 
 
 ## The opaque colour for a side (ShipState.PORT / ShipState.STARBOARD).

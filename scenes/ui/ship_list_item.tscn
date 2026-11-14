@@ -34,6 +34,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Ship Name"
 vertical_alignment = 1
+autowrap_mode = 3
 
 [node name="BadgeLabel" type="Label" parent="MarginContainer/VBoxContainer/TopRow"]
 unique_name_in_owner = true
