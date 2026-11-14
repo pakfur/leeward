@@ -382,8 +382,7 @@ func _handle_ship_selection(screen_pos: Vector2) -> void:
 
 	if ship_state.player_id == HUMAN_PLAYER_ID:
 		# Own ship: full selected-ship UI; status dialog stays hidden until info icon.
-		if camera and camera.has_method("focus_on_ship"):
-			camera.focus_on_ship(ship_view.global_position, ship_state.facing)
+		# The camera does not move: the player clicked what they can already see.
 		_select_ship(ship_view.state_id)
 	else:
 		# Enemy ship: read-only status dialog only, no indicators.
@@ -522,9 +521,10 @@ func _on_planning_ship_selected(ship_id: String) -> void:
 		Trace.trace_log("GameController", "Warning: Ship not found: %s" % ship_id)
 		return
 
-	# Focus camera on ship with smooth animation
-	if camera and camera.has_method("focus_on_ship"):
-		camera.focus_on_ship(ship_view.global_position, ship_state.facing)
+	# Bring the ship into view only if it is off-screen or near the edge: a smooth pan,
+	# never a rotation or zoom change (north stays up unless the player turns the camera).
+	if camera and camera.has_method("pan_to_if_needed"):
+		camera.pan_to_if_needed(ship_view.global_position)
 
 	# Select ship on map (highlight)
 	_select_ship(ship_id)
@@ -847,11 +847,10 @@ func _on_fire_declaration_requested() -> void:
 		_close_fire_panel()
 		_submit_fire_orders([])
 		return
-	if camera and camera.has_method("focus_on_ship"):
-		var focused = GameState.get_ship(panel.get_focused_ship())
+	if camera and camera.has_method("pan_to_if_needed"):
 		var view = ship_views.get(panel.get_focused_ship())
-		if focused and view:
-			camera.focus_on_ship(view.global_position, focused.facing)
+		if view:
+			camera.pan_to_if_needed(view.global_position)
 
 
 func _on_fire_pressed(orders: Array) -> void:
