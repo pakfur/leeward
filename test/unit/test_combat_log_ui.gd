@@ -321,8 +321,10 @@ func test_earlier_turns_label_hidden_on_turn_one_of_a_new_game() -> void:
 		var l := _turn_log(turn)
 		l.add(PhaseEvents.Type.HOLD_FIRE, COMBAT, "a")
 		old_logs[turn] = l
+	var saved_turn := GameState.current_turn
 	GameState.turn_logs = old_logs
 	GameState.turn_log = old_logs[14]
+	GameState.current_turn = 14
 	var panel = load("res://scenes/ui/combat_log_panel.tscn").instantiate()
 	add_child_autofree(panel)
 	panel.set_expanded(true)
@@ -330,7 +332,38 @@ func test_earlier_turns_label_hidden_on_turn_one_of_a_new_game() -> void:
 	# The next game starts with the panel already built
 	GameState.turn_logs = {}
 	GameState.turn_log = _turn_log(1)
+	GameState.current_turn = 1
 	panel.refresh()
 	assert_false(panel._earlier_label.visible)
 	GameState.turn_logs = saved_logs
 	GameState.turn_log = saved_log
+	GameState.current_turn = saved_turn
+
+
+func test_earlier_turns_label_needs_more_turns_in_this_game_than_the_list_holds() -> void:
+	assert_false(LogPanel.earlier_turns_omitted(1, true), "turn 1: there are no earlier turns")
+	assert_false(LogPanel.earlier_turns_omitted(LogPanel.MAX_TURNS_SHOWN, true))
+	assert_true(LogPanel.earlier_turns_omitted(LogPanel.MAX_TURNS_SHOWN + 1, true))
+	assert_false(LogPanel.earlier_turns_omitted(LogPanel.MAX_TURNS_SHOWN + 1, false), "nothing cut")
+
+
+func test_earlier_turns_label_hidden_on_turn_one_even_with_logs_left_from_another_game() -> void:
+	# GameState says turn 1 (e.g. after a reset) while logs of a 14-turn game are still held.
+	var saved_logs := GameState.turn_logs
+	var saved_log := GameState.turn_log
+	var saved_turn := GameState.current_turn
+	var old_logs := {}
+	for turn in range(1, 14):
+		var l := _turn_log(turn)
+		l.add(PhaseEvents.Type.HOLD_FIRE, COMBAT, "a")
+		old_logs[turn] = l
+	GameState.turn_logs = old_logs
+	GameState.turn_log = _turn_log(14)
+	GameState.current_turn = 1
+	var panel = load("res://scenes/ui/combat_log_panel.tscn").instantiate()
+	add_child_autofree(panel)
+	panel.set_expanded(true)
+	assert_false(panel._earlier_label.visible, "no 'Earlier turns not shown' on turn 1")
+	GameState.turn_logs = saved_logs
+	GameState.turn_log = saved_log
+	GameState.current_turn = saved_turn

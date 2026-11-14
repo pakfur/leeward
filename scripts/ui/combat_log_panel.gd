@@ -88,6 +88,13 @@ static func plan_update(built: Dictionary, available: Dictionary, max_turns: int
 	return {"window": window, "drop": drop, "append": append, "truncated": turns.size() > window.size()}
 
 
+## "Earlier turns not shown" only when turns of the current game are really left out: the game is
+## past turn MAX_TURNS_SHOWN (GameState.current_turn, reset to 1 by every new game) and the list
+## dropped some. Logs alone are not trusted to say which game they belong to.
+static func earlier_turns_omitted(current_turn: int, truncated: bool) -> bool:
+	return truncated and current_turn > MAX_TURNS_SHOWN
+
+
 ## Identifies one phase step ("turn:phase:combat step"); a manual toggle is remembered only
 ## while this key stays the same.
 static func phase_key(turn: int, phase: int, combat_step: int) -> String:
@@ -283,8 +290,7 @@ func refresh() -> void:
 	_signature = _signature_now()
 	var by_turn := _logs_by_turn()
 	_update_latest_label(by_turn)
-	# "Earlier turns not shown" only when turns of this game fall outside the list's window.
-	_earlier_label.visible = by_turn.size() > MAX_TURNS_SHOWN
+	_earlier_label.visible = earlier_turns_omitted(GameState.current_turn, by_turn.size() > MAX_TURNS_SHOWN)
 	_dirty = true
 	if needs_build(_expanded, _dirty):
 		_update_list(by_turn)
@@ -316,7 +322,7 @@ func _update_list(by_turn: Dictionary) -> void:
 	var plan := plan_update(built, available)
 	for turn in plan["drop"]:
 		_remove_section(turn)
-	_earlier_label.visible = plan["truncated"]
+	_earlier_label.visible = earlier_turns_omitted(GameState.current_turn, plan["truncated"])
 	for turn in plan["window"]:
 		if not _sections.has(turn):
 			var box := VBoxContainer.new()
