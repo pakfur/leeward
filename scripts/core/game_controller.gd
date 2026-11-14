@@ -159,6 +159,7 @@ func _setup_indicators() -> void:
 	if ui:
 		ui.add_child(indicator_overlay)
 	indicator_overlay.setup(camera)
+	indicator_overlay.map_rect_provider = _map_safe_rect  # labels stay clear of the side panel
 	indicator_overlay.info_toggled.connect(_on_info_toggled)
 
 ## The corner Menu button and the pause menu (added last so it draws over every other panel).
@@ -169,10 +170,15 @@ func _setup_pause_menu() -> void:
 	menu_button.tooltip_text = "Pause menu (Esc)"
 	menu_button.theme_type_variation = &"SecondaryButton"
 	menu_button.focus_mode = Control.FOCUS_NONE
-	# Bottom-right: clear of the minimap (top right), the side panel (left) and the log bar.
-	menu_button.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 10)
+	# Top right, just under the minimap: clear of the ship status panel (bottom right), the side
+	# panel (left) and the log bar (bottom).
+	menu_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 20)
 	menu_button.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	menu_button.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	var minimap := get_node_or_null("UI/MiniMap") as Control
+	if minimap:
+		var minimap_bottom := minimap.position.y + minimap.size.y
+		menu_button.offset_top = minimap_bottom + 8.0
+		menu_button.offset_bottom = menu_button.offset_top
 	menu_button.pressed.connect(_open_pause_menu)
 	pause_menu = PauseMenuScript.new()
 	pause_menu.leave_confirmed.connect(_leave_game)

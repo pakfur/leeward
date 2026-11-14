@@ -89,3 +89,29 @@ func test_info_button_keeps_a_margin_around_each_centre() -> void:
 		var rect: Rect2 = Overlay.info_button_rect(centers, facing, BUTTON)
 		for c in centers:
 			assert_false(rect.grow(4.0).has_point(c), "facing %d: closer than 4 px to a centre" % facing)
+
+
+# --- Kept inside the map area ----------------------------------------------------------------
+
+func test_label_is_pushed_out_from_under_the_side_panel() -> void:
+	# Map area starts at x = 460 (side panel on the left); a label placed at x = 430 moves right.
+	var map_rect := Rect2(460, 0, 1460, 1000)
+	var pos: Vector2 = Overlay.keep_inside(Vector2(430, 300), Vector2(100, 40), map_rect, 4.0)
+	assert_eq(pos, Vector2(464, 300))
+
+
+func test_label_inside_the_map_area_is_left_alone() -> void:
+	var map_rect := Rect2(460, 0, 1460, 1000)
+	assert_eq(Overlay.keep_inside(Vector2(800, 300), Vector2(100, 40), map_rect, 4.0), Vector2(800, 300))
+
+
+func test_label_kept_above_the_bottom_and_left_of_the_right_edge() -> void:
+	var map_rect := Rect2(0, 0, 1000, 800)
+	assert_eq(Overlay.keep_inside(Vector2(950, 790), Vector2(100, 40), map_rect, 4.0), Vector2(896, 756))
+
+
+func test_overlay_clamps_to_the_map_rect_it_is_given() -> void:
+	var overlay = Overlay.new()
+	autofree(overlay)
+	overlay.map_rect_provider = func() -> Rect2: return Rect2(460, 0, 1460, 1000)
+	assert_eq(overlay._map_rect(), Rect2(460, 0, 1460, 1000))

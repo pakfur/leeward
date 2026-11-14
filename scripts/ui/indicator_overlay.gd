@@ -12,6 +12,10 @@ var _sel_ship_id: String = ""
 var _sel_model: ShipIndicatorModel = null
 var _hov_model: ShipIndicatorModel = null
 var _info_enabled: bool = true  # false while a ship is being plotted: nothing clickable over the hexes
+## Returns the screen rect of the map area (clear of the side panel and the log bar); labels are
+## kept inside it. Unset: the whole overlay.
+var map_rect_provider: Callable = Callable()
+const MAP_EDGE_GAP_PX := 6.0
 
 ## The label keeps at least this far (screen px) from the ship's centre, so it never covers the
 ## ship model or its info button even when the camera is zoomed far out.
@@ -167,8 +171,23 @@ func _update_label(model: ShipIndicatorModel, label: Label, side: float, min_cle
 	var along := model.center_anchor + model.direction_dir * side * 2.0 * model.center_anchor.distance_to(model.direction_anchor)
 	var along_px := _camera.unproject_position(along)
 	var clearance := maxf(maxf(center_px.distance_to(along_px) * 0.55, MIN_CLEARANCE_PX), min_clearance)
-	label.position = label_position(center_px, along_px - center_px, clearance, label.size)
+	label.position = keep_inside(label_position(center_px, along_px - center_px, clearance, label.size),
+		label.size, _map_rect(), MAP_EDGE_GAP_PX)
 	label.visible = true
+
+
+func _map_rect() -> Rect2:
+	if map_rect_provider.is_valid():
+		return map_rect_provider.call()
+	return get_rect()
+
+
+## Top-left corner that keeps a label of `label_size` at `pos` inside `rect` (inset by `gap`), so
+## it is never clipped by or hidden under a panel beside the map.
+static func keep_inside(pos: Vector2, label_size: Vector2, rect: Rect2, gap: float) -> Vector2:
+	var lo := rect.position + Vector2(gap, gap)
+	var hi := rect.end - label_size - Vector2(gap, gap)
+	return Vector2(clampf(pos.x, lo.x, maxf(lo.x, hi.x)), clampf(pos.y, lo.y, maxf(lo.y, hi.y)))
 
 func _update_info_button() -> void:
 	if not _info_enabled or _sel_model == null or _camera == null \
