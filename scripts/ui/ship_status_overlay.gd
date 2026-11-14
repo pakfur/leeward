@@ -1,99 +1,150 @@
 class_name ShipStatusOverlay
-extends Control
-## ShipStatusOverlay - floats ShipStatusBars over ships on the map. One stays over the pinned
-## (selected) ship for as long as it is pinned; another pops up over a ship the mouse has rested
-## on for HOVER_DELAY seconds and goes when the mouse leaves it. Follows the ship's view node, so
-## it tracks the ship during movement playback. Reads state only. (View layer.)
+extends Node3D
+## ShipStatusOverlay - lays a ship's ShipStatusBars flat on the water beside it, at a fixed size
+## in the world (about six hexes long). One plate stays by the pinned (selected) ship for as long
+## as it is pinned; another appears by a ship the mouse has rested on for HOVER_DELAY seconds and
+## goes when the mouse leaves it.
+##
+## The plate lies with its long side parallel to the ship. It goes astern if that water is clear,
+## otherwise ahead, to port, to starboard; if none is clear it goes astern anyway. Water is
+## clear when the plate covers no other ship, no other plate and stays on the map. The text is
+## turned end for end whenever needed so it never reads upside down from the camera.
+## Reads state only. (View layer.)
+
+enum Side { STERN, BOW, PORT, STARBOARD }
+const SIDE_ORDER: Array[int] = [Side.STERN, Side.BOW, Side.PORT, Side.STARBOARD]
 
 const HOVER_DELAY := 0.4
-## Gap (screen px) between the bottom of the bars and the ship's projected centre.
-const LIFT_PX := 46.0
-const MAP_EDGE_GAP_PX := 6.0
-
-## Returns the screen rect of the map area; the bars are kept inside it. Unset: the whole overlay.
-var map_rect_provider: Callable = Callable()
+const HEXES_LONG := 6.0
+## Clear water (world units, hex size 1) between the ship's centre and the near edge of the plate:
+## past the ship's own hex along the heading (edge at 0.87) and across it (corner at 1.0).
+const GAP_ALONG := 1.0
+const GAP_ACROSS := 1.1
+## A ship counts as covered when its centre is within this distance of the plate.
+const SHIP_MARGIN := 0.7
+const PLATE_Y := 0.1            # with the hex overlays, just above the water
+const RENDER_PRIORITY := 1      # above the transparent ocean (priority 0)
+const TEXTURE_DETAIL := 4.0     # the bars are drawn at this multiple of their base size
 
 var _camera: Camera3D = null
-var _pinned_bars: ShipStatusBars = null
-var _hover_bars: ShipStatusBars = null
-var _pinned_anchor: Node3D = null
-var _hover_anchor: Node3D = null
+var _hex_grid: HexGrid = null
+var _bounds: Rect2 = Rect2()    # the map in world X/Z; no area: nothing is off the map
+var _pinned: Plate = null
+var _hover: Plate = null
 var _pinned_id: String = ""
+var _pinned_state: ShipState = null
 var _hover_id: String = ""      # ship under the mouse (shown or still waiting out the delay)
 var _hover_state: ShipState = null
 var _hover_time: float = 0.0
-var _suppressed: bool = false   # true while a course is being plotted: nothing covers the hexes
+var _suppressed: bool = false   # true while plotting, moving or showing broadside arcs
 
 
-func setup(camera: Camera3D) -> void:
+## One status display on the water: the bars drawn into a texture, shown on a flat quad.
+class Plate extends Node3D:
+	var bars: ShipStatusBars
+	var quad: MeshInstance3D
+	var rect: Dictionary = {}  # where it lies now ({} while hidden): see plate_rect()
+
+	func _init(world_size: Vector2) -> void:
+		var viewport := SubViewport.new()
+		viewport.transparent_bg = true
+		viewport.disable_3d = true
+		viewport.size = Vector2i(ShipStatusBars.panel_size(TEXTURE_DETAIL).ceil())
+		viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		add_child(viewport)
+		bars = ShipStatusBars.new(TEXTURE_DETAIL)
+		viewport.add_child(bars)
+
+		var mesh := QuadMesh.new()
+		mesh.size = world_size
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_texture = viewport.get_texture()
+		mat.no_depth_test = true  # the waves rise through a flat plate otherwise
+		mat.render_priority = RENDER_PRIORITY
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		quad = MeshInstance3D.new()
+		quad.mesh = mesh
+		quad.material_override = mat
+		quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(quad)
+		visible = false
+
+
+func setup(camera: Camera3D, hex_grid: HexGrid, map_bounds: Rect2 = Rect2()) -> void:
 	_camera = camera
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_anchors_preset(Control.PRESET_FULL_RECT)
-	_pinned_bars = _make_bars("PinnedStatus")
-	_hover_bars = _make_bars("HoverStatus")
+	_hex_grid = hex_grid
+	_bounds = map_bounds
+	_pinned = Plate.new(plate_size())
+	_pinned.name = "PinnedStatus"
+	add_child(_pinned)
+	_hover = Plate.new(plate_size())
+	_hover.name = "HoverStatus"
+	add_child(_hover)
 
 
-func _make_bars(node_name: String) -> ShipStatusBars:
-	var bars := ShipStatusBars.new()
-	bars.name = node_name
-	bars.visible = false
-	add_child(bars)
-	return bars
+## World size of a plate: HEXES_LONG hex widths long, as deep as the bars' own proportions make it.
+static func plate_size() -> Vector2:
+	var px := ShipStatusBars.panel_size()
+	var length := HEXES_LONG * HexGrid.SQRT3
+	return Vector2(length, length * px.y / px.x)
 
 
-## Keep the status up over `anchor` (the ship's view node) until unpin().
-func pin(ship_id: String, state: ShipState, anchor: Node3D) -> void:
+## Keep the status by this ship until unpin().
+func pin(ship_id: String, state: ShipState) -> void:
 	_pinned_id = ship_id
-	_pinned_anchor = anchor
-	_pinned_bars.show_ship(state)
+	_pinned_state = state
 	if _hover_id == ship_id:
-		_hover_bars.visible = false  # one display per ship
-	if not _suppressed:
-		_place(_pinned_bars, _pinned_anchor)
+		_hide(_hover)  # one display per ship
+	_refresh()
 
 
 func unpin() -> void:
 	_pinned_id = ""
-	_pinned_anchor = null
-	_pinned_bars.visible = false
+	_pinned_state = null
+	_hide(_pinned)
 
 
 func pinned_ship_id() -> String:
 	return _pinned_id
 
 
-## Report the ship under the mouse every frame ("" and nulls for none). The status appears once
+## Report the ship under the mouse every frame ("" and null for none). The status appears once
 ## the same ship has been reported for HOVER_DELAY seconds and goes as soon as another is.
-func set_hover_target(ship_id: String, state: ShipState, anchor: Node3D) -> void:
+func set_hover_target(ship_id: String, state: ShipState) -> void:
 	if ship_id == _hover_id:
 		return
 	_hover_id = ship_id
 	_hover_state = state
-	_hover_anchor = anchor
 	_hover_time = 0.0
-	_hover_bars.visible = false
+	_hide(_hover)
 
 
 ## Hide every status (true) or allow them again (false). The pin is kept, so the selected ship's
-## status returns when plotting ends; a hover has to wait out its delay again.
+## status returns afterwards; a hover has to wait out its delay again.
 func set_suppressed(suppressed: bool) -> void:
 	if suppressed == _suppressed:
 		return
 	_suppressed = suppressed
 	_hover_time = 0.0
 	if suppressed:
-		_pinned_bars.visible = false
-		_hover_bars.visible = false
-	elif _pinned_id != "":
-		_place(_pinned_bars, _pinned_anchor)
+		_hide(_pinned)
+		_hide(_hover)
+	else:
+		_refresh()
+
+
+func is_suppressed() -> bool:
+	return _suppressed
 
 
 func is_pinned_shown() -> bool:
-	return _pinned_bars != null and _pinned_bars.visible
+	return _pinned != null and _pinned.visible
 
 
 func is_hover_shown() -> bool:
-	return _hover_bars != null and _hover_bars.visible
+	return _hover != null and _hover.visible
 
 
 ## Whether a ship that has been under the mouse for `elapsed` seconds gets a hover status: only
@@ -102,36 +153,143 @@ static func hover_due(hover_id: String, pinned_id: String, elapsed: float) -> bo
 	return hover_id != "" and hover_id != pinned_id and elapsed >= HOVER_DELAY
 
 
-## Top-left corner for bars of `bars_size` centred above `ship_px`, kept inside `rect`.
-## Pure; unit tested.
-static func bars_position(ship_px: Vector2, bars_size: Vector2, rect: Rect2) -> Vector2:
-	var pos := Vector2(ship_px.x - bars_size.x * 0.5, ship_px.y - LIFT_PX - bars_size.y).round()
-	var lo := rect.position + Vector2(MAP_EDGE_GAP_PX, MAP_EDGE_GAP_PX)
-	var hi := rect.end - bars_size - Vector2(MAP_EDGE_GAP_PX, MAP_EDGE_GAP_PX)
-	return Vector2(clampf(pos.x, lo.x, maxf(lo.x, hi.x)), clampf(pos.y, lo.y, maxf(lo.y, hi.y)))
+## The plate for a ship at `ship_pos` (world X/Z) heading along the unit vector `heading`, placed
+## on `side`: {"center": Vector2, "axis": Vector2 (unit, along its long side), "half": Vector2
+## (half length, half depth)}. Port is to the left of the heading seen from above. Pure.
+static func plate_rect(ship_pos: Vector2, heading: Vector2, side: int, size: Vector2) -> Dictionary:
+	var h := heading.normalized()
+	var port := Vector2(h.y, -h.x)  # east-heading ship: port is north (-Z)
+	var center := ship_pos
+	match side:
+		Side.STERN: center -= h * (GAP_ALONG + size.x * 0.5)
+		Side.BOW: center += h * (GAP_ALONG + size.x * 0.5)
+		Side.PORT: center += port * (GAP_ACROSS + size.y * 0.5)
+		Side.STARBOARD: center -= port * (GAP_ACROSS + size.y * 0.5)
+	return {"center": center, "axis": h, "half": size * 0.5}
+
+
+## Whether `point` lies on the plate or within `margin` of it. Pure.
+static func rect_covers(rect: Dictionary, point: Vector2, margin: float) -> bool:
+	var axis: Vector2 = rect["axis"]
+	var half: Vector2 = rect["half"]
+	var d: Vector2 = point - rect["center"]
+	return absf(d.dot(axis)) < half.x + margin and absf(d.dot(Vector2(-axis.y, axis.x))) < half.y + margin
+
+
+static func rect_corners(rect: Dictionary) -> Array[Vector2]:
+	var axis: Vector2 = rect["axis"]
+	var across := Vector2(-axis.y, axis.x)
+	var half: Vector2 = rect["half"]
+	var c: Vector2 = rect["center"]
+	return [c + axis * half.x + across * half.y, c + axis * half.x - across * half.y,
+		c - axis * half.x - across * half.y, c - axis * half.x + across * half.y]
+
+
+## Whether two plates overlap (separating-axis test on their four edge directions). Pure.
+static func rects_overlap(a: Dictionary, b: Dictionary) -> bool:
+	var ca := rect_corners(a)
+	var cb := rect_corners(b)
+	for axis in [a["axis"], Vector2(-a["axis"].y, a["axis"].x), b["axis"], Vector2(-b["axis"].y, b["axis"].x)]:
+		var a_lo := INF; var a_hi := -INF; var b_lo := INF; var b_hi := -INF
+		for p in ca:
+			a_lo = minf(a_lo, p.dot(axis)); a_hi = maxf(a_hi, p.dot(axis))
+		for p in cb:
+			b_lo = minf(b_lo, p.dot(axis)); b_hi = maxf(b_hi, p.dot(axis))
+		if a_hi <= b_lo or b_hi <= a_lo:
+			return false
+	return true
+
+
+## Whether the water under `rect` is taken: by one of `other_ships` (world X/Z centres), by one
+## of the `other_plates` already lying there, or by the edge of the map (`bounds`; no area: the
+## map has no edge). Pure; unit tested.
+static func is_obstructed(rect: Dictionary, other_ships: Array, other_plates: Array, bounds: Rect2) -> bool:
+	for ship_pos in other_ships:
+		if rect_covers(rect, ship_pos, SHIP_MARGIN):
+			return true
+	for plate in other_plates:
+		if rects_overlap(rect, plate):
+			return true
+	if bounds.has_area():
+		for corner in rect_corners(rect):
+			if not bounds.has_point(corner):
+				return true
+	return false
+
+
+## The side the plate goes on: the first of astern, ahead, port, starboard with clear water;
+## astern when none is clear. Pure; unit tested.
+static func choose_side(ship_pos: Vector2, heading: Vector2, size: Vector2, other_ships: Array,
+		other_plates: Array, bounds: Rect2) -> int:
+	for side in SIDE_ORDER:
+		if not is_obstructed(plate_rect(ship_pos, heading, side, size), other_ships, other_plates, bounds):
+			return side
+	return SIDE_ORDER[0]
+
+
+## Direction the text runs along the plate: along `axis`, or the other way when that would read
+## upside down from a camera whose screen-right is `camera_right` (both world X/Z). Pure.
+static func reading_direction(axis: Vector2, camera_right: Vector2) -> Vector2:
+	return -axis if axis.dot(camera_right) < -0.0001 else axis
 
 
 func _process(delta: float) -> void:
 	if _suppressed:
 		return
-	if _pinned_id != "":
-		_pinned_bars.queue_redraw()  # state changes under it (damage, morale)
-		_place(_pinned_bars, _pinned_anchor)
-	if _hover_id == "":
+	if _hover_id != "":
+		_hover_time += delta
+	_refresh()
+
+
+## Place (or hide) both plates from the current state. The pinned plate takes its water first;
+## the hover plate then keeps clear of it.
+func _refresh() -> void:
+	if _suppressed or _hex_grid == null:
 		return
-	_hover_time += delta
-	if hover_due(_hover_id, _pinned_id, _hover_time):
-		_hover_bars.show_ship(_hover_state)
-		_place(_hover_bars, _hover_anchor)
+	if _pinned_id != "" and _pinned_state:
+		_place(_pinned, _pinned_state, [])
 	else:
-		_hover_bars.visible = false
+		_hide(_pinned)
+	if hover_due(_hover_id, _pinned_id, _hover_time) and _hover_state:
+		_place(_hover, _hover_state, [_pinned.rect] if not _pinned.rect.is_empty() else [])
+	else:
+		_hide(_hover)
 
 
-func _place(bars: ShipStatusBars, anchor: Node3D) -> void:
-	if _camera == null or anchor == null or not is_instance_valid(anchor) \
-			or _camera.is_position_behind(anchor.global_position):
-		bars.visible = false
-		return
-	var rect: Rect2 = map_rect_provider.call() if map_rect_provider.is_valid() else get_rect()
-	bars.position = bars_position(_camera.unproject_position(anchor.global_position), bars.size, rect)
-	bars.visible = true
+func _hide(plate: Plate) -> void:
+	if plate:
+		plate.visible = false
+		plate.rect = {}
+
+
+func _place(plate: Plate, state: ShipState, other_plates: Array) -> void:
+	var here := _world_xz(state.hex_position)
+	var ahead := _hex_grid.get_neighbor(state.hex_position.x, state.hex_position.y, state.facing)
+	var heading := (_world_xz(ahead) - here).normalized()
+	var others: Array = []
+	for other in GameState.get_all_ships():  # read-only  SCV:ALLOW
+		if other != state:
+			others.append(_world_xz(other.hex_position))
+	var size := plate_size()
+	var side := choose_side(here, heading, size, others, other_plates, _bounds)
+	plate.rect = plate_rect(here, heading, side, size)
+
+	var camera_right := Vector2.RIGHT
+	if _camera:
+		var r := _camera.global_transform.basis.x
+		camera_right = Vector2(r.x, r.z)
+	var u := reading_direction(plate.rect["axis"], camera_right)
+	var along := Vector3(u.x, 0, u.y)       # the text runs this way
+	var text_up := Vector3(u.y, 0, -u.x)    # and its tops point this way (east-running: north)
+	var center: Vector2 = plate.rect["center"]
+	plate.quad.transform = Transform3D(Basis(along, text_up, Vector3.UP), Vector3(center.x, PLATE_Y, center.y))
+	# Every frame: the state changes under it (damage, morale, speed, the wind).
+	var env = GameState.environment  # read-only  SCV:ALLOW
+	plate.bars.show_ship(state, ShipIndicatorModel.point_of_sail_label(
+		_hex_grid.get_wind_facing(state.facing, env.wind_direction)) if env else "")
+	plate.visible = true
+
+
+func _world_xz(hex: Vector2i) -> Vector2:
+	var w := _hex_grid.axial_to_world(hex.x, hex.y)
+	return Vector2(w.x, w.z)

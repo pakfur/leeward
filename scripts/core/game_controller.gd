@@ -169,11 +169,12 @@ func _setup_indicators() -> void:
 
 	status_overlay = ShipStatusOverlay.new()
 	status_overlay.name = "ShipStatusOverlay"
-	if ui:
-		ui.add_child(status_overlay)
-		ui.move_child(status_overlay, indicator_overlay.get_index())  # under the labels and panels
-	status_overlay.setup(camera)
-	status_overlay.map_rect_provider = _map_safe_rect
+	add_child(status_overlay)  # in the world: it lies on the water
+	if hex_map:
+		var grid: HexGrid = hex_map.get_hex_grid()
+		var map_size := Vector2(hex_map.grid_width * grid.hex_size * HexGrid.SQRT3,
+			hex_map.grid_height * grid.hex_size * 1.5)
+		status_overlay.setup(camera, grid, Rect2(-map_size * 0.5, map_size))
 
 ## The corner Menu button and the pause menu (added last so it draws over every other panel).
 func _setup_pause_menu() -> void:
@@ -539,23 +540,29 @@ func _ship_view_at(screen_pos: Vector2) -> ShipView:
 func _update_status_hover() -> void:
 	if not status_overlay:
 		return
-	# No status over the map while a course is being plotted: it would cover offered hexes.
-	status_overlay.set_suppressed(movement_client != null and movement_client.is_plotting())
+	# No status on the water while a course is being plotted or broadside arcs are shown (it
+	# would cover those hexes), or while ships are moving (it is placed from where they stand).
+	status_overlay.set_suppressed((movement_client != null and movement_client.is_plotting())
+		or fire_panel != null
+		or GameState.current_phase == GameState.GamePhase.MOVEMENT_RESOLUTION)
+	# The plate carries speed and point of sail; the floating label stands in only while it is hidden.
+	if indicator_overlay:
+		indicator_overlay.set_selected_label_enabled(status_overlay.is_suppressed())
 	var ship_view: ShipView = null
 	if not game_over_panel and not is_pause_menu_open() \
 			and get_viewport().gui_get_hovered_control() == null:
 		ship_view = _ship_view_at(_mouse_pos)
 	var ship_state: ShipState = GameState.get_ship(ship_view.state_id) if ship_view else null
 	if ship_state:
-		status_overlay.set_hover_target(ship_state.ship_id, ship_state, ship_view)
+		status_overlay.set_hover_target(ship_state.ship_id, ship_state)
 	else:
-		status_overlay.set_hover_target("", null, null)
+		status_overlay.set_hover_target("", null)
 
 ## Keep the graphic status up over a ship (ours when selected, an enemy when clicked).
 func _pin_status(ship_id: String) -> void:
 	var ship_state = GameState.get_ship(ship_id)
-	if status_overlay and ship_state and ship_views.has(ship_id):
-		status_overlay.pin(ship_id, ship_state, ship_views[ship_id])
+	if status_overlay and ship_state:
+		status_overlay.pin(ship_id, ship_state)
 
 func _find_ship_view_from_collider(collider: Node) -> ShipView:
 	var node = collider

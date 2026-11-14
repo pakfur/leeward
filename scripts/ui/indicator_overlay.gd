@@ -12,6 +12,7 @@ var _sel_ship_id: String = ""
 var _sel_model: ShipIndicatorModel = null
 var _hov_model: ShipIndicatorModel = null
 var _info_enabled: bool = true  # false while a ship is being plotted: nothing clickable over the hexes
+var _sel_label_enabled: bool = true  # false while the status plate on the water shows the same facts
 ## Returns the screen rect of the map area (clear of the side panel and the log bar); labels are
 ## kept inside it. Unset: the whole overlay.
 var map_rect_provider: Callable = Callable()
@@ -88,6 +89,18 @@ func set_info_enabled(enabled: bool) -> void:
 	_update_info_button()
 
 
+## Show (true) or hide (false) the selected ship's speed / point-of-sail label. Off while the
+## status plate on the water is up: it carries the same two facts.
+func set_selected_label_enabled(enabled: bool) -> void:
+	_sel_label_enabled = enabled
+	if not enabled:
+		_sel_label.visible = false
+
+
+func is_selected_label_visible() -> bool:
+	return _sel_label != null and _sel_label.visible
+
+
 func is_info_button_visible() -> bool:
 	return _info_btn != null and _info_btn.visible
 
@@ -110,7 +123,7 @@ func _update() -> void:
 	if _info_btn.visible:
 		sel_min = clearance_past(_camera.unproject_position(_sel_model.center_anchor),
 			Rect2(_info_btn.position, _info_btn.size), 4.0)
-	_update_label(_sel_model, _sel_label, -1.0, sel_min)
+	_update_label(_sel_model if _sel_label_enabled else null, _sel_label, -1.0, sel_min)
 	_update_label(_hov_model, _hov_label, 1.0)
 
 
