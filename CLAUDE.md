@@ -15,6 +15,8 @@ Leeward is a Godot 4.6 naval sailing game (Age of Sail) using the Forward Plus r
 - Checking the running game for problems: `game_get_errors` (push_error/push_warning + parser warnings) and `game_get_logs` (print output). After editing GDScript, relaunch and confirm `game_get_errors` returns zero — this is the canonical way to verify a clean build.
 - Inspecting/driving the live game (scene tree, nodes, input, screenshots) via the `game_*` tools, and project/scene/script management (`read_scene`, `read_project_settings`, `list_project_files`, etc.).
 - Note the in-game interaction server (`scripts/mcp_interaction_server.gd`) binds `127.0.0.1:9090`; the `game_*` tools connect to it. If `game_get_errors`/`game_get_logs` returns "No active Godot process" right after launch, it's a startup race — wait ~1s and retry.
+- **Clicking the UI**: `game_click(x, y)` takes **window pixels**, not UI coordinates. Multiply a control's `get_global_rect()` position (or `Camera3D.unproject_position()` for a hex or ship) by the root viewport scale, `get_tree().root.get_final_transform().get_scale()` (about 1.89 on a Retina display), before clicking. Unscaled coordinates land on the wrong spot and look like ignored clicks. Drive the UI with real clicks rather than by emitting control signals.
+- A script error inside `game_eval` freezes the running game; stop and relaunch it.
 
 **For Godot API docs, use the `context7` MCP server with library `/godotengine/godot-docs`.** Call `context7` (`query-docs` against `/godotengine/godot-docs`) before relying on memory for engine/class/method APIs — training data may lag the 4.6 API. Skip the `resolve-library-id` step; this project's library ID is fixed.
 
@@ -237,7 +239,6 @@ Run the `scv-reviewer` agent as a **final step** before reporting any planned wo
 - Nothing constrains plotted movement to the map bounds; drift treats the map edge as blocked.
 - The stub AI stalls instead of tacking when the wind blows straight against its approach.
 - Not implemented (Milestone 2): critical hits (CH# is stored only), fire, sinking, boarding, marine fire, repairs, grappling, manual crew tasks. Milestone 3 items (anchoring, lower-deck guns, chase guns, medium guns, class 4 ships) are also absent.
-- Mouse clicks could not be injected through godot-mcp during verification (window unfocused); UI was driven by emitting control signals.
 
 ### Developer UI
 - Press **F12** in-game to toggle the debug inspection panel
