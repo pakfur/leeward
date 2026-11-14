@@ -289,3 +289,25 @@ func test_deterministic_resolution_with_same_seed() -> void:
 	for i in range(logs[0].size()):
 		assert_eq(logs[0][i], logs[1][i],
 			"Turn %d resolution should be identical across runs" % (i + 1))
+
+
+func test_new_game_resets_every_turn_and_phase_mirror() -> void:
+	_setup_two_ship_scenario()
+	var pc = GameState.phase_controller
+	_start_game()
+	for i in range(3):
+		_run_one_turn(pc)
+	assert_eq(GameState.current_turn, 4, "GameState mirrors the turn during the game")
+	pc.game_result = {"winner": 0, "reason": "all struck"}  # as if game 1 had ended
+	GameState.players_ready = [true, true] as Array[bool]
+
+	_start_game()
+
+	assert_eq(GameState.current_turn, 1, "GameState.current_turn starts again at 1")
+	assert_eq(GameState.current_turn, pc.current_turn)
+	assert_eq(GameState.current_phase, GameState.GamePhase.PLANNING)
+	assert_eq(int(GameState.current_phase), int(pc.current_phase))
+	assert_eq(GameState.turn_log.turn, 1)
+	assert_eq(GameState.turn_logs.size(), 0)
+	assert_true(pc.game_result.is_empty())
+	assert_eq(GameState.players_ready, [false, false] as Array[bool])

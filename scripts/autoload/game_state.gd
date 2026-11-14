@@ -139,6 +139,11 @@ func start_new_game(scenario_data: Dictionary) -> void:
 		return
 
 	active_scenario = scenario_data
+	# Mirrors of the phase controller's state start over with the game (the controller's
+	# turn_changed / phase_changed keep them in step from here on).
+	current_turn = 1
+	current_phase = GamePhase.SETUP
+	players_ready = [false, false] as Array[bool]
 
 	# Seed the shared RNG from scenario (default to 0 if no seed provided)
 	var seed_value: int = scenario_data.get("seed", 0)

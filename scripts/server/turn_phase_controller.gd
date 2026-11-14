@@ -52,6 +52,7 @@ func start_new_game() -> void:
 
 	current_turn = 1
 	game_result = {}
+	players_ready = [false, false] as Array[bool]
 	combat_step = CombatStep.NONE
 	_fire_orders = [[], []]
 	_fire_ready = [false, false]
@@ -59,6 +60,7 @@ func start_new_game() -> void:
 	current_phase = GamePhase.SETUP  # Start in SETUP so advance_phase() enters ENVIRONMENT
 
 	Trace.trace_log("TurnPhase", "Game started - Turn: %d" % current_turn)
+	turn_changed.emit(current_turn)  # listeners (and GameState's mirror) see turn 1 of the new game
 	advance_phase()  # This will transition SETUP -> ENVIRONMENT
 
 func advance_phase() -> void:
