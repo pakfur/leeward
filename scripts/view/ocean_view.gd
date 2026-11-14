@@ -49,7 +49,9 @@ func update_water_shader() -> void:
 	])
 
 func _update_wave_parameters(material: ShaderMaterial, wind_dir: int, wind_speed: int, sea_state: int) -> void:
-	var wind_vec = HEX_DIRECTIONS.get(wind_dir, Vector2(1.0, 0.0))
+	# wind_dir is where the wind blows FROM; Gerstner crests travel along +direction, so the
+	# primary waves use the downwind vector (world XZ: x east, z south).
+	var wind_vec = -HEX_DIRECTIONS.get(wind_dir, Vector2(1.0, 0.0))
 	var base_amplitude = 0.05 + (wind_speed * 0.03) + (sea_state * 0.05)
 	var base_frequency = 1.0 - (sea_state * 0.15)
 

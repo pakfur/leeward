@@ -39,7 +39,8 @@ func _update_wind_direction() -> void:
 	# Each hex face is 60 degrees apart
 	var wind_angle = wind_direction * 60.0
 
-	# Adjust for coordinate system (hex 0=E is 0°, convert to N-based)
+	# The minimap is north-up. wind_direction is where the wind blows FROM (bearing 90 + 60d);
+	# the arrow (tip drawn at the top) points DOWNWIND, bearing 270 + 60d == 60d - 90.
 	wind_angle = wind_angle - 90.0
 
 	# Rotate the arrow
