@@ -899,35 +899,14 @@ func _on_fire_declaration_requested() -> void:
 	# setup() focused the first ship, which drew its arcs and framed it with its targets.
 
 
-## "No broadside bears..." plus one "<ship>: <main reason>" line per own ship, the reason taken
-## from the calculator's preview against that ship's nearest enemy.
+## "No broadside bears..." plus one no-shot line per own ship (the same wording the fire panel uses
+## for a ship without a shot), the reason previewed against that ship's nearest enemy.
 func _no_shot_lines(own_ships: Array) -> Array[String]:
 	var lines: Array[String] = [NO_SHOT_HEADLINE]
-	var calculator: GunneryCalculator = GameState.gunnery_calculator
 	var grid: HexGrid = GameState.fire_geometry.hex_grid if GameState.fire_geometry else null
 	for ship: ShipState in own_ships:
-		var reasons: Array = []
-		if ship.is_struck():
-			reasons = ["a struck ship cannot fire or be fired on"]
-		else:
-			var nearest: ShipState = null
-			var best := 1 << 30
-			for other: ShipState in GameState.get_all_ships():
-				if other.player_id == ship.player_id or other.is_struck() or grid == null:
-					continue
-				var d := grid.hex_distance(ship.hex_position.x, ship.hex_position.y,
-					other.hex_position.x, other.hex_position.y)
-				if d < best or (d == best and other.ship_id < nearest.ship_id):
-					best = d
-					nearest = other
-			if nearest and calculator:
-				for side in [ShipState.PORT, ShipState.STARBOARD]:
-					var order := GunneryTypes.FireOrder.new()
-					order.ship_id = ship.ship_id
-					order.side = side
-					order.target_id = nearest.ship_id
-					reasons.append(calculator.preview(order).reason)
-		lines.append("%s: %s" % [ship.ship_name, FirePanelScript.no_shot_reason(reasons)])
+		lines.append(FirePanelScript.no_shot_line(ship.ship_name, FirePanelScript.ship_no_shot_reason(
+			ship, GameState.get_all_ships(), GameState.gunnery_calculator, grid)))
 	return lines
 
 

@@ -198,3 +198,54 @@ func test_footer_follows_the_selection() -> void:
 	assert_string_contains(FirePanel.footer_text(0, true), "Holding all fire")
 	assert_string_contains(FirePanel.footer_text(0, false), "Holding all fire")
 	assert_false(FirePanel.footer_text(0, true).contains("best shot"), "no best-shot hint while holding fire")
+
+
+# --- Ships without a shot ----------------------------------------------------------------------
+
+class FakeCalculator:
+	extends RefCounted
+	var reasons := {}  # side -> reason
+	func preview(order: GunneryTypes.FireOrder, _two := false) -> GunneryTypes.ShotPreview:
+		var p := GunneryTypes.ShotPreview.new()
+		p.reason = str(reasons.get(order.side, ""))
+		return p
+
+
+func _state(id: String, ship_name: String, player: int, hex: Vector2i) -> ShipState:
+	var s := ShipState.new()
+	s.ship = Ship.from_dict({"ship_id": id, "ship_name": ship_name, "player_id": player})
+	s.hex_position = hex
+	return s
+
+
+func test_no_shot_line_names_the_ship_and_the_reason() -> void:
+	assert_eq(FirePanel.no_shot_line("HMS Phoebe", "out of both broadside arcs"),
+		"HMS Phoebe — no broadside bears: out of both broadside arcs")
+
+
+func test_ship_no_shot_reason_previews_against_the_nearest_enemy() -> void:
+	var own := _state("o", "HMS Phoebe", 0, Vector2i(0, 0))
+	var far := _state("f", "Far", 1, Vector2i(9, 0))
+	var near := _state("n", "Near", 1, Vector2i(3, 0))
+	var calc := FakeCalculator.new()
+	calc.reasons = {ShipState.PORT: "target is not in the port arc",
+		ShipState.STARBOARD: "target is out of range (16 hexes, maximum 15)"}
+	var grid := HexGrid.new(1.0)
+	assert_eq(FirePanel.nearest_enemy(own, [own, far, near], grid), near)
+	assert_eq(FirePanel.ship_no_shot_reason(own, [own, far, near], calc, grid), "out of range")
+
+
+func test_ship_no_shot_reason_for_struck_ships_and_no_enemy() -> void:
+	var own := _state("o", "HMS Phoebe", 0, Vector2i(0, 0))
+	var calc := FakeCalculator.new()
+	var grid := HexGrid.new(1.0)
+	assert_eq(FirePanel.ship_no_shot_reason(own, [own], calc, grid), "no enemy afloat")
+	own.status = ShipState.Status.STRUCK
+	assert_eq(FirePanel.ship_no_shot_reason(own, [own], calc, grid), "struck")
+
+
+func test_more_below_hint_only_while_content_is_hidden_below() -> void:
+	assert_true(FirePanel.more_below(0, 300, 800))
+	assert_true(FirePanel.more_below(400, 300, 800))
+	assert_false(FirePanel.more_below(500, 300, 800), "scrolled to the end")
+	assert_false(FirePanel.more_below(0, 300, 280), "everything fits")

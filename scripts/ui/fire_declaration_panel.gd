@@ -1,7 +1,8 @@
 extends Control
 ## FireDeclarationPanel - Context-panel UI for declaring broadside fire during COMBAT_RESOLUTION.
 ##
-## Lists each own ship that has at least one eligible shot. Each broadside (port/starboard) gets
+## Lists each own ship that has at least one eligible shot; ships without one are listed greyed
+## underneath with the reason in plain words. Each broadside (port/starboard) gets
 ## an always-visible list of target rows (best target first, "Hold fire" last; only the ship's
 ## single best shot is selected by default, the other broadside holds fire), an aim toggle and an ammunition toggle, each with the reason when it is locked. Every
 ## change re-queries GunneryCalculator.preview (a pure query) so the displayed numbers and the
@@ -33,6 +34,10 @@ const NO_SHOT_NO_ENEMY := "no enemy afloat"
 @onready var fire_button: Button = %FireButton
 @onready var instructions_label: Label = %InstructionsLabel
 @onready var two_target_label: Label = %TwoTargetLabel
+@onready var scroll: ScrollContainer = %ScrollContainer
+@onready var more_below_label: Label = %MoreBelowLabel
+
+const NO_SHOT_COLOR := Color(0.6, 0.62, 0.66)
 
 ## ship_id -> {"name": String, "header": Button, "shots": {side: Array[ShotPreview]},
 ##             "sides": {side: {"target_id","aim","ammo","want_high","want_dismantling"}},
@@ -200,6 +205,52 @@ static func no_shot_reason(reasons: Array) -> String:
 	return chosen
 
 
+## "HMS Phoebe — no broadside bears: out of range": one ship's no-shot line, in the fire panel and
+## in the "Combat" panel alike.
+static func no_shot_line(ship_name: String, reason: String) -> String:
+	return "%s%sno broadside bears: %s" % [ship_name, SEPARATOR, reason]
+
+
+## The nearest enemy afloat (ties by ship id), null when none. Hex distance on `grid`.
+static func nearest_enemy(ship: ShipState, all_ships: Array, grid: HexGrid) -> ShipState:
+	var nearest: ShipState = null
+	var best := 1 << 30
+	if grid == null:
+		return null
+	for other: ShipState in all_ships:
+		if other.player_id == ship.player_id or other.is_struck():
+			continue
+		var d := grid.hex_distance(ship.hex_position.x, ship.hex_position.y,
+			other.hex_position.x, other.hex_position.y)
+		if d < best or (d == best and other.ship_id < nearest.ship_id):
+			best = d
+			nearest = other
+	return nearest
+
+
+## Why `ship` has no shot, in plain words: its calculator previews (a pure query) of both
+## broadsides against its nearest enemy, mapped by no_shot_reason(). `calculator` is a
+## GunneryCalculator (anything with preview(order)).
+static func ship_no_shot_reason(ship: ShipState, all_ships: Array, calculator, grid: HexGrid) -> String:
+	if ship.is_struck():
+		return NO_SHOT_STRUCK
+	var reasons: Array = []
+	var target := nearest_enemy(ship, all_ships, grid)
+	if target and calculator:
+		for side in [ShipState.PORT, ShipState.STARBOARD]:
+			var order := GunneryTypes.FireOrder.new()
+			order.ship_id = ship.ship_id
+			order.side = side
+			order.target_id = target.ship_id
+			reasons.append(calculator.preview(order).reason)
+	return no_shot_reason(reasons)
+
+
+## True while part of the list is hidden below the visible area (the "More below" hint shows).
+static func more_below(scroll_value: float, page: float, content_height: float) -> bool:
+	return scroll_value + page < content_height - 1.0
+
+
 ## Order dictionaries (FireOrder.to_dict()) for one ship, in side order. Sides on hold fire
 ## (empty target_id) produce no order. `sides` is side -> {"target_id", "aim", "ammo"}.
 static func build_orders(ship_id: String, sides: Dictionary) -> Array:
@@ -227,6 +278,39 @@ static func build_orders(ship_id: String, sides: Dictionary) -> Array:
 func _ready() -> void:
 	fire_button.pressed.connect(_on_fire_pressed)
 	error_label.visible = false
+	_style_scrollbar()
+	var bar := scroll.get_v_scroll_bar()
+	bar.value_changed.connect(func(_v: float): _update_more_below())
+	bar.changed.connect(_update_more_below)
+	scroll.resized.connect(_update_more_below)
+
+
+## A scrollbar wide and bright enough to notice: the panel often holds more than fits.
+func _style_scrollbar() -> void:
+	var bar := scroll.get_v_scroll_bar()
+	bar.custom_minimum_size.x = 10
+	var track := StyleBoxFlat.new()
+	track.bg_color = Color(1, 1, 1, 0.08)
+	track.set_corner_radius_all(4)
+	bar.add_theme_stylebox_override("scroll", track)
+	for state in ["grabber", "grabber_highlight", "grabber_pressed"]:
+		var grab := StyleBoxFlat.new()
+		grab.bg_color = Color(0.75, 0.8, 0.88, 0.85 if state == "grabber" else 1.0)
+		grab.set_corner_radius_all(4)
+		bar.add_theme_stylebox_override(state, grab)
+
+
+func _update_more_below() -> void:
+	if not is_instance_valid(scroll) or not more_below_label:
+		return
+	var bar := scroll.get_v_scroll_bar()
+	more_below_label.visible = more_below(bar.value, bar.page, bar.max_value)
+
+
+## Scroll so `control` (a row of the list) is in view; deferred so a fresh layout is used.
+func _reveal(control: Control) -> void:
+	if is_instance_valid(control) and is_instance_valid(scroll):
+		scroll.ensure_control_visible.call_deferred(control)
 
 
 ## Build rows for the given ships that have eligible shots. Returns how many were listed.
@@ -234,6 +318,7 @@ func setup(ship_ids: Array) -> int:
 	_clear()
 	_building = true
 	var calculator: GunneryCalculator = GameState.gunnery_calculator
+	var no_shot: Array[ShipState] = []
 	for ship_id in ship_ids:
 		var ship_state: ShipState = GameState.get_ship(ship_id)
 		if ship_state == null:
@@ -245,8 +330,13 @@ func setup(ship_ids: Array) -> int:
 				shots_by_side[side] = []
 			shots_by_side[side].append(shot)
 		if shots_by_side.is_empty():
+			no_shot.append(ship_state)
 			continue
 		_add_ship(ship_state, shots_by_side)
+	var grid: HexGrid = GameState.fire_geometry.hex_grid if GameState.fire_geometry else null
+	for ship_state in no_shot:
+		_add_no_shot_row(no_shot_line(ship_state.ship_name,
+			ship_no_shot_reason(ship_state, GameState.get_all_ships(), calculator, grid)))
 	_building = false
 	for ship_id in _ship_order:
 		_refresh_ship(ship_id)
@@ -254,6 +344,15 @@ func setup(ship_ids: Array) -> int:
 	if not _ship_order.is_empty():
 		focus_ship(_ship_order[0])
 	return _ship_order.size()
+
+
+## The greyed no-shot lines, in list order.
+func get_no_shot_lines() -> Array[String]:
+	var lines: Array[String] = []
+	for child in ship_list_container.get_children():
+		if child.has_meta("no_shot") and not child.is_queued_for_deletion():
+			lines.append((child as Label).text)
+	return lines
 
 
 func get_focused_ship() -> String:
@@ -266,6 +365,7 @@ func focus_ship(ship_id: String) -> void:
 	_focused_ship_id = ship_id
 	var header: Button = _ships[ship_id]["header"]
 	header.set_pressed_no_signal(true)
+	_reveal(header)
 	ship_focused.emit(ship_id)
 
 
@@ -294,6 +394,9 @@ func select_target(ship_id: String, side: int, target_id: String) -> void:
 		return
 	_ships[ship_id]["sides"][side]["target_id"] = target_id
 	_on_side_changed(ship_id, side)
+	var row: Button = _ships[ship_id]["widgets"][side]["targets"].get(target_id)
+	if row:
+		_reveal(row)
 
 
 ## Ask for high fire / dismantling shot on a broadside. Same effect as pressing the toggles.
@@ -385,6 +488,18 @@ func _add_ship(ship_state: ShipState, shots_by_side: Dictionary) -> void:
 			"ammo": GunneryTypes.AMMO_ROUND, "want_high": false, "want_dismantling": false}
 		entry["widgets"][side] = _build_side(box, ship_id, side, ranked)
 	box.add_child(HSeparator.new())
+
+
+## A greyed, unclickable line for an own ship with no shot this turn.
+func _add_no_shot_row(text: String) -> void:
+	var label := Label.new()
+	label.text = text
+	label.set_meta("no_shot", true)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.theme_type_variation = &"SecondaryLabel"
+	label.add_theme_color_override("font_color", NO_SHOT_COLOR)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ship_list_container.add_child(label)
 
 
 func _build_side(parent: VBoxContainer, ship_id: String, side: int, ranked: Array) -> Dictionary:
