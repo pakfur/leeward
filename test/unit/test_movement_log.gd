@@ -66,7 +66,7 @@ func test_collision_stop_short_and_fouling_are_logged_in_order() -> void:
 		texts.append(ev.to_text({"a": "Alpha", "b": "Bravo"}))
 	assert_eq(texts, [
 		"Alpha collides with Bravo at (2, 0)",
-		"Alpha stops short of its plotted course",
+		"Alpha stops short of its plotted course after colliding with Bravo",
 		"Alpha and Bravo are fouled together",
 	])
 
@@ -125,3 +125,83 @@ func test_drift_fouling_text_is_unchanged() -> void:
 func test_log_headings_name_movement_and_weather() -> void:
 	assert_eq(CombatLogPanel.phase_heading(2, MOVE), "Turn 2 — Movement")
 	assert_eq(CombatLogPanel.phase_heading(2, TurnPhaseController.GamePhase.ENVIRONMENT), "Turn 2 — Weather")
+
+
+# --- Why a ship stopped short ------------------------------------------------------------------
+
+func _bear_off_log() -> MovementTypes.ResolutionLog:
+	var log := MovementTypes.ResolutionLog.new(1)
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	_move(a, 0, Vector2i(0, 0), Vector2i(1, 0))
+	var roll := MovementTypes.ResolutionEvent.new("a", 1, T.BEARING_OFF_ROLL)
+	roll.success = true
+	a.events.append(roll)
+	var stop := MovementTypes.ResolutionEvent.new("a", 1, T.STOPPED)
+	stop.detail = "bore off successfully, movement ends"
+	a.events.append(stop)
+	a.blocked_by = "b"
+	a.stopped_at_impulse = 1
+	log.add_result(a)
+	log.add_result(MovementTypes.ShipResolutionResult.new("b"))
+	return log
+
+
+func test_stop_short_after_bearing_off_names_the_ship_in_the_way() -> void:
+	var ships: Array[ShipState] = [_ship("a", 3), _ship("b", 0)]
+	resolver.log_outcomes(_bear_off_log(), ships, turn_log)
+	var stops := turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT)
+	assert_eq(stops.size(), 1)
+	assert_eq(stops[0].to_text({"a": "Alpha", "b": "HMS Lively"}),
+		"Alpha stops short of its plotted course after bearing off — HMS Lively was in the way")
+
+
+func test_stop_short_after_a_collision_names_the_other_ship() -> void:
+	var ships: Array[ShipState] = [_ship("a", 3), _ship("b", 0)]
+	resolver.log_outcomes(_collision_log(false), ships, turn_log)
+	var stops := turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT)
+	assert_eq(stops[0].to_text({"a": "Alpha", "b": "Bravo"}),
+		"Alpha stops short of its plotted course after colliding with Bravo")
+
+
+func test_ship_run_into_also_says_it_collided() -> void:
+	# b had a plot of its own and was hit before finishing it.
+	var ships: Array[ShipState] = [_ship("a", 3), _ship("b", 2)]
+	resolver.log_outcomes(_collision_log(false), ships, turn_log)
+	var texts: Array = []
+	for ev in turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT):
+		texts.append(ev.to_text({"a": "Alpha", "b": "Bravo"}))
+	assert_has(texts, "Bravo stops short of its plotted course after colliding with Alpha")
+
+
+func test_stop_short_without_a_known_cause_keeps_the_plain_wording() -> void:
+	var ev := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.STOPPED_SHORT, MOVE, "a", {"moved": 1, "planned": 3})
+	assert_eq(ev.to_text({"a": "Alpha"}), "Alpha stops short of its plotted course")
+
+
+func test_bear_off_cause_survives_without_the_other_ships_name() -> void:
+	var ev := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.STOPPED_SHORT, MOVE, "a", {"cause": "bore_off"})
+	assert_eq(ev.to_text({"a": "Alpha"}), "Alpha stops short of its plotted course after bearing off")
+
+
+func test_resolver_records_which_ship_was_in_the_way() -> void:
+	# A plotted mover into a stationary ship's hex: whatever the bear-off roll, the result names it.
+	GameState.clear_ships()
+	DataManager.load_movement_allowance_table()
+	DataManager.load_ship_definitions()
+	DataManager.load_bearing_off_table()
+	var mover := ShipState.new()
+	mover.ship = Ship.from_dict({"ship_id": "m", "ship_name": "Mover", "maneuverability": "B"})
+	mover.hex_position = Vector2i(0, 0)
+	mover.facing = 0
+	mover.speed = 2
+	mover.crew_quality = "C"
+	mover.plotted_actions["movement"] = [{"hex": {"q": 1, "r": 0}, "facing": 0, "move_type": 1}]
+	var still := ShipState.new()
+	still.ship = Ship.from_dict({"ship_id": "s", "ship_name": "Still", "maneuverability": "B"})
+	still.hex_position = Vector2i(1, 0)
+	var env := EnvironmentState.new()
+	var ships: Array[ShipState] = [mover, still]
+	var log := MovementResolver.new(null, RandomNumberGenerator.new()).run(ships, env)
+	var r: MovementTypes.ShipResolutionResult = log.get_result("m")
+	assert_true(r.blocked_by == "s" or r.collided_with == "s", "the blocker is named")
+	assert_eq(r.blocked_by, "s")

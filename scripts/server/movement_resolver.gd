@@ -316,6 +316,7 @@ func _resolve_collision_or_bearoff(
 	var loser: ShipState = ship_map[loser_id]
 	var loser_result: MovementTypes.ShipResolutionResult = results[loser_id]
 	var maneuverability: String = loser.ship.maneuverability if loser.ship else "b"
+	loser_result.blocked_by = blocker_id
 
 	if not _is_bearing_off_pivot_legal(loser, forward_since_turn.get(loser_id, 0)):
 		var deny_ev = MovementTypes.ResolutionEvent.new(
@@ -785,12 +786,27 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 					result.collided_with)
 		var planned: int = _get_plotted_steps(ship_state).size()
 		if not result.tacking_failed and planned > 0 and _count_hexes_moved(result) < planned:
-			turn_log.add(PhaseEvents.Type.STOPPED_SHORT, phase, sid,
-				{"moved": _count_hexes_moved(result), "planned": planned})
+			var data := {"moved": _count_hexes_moved(result), "planned": planned}
+			var cause := stop_cause(result)
+			if not cause.is_empty():
+				data["cause"] = cause["cause"]
+			turn_log.add(PhaseEvents.Type.STOPPED_SHORT, phase, sid, data, str(cause.get("other", "")))
 		if result.fouled_with != "" and not fouled_logged.has(sid):
 			turn_log.add(PhaseEvents.Type.FOULED, phase, sid, {"cause": "collision"}, result.fouled_with)
 			fouled_logged[sid] = true
 			fouled_logged[result.fouled_with] = true
+
+
+## Why a ship's movement ended before its plot did, from its resolution result alone:
+## {"cause": "collision", "other": id} when it collided (either ship), {"cause": "bore_off",
+## "other": id} when it bore off to avoid the ship in its way, {} when the result names no cause.
+static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary:
+	if result.collided_with != "":
+		return {"cause": "collision", "other": result.collided_with}
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.STOPPED and ev.success:
+			return {"cause": "bore_off", "other": result.blocked_by}
+	return {}
 
 
 ## Where the other ship lay when this one ran into it (its own collision event), else where this ship was.

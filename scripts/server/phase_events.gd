@@ -170,7 +170,7 @@ class PhaseEvent extends RefCounted:
 				var at := _hex_text("hex")
 				return "%s collides with %s%s" % [who, other, " at " + at if at != "" else ""]
 			Type.STOPPED_SHORT:
-				return "%s stops short of its plotted course" % who
+				return _stopped_short_text(who, other)
 			Type.IN_IRONS:
 				if data.get("cause", "") == "tack":
 					return "%s misses stays and is in irons" % who
@@ -184,6 +184,19 @@ class PhaseEvent extends RefCounted:
 			Type.VICTORY:
 				return _victory_text()
 		return "%s: event %d" % [who, type]
+
+	## "… stops short of its plotted course", with the cause the resolution recorded, if any.
+	func _stopped_short_text(who: String, other: String) -> String:
+		var text := "%s stops short of its plotted course" % who
+		match str(data.get("cause", "")):
+			"collision":
+				if target_id != "":
+					return "%s after colliding with %s" % [text, other]
+			"bore_off":
+				text += " after bearing off"
+				if target_id != "":
+					text += " — %s was in the way" % other
+		return text
 
 	func _fire_text(who: String, other: String) -> String:
 		var side_idx := int(data.get("side", -1))
