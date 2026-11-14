@@ -171,10 +171,11 @@ func test_strike_fouled_and_unfoul_sentences() -> void:
 		"Surprise drifts into Renard; the two ships are fouled")
 	assert_eq(log.add(PhaseEvents.Type.UNFOUL, 6, "s1",
 		{"roll": 3, "modifier": 1, "needed": 8, "success": true}, "s2").to_text(NAMES),
-		"Surprise tries to cut free of Renard: rolled 3 +1, needed 8 or less — frees herself")
+		"Surprise cuts free (rolled 3 +1, needed 8 or less) — Surprise and Renard are no longer fouled")
+	# A failed attempt speaks only for that ship: the partner may still free the pair.
 	assert_eq(log.add(PhaseEvents.Type.UNFOUL, 6, "s1",
 		{"roll": 9, "modifier": 0, "needed": 2, "success": false}, "s2").to_text(NAMES),
-		"Surprise tries to cut free of Renard: rolled 9, needed 2 or less — stays fouled")
+		"Surprise fails to cut free of Renard (rolled 9, needed 2 or less)")
 
 
 func test_victory_names_the_side_never_a_number() -> void:

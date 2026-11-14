@@ -297,11 +297,13 @@ class PhaseEvent extends RefCounted:
 		return text + " (drift roll %s, needed %s)" % [_roll_text(), _val("needed")]
 
 	func _unfoul_text(who: String, other: String) -> String:
-		var text := "%s tries to cut free of %s: rolled %s, needed %s or less" % [
-			who, other, _roll_text(), _val("needed")]
-		if data.has("success"):
-			text += " — frees herself" if data["success"] else " — stays fouled"
-		return text
+		# Either ship's success frees the pair, so a failure never claims the pair stays fouled.
+		var dice := "rolled %s, needed %s or less" % [_roll_text(), _val("needed")]
+		if not data.has("success"):
+			return "%s tries to cut free of %s: %s" % [who, other, dice]
+		if data["success"]:
+			return "%s cuts free (%s) — %s and %s are no longer fouled" % [who, dice, who, other]
+		return "%s fails to cut free of %s (%s)" % [who, other, dice]
 
 	## "6", or "6 +1" when a modifier applies.
 	func _roll_text() -> String:
