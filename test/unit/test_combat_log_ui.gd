@@ -220,3 +220,19 @@ func test_log_names_feed_event_text() -> void:
 	turn_log.add(PhaseEvents.Type.STRIKE, COMBAT, "s2", {"reason": "morale"})
 	assert_eq(LogPanel.latest_line(turn_log, LogPanel.log_names([mine, theirs])),
 		"HMS Test (enemy) strikes her colours (the crew's morale broke)")
+
+
+# --- Auto collapse / expand ----------------------------------------------------------
+
+func test_phase_key_separates_turns_phases_and_combat_steps() -> void:
+	assert_eq(LogPanel.phase_key(3, 4, 1), "3:4:1")
+	assert_ne(LogPanel.phase_key(3, 4, 1), LogPanel.phase_key(3, 4, 2))
+	assert_ne(LogPanel.phase_key(3, 2, 0), LogPanel.phase_key(4, 2, 0))
+
+
+func test_manual_choice_only_holds_in_its_own_phase_step() -> void:
+	assert_true(LogPanel.choose_expanded(true, "", "3:4:2", false), "no manual choice: auto wins")
+	assert_false(LogPanel.choose_expanded(true, "3:4:2", "3:4:2", false), "same step: manual wins")
+	assert_true(LogPanel.choose_expanded(false, "3:4:2", "3:4:2", true), "same step: manual expand kept")
+	assert_false(LogPanel.choose_expanded(false, "3:9:0", "4:2:0", true), "next planning: auto collapse")
+	assert_true(LogPanel.choose_expanded(true, "3:4:1", "3:4:2", false), "declare -> playback re-expands")

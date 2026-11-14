@@ -23,6 +23,12 @@ var _signature: String = ""
 var _dirty: bool = false  # list is behind the logs (set while collapsed)
 var _sections: Dictionary = {}  # turn -> {"box": VBoxContainer, "count": int, "last_phase": int, "log": PhaseLog}
 var _earlier_label: Label
+var _skip_label: Label
+## The player's own collapse/expand only holds within the phase step in which they made it.
+var _manual_key: String = ""
+var _manual_expanded: bool = false
+
+const SKIP_HINT := "Space or click to skip"
 
 
 # --- Pure presentation helpers (unit tested) ---------------------------------
@@ -71,6 +77,21 @@ static func plan_update(built: Dictionary, available: Dictionary, max_turns: int
 		if extra > 0:
 			append[turn] = extra
 	return {"window": window, "drop": drop, "append": append, "truncated": turns.size() > window.size()}
+
+
+## Identifies one phase step ("turn:phase:combat step"); a manual toggle is remembered only
+## while this key stays the same.
+static func phase_key(turn: int, phase: int, combat_step: int) -> String:
+	return "%d:%d:%d" % [turn, phase, combat_step]
+
+
+## Whether the log should be expanded when the game asks for `auto_value`: the player's manual
+## choice wins only if it was made in the current phase step.
+static func choose_expanded(auto_value: bool, manual_key: String, current_key: String,
+		manual_value: bool) -> bool:
+	if manual_key != "" and manual_key == current_key:
+		return manual_value
+	return auto_value
 
 
 ## The list is only rebuilt while visible; otherwise it is just marked dirty.
@@ -138,13 +159,19 @@ func _ready() -> void:
 	_toggle_button.text = "Log ▲"
 	_toggle_button.custom_minimum_size = Vector2(80, 0)
 	_toggle_button.focus_mode = Control.FOCUS_NONE  # keep Space/Enter free for skipping playback
-	_toggle_button.pressed.connect(toggle)
+	_toggle_button.pressed.connect(_on_toggle_pressed)
 	header.add_child(_toggle_button)
 	_latest_label = Label.new()
 	_latest_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_latest_label.clip_text = true
 	_latest_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	header.add_child(_latest_label)
+	_skip_label = Label.new()
+	_skip_label.name = "SkipHint"
+	_skip_label.text = SKIP_HINT
+	_skip_label.add_theme_color_override("font_color", Color(0.95, 0.85, 0.5))
+	_skip_label.visible = false
+	header.add_child(_skip_label)
 
 	_scroll = ScrollContainer.new()
 	_scroll.custom_minimum_size = Vector2(0, EXPANDED_HEIGHT - BAR_HEIGHT)
@@ -200,6 +227,35 @@ func _apply_height() -> void:
 
 func toggle() -> void:
 	set_expanded(not _expanded)
+
+
+## The game's wish for this phase (expand for playback / review, collapse for planning and fire
+## orders). Ignored when the player toggled the log by hand earlier in this same phase step.
+func auto_expand(expanded: bool) -> void:
+	set_expanded(choose_expanded(expanded, _manual_key, _current_key(), _manual_expanded))
+
+
+## Show or hide the "Space or click to skip" cue in the header bar (combat playback).
+func set_skip_hint(on: bool) -> void:
+	if _skip_label:
+		_skip_label.visible = on
+
+
+func is_skip_hint_visible() -> bool:
+	return _skip_label != null and _skip_label.visible
+
+
+func _on_toggle_pressed() -> void:
+	toggle()
+	_manual_key = _current_key()
+	_manual_expanded = _expanded
+
+
+func _current_key() -> String:
+	var pc = GameState.phase_controller
+	if pc == null:
+		return ""
+	return phase_key(pc.current_turn, pc.current_phase, pc.combat_step)
 
 
 ## Show only the first `limit` events of the current turn's log (-1 shows all).
