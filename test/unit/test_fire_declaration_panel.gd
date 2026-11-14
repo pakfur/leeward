@@ -168,3 +168,9 @@ func test_default_side_with_one_broadside_or_none() -> void:
 
 func test_two_target_note_shows_the_penalty_on_each_broadside() -> void:
 	assert_eq(FirePanel.two_target_note(-12), "Two targets: −12 on each broadside")
+
+
+func test_target_names_give_name_and_type() -> void:
+	var s := ShipState.new()
+	s.ship = Ship.from_dict({"ship_id": "e1", "player_id": 1, "ship_name": "Topaze", "name": "32-gun Frigate"})
+	assert_eq(FirePanel.target_names([s]), {"e1": "Topaze — 32-gun Frigate"})

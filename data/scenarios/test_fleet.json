@@ -21,6 +21,7 @@
   "ships": [
 	{
 	  "id": "player_ship_1",
+	  "ship_name": "HMS Lively",
 	  "player_id": 0,
 	  "ship_type": "frigate_38",
 	  "position": {
@@ -37,6 +38,7 @@
 	},
 	{
 	  "id": "player_ship_2",
+	  "ship_name": "HMS Phoebe",
 	  "player_id": 0,
 	  "ship_type": "frigate_38",
 	  "position": {
@@ -53,6 +55,7 @@
 	},
 	{
 	  "id": "enemy_ship_1",
+	  "ship_name": "Topaze",
 	  "player_id": 1,
 	  "ship_type": "frigate_32",
 	  "position": {
@@ -69,6 +72,7 @@
 	},
 	{
 	  "id": "enemy_ship_2",
+	  "ship_name": "Vestale",
 	  "player_id": 1,
 	  "ship_type": "frigate_32",
 	  "position": {
@@ -85,6 +89,7 @@
 	},
 	{
 	  "id": "enemy_ship_3",
+	  "ship_name": "Amphitrite",
 	  "player_id": 1,
 	  "ship_type": "frigate_32",
 	  "position": {
@@ -101,6 +106,7 @@
 	},
 	{
 	  "id": "enemy_ship_4",
+	  "ship_name": "Pique",
 	  "player_id": 1,
 	  "ship_type": "frigate_32",
 	  "position": {

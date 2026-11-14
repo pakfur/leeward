@@ -50,6 +50,14 @@ var _building: bool = false
 # Pure presentation helpers (unit tested)
 # ============================================================================
 
+## ship_id -> "Topaze — 32-gun Frigate": target rows name each ship with its type.
+static func target_names(ships: Array) -> Dictionary:
+	var names := {}
+	for ship in ships:
+		names[ship.ship_id] = PlanningText.name_and_type(ship)
+	return names
+
+
 ## "<name> — range N — gunfire M[ — stern rake][ — initial broadside]"
 static func option_text(target_name: String, preview: GunneryTypes.ShotPreview) -> String:
 	var parts: Array[String] = [target_name, "range %d" % preview.range_hexes, "gunfire %d" % preview.mgn]
@@ -335,7 +343,7 @@ func _add_ship(ship_state: ShipState, shots_by_side: Dictionary) -> void:
 	ship_list_container.add_child(box)
 
 	var header := Button.new()
-	header.text = ship_state.ship_name
+	header.text = PlanningText.name_and_type(ship_state)
 	header.toggle_mode = true
 	header.button_group = _group
 	header.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -347,7 +355,7 @@ func _add_ship(ship_state: ShipState, shots_by_side: Dictionary) -> void:
 	_ships[ship_id] = entry
 	_ship_order.append(ship_id)
 
-	var names := CombatLogPanel.log_names(GameState.get_all_ships())
+	var names := target_names(GameState.get_all_ships())
 	var ranked_by_side := {}
 	for side in [ShipState.PORT, ShipState.STARBOARD]:
 		if not shots_by_side.has(side):
@@ -477,7 +485,7 @@ func any_ship_fires_both() -> bool:
 func _refresh_ship(ship_id: String) -> void:
 	var entry: Dictionary = _ships[ship_id]
 	var sides: Dictionary = entry["sides"]
-	var names := CombatLogPanel.log_names(GameState.get_all_ships())
+	var names := target_names(GameState.get_all_ships())
 	for side in sides:
 		var state: Dictionary = sides[side]
 		var widgets: Dictionary = entry["widgets"][side]

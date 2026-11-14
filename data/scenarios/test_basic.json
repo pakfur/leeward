@@ -21,6 +21,7 @@
   "ships": [
 	{
 	  "id": "player_ship",
+	  "ship_name": "HMS Lively",
 	  "player_id": 0,
 	  "ship_type": "frigate_38",
 	  "position": {
@@ -37,6 +38,7 @@
 	},
 	{
 	  "id": "enemy_ship",
+	  "ship_name": "Topaze",
 	  "player_id": 1,
 	  "ship_type": "frigate_32",
 	  "position": {

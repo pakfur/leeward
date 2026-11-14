@@ -164,3 +164,37 @@ func test_shipped_scenarios_have_a_turn_limit() -> void:
 		assert_true(scenarios.has(file_name), "%s is shipped" % file_name)
 		if scenarios.has(file_name):
 			assert_gt(int(scenarios[file_name].get("turn_limit", 0)), 0, "%s has a positive turn_limit" % file_name)
+
+func test_shipped_scenarios_name_every_ship_uniquely() -> void:
+	var scenarios := _shipped_scenarios()
+	for file_name in ["test_basic.json", "test_fleet.json"]:
+		assert_true(scenarios.has(file_name), "%s is shipped" % file_name)
+		var seen := {}
+		for ship in scenarios.get(file_name, {}).get("ships", []):
+			var ship_name := str(ship.get("ship_name", ""))
+			assert_ne(ship_name.strip_edges(), "", "%s: %s has a name" % [file_name, ship["id"]])
+			assert_false(seen.has(ship_name), "%s: name %s is unique" % [file_name, ship_name])
+			seen[ship_name] = true
+
+func test_loaded_scenarios_have_unique_names_after_fallback() -> void:
+	for scenario_name in ["test_basic", "test_fleet"]:
+		var scenario := DataManager.load_scenario(scenario_name)
+		var seen := {}
+		for ship in scenario["ships"]:
+			assert_false(seen.has(ship["ship_name"]), "%s: %s unique" % [scenario_name, ship["ship_name"]])
+			seen[ship["ship_name"]] = true
+
+func test_unnamed_ships_get_numbered_fallback_names_per_side() -> void:
+	var ships := [
+		{"id": "a", "player_id": 0, "ship_type": "frigate_38"},
+		{"id": "b", "player_id": 0, "ship_type": "frigate_38"},
+		{"id": "c", "player_id": 1, "ship_type": "frigate_38"},
+		{"id": "d", "player_id": 1, "ship_type": "frigate_32", "ship_name": "Topaze"},
+		{"id": "e", "player_id": 1, "ship_type": "frigate_32", "ship_name": ""},
+	]
+	DataManager.assign_fallback_ship_names(ships)
+	assert_eq(ships[0]["ship_name"], "38-gun Frigate 1")
+	assert_eq(ships[1]["ship_name"], "38-gun Frigate 2")
+	assert_eq(ships[2]["ship_name"], "38-gun Frigate 1", "numbered per side")
+	assert_eq(ships[3]["ship_name"], "Topaze", "a given name is kept")
+	assert_eq(ships[4]["ship_name"], "32-gun Frigate 1")

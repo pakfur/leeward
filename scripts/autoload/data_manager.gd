@@ -350,7 +350,9 @@ func load_scenario(scenario_name: String, file_path: String = "") -> Dictionary:
 
 	if not FileAccess.file_exists(file_path):
 		push_warning("Scenario not found: %s" % file_path)
-		return _create_default_scenario()
+		var fallback := _create_default_scenario()
+		assign_fallback_ship_names(fallback.get("ships", []))
+		return fallback
 
 	var file = FileAccess.open(file_path, FileAccess.READ)
 	if file == null:
@@ -384,9 +386,27 @@ func load_scenario(scenario_name: String, file_path: String = "") -> Dictionary:
 		for ship in scenario_dict["ships"]:
 			if ship is Dictionary and ship.has("crew_quality"):
 				ship["crew_quality"] = _normalize_crew_quality(ship["crew_quality"])
+		assign_fallback_ship_names(scenario_dict["ships"])
 
 	Trace.trace_log("DataManager", "Loaded scenario: %s" % scenario_name)
 	return scenario_dict
+
+## Ships the scenario leaves unnamed are called "<type name> N", numbered per side and type, so
+## no two ships read the same in the log and panels. Given names are kept.
+func assign_fallback_ship_names(ships: Array) -> void:
+	if ship_definitions.is_empty():
+		load_ship_definitions()
+	var counts := {}  # "player:type name" -> ships numbered so far
+	for ship in ships:
+		if not ship is Dictionary or str(ship.get("ship_name", "")).strip_edges() != "":
+			continue
+		var type_id := str(ship.get("ship_type", ""))
+		var type_name := type_id
+		if ship_definitions.has(type_id):
+			type_name = ship_definitions[type_id].name
+		var key := "%d:%s" % [int(ship.get("player_id", 0)), type_name]
+		counts[key] = int(counts.get(key, 0)) + 1
+		ship["ship_name"] = "%s %d" % [type_name, counts[key]]
 
 func get_movement_allowance(speed_type: String, wind_speed: int, wind_facing: String,
 							 sail_state: String, rigging_quality: int) -> int:

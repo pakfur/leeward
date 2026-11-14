@@ -58,3 +58,18 @@ func test_occupied_hexes_names_other_ships_only() -> void:
 
 func test_collision_text() -> void:
 	assert_eq(PlanningText.collision_text("Foe"), "Collision risk: Foe is here")
+
+
+func test_name_and_type_reads_name_then_type() -> void:
+	var s := _ship("a", "HMS Lively")
+	s.ship.name = "38-gun Frigate"
+	assert_eq(PlanningText.name_and_type(s), "HMS Lively — 38-gun Frigate")
+
+
+func test_name_and_type_skips_a_type_the_name_already_says() -> void:
+	var s := _ship("a", "38-gun Frigate 2")
+	s.ship.name = "38-gun Frigate"
+	assert_eq(PlanningText.name_and_type(s), "38-gun Frigate 2")
+	s.ship.name = ""
+	s.ship.ship_name = "Topaze"
+	assert_eq(PlanningText.name_and_type(s), "Topaze")

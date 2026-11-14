@@ -4,6 +4,15 @@ extends RefCounted
 ## readout, the instruction line and collision warnings. No scene nodes, no state changes.
 
 
+## "HMS Lively — 38-gun Frigate": how a ship is first identified in a panel. The type is left out
+## when it is unknown or the name already starts with it (a fallback name such as "38-gun Frigate 2").
+static func name_and_type(ship: ShipState) -> String:
+	var type_name: String = ship.ship.name if ship.ship else ""
+	if type_name == "" or ship.ship_name.to_lower().begins_with(type_name.to_lower()):
+		return ship.ship_name
+	return "%s — %s" % [ship.ship_name, type_name]
+
+
 ## The ship card's detail lines: hull and rigging as boxes per section (as in the status panel),
 ## the sail by name, and crew quality and morale spelled out.
 static func card_lines(ship: ShipState) -> Array[String]:

@@ -77,7 +77,7 @@ func _update_display() -> void:
 
 	# Ship name
 	if ship_name_label:
-		ship_name_label.text = ship_state.ship_name
+		ship_name_label.text = _title()
 
 	# Speed
 	if speed_label:
@@ -121,10 +121,13 @@ func set_selected_state(selected_state: bool) -> void:
 func set_submitted_state(submitted: bool) -> void:
 	is_submitted = submitted
 	_apply_panel_style()
-	if ship_name_label and submitted:
-		ship_name_label.text = ship_state.ship_name + " — orders given" if ship_state else ship_name_label.text
-	elif ship_name_label and ship_state:
-		ship_name_label.text = ship_state.ship_name
+	if ship_name_label and ship_state:
+		ship_name_label.text = _title()
+
+## "HMS Lively — 38-gun Frigate", with "(orders given)" once the ship has its orders.
+func _title() -> String:
+	var text := PlanningText.name_and_type(ship_state)
+	return text + " (orders given)" if is_submitted else text
 
 func _apply_panel_style() -> void:
 	if is_selected:
