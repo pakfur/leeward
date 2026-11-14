@@ -141,3 +141,30 @@ func test_build_orders_two_sides_in_side_order() -> void:
 func test_build_orders_all_hold_is_empty() -> void:
 	var sides := {0: {"target_id": "", "aim": "low", "ammo": "round"}}
 	assert_eq(FirePanel.build_orders("me", sides).size(), 0)
+
+
+func test_default_side_is_the_single_best_one_target_shot() -> void:
+	var port := FirePanel.rank_targets([{"target_id": "a", "mgn": 10, "range": 3, "name": "A"}])
+	var starboard := FirePanel.rank_targets([{"target_id": "b", "mgn": 14, "range": 6, "name": "B"},
+		{"target_id": "c", "mgn": 9, "range": 2, "name": "C"}])
+	assert_eq(FirePanel.default_side({ShipState.PORT: port, ShipState.STARBOARD: starboard}), ShipState.STARBOARD)
+
+
+func test_default_side_ties_go_to_nearest_then_name_then_port() -> void:
+	var near := [{"target_id": "a", "mgn": 10, "range": 2, "name": "Z"}]
+	var far := [{"target_id": "b", "mgn": 10, "range": 5, "name": "A"}]
+	assert_eq(FirePanel.default_side({ShipState.PORT: far, ShipState.STARBOARD: near}), ShipState.STARBOARD)
+	var named_a := [{"target_id": "a", "mgn": 10, "range": 2, "name": "A"}]
+	var named_b := [{"target_id": "b", "mgn": 10, "range": 2, "name": "B"}]
+	assert_eq(FirePanel.default_side({ShipState.PORT: named_b, ShipState.STARBOARD: named_a}), ShipState.STARBOARD)
+	assert_eq(FirePanel.default_side({ShipState.PORT: named_a, ShipState.STARBOARD: named_a.duplicate(true)}), ShipState.PORT)
+
+
+func test_default_side_with_one_broadside_or_none() -> void:
+	var rows := [{"target_id": "a", "mgn": 4, "range": 9, "name": "A"}]
+	assert_eq(FirePanel.default_side({ShipState.STARBOARD: rows}), ShipState.STARBOARD)
+	assert_eq(FirePanel.default_side({}), -1)
+
+
+func test_two_target_note_shows_the_penalty_on_each_broadside() -> void:
+	assert_eq(FirePanel.two_target_note(-12), "Two targets: −12 on each broadside")

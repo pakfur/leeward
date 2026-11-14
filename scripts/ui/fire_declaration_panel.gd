@@ -2,8 +2,8 @@ extends Control
 ## FireDeclarationPanel - Context-panel UI for declaring broadside fire during COMBAT_RESOLUTION.
 ##
 ## Lists each own ship that has at least one eligible shot. Each broadside (port/starboard) gets
-## an always-visible list of target rows (best target first and selected by default, "Hold fire"
-## last), an aim toggle and an ammunition toggle, each with the reason when it is locked. Every
+## an always-visible list of target rows (best target first, "Hold fire" last; only the ship's
+## single best shot is selected by default, the other broadside holds fire), an aim toggle and an ammunition toggle, each with the reason when it is locked. Every
 ## change re-queries GunneryCalculator.preview (a pure query) so the displayed numbers and the
 ## breakdown are always current. No popups. The panel never mutates game state: pressing the
 ## main button only emits the assembled order dictionaries for the controller.
@@ -34,6 +34,7 @@ const NO_SHOT_NO_ENEMY := "no enemy afloat"
 @onready var error_label: Label = %ErrorLabel
 @onready var fire_button: Button = %FireButton
 @onready var instructions_label: Label = %InstructionsLabel
+@onready var two_target_label: Label = %TwoTargetLabel
 
 ## ship_id -> {"name": String, "header": Button, "shots": {side: Array[ShotPreview]},
 ##             "sides": {side: {"target_id","aim","ammo","want_high","want_dismantling"}},
@@ -121,13 +122,42 @@ static func dismantling_note(range_hexes: int, want_dismantling: bool) -> String
 ## Each entry is {"target_id", "mgn", "range", "name"}; returns a sorted copy.
 static func rank_targets(entries: Array) -> Array:
 	var sorted := entries.duplicate()
-	sorted.sort_custom(func(x: Dictionary, y: Dictionary) -> bool:
-		if int(x["mgn"]) != int(y["mgn"]):
-			return int(x["mgn"]) > int(y["mgn"])
-		if int(x["range"]) != int(y["range"]):
-			return int(x["range"]) < int(y["range"])
-		return str(x["name"]) < str(y["name"]))
+	sorted.sort_custom(func(x: Dictionary, y: Dictionary) -> bool: return _better_row(x, y))
 	return sorted
+
+
+## Which broadside starts with a target: the one whose best row is the best one-target shot
+## (highest modified number, then nearest, then name; port before starboard on a full tie).
+## `ranked_by_side` is side -> rank_targets() output. The other broadside starts on hold fire,
+## because firing both costs the two-target modifier on each shot. -1 when no side has a row.
+static func default_side(ranked_by_side: Dictionary) -> int:
+	var best_side := -1
+	var best: Dictionary = {}
+	var sides := ranked_by_side.keys()
+	sides.sort()
+	for side in sides:
+		var rows: Array = ranked_by_side[side]
+		if rows.is_empty():
+			continue
+		var top: Dictionary = rows[0]
+		if best_side < 0 or _better_row(top, best):
+			best_side = int(side)
+			best = top
+	return best_side
+
+
+static func _better_row(x: Dictionary, y: Dictionary) -> bool:
+	if int(x["mgn"]) != int(y["mgn"]):
+		return int(x["mgn"]) > int(y["mgn"])
+	if int(x["range"]) != int(y["range"]):
+		return int(x["range"]) < int(y["range"])
+	return str(x["name"]) < str(y["name"])
+
+
+## Shown next to the main button while some ship fires both broadsides, e.g.
+## "Two targets: −12 on each broadside". `modifier` is the (negative) two-target modifier.
+static func two_target_note(modifier: int) -> String:
+	return "Two targets: %s%d on each broadside" % ["−" if modifier < 0 else "+", absi(modifier)]
 
 
 ## The main reason a ship cannot fire at its nearest enemy, in plain words, from the calculator's
@@ -295,7 +325,7 @@ func _clear() -> void:
 	error_label.visible = false
 	fire_button.disabled = false
 	fire_button.text = fire_button_text(0)
-	instructions_label.text = "Each broadside starts on its best target. Pick another row, or Hold fire."
+	instructions_label.text = "Your best shot is chosen; the other broadside holds fire. Pick any row to change it."
 
 
 func _add_ship(ship_state: ShipState, shots_by_side: Dictionary) -> void:
@@ -318,17 +348,24 @@ func _add_ship(ship_state: ShipState, shots_by_side: Dictionary) -> void:
 	_ship_order.append(ship_id)
 
 	var names := CombatLogPanel.log_names(GameState.get_all_ships())
+	var ranked_by_side := {}
 	for side in [ShipState.PORT, ShipState.STARBOARD]:
 		if not shots_by_side.has(side):
 			continue
-		# Rank with the defaults the server would preview (low unless forced, roundshot).
+		# Rank with the defaults the server would preview (low unless forced, roundshot, one target).
 		var ranked_entries: Array = []
 		for shot: GunneryTypes.ShotPreview in shots_by_side[side]:
 			var target_id := shot.order.target_id
 			ranked_entries.append({"target_id": target_id, "mgn": shot.mgn,
 				"range": shot.range_hexes, "name": str(names.get(target_id, target_id))})
-		var ranked := rank_targets(ranked_entries)
-		entry["sides"][side] = {"target_id": str(ranked[0]["target_id"]), "aim": GunneryTypes.AIM_LOW,
+		ranked_by_side[side] = rank_targets(ranked_entries)
+	var firing_side := default_side(ranked_by_side)
+	for side in [ShipState.PORT, ShipState.STARBOARD]:
+		if not ranked_by_side.has(side):
+			continue
+		var ranked: Array = ranked_by_side[side]
+		var start_target: String = str(ranked[0]["target_id"]) if side == firing_side else ""
+		entry["sides"][side] = {"target_id": start_target, "aim": GunneryTypes.AIM_LOW,
 			"ammo": GunneryTypes.AMMO_ROUND, "want_high": false, "want_dismantling": false}
 		entry["widgets"][side] = _build_side(box, ship_id, side, ranked)
 	box.add_child(HSeparator.new())
@@ -346,7 +383,6 @@ func _build_side(parent: VBoxContainer, ship_id: String, side: int, ranked: Arra
 	title.add_child(swatch)
 	var label := Label.new()
 	label.text = "%s broadside" % SIDE_NAMES[side]
-	label.add_theme_font_size_override("font_size", 12)
 	title.add_child(label)
 	parent.add_child(title)
 
@@ -360,7 +396,7 @@ func _build_side(parent: VBoxContainer, ship_id: String, side: int, ranked: Arra
 	targets[""] = _target_row(rows, group, ship_id, side, "")
 
 	var breakdown := Label.new()
-	breakdown.add_theme_font_size_override("font_size", 10)
+	breakdown.theme_type_variation = &"SecondaryLabel"
 	breakdown.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	parent.add_child(breakdown)
 
@@ -380,7 +416,7 @@ func _target_row(parent: VBoxContainer, group: ButtonGroup, ship_id: String, sid
 	button.button_group = group
 	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	button.add_theme_font_size_override("font_size", 11)
+	button.theme_type_variation = &"SecondaryButton"
 	button.focus_mode = Control.FOCUS_NONE
 	button.pressed.connect(func(): select_target(ship_id, side, target_id))
 	parent.add_child(button)
@@ -391,11 +427,11 @@ func _toggle_row(parent: VBoxContainer, text: String) -> Dictionary:
 	var row := HBoxContainer.new()
 	var button := CheckButton.new()
 	button.text = text
-	button.add_theme_font_size_override("font_size", 11)
+	button.theme_type_variation = &"SecondaryCheckButton"
 	button.focus_mode = Control.FOCUS_NONE
 	row.add_child(button)
 	var note := Label.new()
-	note.add_theme_font_size_override("font_size", 10)
+	note.theme_type_variation = &"SecondaryLabel"
 	note.add_theme_color_override("font_color", Color(0.95, 0.8, 0.45))
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -421,6 +457,18 @@ func _on_side_changed(ship_id: String, _side: int) -> void:
 func _update_fire_button() -> void:
 	if fire_button.text != "Orders submitted":
 		fire_button.text = fire_button_text(get_all_orders().size())
+	if two_target_label:
+		two_target_label.text = two_target_note(DataManager.combat_tables.flat_modifier("two_targets")) \
+			if DataManager.combat_tables else ""
+		two_target_label.visible = any_ship_fires_both()
+
+
+## True while some listed ship has a target on both broadsides.
+func any_ship_fires_both() -> bool:
+	for ship_id in _ship_order:
+		if get_target_ids(ship_id).size() > 1:
+			return true
+	return false
 
 
 ## Re-query previews for every broadside of a ship and refresh rows, toggles, notes and breakdowns.
