@@ -189,6 +189,8 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 ### Hex Grid
 - **Axial coordinates** (q, r) with **pointy-top** orientation
 - **Direction numbering**: 0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE
+- **World/screen orientation**: world +X is east, −Z is north. `IsometricCamera` builds a right-handed basis (covered by `test_isometric_camera.gd`); `camera_rotation_y = 90` is north-up/east-right and only the player's camera controls change it. Selecting a ship never rotates or zooms the camera (`pan_to_if_needed` pans only when the ship is near the screen edge).
+- **Owner colours**: green = human player's ships, red = enemy (`ShipView.owner_color`, shared by the map ring/pennant and the minimap).
 - **All ships are 1-hex.** `ShipState.get_ship_size()` is deprecated and hardcoded to return 1; use `HexGrid.axial_to_world()` for positioning. The `size == 2` branches in `ShipView` are dead code kept for possible future revival. (`HexGrid.axial_to_edge_world()` is live — `ShipIndicatorModel` uses it to compute hex-face midpoints for the selection indicators.)
 
 ### Sides, Arcs and Rake
@@ -232,7 +234,6 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 Run the `scv-reviewer` agent as a **final step** before reporting any planned work as complete. Do not run it after each individual task or phase — only once at the very end, after all code changes are made and tests pass. Fix any violations it finds before finishing.
 
 ### Known Limitations
-- The camera renders the map mirrored (`scripts/core/isometric_camera.gd` builds a left-handed basis), so "starboard" appears on a ship's left on screen.
 - Nothing constrains plotted movement to the map bounds; drift treats the map edge as blocked.
 - The stub AI stalls instead of tacking when the wind blows straight against its approach.
 - Not implemented (Milestone 2): critical hits (CH# is stored only), fire, sinking, boarding, marine fire, repairs, grappling, manual crew tasks. Milestone 3 items (anchoring, lower-deck guns, chase guns, medium guns, class 4 ships) are also absent.
