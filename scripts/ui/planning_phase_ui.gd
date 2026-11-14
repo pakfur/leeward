@@ -113,6 +113,11 @@ func _on_ship_item_selected(ship_id: String) -> void:
 	_select_ship(ship_id)
 	ship_selected.emit(ship_id)
 
+## Make `ship_id` the ship whose orders are shown and tell the controller (as a card click does).
+func select_ship(ship_id: String) -> void:
+	if ship_list_items.has(ship_id):
+		_on_ship_item_selected(ship_id)
+
 func _select_ship(ship_id: String) -> void:
 	# Deselect previous
 	if selected_ship_id != "" and ship_list_items.has(selected_ship_id):
@@ -132,6 +137,16 @@ func _on_action_button_pressed(ship_id: String, action_type: String) -> void:
 	# Toggle the state
 	var current_state = action_states[ship_id].get(action_type, false)
 	var new_state = not current_state
+
+	# Giving a ship orders selects it in every sense (card, sail section, plotting controls, map):
+	# `selected_ship_id` is the one ship whose orders the panel shows. Only one ship plots at a time.
+	if new_state:
+		if selected_ship_id != ship_id:
+			_on_ship_item_selected(ship_id)
+		if action_type == "movement":
+			for other_id in action_states:
+				if other_id != ship_id and action_states[other_id].get("movement", false):
+					deactivate_movement_button(other_id)
 	action_states[ship_id][action_type] = new_state
 
 	# Update button visual state
@@ -227,14 +242,17 @@ func _refresh_sail_row() -> void:
 
 ## `remaining_ma_val` is the session's movement at the start of the plot (the most this ship can
 ## spend this turn, after acceleration limits); `table_ma` is what wind and sail alone would allow.
-func show_plotting_controls(_ship_id: String, remaining_ma_val: int, table_ma: int,
-		speed_last_turn: int = 0, acceleration: int = 0) -> void:
+## `can_submit_val` is the server's answer for the empty path (staying put may be allowed).
+func show_plotting_controls(ship_id: String, remaining_ma_val: int, table_ma: int,
+		speed_last_turn: int = 0, acceleration: int = 0, can_submit_val: bool = false) -> void:
 	_plot_max = remaining_ma_val
+	if ship_list_items.has(ship_id) and ship_id != selected_ship_id:
+		_select_ship(ship_id)  # the controls shown always belong to the selected ship
 	if plotting_controls:
 		plotting_controls.visible = true
 		_update_ma_display(remaining_ma_val)
 		_update_path_display([])
-		_update_button_states(true, false)
+		_update_button_states(false, can_submit_val, true)
 		set_collision_warning("")
 		var note := PlanningText.movement_limit_note(table_ma, _plot_max, speed_last_turn, acceleration)
 		if ma_limit_label:
@@ -254,7 +272,7 @@ func update_plotting_state(plotted_path_arr: Array, remaining_ma_val: int, can_s
 	_plot_max = maxi(_plot_max, remaining_ma_val)
 	_update_ma_display(remaining_ma_val)
 	_update_path_display(plotted_path_arr)
-	_update_button_states(not plotted_path_arr.is_empty(), can_submit_val)
+	_update_button_states(not plotted_path_arr.is_empty(), can_submit_val, plotted_path_arr.is_empty())
 
 ## "" hides the warning.
 func set_collision_warning(text: String) -> void:
@@ -307,13 +325,18 @@ func _update_path_display(path: Array) -> void:
 		parts.append("(%d,%d)" % [step.hex.x, step.hex.y])
 	path_label.text = "Path: " + " → ".join(parts)
 
-func _update_button_states(can_undo: bool, can_submit_val: bool) -> void:
+## Undo needs a plotted step; Submit follows the server, and says so when it means staying put.
+func _update_button_states(can_undo: bool, can_submit_val: bool, path_empty: bool) -> void:
 	if undo_button:
 		undo_button.disabled = not can_undo
 	if undo_all_button:
 		undo_all_button.disabled = not can_undo
 	if submit_button:
 		submit_button.disabled = not can_submit_val
+		submit_button.text = submit_text(can_submit_val, path_empty)
+
+static func submit_text(can_submit_val: bool, path_empty: bool) -> String:
+	return "Submit (hold position)" if can_submit_val and path_empty else "Submit"
 
 func _update_end_planning_state() -> void:
 	if not end_planning_button:

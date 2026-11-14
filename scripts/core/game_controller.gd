@@ -389,6 +389,14 @@ func _handle_ship_selection(screen_pos: Vector2) -> void:
 	if ship_state.player_id == HUMAN_PLAYER_ID:
 		# Own ship: full selected-ship UI; status dialog stays hidden until info icon.
 		# The camera does not move: the player clicked what they can already see.
+		# While planning, the orders panel follows (one selected ship everywhere); a ship being
+		# plotted keeps the selection until its plot is submitted or cancelled.
+		if current_planning_ui and is_instance_valid(current_planning_ui) \
+				and GameState.current_phase == GameState.GamePhase.PLANNING:
+			if movement_client and movement_client.is_plotting():
+				return
+			current_planning_ui.select_ship(ship_view.state_id)
+			return
 		_select_ship(ship_view.state_id)
 	else:
 		# Enemy ship: read-only status dialog only, no indicators.
@@ -530,6 +538,13 @@ func _on_planning_ship_selected(ship_id: String) -> void:
 		Trace.trace_log("GameController", "Warning: Ship not found: %s" % ship_id)
 		return
 
+	# The plotting controls belong to the selected ship: a plot left open for another ship ends.
+	if movement_client and movement_client.is_plotting() and movement_client.get_active_ship_id() != ship_id:
+		var plotting_id := movement_client.get_active_ship_id()
+		movement_client.cancel()
+		if current_planning_ui:
+			current_planning_ui.deactivate_movement_button(plotting_id)
+
 	# Bring the ship into view only if it is off-screen or near the edge: a smooth pan,
 	# never a rotation or zoom change (north stays up unless the player turns the camera).
 	if camera and camera.has_method("pan_to_if_needed"):
@@ -653,7 +668,9 @@ func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_va
 		var accel := 0
 		if ship_state and ship_state.ship:
 			accel = DataManager.get_speed_change("acceleration", ship_state.ship.maneuverability.to_lower())
-		current_planning_ui.show_plotting_controls(ship_id, remaining_ma_val, table_ma, speed_last_turn, accel)
+		var can_submit_val: bool = movement_client.can_submit if movement_client else false
+		current_planning_ui.show_plotting_controls(ship_id, remaining_ma_val, table_ma, speed_last_turn, accel,
+			can_submit_val)
 		_update_tacking_display(is_tacking)
 	_rebuild_hover_candidates(vnh)
 	_show_collision_warning(_last_hover_hex)
