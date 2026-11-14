@@ -87,9 +87,25 @@ func test_no_shot_reason_maps_calculator_reasons_to_plain_words() -> void:
 	assert_eq(FirePanel.no_shot_reason([]), "no enemy afloat")
 
 
-func test_arc_colors_one_per_side() -> void:
-	assert_eq(FirePanel.ARC_COLORS.size(), 2)
-	assert_ne(FirePanel.ARC_COLORS[0], FirePanel.ARC_COLORS[1])
+func test_broadside_colors_one_opaque_colour_per_side() -> void:
+	assert_ne(BroadsideColors.color(ShipState.PORT), BroadsideColors.color(ShipState.STARBOARD))
+	assert_eq(BroadsideColors.color(ShipState.PORT).a, 1.0)
+	var fill := BroadsideColors.fill(ShipState.PORT)
+	var solid := BroadsideColors.color(ShipState.PORT)
+	assert_eq(Color(fill.r, fill.g, fill.b), Color(solid.r, solid.g, solid.b), "fill is the same hue")
+
+
+func test_arc_on_the_map_uses_the_swatch_colour() -> void:
+	var overlay = load("res://scripts/view/hex_overlay.gd").new()
+	add_child_autofree(overlay)
+	overlay.arc_grid = HexGrid.new()
+	var hexes: Array[Vector2i] = [Vector2i(1, 0)]
+	overlay.show_arc(hexes, ShipState.PORT)
+	var rim_colors: Array = []
+	for child in overlay.arcs_node.get_children():
+		if child.name.begins_with("ArcRim"):
+			rim_colors.append(child.material_override.albedo_color)
+	assert_eq(rim_colors, [BroadsideColors.color(ShipState.PORT)])
 
 
 func test_modifier_lines_use_labels_and_signed_values() -> void:

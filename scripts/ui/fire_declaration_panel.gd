@@ -16,8 +16,6 @@ signal selection_changed(ship_id: String)
 
 const SIDE_NAMES := ["Port", "Starboard"]
 const SEPARATOR := " — "
-## Arc overlay colours, by side (port, starboard). The section headers show the same colour.
-const ARC_COLORS := [Color(0.95, 0.35, 0.2, 0.2), Color(0.2, 0.85, 0.35, 0.25)]
 const HIGH_ONLY_NOTE := "Range %d+: must fire high"
 const DISMANTLING_NOTE := "Dismantling shot reaches %d hexes"
 const D6_NOTE := "A d6 is added when you fire; higher is better."
@@ -384,8 +382,7 @@ func _build_side(parent: VBoxContainer, ship_id: String, side: int, ranked: Arra
 	title.add_theme_constant_override("separation", 6)
 	var swatch := ColorRect.new()
 	swatch.name = "ArcSwatch"
-	var arc_color: Color = ARC_COLORS[side]
-	swatch.color = Color(arc_color.r, arc_color.g, arc_color.b, 1.0)
+	swatch.color = BroadsideColors.color(side)  # the same constant draws this side's arc on the map
 	swatch.custom_minimum_size = Vector2(14, 14)
 	swatch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	title.add_child(swatch)

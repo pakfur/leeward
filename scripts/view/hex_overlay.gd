@@ -115,15 +115,52 @@ func show_blocked_hexes(hex_positions: Array[Vector2i], hex_grid: HexGrid) -> vo
 		_add_hex_mesh(blocked_hexes_node, world_pos, hex_grid.hex_size, _blocked_material)
 
 
-## Draw a translucent fire arc (one broadside). Arcs accumulate until clear_arcs().
-func show_arc(hexes: Array[Vector2i], color: Color) -> void:
+## Draw one broadside's fire arc in that side's colour (BroadsideColors): a faint fill and an
+## opaque rim, so the arc reads as the same colour as the fire panel's swatch on any water.
+## Arcs accumulate until clear_arcs().
+func show_arc(hexes: Array[Vector2i], side: int) -> void:
 	if arc_grid == null or arcs_node == null:
 		return
-	if not _arc_materials.has(color):
-		_arc_materials[color] = _create_material(color)
+	var fill_mat := _arc_material(BroadsideColors.fill(side))
+	var rim_mat := _arc_material(BroadsideColors.color(side))
 	for hex_pos in hexes:
 		var world_pos = arc_grid.axial_to_world(hex_pos.x, hex_pos.y)
-		_add_hex_mesh(arcs_node, world_pos, arc_grid.hex_size, _arc_materials[color])
+		_add_hex_mesh(arcs_node, world_pos, arc_grid.hex_size, fill_mat)
+		var rim := MeshInstance3D.new()
+		rim.name = "ArcRim"
+		rim.mesh = _create_hex_ring_mesh(arc_grid.hex_size * HEX_INSET, arc_grid.hex_size * HEX_INSET * 0.86)
+		rim.material_override = rim_mat
+		rim.position = Vector3(world_pos.x, OVERLAY_Y, world_pos.z)
+		arcs_node.add_child(rim)
+
+
+func _arc_material(color: Color) -> StandardMaterial3D:
+	if not _arc_materials.has(color):
+		_arc_materials[color] = _create_material(color)
+	return _arc_materials[color]
+
+
+## A flat hexagonal band between two radii (pointy-top), for arc rims.
+func _create_hex_ring_mesh(outer: float, inner: float) -> ArrayMesh:
+	var vertices := PackedVector3Array()
+	var indices := PackedInt32Array()
+	for i in range(6):
+		var angle := deg_to_rad(60.0 * i - 30.0)
+		vertices.append(Vector3(cos(angle) * outer, 0, sin(angle) * outer))
+		vertices.append(Vector3(cos(angle) * inner, 0, sin(angle) * inner))
+	for i in range(6):
+		var o0 := i * 2
+		var i0 := o0 + 1
+		var o1 := ((i + 1) % 6) * 2
+		var i1 := o1 + 1
+		indices.append_array([o0, o1, i0, i0, o1, i1])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
 
 
 ## Highlight the hexes of the currently chosen fire targets.

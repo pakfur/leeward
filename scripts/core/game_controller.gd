@@ -28,9 +28,6 @@ var _combat_playback_active: bool = false  # true from combat_log_ready until pl
 var _combat_playback_skip: bool = false
 const COMBAT_REVEAL_SECONDS := 0.6
 
-# Fire arc overlay colours (port / starboard broadsides); the fire panel's headers use the same
-const ARC_COLOR_PORT: Color = FirePanelScript.ARC_COLORS[ShipState.PORT]
-const ARC_COLOR_STARBOARD: Color = FirePanelScript.ARC_COLORS[ShipState.STARBOARD]
 const NO_SHOT_HEADLINE := "No broadside bears on an enemy this turn."
 
 # Views (presentation layer)
@@ -1001,9 +998,9 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 	hex_overlay.clear_arcs()
 	var geometry: FireGeometry = GameState.fire_geometry
 	hex_overlay.show_arc(geometry.broadside_hexes(ship_state.hex_position, ship_state.facing,
-		ShipState.PORT, FireGeometry.MAX_RANGE), ARC_COLOR_PORT)
+		ShipState.PORT, FireGeometry.MAX_RANGE), ShipState.PORT)
 	hex_overlay.show_arc(geometry.broadside_hexes(ship_state.hex_position, ship_state.facing,
-		ShipState.STARBOARD, FireGeometry.MAX_RANGE), ARC_COLOR_STARBOARD)
+		ShipState.STARBOARD, FireGeometry.MAX_RANGE), ShipState.STARBOARD)
 	var target_hexes: Array[Vector2i] = []
 	for target_id in fire_panel.get_target_ids(ship_id):
 		var target := GameState.get_ship(target_id)
