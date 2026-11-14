@@ -156,6 +156,15 @@ func test_simultaneous_fire_uses_pre_fire_state() -> void:
 	assert_eq(_fire_events().size(), 2)
 
 
+func test_fire_line_precedes_its_damage_line() -> void:
+	_sixes()
+	_fire([_order("a_ship", "b_ship")])
+	var types: Array = GameState.turn_log.events.map(func(e): return e.type)
+	var damage_at := types.find(PhaseEvents.Type.DAMAGE)
+	assert_gt(damage_at, -1, "the broadside does damage")
+	assert_lt(types.find(PhaseEvents.Type.FIRE), damage_at)
+
+
 func test_initial_broadside_spent_after_firing() -> void:
 	_sixes()
 	_fire([_order("a_ship", "b_ship")])

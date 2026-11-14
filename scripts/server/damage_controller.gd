@@ -24,6 +24,9 @@ func apply_hits(ship_id: String, rigging: int, hull: int, crew: int, crew_cause:
 		push_error("[Server] Ship not found: %s" % ship_id)
 		return
 	var struck_before := ship.is_struck()
+	# The DAMAGE line is the cause; guns dismounted, morale checks and a strike logged while the
+	# hits are applied are its consequences, so it goes in ahead of them.
+	var damage_index: int = game_state.turn_log.events.size()
 
 	var rigging_applied := _apply_rigging(ship, ship_id, rigging, phase, struck_before)
 	var hull_applied := _apply_hull(ship, ship_id, hull, phase, struck_before)
@@ -32,7 +35,7 @@ func apply_hits(ship_id: String, rigging: int, hull: int, crew: int, crew_cause:
 	var crew_applied := _apply_crew(ship, ship_id, crew, crew_cause, phase, struck_before, crew_rolls)
 	var marines_lost := marines_before - ship.marine_count
 
-	game_state.turn_log.add(PhaseEvents.Type.DAMAGE, phase, ship_id, {
+	game_state.turn_log.insert(damage_index, PhaseEvents.Type.DAMAGE, phase, ship_id, {
 		"rigging": rigging_applied,
 		"hull": hull_applied,
 		"crew": crew_applied,

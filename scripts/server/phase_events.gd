@@ -383,6 +383,14 @@ class PhaseLog extends RefCounted:
 		events.append(ev)
 		return ev
 
+	## Like add, but places the event at `index` (clamped to the log), so a cause can be logged
+	## ahead of consequences that were recorded while it was being worked out.
+	func insert(index: int, type: Type, phase: int, ship_id: String, data: Dictionary = {},
+			target_id: String = "") -> PhaseEvent:
+		var ev := PhaseEvent.new(type, phase, ship_id, data, target_id)
+		events.insert(clampi(index, 0, events.size()), ev)
+		return ev
+
 	func of_type(type: Type) -> Array[PhaseEvent]:
 		var result: Array[PhaseEvent] = []
 		for ev in events:

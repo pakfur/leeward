@@ -207,6 +207,29 @@ func test_guns_and_morale_events() -> void:
 	assert_eq(morale[0].data["count"], 1)
 
 
+func test_damage_line_precedes_its_consequences() -> void:
+	_hit(0, 21, 0)
+	var types: Array = []
+	for ev in GameState.turn_log.events:
+		types.append(ev.type)
+	assert_eq(types[0], PhaseEvents.Type.DAMAGE, "the loss is logged before what it causes")
+	var damage_at := types.find(PhaseEvents.Type.DAMAGE)
+	assert_lt(damage_at, types.find(PhaseEvents.Type.GUNS_DISMOUNTED))
+	assert_lt(damage_at, types.find(PhaseEvents.Type.MORALE_NOTED))
+	assert_lt(damage_at, types.find(PhaseEvents.Type.STRIKE))
+	assert_eq(types.count(PhaseEvents.Type.DAMAGE), 1)
+	# Consequences keep their own order: section 1 guns, its morale, ... then the strike last.
+	assert_eq(types.back(), PhaseEvents.Type.STRIKE)
+	assert_lt(types.find(PhaseEvents.Type.GUNS_DISMOUNTED), types.find(PhaseEvents.Type.MORALE_NOTED))
+
+
+func test_damage_line_follows_earlier_events_in_the_log() -> void:
+	GameState.turn_log.add(PhaseEvents.Type.FIRE, 4, "enemy", {}, "hit_ship")
+	_hit(0, 5, 0)
+	assert_eq(GameState.turn_log.events[0].type, PhaseEvents.Type.FIRE)
+	assert_eq(GameState.turn_log.events[1].type, PhaseEvents.Type.DAMAGE)
+
+
 func test_already_struck_ship_notes_nothing() -> void:
 	ctrl.strike("hit_ship", "test", 4)
 	_hit(0, 5, 0)
