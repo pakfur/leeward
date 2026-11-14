@@ -70,6 +70,8 @@ func test_summary_collects_every_displayed_value() -> void:
 	assert_eq(summary["enemy_points"], "2.0")
 	assert_eq(summary["player_struck"], "1 of 2")
 	assert_eq(summary["enemy_struck"], "2 of 2")
+	assert_eq(summary["points_note"],
+		"Points: full value for each enemy ship struck, part value for sections destroyed.")
 
 
 func test_summary_tolerates_missing_fields() -> void:

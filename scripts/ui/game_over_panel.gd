@@ -10,11 +10,14 @@ signal back_requested()
 const PLAYER_ID := 0
 const ENEMY_ID := 1
 const PANEL_SIZE := Vector2(460, 0)
+const TOP_MARGIN := 24.0  # gap above the card: it sits at the upper centre, clear of the ships
+const POINTS_NOTE := "Points: full value for each enemy ship struck, part value for sections destroyed."
 
 var _headline_label: Label
 var _reason_label: Label
 var _turn_label: Label
 var _grid: GridContainer
+var _points_note_label: Label
 var _back_button: Button
 
 
@@ -81,6 +84,7 @@ static func summary(result: Dictionary, ships: Array) -> Dictionary:
 		"enemy_points": points_text(float(points.get(ENEMY_ID, 0.0))),
 		"player_struck": struck_text(own["struck"], own["total"]),
 		"enemy_struck": struck_text(enemy["struck"], enemy["total"]),
+		"points_note": POINTS_NOTE,
 	}
 
 
@@ -125,6 +129,13 @@ func _ready() -> void:
 	_grid.add_theme_constant_override("h_separation", 24)
 	box.add_child(_grid)
 
+	_points_note_label = Label.new()
+	_points_note_label.name = "PointsNoteLabel"
+	_points_note_label.add_theme_font_size_override("font_size", 11)
+	_points_note_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_points_note_label.custom_minimum_size = Vector2(PANEL_SIZE.x - 48, 0)
+	box.add_child(_points_note_label)
+
 	box.add_child(HSeparator.new())
 
 	_back_button = Button.new()
@@ -141,6 +152,7 @@ func show_result(result: Dictionary, ships: Array) -> void:
 	_headline_label.text = text["headline"]
 	_reason_label.text = text["reason"]
 	_turn_label.text = text["turn"]
+	_points_note_label.text = text["points_note"]
 	for child in _grid.get_children():
 		child.queue_free()
 		_grid.remove_child(child)
@@ -152,10 +164,13 @@ func show_result(result: Dictionary, ships: Array) -> void:
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_grid.add_child(label)
 	visible = true
-	_center.call_deferred()  # after the layout has measured the new rows
+	_place.call_deferred()  # after the layout has measured the new rows
 
 
-## Centre over the map at the panel's minimum size.
-func _center() -> void:
+## Upper centre of the screen at the panel's minimum size, so the final position of the ships
+## (usually mid-map) stays visible below it.
+func _place() -> void:
 	reset_size()
-	set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_MINSIZE)
+	set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE)
+	offset_top = TOP_MARGIN
+	offset_bottom = TOP_MARGIN + size.y
