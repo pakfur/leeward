@@ -9,6 +9,7 @@ signal submit_pressed()
 signal cancel_pressed()
 signal end_planning_pressed()
 signal sail_change_requested(ship_id: String, target: String)  ## target "" cancels the plotted order
+signal status_requested(ship_id: String)  ## a card's Status button: show that ship's status panel
 
 const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
 
@@ -28,6 +29,7 @@ const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
 @onready var tacking_label: Label = %TackingLabel
 @onready var ma_limit_label: Label = %MALimitLabel
 @onready var collision_label: Label = %CollisionLabel
+@onready var allowance_note_label: Label = %AllowanceNoteLabel
 
 # Sail row
 @onready var sail_row: VBoxContainer = %SailRow
@@ -95,6 +97,7 @@ func _add_ship_to_list(ship_state: ShipState) -> void:
 	# Connect signals
 	list_item.selected.connect(func(): _on_ship_item_selected(ship_state.ship_id))
 	list_item.action_button_pressed.connect(func(action_type): _on_action_button_pressed(ship_state.ship_id, action_type))
+	list_item.status_pressed.connect(func(): status_requested.emit(ship_state.ship_id))
 
 	# Track the item
 	ship_list_items[ship_state.ship_id] = list_item
@@ -254,6 +257,7 @@ func show_plotting_controls(ship_id: String, remaining_ma_val: int, table_ma: in
 		_update_path_display([])
 		_update_button_states(false, can_submit_val, true)
 		set_collision_warning("")
+		set_allowance_note("")
 		var note := PlanningText.movement_limit_note(table_ma, _plot_max, speed_last_turn, acceleration)
 		if ma_limit_label:
 			ma_limit_label.text = note
@@ -264,6 +268,7 @@ func show_plotting_controls(ship_id: String, remaining_ma_val: int, table_ma: in
 func hide_plotting_controls() -> void:
 	if plotting_controls:
 		plotting_controls.visible = false
+	set_allowance_note("")
 	if tacking_label:
 		tacking_label.visible = false
 	set_collision_warning("")
@@ -273,6 +278,12 @@ func update_plotting_state(plotted_path_arr: Array, remaining_ma_val: int, can_s
 	_update_ma_display(remaining_ma_val)
 	_update_path_display(plotted_path_arr)
 	_update_button_states(not plotted_path_arr.is_empty(), can_submit_val, plotted_path_arr.is_empty())
+
+## The note under the readout when a pivot changed the allowance ("" hides it).
+func set_allowance_note(text: String) -> void:
+	if allowance_note_label:
+		allowance_note_label.text = text
+		allowance_note_label.visible = text != ""
 
 ## "" hides the warning.
 func set_collision_warning(text: String) -> void:

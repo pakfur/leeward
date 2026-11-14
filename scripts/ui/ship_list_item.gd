@@ -3,6 +3,7 @@ extends PanelContainer
 
 signal selected()
 signal action_button_pressed(action_type: String)
+signal status_pressed()  ## the Status button: open this ship's status panel
 
 @onready var ship_icon: TextureRect = %ShipIcon
 @onready var ship_name_label: Label = %ShipNameLabel
@@ -12,6 +13,7 @@ signal action_button_pressed(action_type: String)
 @onready var movement_button: Button = %MovementButton
 @onready var crew_button: Button = %CrewButton
 @onready var maintenance_button: Button = %MaintenanceButton
+@onready var status_button: Button = %StatusButton
 
 var ship_state: ShipState = null
 var is_selected: bool = false
@@ -63,6 +65,10 @@ func _ready() -> void:
 		crew_button.pressed.connect(_on_crew_pressed)
 	if maintenance_button:
 		maintenance_button.pressed.connect(_on_maintenance_pressed)
+
+	if status_button:
+		status_button.focus_mode = Control.FOCUS_NONE
+		status_button.pressed.connect(func(): status_pressed.emit())
 
 	# Make the panel clickable
 	gui_input.connect(_on_gui_input)

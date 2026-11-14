@@ -48,6 +48,8 @@ var _hover_candidates: Dictionary = {}  # Vector2i hex -> int resulting_facing (
 var _last_hover_hex: Vector2i = Vector2i(-99, -99)  # avoids re-raycasting when the hovered hex is unchanged
 var _collision_names: Dictionary = {}  # offered hex -> name of the ship already in it
 var _path_collision_text: String = ""  # warning when the plotted path enters another ship's hex
+var _ma_by_len: Dictionary = {}  # plotted path length -> server's remaining movement at that length
+var _allowance_notes: Dictionary = {}  # plotted path length -> allowance-change note for that step
 
 # Resolution playback
 var playback_controller: MovementResolutionPlaybackController = null
@@ -465,6 +467,8 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 	# Selection is a planning-time affordance — clear it (and any hover) on every phase change
 	# so the one-shot indicator snapshot can't go stale across resolution/turn boundaries.
 	_deselect_ship()
+	if indicator_overlay:
+		indicator_overlay.set_info_enabled(true)
 	_hover_candidates.clear()
 	_clear_hover()
 	_close_fire_panel()
@@ -511,6 +515,7 @@ func _enter_planning_phase() -> void:
 		current_planning_ui.cancel_pressed.connect(_on_plotting_cancel_pressed)
 		current_planning_ui.end_planning_pressed.connect(_on_end_planning_pressed)
 		current_planning_ui.sail_change_requested.connect(_on_sail_change_requested)
+		current_planning_ui.status_requested.connect(_on_info_toggled)
 
 	# Load into context panel (must be done before setup to ensure @onready nodes are available)
 	if context_panel:
@@ -646,6 +651,11 @@ func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_va
 	# Plotting one of our ships: a status panel left open for another ship would compete with it.
 	if ship_status_panel:
 		ship_status_panel.hide_unless_showing(ship_id)
+	# Nothing clickable may sit over the hexes while a course is being plotted.
+	if indicator_overlay:
+		indicator_overlay.set_info_enabled(false)
+	_ma_by_len = {0: remaining_ma_val}
+	_allowance_notes.clear()
 	var vnh = valid_hexes as MovementTypes.ValidNextHexes
 	_update_collision_hexes(vnh, [])
 	var ship_state = GameState.get_ship(ship_id)
@@ -702,9 +712,33 @@ func _show_plot_step(plotted_path: Array, vnh: MovementTypes.ValidNextHexes, can
 
 	if current_planning_ui:
 		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
+		current_planning_ui.set_allowance_note(_track_allowance_change(plotted_path, remaining_ma_val))
 		_update_tacking_display(is_tacking)
 	_rebuild_hover_candidates(vnh)
 	_show_collision_warning(_last_hover_hex)
+
+## Record the server's remaining movement for this path length and return the note to show: the
+## latest step whose pivot changed the allowance (not just spent a point), "" when none did.
+func _track_allowance_change(plotted_path: Array, remaining_ma_val: int) -> String:
+	var n := plotted_path.size()
+	for length in _ma_by_len.keys():
+		if length > n:
+			_ma_by_len.erase(length)
+			_allowance_notes.erase(length)
+	if n > 0 and _ma_by_len.has(n - 1) and not _ma_by_len.has(n):
+		var ship_state: ShipState = GameState.get_ship(movement_client.active_ship_id) if movement_client else null
+		if ship_state and hex_map and GameState.environment:
+			var grid: HexGrid = hex_map.get_hex_grid()
+			var wind: int = GameState.environment.wind_direction
+			var old_facing: int = plotted_path[n - 2].facing if n >= 2 else ship_state.facing
+			_allowance_notes[n] = PlanningText.allowance_change_note(_ma_by_len[n - 1], remaining_ma_val,
+				grid.get_wind_facing(old_facing, wind), grid.get_wind_facing(plotted_path[n - 1].facing, wind))
+	_ma_by_len[n] = remaining_ma_val
+	for length in range(n, 0, -1):
+		if str(_allowance_notes.get(length, "")) != "":
+			return _allowance_notes[length]
+	return ""
+
 
 ## Which offered hexes hold another ship, and whether the plotted path already enters one.
 func _update_collision_hexes(vnh: MovementTypes.ValidNextHexes, plotted_path: Array) -> void:
@@ -742,6 +776,8 @@ func _rebuild_hover_candidates(valid_hexes: MovementTypes.ValidNextHexes) -> voi
 		_hover_candidates[vm.hex] = vm.metadata.resulting_facing
 
 func _on_plotting_cancelled(ship_id: String) -> void:
+	if indicator_overlay:
+		indicator_overlay.set_info_enabled(true)
 	_hover_candidates.clear()
 	_collision_names.clear()
 	_path_collision_text = ""
@@ -754,6 +790,8 @@ func _on_plotting_cancelled(ship_id: String) -> void:
 		current_planning_ui.hide_plotting_controls()
 
 func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
+	if indicator_overlay:
+		indicator_overlay.set_info_enabled(true)
 	_hover_candidates.clear()
 	_collision_names.clear()
 	_path_collision_text = ""

@@ -73,3 +73,20 @@ func test_name_and_type_skips_a_type_the_name_already_says() -> void:
 	s.ship.name = ""
 	s.ship.ship_name = "Topaze"
 	assert_eq(PlanningText.name_and_type(s), "Topaze")
+
+
+# --- Allowance change after a pivot -----------------------------------------------------------
+
+func test_allowance_note_when_a_pivot_changes_the_point_of_sail_and_the_allowance() -> void:
+	# 1 left before the pivot; spending a point would leave 0, but the new heading allows more.
+	assert_eq(PlanningText.allowance_change_note(1, 3, "B", "C"),
+		"Allowance changed on the new heading (broad reach → close hauled)")
+	assert_eq(PlanningText.allowance_change_note(3, 0, "C", "L"),
+		"Allowance changed on the new heading (close hauled → in irons)")
+
+
+func test_no_allowance_note_for_an_ordinary_step() -> void:
+	assert_eq(PlanningText.allowance_change_note(4, 3, "B", "B"), "", "forward step spends one point")
+	assert_eq(PlanningText.allowance_change_note(4, 3, "B", "C"), "", "pivot that only spends its point")
+	assert_eq(PlanningText.allowance_change_note(2, 2, "B", "B"), "", "same point of sail: not a heading change")
+	assert_eq(PlanningText.allowance_change_note(0, 0, "B", "C"), "", "nothing left either way")

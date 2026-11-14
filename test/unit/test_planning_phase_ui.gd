@@ -94,3 +94,19 @@ func test_submit_and_undo_after_a_step() -> void:
 	ui.update_plotting_state([], 4, true)
 	assert_eq(ui.submit_button.text, "Submit (hold position)")
 	assert_true(ui.undo_button.disabled)
+
+
+func test_status_button_on_a_card_asks_for_that_ships_status() -> void:
+	watch_signals(ui)
+	var card = ui.ship_list_items["p2"]
+	card.status_button.pressed.emit()
+	assert_signal_emitted_with_parameters(ui, "status_requested", ["p2"])
+
+
+func test_allowance_note_shows_under_the_readout_and_hides_when_empty() -> void:
+	ui.show_plotting_controls("p1", 4, 4)
+	ui.set_allowance_note("Allowance changed on the new heading (broad reach → close hauled)")
+	assert_true(ui.allowance_note_label.visible)
+	assert_eq(ui.allowance_note_label.text, "Allowance changed on the new heading (broad reach → close hauled)")
+	ui.set_allowance_note("")
+	assert_false(ui.allowance_note_label.visible)

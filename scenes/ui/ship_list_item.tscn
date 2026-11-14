@@ -86,3 +86,9 @@ size_flags_horizontal = 3
 disabled = true
 toggle_mode = true
 text = "Maintenance"
+
+[node name="StatusButton" type="Button" parent="MarginContainer/VBoxContainer/ActionButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Show this ship's status"
+text = "Status"

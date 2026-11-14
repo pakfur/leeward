@@ -39,6 +39,18 @@ static func movement_limit_note(table_ma: int, maximum: int, speed_last_turn: in
 		speed_last_turn, acceleration, table_ma]
 
 
+## One line under the readout when a pivot changed the allowance itself (the movement table gives a
+## different number on the new point of sail) instead of only spending its point. `before` and
+## `after` are the server's remaining movement either side of the step; `old_code` / `new_code`
+## are the wind-facing codes (L, C, B, R) of the heading before and after it. "" otherwise.
+static func allowance_change_note(before: int, after: int, old_code: String, new_code: String) -> String:
+	if old_code == new_code or after == before - 1 or (before <= 0 and after <= 0):
+		return ""
+	return "Allowance changed on the new heading (%s → %s)" % [
+		ShipIndicatorModel.point_of_sail_label(old_code).to_lower(),
+		ShipIndicatorModel.point_of_sail_label(new_code).to_lower()]
+
+
 ## The instruction line under the ship list. `needing`: ships still without orders;
 ## `unable`: ships that cannot move at all (fouled, struck, dismasted).
 static func instructions(needing: int, total: int, unable: int) -> String:
