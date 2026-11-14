@@ -139,6 +139,7 @@ func _setup_combat_log_panel() -> void:
 	combat_log_panel = CombatLogPanelScene.instantiate()
 	if ui:
 		ui.add_child(combat_log_panel)
+		combat_log_panel.status_panel = ship_status_panel  # the bar stops short of it
 		combat_log_panel.skip_requested.connect(_skip_combat_playback)
 
 func _setup_hex_overlay() -> void:
