@@ -784,7 +784,8 @@ func _show_plot_step(plotted_path: Array, vnh: MovementTypes.ValidNextHexes, can
 
 	if current_planning_ui:
 		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
-		current_planning_ui.set_allowance_note(_track_allowance_change(plotted_path, remaining_ma_val))
+		current_planning_ui.set_allowance_note(PlanningText.plot_note(
+			_track_allowance_change(plotted_path, remaining_ma_val), _plotted_heading_code(plotted_path)))
 		_update_tacking_display(is_tacking)
 	_rebuild_hover_candidates(vnh)
 	_show_collision_warning(_last_hover_hex)
@@ -810,6 +811,13 @@ func _track_allowance_change(plotted_path: Array, remaining_ma_val: int) -> Stri
 		if str(_allowance_notes.get(length, "")) != "":
 			return _allowance_notes[length]
 	return ""
+
+
+## Wind-facing code (L, C, B, R) of the heading at the end of the plotted path ("" if unknown).
+func _plotted_heading_code(plotted_path: Array) -> String:
+	if plotted_path.is_empty() or not hex_map or not GameState.environment:
+		return ""
+	return hex_map.get_hex_grid().get_wind_facing(plotted_path[-1].facing, GameState.environment.wind_direction)
 
 
 ## Which offered hexes hold another ship, and whether the plotted path already enters one.

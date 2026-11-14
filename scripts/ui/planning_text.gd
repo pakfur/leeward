@@ -51,6 +51,17 @@ static func allowance_change_note(before: int, after: int, old_code: String, new
 		ShipIndicatorModel.point_of_sail_label(new_code).to_lower()]
 
 
+const IRONS_NOTE := "Head to wind: the ship will be in irons and movement ends here."
+
+
+## The note under the movement readout: the allowance-change note (may be ""), plus the irons
+## warning whenever the plotted heading's wind-facing code is "L" (head to wind).
+static func plot_note(allowance_note: String, heading_code: String) -> String:
+	if heading_code != "L":
+		return allowance_note
+	return IRONS_NOTE if allowance_note == "" else allowance_note + "\n" + IRONS_NOTE
+
+
 ## The instruction line under the ship list. `needing`: ships still without orders;
 ## `unable`: ships that cannot move at all (fouled, struck, dismasted).
 static func instructions(needing: int, total: int, unable: int) -> String:

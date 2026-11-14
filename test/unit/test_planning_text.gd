@@ -90,3 +90,18 @@ func test_no_allowance_note_for_an_ordinary_step() -> void:
 	assert_eq(PlanningText.allowance_change_note(4, 3, "B", "C"), "", "pivot that only spends its point")
 	assert_eq(PlanningText.allowance_change_note(2, 2, "B", "B"), "", "same point of sail: not a heading change")
 	assert_eq(PlanningText.allowance_change_note(0, 0, "B", "C"), "", "nothing left either way")
+
+
+# --- Head to wind ---------------------------------------------------------------------------
+
+func test_head_to_wind_note_shown_whenever_the_plotted_heading_is_into_the_wind() -> void:
+	# The remaining movement may be unchanged by the pivot: the irons note still shows.
+	assert_eq(PlanningText.plot_note("", "L"), PlanningText.IRONS_NOTE)
+	assert_eq(PlanningText.IRONS_NOTE, "Head to wind: the ship will be in irons and movement ends here.")
+	assert_eq(PlanningText.plot_note("Allowance changed on the new heading (close hauled → in irons)", "L"),
+		"Allowance changed on the new heading (close hauled → in irons)\n" + PlanningText.IRONS_NOTE)
+
+
+func test_no_head_to_wind_note_off_the_wind() -> void:
+	assert_eq(PlanningText.plot_note("", "C"), "")
+	assert_eq(PlanningText.plot_note("note", "B"), "note")
