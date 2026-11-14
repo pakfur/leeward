@@ -771,7 +771,7 @@ func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_va
 
 		# Show blocked directions as red overlays
 		if ship_state:
-			var blocked = _calculate_blocked_hexes(vnh, ship_state.hex_position, ship_state.facing, hex_grid)
+			var blocked = blocked_hexes_for(vnh, ship_state.hex_position, ship_state.facing, hex_grid)
 			hex_overlay.show_blocked_hexes(blocked, hex_grid)
 
 	if current_planning_ui:
@@ -813,7 +813,7 @@ func _show_plot_step(plotted_path: Array, vnh: MovementTypes.ValidNextHexes, can
 			var ship_state = GameState.get_ship(movement_client.active_ship_id)
 			current_hex = ship_state.hex_position
 			current_facing = ship_state.facing
-		var blocked = _calculate_blocked_hexes(vnh, current_hex, current_facing, hex_grid)
+		var blocked = blocked_hexes_for(vnh, current_hex, current_facing, hex_grid)
 		hex_overlay.show_blocked_hexes(blocked, hex_grid)
 
 	if current_planning_ui:
@@ -949,11 +949,16 @@ func _update_tacking_display(is_tacking: bool) -> void:
 	current_planning_ui.update_tacking_state(true, probability)
 
 
-func _calculate_blocked_hexes(valid_hexes: MovementTypes.ValidNextHexes,
+## Hexes to mark as blocked around the plotting ship: the forward / port / starboard neighbours the
+## server refuses. When the server offers no move at all (head to wind ended the move, in irons, or
+## nothing left), the plot is over and nothing is drawn around the ship.
+static func blocked_hexes_for(valid_hexes: MovementTypes.ValidNextHexes,
 	current_hex: Vector2i,
 	current_facing: int,
 	hex_grid: HexGrid) -> Array[Vector2i]:
 	var blocked: Array[Vector2i] = []
+	if valid_hexes == null or not valid_hexes.has_any_moves():
+		return blocked
 	if valid_hexes.forward.is_empty():
 		blocked.append(hex_grid.get_neighbor(current_hex.x, current_hex.y, current_facing))
 	if valid_hexes.port == null:
