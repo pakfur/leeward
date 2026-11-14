@@ -15,8 +15,8 @@ extends PanelContainer
 @onready var ma_label: Label = %MALabel
 @onready var close_button: Button = %CloseButton
 
-const SAIL_NAMES := {"FS": "Fighting Sail", "MS": "Maneuvering Sail", "PS": "Plain Sail", "NS": "No Sail"}
-const MORALE_NAMES := ["", "", "Low", "Fair", "Good", "High"]
+const HEADING_NAMES := ["east", "south-east", "south-west", "west", "north-west", "north-east"]
+const HUMAN_PLAYER_ID := 0
 
 var current_ship_state: ShipState = null
 var _extra_label: Label = null  # marines, guns dismounted, pending sail change
@@ -57,11 +57,48 @@ static func box_line(label: String, current: Array[int], maximum: Array[int]) ->
 
 
 static func sail_line(s: ShipState) -> String:
-	var text := "Sail: %s" % SAIL_NAMES.get(s.sail_state, s.sail_state)
+	var text := "Sail: %s" % PlanningSailUi.sail_label(s.sail_state)
 	var moves_as := s.movement_sail_state()
 	if moves_as != s.sail_state.to_upper():
-		text += " (moves as %s)" % moves_as
+		text += " (moves as %s)" % PlanningSailUi.sail_label(moves_as).to_lower()
 	return text
+
+
+## Owner, plus the ship type only when it says something the name does not.
+static func identity_line(s: ShipState) -> String:
+	var side := "Yours" if s.player_id == HUMAN_PLAYER_ID else "Enemy"
+	var type_name: String = s.ship.name if s.ship else s.ship_type
+	if type_name != "" and type_name.to_lower() != s.ship_name.to_lower():
+		return "%s · %s" % [side, type_name]
+	return side
+
+
+static func heading_line(facing: int) -> String:
+	return "Heading: %s" % (HEADING_NAMES[facing] if facing >= 0 and facing < HEADING_NAMES.size() else "?")
+
+
+static func speed_line(speed: int) -> String:
+	return "Speed last turn: %d %s" % [speed, "hex" if speed == 1 else "hexes"]
+
+
+## "Movement allowance this turn: 5", or why the ship cannot move at all.
+## `partner_name` names the ship it is fouled with (used only when fouled).
+static func movement_line(s: ShipState, allowance: int, partner_name: String = "") -> String:
+	if s.is_struck():
+		return "Cannot move (struck)"
+	if s.is_dismasted():
+		return "Cannot move (dismasted)"
+	if s.fouled_with != "":
+		return "Cannot move (fouled with %s)" % (partner_name if partner_name != "" else s.fouled_with)
+	return "Movement allowance this turn: %d" % allowance
+
+
+static func crew_quality_line(quality: String) -> String:
+	return "Crew quality %s (of A–G)" % quality
+
+
+static func morale_line(morale: int) -> String:
+	return "Morale rating %d (2 best – 6 worst)" % morale
 
 
 ## "" when no sail change is ordered or underway.
@@ -69,10 +106,10 @@ static func sail_change_line(s: ShipState) -> String:
 	if not s.sail_change.is_empty():
 		var turns: int = s.sail_change.get("turns_left", 0)
 		return "Sail change: %s, %d %s left" % [
-			s.sail_change.get("target", "?"), turns, "turn" if turns == 1 else "turns"]
+			PlanningSailUi.sail_label(s.sail_change.get("target", "?")), turns, "turn" if turns == 1 else "turns"]
 	var ordered: String = s.plotted_actions.get("sail_change", "")
 	if ordered != "":
-		return "Sail change ordered: %s" % ordered
+		return "Sail change ordered: %s" % PlanningSailUi.sail_label(ordered)
 	return ""
 
 
@@ -87,7 +124,8 @@ static func badges(s: ShipState) -> Array[String]:
 	return result
 
 
-## Damage and condition lines in display order (guns line only when something is dismounted).
+## Damage and condition lines in display order: rigging, hull, crew, marines, [guns, only when
+## something is dismounted], crew quality, morale.
 static func status_lines(s: ShipState) -> Array[String]:
 	var lines: Array[String] = []
 	var ship: Ship = s.ship
@@ -97,8 +135,8 @@ static func status_lines(s: ShipState) -> Array[String]:
 	lines.append("Marines %d/%d" % [s.marine_count, ship.marine_count if ship else 0])
 	if s.guns_dismounted[0] > 0 or s.guns_dismounted[1] > 0:
 		lines.append("Guns dismounted: port %d, starboard %d" % [s.guns_dismounted[0], s.guns_dismounted[1]])
-	var morale: String = MORALE_NAMES[s.morale_rating] if s.morale_rating >= 0 and s.morale_rating < MORALE_NAMES.size() else "Unknown"
-	lines.append("Quality %s · Morale %s (%d)" % [s.crew_quality, morale, s.morale_rating])
+	lines.append(crew_quality_line(s.crew_quality))
+	lines.append(morale_line(s.morale_rating))
 	return lines
 
 func show_ship_status_from_state(ship_state: ShipState) -> void:
@@ -112,43 +150,45 @@ func _update_display() -> void:
 		return
 
 	var s = current_ship_state
-	var lines := status_lines(s)  # rigging, hull, crew, marines, [guns], quality/morale
+	var ship: Ship = s.ship
+	var no_max: Array[int] = []
 
 	if ship_name_label:
 		ship_name_label.text = s.ship_name
 
 	if ship_type_label:
-		ship_type_label.text = s.ship.name if s.ship else s.ship_type
+		ship_type_label.text = identity_line(s)
 
 	if position_label:
 		position_label.text = "Position: (%d, %d)" % [s.hex_position.x, s.hex_position.y]
 
 	if facing_label:
-		var facing_names = ["E", "SE", "SW", "W", "NW", "NE"]
-		facing_label.text = "Facing: %s (%d)" % [facing_names[s.facing], s.facing]
+		facing_label.text = heading_line(s.facing)
 
 	if speed_label:
-		speed_label.text = "Speed: %d hexes/turn" % s.speed
+		speed_label.text = speed_line(s.speed)
 
 	if sail_state_label:
 		sail_state_label.text = sail_line(s)
 
 	if rigging_label:
-		rigging_label.text = "%s (max sail %s)" % [lines[0], s.max_sail_state()]
+		rigging_label.text = "%s (carries up to %s)" % [
+			box_line("Rigging", s.rigging_current_hp, ship.rigging_hp if ship else no_max),
+			PlanningSailUi.sail_label(s.max_sail_state()).to_lower()]
 
 	if hull_label:
-		hull_label.text = lines[1]
+		hull_label.text = box_line("Hull", s.hull_current_hp, ship.hull_hp if ship else no_max)
 
 	if crew_label:
-		crew_label.text = lines[2]
+		crew_label.text = box_line("Crew", s.crew_count, ship.crew_count if ship else no_max)
 
 	if morale_label:
-		morale_label.text = lines[lines.size() - 1]
+		morale_label.text = "%s\n%s" % [crew_quality_line(s.crew_quality), morale_line(s.morale_rating)]
 
 	if _extra_label:
-		var extra: Array[String] = [lines[3]]
-		if lines.size() > 5:
-			extra.append(lines[4])
+		var extra: Array[String] = ["Marines %d/%d" % [s.marine_count, ship.marine_count if ship else 0]]
+		if s.guns_dismounted[0] > 0 or s.guns_dismounted[1] > 0:
+			extra.append("Guns dismounted: port %d, starboard %d" % [s.guns_dismounted[0], s.guns_dismounted[1]])
 		var change := sail_change_line(s)
 		if change != "":
 			extra.append(change)
@@ -159,13 +199,19 @@ func _update_display() -> void:
 		_badge_label.visible = not _badge_label.text.is_empty()
 
 	if ma_label:
-		# Read-only query — OK from UI layer  SCV:ALLOW
+		# Read-only queries — OK from UI layer  SCV:ALLOW
 		var ma = GameState.ship_controller.get_movement_allowance(s.ship_id) if GameState.ship_controller else 0
-		ma_label.text = "Movement Allowance: %d" % ma
+		var partner: ShipState = GameState.get_ship(s.fouled_with) if s.fouled_with != "" else null
+		ma_label.text = movement_line(s, ma, partner.ship_name if partner else "")
 
 func _on_close_pressed() -> void:
 	visible = false
 	current_ship_state = null
+
+## Close the panel if it shows a ship other than `ship_id`.
+func hide_unless_showing(ship_id: String) -> void:
+	if visible and current_ship_state and current_ship_state.ship_id != ship_id:
+		_on_close_pressed()
 
 func toggle(ship_state: ShipState) -> void:
 	"""Toggle the panel for a ship: hide if already showing it, otherwise show it."""

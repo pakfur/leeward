@@ -165,7 +165,8 @@ func test_status_lines_show_boxes_marines_quality_and_morale() -> void:
 	assert_has(lines, "Rigging 5/5 5/5 6/6 6/6")
 	assert_has(lines, "Crew 3/3 3/3 3/3 3/3")
 	assert_has(lines, "Marines 4/4")
-	assert_true(lines.any(func(l): return l.contains("Quality B") and l.contains("Morale")))
+	assert_has(lines, "Crew quality B (of A–G)")
+	assert_has(lines, "Morale rating %d (2 best – 6 worst)" % s.morale_rating)
 
 
 func test_guns_dismounted_only_shown_when_non_zero() -> void:
@@ -177,19 +178,19 @@ func test_guns_dismounted_only_shown_when_non_zero() -> void:
 
 func test_sail_line_notes_when_it_moves_as_a_lighter_sail() -> void:
 	var s := _make_ship()
-	assert_eq(StatusPanel.sail_line(s), "Sail: Maneuvering Sail")
+	assert_eq(StatusPanel.sail_line(s), "Sail: Manoeuvring sail")
 	s.sail_state = "PS"
 	s.rigging_current_hp = [0, 5, 6, 6] as Array[int]  # 3 sections -> max MS
-	assert_eq(StatusPanel.sail_line(s), "Sail: Plain Sail (moves as MS)")
+	assert_eq(StatusPanel.sail_line(s), "Sail: Plain sail (moves as manoeuvring sail)")
 
 
 func test_pending_sail_change_line_covers_underway_and_ordered() -> void:
 	var s := _make_ship()
 	assert_eq(StatusPanel.sail_change_line(s), "")
 	s.plotted_actions["sail_change"] = "FS"
-	assert_eq(StatusPanel.sail_change_line(s), "Sail change ordered: FS")
+	assert_eq(StatusPanel.sail_change_line(s), "Sail change ordered: Fighting sail")
 	s.sail_change = {"target": "PS", "turns_left": 2, "sections": [0]}
-	assert_eq(StatusPanel.sail_change_line(s), "Sail change: PS, 2 turns left")
+	assert_eq(StatusPanel.sail_change_line(s), "Sail change: Plain sail, 2 turns left")
 
 
 func test_badges_for_fouled_struck_and_dismasted() -> void:
@@ -199,6 +200,37 @@ func test_badges_for_fouled_struck_and_dismasted() -> void:
 	s.status = ShipState.Status.STRUCK
 	s.rigging_current_hp = [0, 0, 0, 0] as Array[int]
 	assert_eq(StatusPanel.badges(s), ["FOULED", "STRUCK", "DISMASTED"])
+
+
+func test_identity_line_shows_owner_and_type_only_when_it_differs() -> void:
+	var s := _make_ship()
+	assert_eq(StatusPanel.identity_line(s), "Yours · 38-gun Frigate")
+	s.ship.player_id = 1
+	s.ship.ship_name = "38-gun frigate"  # unnamed: the scenario fell back to the type name
+	assert_eq(StatusPanel.identity_line(s), "Enemy")
+
+
+func test_heading_and_speed_lines_in_words() -> void:
+	assert_eq(StatusPanel.heading_line(0), "Heading: east")
+	assert_eq(StatusPanel.heading_line(4), "Heading: north-west")
+	assert_eq(StatusPanel.speed_line(0), "Speed last turn: 0 hexes")
+	assert_eq(StatusPanel.speed_line(1), "Speed last turn: 1 hex")
+
+
+func test_crew_quality_and_morale_lines_carry_their_scales_without_adjectives() -> void:
+	assert_eq(StatusPanel.crew_quality_line("G"), "Crew quality G (of A–G)")
+	assert_eq(StatusPanel.morale_line(4), "Morale rating 4 (2 best – 6 worst)")
+
+
+func test_movement_line_says_why_a_ship_cannot_move() -> void:
+	var s := _make_ship()
+	assert_eq(StatusPanel.movement_line(s, 5), "Movement allowance this turn: 5")
+	s.fouled_with = "s2"
+	assert_eq(StatusPanel.movement_line(s, 5, "Foe"), "Cannot move (fouled with Foe)")
+	s.rigging_current_hp = [0, 0, 0, 0] as Array[int]
+	assert_eq(StatusPanel.movement_line(s, 0), "Cannot move (dismasted)")
+	s.status = ShipState.Status.STRUCK
+	assert_eq(StatusPanel.movement_line(s, 5), "Cannot move (struck)")
 
 
 # --- Ship names in log lines -------------------------------------------------------
