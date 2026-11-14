@@ -17,6 +17,7 @@ const FirePanelScript = preload("res://scripts/ui/fire_declaration_panel.gd")
 const CombatLogPanelScene = preload("res://scenes/ui/combat_log_panel.tscn")
 const GameOverPanelScene = preload("res://scenes/ui/game_over_panel.tscn")
 const OceanViewScript = preload("res://scripts/view/ocean_view.gd")
+const PauseMenuScript = preload("res://scripts/ui/pause_menu.gd")
 var current_planning_ui: Control = null
 var fire_panel: Control = null  # FireDeclarationPanel while fire orders are being declared
 var combat_panel: Control = null  # "Combat" context content while combat resolves / plays back
@@ -26,6 +27,9 @@ var end_turn_button: Button = null
 var game_over_panel: GameOverPanel = null  # modal result card; non-null once the game has ended
 var _combat_playback_active: bool = false  # true from combat_log_ready until playback finishes
 var _combat_playback_skip: bool = false
+var pause_menu: Control = null  # PauseMenu: Escape / the corner Menu button
+var menu_button: Button = null  # discreet corner button that opens the pause menu
+var _leave_pending: bool = false  # leaving once the running combat playback has stopped
 const COMBAT_REVEAL_SECONDS := 0.6
 
 const NO_SHOT_HEADLINE := "No broadside bears on an enemy this turn."
@@ -116,6 +120,8 @@ func _ready() -> void:
 		movement_client = MovementPlottingClient.new(GameState.movement_plotting_controller)
 		_connect_movement_signals()
 
+	_setup_pause_menu()
+
 	# Setup debug hex coordinate label
 	_setup_hex_coord_label()
 	if developer_ui:
@@ -152,6 +158,67 @@ func _setup_indicators() -> void:
 		ui.add_child(indicator_overlay)
 	indicator_overlay.setup(camera)
 	indicator_overlay.info_toggled.connect(_on_info_toggled)
+
+## The corner Menu button and the pause menu (added last so it draws over every other panel).
+func _setup_pause_menu() -> void:
+	menu_button = Button.new()
+	menu_button.name = "MenuButton"
+	menu_button.text = "Menu"
+	menu_button.tooltip_text = "Pause menu (Esc)"
+	menu_button.theme_type_variation = &"SecondaryButton"
+	menu_button.focus_mode = Control.FOCUS_NONE
+	menu_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 8)
+	menu_button.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	menu_button.pressed.connect(_open_pause_menu)
+	pause_menu = PauseMenuScript.new()
+	pause_menu.leave_confirmed.connect(_leave_game)
+	if ui:
+		ui.add_child(menu_button)
+		ui.add_child(pause_menu)
+	else:
+		add_child(menu_button)
+		add_child(pause_menu)
+
+
+func _open_pause_menu() -> void:
+	if game_over_panel or not pause_menu:
+		return
+	_clear_hover()
+	pause_menu.open()
+
+
+func is_pause_menu_open() -> bool:
+	return pause_menu != null and pause_menu.is_open()
+
+
+## Leave the game in progress for scenario selection, the way the game-over card does. A running
+## combat playback is stopped first (it must not tell the server it finished).
+func _leave_game() -> void:
+	Trace.trace_log("GameController", "Leaving the game in progress")
+	if movement_client and movement_client.is_plotting():
+		movement_client.cancel()
+	if _combat_playback_active:
+		_leave_pending = true
+		_combat_playback_skip = true
+		return
+	_on_back_to_scenarios()
+
+
+## Escape opens and closes the pause menu; _input so a focused button cannot swallow it.
+func _input(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE):
+		return
+	if not pause_menu:
+		return
+	match PauseMenuScript.escape_action(pause_menu.is_open(), game_over_panel != null):
+		PauseMenuScript.OPEN:
+			_open_pause_menu()
+		PauseMenuScript.CLOSE:
+			pause_menu.close()
+		_:
+			return
+	get_viewport().set_input_as_handled()
+
 
 func _setup_hex_coord_label() -> void:
 	hex_coord_label = Label.new()
@@ -274,6 +341,9 @@ func _spawn_ship(ship_data: Dictionary) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if game_over_panel:
 		return  # the result card is modal: nothing reaches the map
+	if is_pause_menu_open():
+		get_viewport().set_input_as_handled()  # no map, End Turn or skip keys while paused
+		return
 	if event is InputEventMouseMotion:
 		_update_plotting_hover(event.position)
 		return
@@ -1071,7 +1141,7 @@ func _play_combat_log(combat_log: PhaseEvents.PhaseLog) -> void:
 		combat_log_panel.set_skip_hint(not instant)
 	if not instant:
 		for ev in CombatLogPanel.playback_events(combat_log):
-			if _combat_playback_skip:
+			if _combat_playback_skip or _leave_pending:
 				break
 			combat_log_panel.set_reveal_limit(combat_log.events.find(ev) + 1)
 			if CombatLogPanel.syncs_views(ev):
@@ -1207,6 +1277,10 @@ func _on_game_over(result: Dictionary) -> void:
 		add_child(game_over_panel)
 	game_over_panel.show_result(result, GameState.get_all_ships())
 	game_over_panel.back_requested.connect(_on_back_to_scenarios)
+	if pause_menu:
+		pause_menu.close()
+	if menu_button:
+		menu_button.visible = false  # the result card has its own way out
 	_frame_final_position.call_deferred()
 
 
