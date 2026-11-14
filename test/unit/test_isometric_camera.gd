@@ -93,3 +93,53 @@ func test_pan_moves_target_with_drag_at_straight_down() -> void:
 	camera.camera_target = Vector3.ZERO
 	camera.pan_camera(Vector2(0, 10))
 	assert_lt(camera.camera_target.z, 0.0, "dragging down moves the target north (map follows mouse)")
+
+
+# --- plan_frame (keep two ships on screen) ---------------------------------------------
+
+const VP := Vector2(1000, 800)
+
+
+func _pts(a: Vector3, b: Vector3) -> Array[Vector3]:
+	var points: Array[Vector3] = [a, b]
+	return points
+
+
+func test_plan_frame_pans_to_the_midpoint_without_zoom_when_they_fit() -> void:
+	var plan: Dictionary = IsometricCameraScript.plan_frame(_pts(Vector3.ZERO, Vector3(10, 0, 0)),
+		25.0, 0.05, 90.0, VP, Rect2(Vector2.ZERO, VP), 0.0, 40.0)
+	assert_almost_eq(plan["target"].x, 5.0, 0.001)
+	assert_almost_eq(plan["target"].z, 0.0, 0.001)
+	assert_eq(plan["distance"], 25.0, "no zoom change when both fit")
+
+
+func test_plan_frame_zooms_out_only_as_far_as_needed() -> void:
+	# 100 units wide at 0.05 units/px needs 2000 px; 1000 px fit -> distance doubles.
+	var plan: Dictionary = IsometricCameraScript.plan_frame(_pts(Vector3(-50, 0, 0), Vector3(50, 0, 0)),
+		10.0, 0.05, 90.0, VP, Rect2(Vector2.ZERO, VP), 0.0, 40.0)
+	assert_almost_eq(plan["distance"], 20.0, 0.001)
+	plan = IsometricCameraScript.plan_frame(_pts(Vector3(-50, 0, 0), Vector3(50, 0, 0)),
+		10.0, 0.05, 90.0, VP, Rect2(Vector2.ZERO, VP), 0.0, 15.0)
+	assert_almost_eq(plan["distance"], 15.0, 0.001, "clamped to the zoom limit")
+
+
+func test_plan_frame_never_zooms_in() -> void:
+	var plan: Dictionary = IsometricCameraScript.plan_frame(_pts(Vector3.ZERO, Vector3(1, 0, 0)),
+		30.0, 0.05, 90.0, VP, Rect2(Vector2.ZERO, VP), 0.0, 40.0)
+	assert_eq(plan["distance"], 30.0)
+
+
+func test_plan_frame_centres_in_the_safe_rect() -> void:
+	# Safe rect starts 200 px from the left: its centre is 100 px right of the screen centre,
+	# so the camera target sits 100 px * 0.05 = 5 units left of the midpoint.
+	var plan: Dictionary = IsometricCameraScript.plan_frame(_pts(Vector3.ZERO, Vector3.ZERO),
+		25.0, 0.05, 90.0, VP, Rect2(200, 0, 800, 800), 0.0, 40.0)
+	assert_almost_eq(plan["target"].x, -5.0, 0.001)
+	assert_almost_eq(plan["target"].z, 0.0, 0.001)
+
+
+func test_plan_frame_uses_the_screen_axes_of_the_rotation() -> void:
+	# Rotation 0: screen-right is -Z, so points spread along Z are spread across the screen.
+	var plan: Dictionary = IsometricCameraScript.plan_frame(_pts(Vector3(0, 0, -50), Vector3(0, 0, 50)),
+		10.0, 0.05, 0.0, VP, Rect2(Vector2.ZERO, VP), 0.0, 40.0)
+	assert_almost_eq(plan["distance"], 20.0, 0.001)

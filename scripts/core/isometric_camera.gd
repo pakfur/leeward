@@ -232,6 +232,76 @@ func pan_to_if_needed(world_pos: Vector3, edge_margin: float = 0.15) -> bool:
 	)
 	return true
 
+## Where to put the camera so every point lands inside `safe_rect` (viewport pixels) less
+## `margin_px`: pan so the points' bounding box is centred in the safe rect and zoom OUT only
+## if they cannot fit at the current zoom (never zooms in, never rotates).
+## Returns {"target": Vector3, "distance": float}. Orthographic approximation at the ground plane.
+static func plan_frame(points: Array[Vector3], distance: float, world_per_px: float,
+		rotation_deg: float, viewport_size: Vector2, safe_rect: Rect2, margin_px: float,
+		max_distance: float) -> Dictionary:
+	var rad := deg_to_rad(rotation_deg)
+	var right := Vector3(sin(rad), 0, -cos(rad))
+	var down := Vector3(cos(rad), 0, sin(rad))
+	var min_r := INF
+	var max_r := -INF
+	var min_d := INF
+	var max_d := -INF
+	for p in points:
+		min_r = minf(min_r, p.dot(right))
+		max_r = maxf(max_r, p.dot(right))
+		min_d = minf(min_d, p.dot(down))
+		max_d = maxf(max_d, p.dot(down))
+	var avail := Vector2(maxf(safe_rect.size.x * 0.5 - margin_px, 1.0),
+		maxf(safe_rect.size.y * 0.5 - margin_px, 1.0))
+	var needed := maxf((max_r - min_r) * 0.5 / avail.x, (max_d - min_d) * 0.5 / avail.y)
+	var new_distance := distance
+	var wpp := world_per_px
+	if needed > world_per_px and world_per_px > 0.0:
+		new_distance = minf(distance * needed / world_per_px, max_distance)
+		wpp = world_per_px * new_distance / distance
+	var mid := right * ((min_r + max_r) * 0.5) + down * ((min_d + max_d) * 0.5)
+	var offset := safe_rect.get_center() - viewport_size * 0.5
+	var target := mid - right * offset.x * wpp - down * offset.y * wpp
+	target.y = 0.0
+	return {"target": target, "distance": new_distance}
+
+
+## Ground units per screen pixel at the current zoom.
+func world_per_pixel() -> float:
+	var height := get_viewport().get_visible_rect().size.y
+	return 2.0 * camera_distance * tan(deg_to_rad(fov) * 0.5) / maxf(height, 1.0)
+
+
+## Smoothly pan (and zoom out only if needed) so every world position is inside `safe_rect`
+## (viewport pixels) with `margin_px` to spare. Does nothing when they already are.
+## Never rotates or tilts. Returns true if the camera moves.
+func frame_points_if_needed(points: Array[Vector3], safe_rect: Rect2, margin_px: float = 60.0) -> bool:
+	if points.is_empty():
+		return false
+	var inner := safe_rect.grow(-margin_px)
+	var all_inside := true
+	for p in points:
+		if is_position_behind(p) or not inner.has_point(unproject_position(p)):
+			all_inside = false
+			break
+	if all_inside:
+		return false
+	var plan := plan_frame(points, camera_distance, world_per_pixel(), camera_rotation_y,
+		get_viewport().get_visible_rect().size, safe_rect, margin_px, max_zoom)
+	is_tweening = true
+	var tween = create_tween()
+	tween.set_parallel(true)
+	tween.set_ease(Tween.EASE_IN_OUT)
+	tween.set_trans(Tween.TRANS_CUBIC)
+	tween.tween_property(self, "camera_target", plan["target"], focus_animation_duration)
+	if not is_equal_approx(plan["distance"], camera_distance):
+		tween.tween_property(self, "camera_distance", plan["distance"], focus_animation_duration)
+	tween.finished.connect(func():
+		is_tweening = false
+		_update_camera_transform()
+	)
+	return true
+
 func focus_on_ship(world_pos: Vector3, ship_facing: int, zoom_distance: float = -1.0) -> void:
 	"""
 	Focus camera on a specific ship with smooth animation.
