@@ -283,6 +283,8 @@ func refresh() -> void:
 	_signature = _signature_now()
 	var by_turn := _logs_by_turn()
 	_update_latest_label(by_turn)
+	# "Earlier turns not shown" only when turns of this game fall outside the list's window.
+	_earlier_label.visible = by_turn.size() > MAX_TURNS_SHOWN
 	_dirty = true
 	if needs_build(_expanded, _dirty):
 		_update_list(by_turn)
@@ -357,11 +359,20 @@ func _update_latest_label(by_turn: Dictionary) -> void:
 
 
 func _logs_by_turn() -> Dictionary:
+	return current_game_logs(GameState.turn_logs, GameState.turn_log)
+
+
+## turn -> log for the game being played: the finished turns before the current one, then the
+## current turn's log. Logs numbered after the current turn are left over from an earlier game
+## (the panel can be built before the new game replaces them) and are never shown.
+static func current_game_logs(turn_logs: Dictionary, current: PhaseEvents.PhaseLog) -> Dictionary:
 	var by_turn: Dictionary = {}
-	for turn in GameState.turn_logs.keys():
-		by_turn[turn] = GameState.turn_logs[turn]
-	if GameState.turn_log:
-		by_turn[GameState.turn_log.turn] = GameState.turn_log
+	var current_turn: int = current.turn if current else 1 << 30
+	for turn in turn_logs.keys():
+		if turn < current_turn:
+			by_turn[turn] = turn_logs[turn]
+	if current:
+		by_turn[current.turn] = current
 	return by_turn
 
 

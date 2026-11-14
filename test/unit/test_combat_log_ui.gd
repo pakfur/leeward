@@ -268,3 +268,52 @@ func test_manual_choice_only_holds_in_its_own_phase_step() -> void:
 	assert_true(LogPanel.choose_expanded(false, "3:4:2", "3:4:2", true), "same step: manual expand kept")
 	assert_false(LogPanel.choose_expanded(false, "3:9:0", "4:2:0", true), "next planning: auto collapse")
 	assert_true(LogPanel.choose_expanded(true, "3:4:1", "3:4:2", false), "declare -> playback re-expands")
+
+
+# --- Only the current game's turns ---------------------------------------------------
+
+func _turn_log(turn: int) -> PhaseEvents.PhaseLog:
+	var l := PhaseEvents.PhaseLog.new()
+	l.turn = turn
+	return l
+
+
+func test_current_game_logs_drop_turns_left_from_an_earlier_game() -> void:
+	var old_logs := {}
+	for turn in range(1, 15):
+		old_logs[turn] = _turn_log(turn)
+	var fresh := _turn_log(1)
+	var by_turn: Dictionary = LogPanel.current_game_logs(old_logs, fresh)
+	assert_eq(by_turn.keys(), [1])
+	assert_eq(by_turn[1], fresh, "turn 1 of the new game, not the old game's turn 1")
+	var plan: Dictionary = LogPanel.plan_update({}, {1: 0})
+	assert_false(plan["truncated"], "no 'Earlier turns not shown' on turn 1")
+
+
+func test_current_game_logs_keep_finished_turns_of_this_game() -> void:
+	var logs := {1: _turn_log(1), 2: _turn_log(2)}
+	var current := _turn_log(3)
+	assert_eq(LogPanel.current_game_logs(logs, current).keys(), [1, 2, 3])
+
+
+func test_earlier_turns_label_hidden_on_turn_one_of_a_new_game() -> void:
+	var saved_logs := GameState.turn_logs
+	var saved_log := GameState.turn_log
+	var old_logs := {}
+	for turn in range(1, 15):
+		var l := _turn_log(turn)
+		l.add(PhaseEvents.Type.HOLD_FIRE, COMBAT, "a")
+		old_logs[turn] = l
+	GameState.turn_logs = old_logs
+	GameState.turn_log = old_logs[14]
+	var panel = load("res://scenes/ui/combat_log_panel.tscn").instantiate()
+	add_child_autofree(panel)
+	panel.set_expanded(true)
+	assert_true(panel._earlier_label.visible, "14 turns of the old game: earlier turns are cut")
+	# The next game starts with the panel already built
+	GameState.turn_logs = {}
+	GameState.turn_log = _turn_log(1)
+	panel.refresh()
+	assert_false(panel._earlier_label.visible)
+	GameState.turn_logs = saved_logs
+	GameState.turn_log = saved_log
