@@ -3,14 +3,17 @@ extends PanelContainer
 
 signal selected()
 signal action_button_pressed(action_type: String)
+signal status_pressed()  ## the Status button: open this ship's status panel
 
 @onready var ship_icon: TextureRect = %ShipIcon
 @onready var ship_name_label: Label = %ShipNameLabel
+@onready var badge_label: Label = %BadgeLabel
 @onready var speed_label: Label = %SpeedLabel
 @onready var stats_label: Label = %StatsLabel
 @onready var movement_button: Button = %MovementButton
 @onready var crew_button: Button = %CrewButton
 @onready var maintenance_button: Button = %MaintenanceButton
+@onready var status_button: Button = %StatusButton
 
 var ship_state: ShipState = null
 var is_selected: bool = false
@@ -51,13 +54,21 @@ func _ready() -> void:
 
 	add_theme_stylebox_override("panel", normal_style)
 
-	# Connect button signals
+	# Connect button signals. Crew and Maintenance orders belong to a later milestone: hidden.
 	if movement_button:
 		movement_button.pressed.connect(_on_movement_pressed)
+	if crew_button:
+		crew_button.visible = false
+	if maintenance_button:
+		maintenance_button.visible = false
 	if crew_button:
 		crew_button.pressed.connect(_on_crew_pressed)
 	if maintenance_button:
 		maintenance_button.pressed.connect(_on_maintenance_pressed)
+
+	if status_button:
+		status_button.focus_mode = Control.FOCUS_NONE
+		status_button.pressed.connect(func(): status_pressed.emit())
 
 	# Make the panel clickable
 	gui_input.connect(_on_gui_input)
@@ -72,23 +83,27 @@ func _update_display() -> void:
 
 	# Ship name
 	if ship_name_label:
-		ship_name_label.text = ship_state.ship_name
+		ship_name_label.text = _title()
 
 	# Speed
 	if speed_label:
-		speed_label.text = "Spd: %d" % ship_state.speed
+		speed_label.text = "Speed %d" % ship_state.speed
+		speed_label.tooltip_text = "Speed last turn"
 
-	# Stats line: "Hull: 8/8/8 Crew: 200/4 Sails: MS/4"
+	# Detail lines: hull and rigging per section, sail by name, crew quality and morale
 	if stats_label:
-		var hull_str = "%d/%d/%d" % [
-			ship_state.hull_current_hp[0],
-			ship_state.hull_current_hp[1],
-			ship_state.hull_current_hp[2]
-		]
-		var crew_str = "%s/%d" % [ship_state.crew_quality, ship_state.crew_morale]
-		var sails_str = "%s/%s" % [ship_state.sail_state, ship_state.rigging_current_hp]
+		var lines := PlanningText.card_lines(ship_state)
+		stats_label.text = "\n".join(lines)
 
-		stats_label.text = "Hull: %s  Crew: %s  Sails: %s" % [hull_str, crew_str, sails_str]
+	# Status badge (fouled / struck / dismasted) locks out movement plotting
+	var badge := PlanningSailUi.status_badge(ship_state)
+	if badge_label:
+		badge_label.text = badge
+		badge_label.visible = badge != ""
+	if movement_button:
+		var can_move := PlanningSailUi.can_plot_movement(ship_state)
+		movement_button.disabled = not can_move
+		movement_button.tooltip_text = "" if can_move else PlanningSailUi.movement_block_reason(ship_state)
 
 	# Ship icon
 	if ship_icon:
@@ -112,10 +127,13 @@ func set_selected_state(selected_state: bool) -> void:
 func set_submitted_state(submitted: bool) -> void:
 	is_submitted = submitted
 	_apply_panel_style()
-	if ship_name_label and submitted:
-		ship_name_label.text = ship_state.ship_name + " [OK]" if ship_state else ship_name_label.text
-	elif ship_name_label and ship_state:
-		ship_name_label.text = ship_state.ship_name
+	if ship_name_label and ship_state:
+		ship_name_label.text = _title()
+
+## "HMS Lively — 38-gun Frigate", with "(orders given)" once the ship has its orders.
+func _title() -> String:
+	var text := PlanningText.name_and_type(ship_state)
+	return text + " (orders given)" if is_submitted else text
 
 func _apply_panel_style() -> void:
 	if is_selected:

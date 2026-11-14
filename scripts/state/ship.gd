@@ -32,8 +32,14 @@ var hull_hp: Array[int] = [0, 0, 0, 0]
 var crew_count: Array[int] = [0, 0, 0, 0]
 var marine_count: int = 0
 
-# Armament - stored as Dictionary for flexibility
-var guns: Dictionary = {}
+# Display-only armament breakdown (stored as Dictionary for flexibility)
+var armament: Dictionary = {}
+
+# Gunnery data from the Ship Data Chart (per side)
+var gun_factors: Dictionary = {"lg": 0, "mg": 0, "cr": 0}  # long guns, medium guns, carronades
+var ch_modifier: int = 0
+var lower_deck_modifier: int = 0
+var point_costs: Dictionary = {}  # "<CQ><MR>" -> cost, e.g. "A3": 54
 
 static func from_dict(data: Dictionary) -> Ship:
 	"""Create a Ship from a Dictionary (parsed from JSON)"""
@@ -76,8 +82,17 @@ static func from_dict(data: Dictionary) -> Ship:
 
 	ship.marine_count = data.get("marine_count", 0)
 
-	# Guns - store as-is (complex nested structure)
-	ship.guns = data.get("guns", {})
+	# Armament - display only, store as-is (complex nested structure)
+	ship.armament = data.get("armament", {})
+
+	var gf: Dictionary = data.get("gun_factors", {})
+	ship.gun_factors = {"lg": int(gf.get("lg", 0)), "mg": int(gf.get("mg", 0)), "cr": int(gf.get("cr", 0))}
+	ship.ch_modifier = int(data.get("ch_modifier", 0))
+	ship.lower_deck_modifier = int(data.get("lower_deck_modifier", 0))
+	var costs: Dictionary = data.get("point_costs", {})
+	ship.point_costs = {}
+	for key in costs:
+		ship.point_costs[key] = int(costs[key])
 
 	return ship
 
@@ -116,7 +131,11 @@ func to_dict() -> Dictionary:
 		"hull_hp": hull_hp,
 		"crew_count": crew_count,
 		"marine_count": marine_count,
-		"guns": guns
+		"armament": armament,
+		"gun_factors": gun_factors,
+		"ch_modifier": ch_modifier,
+		"lower_deck_modifier": lower_deck_modifier,
+		"point_costs": point_costs
 	}
 
 func get_total_crew() -> int:
@@ -144,7 +163,7 @@ func get_gun_count() -> int:
 	"""Get the total number of guns on this ship"""
 	var total = 0
 
-	for category in guns.values():
+	for category in armament.values():
 		if category is Dictionary:
 			if category.has("count"):
 				# Flat gun category (e.g. bow_chasers: {count: 2, size: 9})
@@ -156,3 +175,30 @@ func get_gun_count() -> int:
 						total += gun_group.get("count", 0)
 
 	return total
+
+func is_french_gunned() -> bool:
+	return nationality == "French"
+
+func point_value(crew_quality_letter: String, morale_rating: int) -> float:
+	"""Purchase cost for a crew quality / morale rating. Exact "<CQ><MR>" key, else the
+	same CQ at the nearest MR, else the lowest cost in the row."""
+	if point_costs.is_empty():
+		return 0.0
+	var exact := "%s%d" % [crew_quality_letter, morale_rating]
+	if point_costs.has(exact):
+		return float(point_costs[exact])
+	var best_key := ""
+	var best_dist := 1000000
+	for key in point_costs:
+		if not key.begins_with(crew_quality_letter) or key.length() < 2:
+			continue
+		var dist := absi(int(key.substr(1)) - morale_rating)
+		if dist < best_dist:
+			best_dist = dist
+			best_key = key
+	if best_key != "":
+		return float(point_costs[best_key])
+	var lowest := 1000000
+	for key in point_costs:
+		lowest = mini(lowest, int(point_costs[key]))
+	return float(lowest)

@@ -23,7 +23,7 @@ theme_override_constants/separation = 8
 [node name="TitleLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_type_variation = &"HeaderLabel"
 text = "Your Fleet"
 horizontal_alignment = 1
 
@@ -35,76 +35,139 @@ layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="ShipListContainer" type="VBoxContainer" parent="VBoxContainer/ScrollContainer"]
+[node name="ScrollContent" type="VBoxContainer" parent="VBoxContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="ShipListContainer" type="VBoxContainer" parent="VBoxContainer/ScrollContainer/ScrollContent"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 3
 theme_override_constants/separation = 6
 
-[node name="HSeparator2" type="HSeparator" parent="VBoxContainer"]
+[node name="OrdersSeparator" type="HSeparator" parent="VBoxContainer/ScrollContainer/ScrollContent"]
 layout_mode = 2
 
-[node name="PlottingControls" type="VBoxContainer" parent="VBoxContainer"]
+[node name="SailRow" type="VBoxContainer" parent="VBoxContainer/ScrollContainer/ScrollContent"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="PlottingHeader" type="Label" parent="VBoxContainer/PlottingControls"]
+[node name="SailHeader" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/SailRow"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
-text = "Movement Plotting"
-horizontal_alignment = 1
+text = "Sail"
 
-[node name="MALabel" type="Label" parent="VBoxContainer/PlottingControls"]
+[node name="SailCurrentLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/SailRow"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
-text = "Movement: 0/0 remaining"
-horizontal_alignment = 1
+text = "Now: Manoeuvring sail"
 
-[node name="PathLabel" type="Label" parent="VBoxContainer/PlottingControls"]
+[node name="SailStatusLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/SailRow"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 10
-text = "Path: (none)"
-horizontal_alignment = 1
+theme_type_variation = &"SecondaryLabel"
+theme_override_colors/font_color = Color(1, 0.8, 0.2, 1)
 autowrap_mode = 2
 
-[node name="TackingLabel" type="Label" parent="VBoxContainer/PlottingControls"]
+[node name="SailButtons" type="VBoxContainer" parent="VBoxContainer/ScrollContainer/ScrollContent/SailRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="SailHintLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/SailRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"SecondaryLabel"
+text = "Sections changing sail cannot serve the guns."
+autowrap_mode = 2
+
+[node name="SailErrorLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/SailRow"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
-theme_override_colors/font_color = Color(1, 0.8, 0.2, 1)
-text = "⚓ Tacking: 0%"
-horizontal_alignment = 1
+theme_type_variation = &"SecondaryLabel"
+theme_override_colors/font_color = Color(1, 0.4, 0.4, 1)
+autowrap_mode = 2
 
-[node name="ButtonRow" type="HBoxContainer" parent="VBoxContainer/PlottingControls"]
+[node name="PlottingControls" type="VBoxContainer" parent="VBoxContainer/ScrollContainer/ScrollContent"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="PlottingHeader" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
+layout_mode = 2
+text = "Movement plotting"
+
+[node name="MALabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 0
+text = "Movement: 0 of 0 left"
+
+[node name="AllowanceNoteLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"SecondaryLabel"
+theme_override_colors/font_color = Color(0.85, 0.85, 0.7, 1)
+autowrap_mode = 2
+
+[node name="MALimitLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"SecondaryLabel"
+theme_override_colors/font_color = Color(0.85, 0.85, 0.7, 1)
+autowrap_mode = 2
+
+[node name="CollisionLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.55, 0.15, 1)
+autowrap_mode = 2
+
+[node name="PathLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"SecondaryLabel"
+text = "Path: (none)"
+autowrap_mode = 2
+
+[node name="TackingLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.8, 0.2, 1)
+text = "Tacking: 0%"
+
+[node name="ButtonRow" type="HBoxContainer" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
 layout_mode = 2
 theme_override_constants/separation = 4
 alignment = 1
 
-[node name="UndoButton" type="Button" parent="VBoxContainer/PlottingControls/ButtonRow"]
+[node name="UndoButton" type="Button" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls/ButtonRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Undo"
 
-[node name="UndoAllButton" type="Button" parent="VBoxContainer/PlottingControls/ButtonRow"]
+[node name="UndoAllButton" type="Button" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls/ButtonRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Undo All"
 
-[node name="SubmitButton" type="Button" parent="VBoxContainer/PlottingControls/ButtonRow"]
+[node name="SubmitButton" type="Button" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls/ButtonRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Submit"
 
-[node name="CancelButton" type="Button" parent="VBoxContainer/PlottingControls/ButtonRow"]
+[node name="CancelButton" type="Button" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls/ButtonRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -113,18 +176,17 @@ text = "Cancel"
 [node name="HSeparator3" type="HSeparator" parent="VBoxContainer"]
 layout_mode = 2
 
-[node name="EndPlanningButton" type="Button" parent="VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-custom_minimum_size = Vector2(0, 36)
-theme_override_font_sizes/font_size = 14
-disabled = true
-text = "End Planning (0/0)"
-
 [node name="InstructionsLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 10
-text = "Select ship and click Movement to plot course."
+theme_type_variation = &"SecondaryLabel"
+text = "Select a ship and press Movement to plot its course."
 horizontal_alignment = 1
 autowrap_mode = 2
+
+[node name="EndPlanningButton" type="Button" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 44)
+disabled = true
+text = "End Planning (0/0)"

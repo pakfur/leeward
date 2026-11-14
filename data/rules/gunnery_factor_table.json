@@ -1,0 +1,6 @@
+{
+  "_doc": "Gunnery Factor Calculation Table (1997 chart, p.111). Effectiveness multiplier per gun type, indexed by range-1 (ranges 1-15). 0 = '-' on the chart (cannot fire at that range).",
+  "lg": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  "mg": [1, 1, 1, 1, 1, 0.75, 0.75, 0.75, 0.75, 0.75, 0.5, 0.5, 0, 0, 0],
+  "cr": [2, 2, 2, 1.5, 1, 0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+}

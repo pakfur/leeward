@@ -63,6 +63,7 @@ func _run_tick_sequence(seed_value: int, ticks: int) -> Array:
 	env.region = "oceanic"
 
 	GameState.rng = rng
+	GameState.dice = Dice.new(rng)
 	GameState.environment = env
 	GameState.environment_history = [] as Array[EnvironmentState]
 

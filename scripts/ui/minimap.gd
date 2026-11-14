@@ -27,6 +27,7 @@ var viewport_hovered: bool = false
 
 # Ship tracking
 var ship_icons: Dictionary = {}  # ship_id -> TextureRect
+var _hex_grid := HexGrid.new()  # hex -> world mapping (same unit hex size as HexMap)
 
 func _ready() -> void:
 	# Set size and position
@@ -35,15 +36,11 @@ func _ready() -> void:
 	# Find camera reference
 	_find_camera()
 
-	# Connect to GameState
+	# Connect to GameState. The scenario, bounds and ships are taken when the game starts: at
+	# _ready GameState still holds the previous game (or nothing, on the first game).
 	GameState.phase_changed.connect(_on_phase_changed)
 	GameState.turn_changed.connect(_on_turn_changed)
-
-	# Initialize from scenario
-	_load_scenario_config()
-
-	# Create initial ship icons
-	_refresh_ship_icons()
+	GameState.game_started.connect(configure_for_scenario)
 
 	# Set z-index below DevUI
 	z_index = 10
@@ -60,14 +57,12 @@ func _find_camera() -> void:
 		else:
 			push_warning("MiniMap: No camera found")
 
-func _load_scenario_config() -> void:
-	"""Load minimap configuration from active scenario"""
-	if GameState.active_scenario.is_empty():
-		return
-
-	# Load map bounds from scenario
-	var scenario_bounds = GameState.active_scenario.get("map_bounds", {})
-	if scenario_bounds.has("width") and scenario_bounds.has("height"):
+## Build the minimap for the game being started (GameState.game_started). Every game is set up
+## from its own scenario alone, so the first and every later game look the same.
+func configure_for_scenario(scenario: Dictionary) -> void:
+	map_bounds = Vector2(100, 100)
+	var scenario_bounds = scenario.get("map_bounds", {})
+	if scenario_bounds is Dictionary and scenario_bounds.has("width") and scenario_bounds.has("height"):
 		map_bounds = Vector2(scenario_bounds.width, scenario_bounds.height)
 
 	# Calculate world size (hex grid dimensions)
@@ -77,19 +72,16 @@ func _load_scenario_config() -> void:
 		map_bounds.y * 1.5
 	)
 
-	# Load minimap texture if specified
-	var minimap_texture_path = GameState.active_scenario.get("minimap_texture", "")
+	# The scenario's minimap texture if it names one; otherwise no texture, so the panel's own
+	# dark translucent background shows.
+	var minimap_texture_path: String = str(scenario.get("minimap_texture", ""))
 	if minimap_texture_path != "" and ResourceLoader.exists(minimap_texture_path):
 		background.texture = load(minimap_texture_path)
 	else:
-		# Use placeholder blue
-		_create_placeholder_texture()
+		background.texture = null
 
-func _create_placeholder_texture() -> void:
-	"""Create a simple blue placeholder texture"""
-	var img = Image.create(512, 512, false, Image.FORMAT_RGB8)
-	img.fill(Color(0.476, 0.669, 0.968, 1.0))  # Ocean blue
-	background.texture = ImageTexture.create_from_image(img)
+	_refresh_ship_icons()
+	Trace.trace_log("MiniMap", "Configured for scenario: bounds=%s, texture=%s" % [map_bounds, background.texture != null])
 
 func _update_minimap_transform() -> void:
 	"""Update minimap size and position based on screen size"""
@@ -224,11 +216,8 @@ func _create_ship_icon(ship_id: String) -> void:
 	img.fill(Color.WHITE)
 	icon.texture = ImageTexture.create_from_image(img)
 
-	# Color modulate by player
-	if ship.player_id == 0:
-		icon.modulate = Color(0.183, 0.927, 0.479, 1.0)  # Blue for player 0
-	else:
-		icon.modulate = Color(1.0, 0.3, 0.3)  # Red for player 1
+	# Owner colour, shared with the main-map ring/pennant (green = player, red = enemy)
+	icon.modulate = ShipView.owner_color(ship.player_id)
 
 	ship_layer.add_child(icon)
 	ship_icons[ship_id] = icon
@@ -244,15 +233,13 @@ func _update_ship_positions() -> void:
 
 		var icon = ship_icons[ship_id]
 
-		# Convert hex position to world coordinates
-		# Hex grid: q = x offset, r = y offset
-		# World position formula for flat-top hexes
-		var hex_pos = ship.hex_position
-		var world_x = hex_pos.x * sqrt(3)
-		var world_z = hex_pos.y * 1.5
+		# Same hex -> world mapping as the main map (pointy-top axial; x east, z south),
+		# and the minimap draws +X right and +Z down, i.e. north up like the main camera.
+		var grid: HexGrid = hex_map.get_hex_grid() if hex_map and hex_map.has_method("get_hex_grid") else _hex_grid
+		var world_pos = grid.axial_to_world(ship.hex_position.x, ship.hex_position.y)
 
 		# Convert to minimap coordinates
-		var minimap_pos = _world_to_minimap(Vector3(world_x, 0, world_z))
+		var minimap_pos = _world_to_minimap(world_pos)
 
 		# Center icon on position
 		icon.position = minimap_pos - icon.size / 2.0

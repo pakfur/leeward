@@ -339,7 +339,7 @@ func _create_hex_labels() -> void:
 			label.font_size = 32
 			label.pixel_size = 0.005
 			label.position = Vector3(world_pos.x, 0.15, world_pos.z)
-			label.rotation_degrees = Vector3(90, 180, 0)  # Face up, readable from above
+			label.rotation_degrees = Vector3(-90, 0, 0)  # Face up, text reads left-to-right with north up
 			label.modulate = Color(1.0, 1.0, 0.6, 0.8)
 			label.outline_modulate = Color(0, 0, 0, 0.9)
 			label.outline_size = 8

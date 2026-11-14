@@ -9,6 +9,10 @@ signal turn_changed(turn_number: int)
 @warning_ignore("unused_signal")  # Part of the state API; emitted once multiplayer readiness is wired
 signal player_ready(player_id: int)
 signal state_synced()  # Emitted when state is synced from server
+## A new game has been set up from `scenario` (active_scenario, ships and environment are the new
+## game's). Views that depend on the scenario configure themselves here, never in _ready(): the
+## game scene's nodes are ready before the game starts and would see the previous game's data.
+signal game_started(scenario: Dictionary)
 
 enum GamePhase {
 	SETUP,
@@ -48,6 +52,21 @@ var ships_by_player: Dictionary = {0: [], 1: []}  # player_id -> Array[ship_id]
 
 # Shared seeded RNG — seeded from scenario on game start; all controllers share this instance
 var rng: RandomNumberGenerator = null
+# All die rolls (d10 is 0-9); built on rng
+var dice: Dice = null
+var fire_geometry: FireGeometry = null
+var gunnery_calculator: GunneryCalculator = null
+var damage_controller: DamageController = null
+var gunnery_resolver: GunneryResolver = null
+var sail_controller: SailController = null
+var drift_resolver: DriftResolver = null
+var fouling_controller: FoulingController = null
+var morale_controller: MoraleController = null
+var victory_controller: VictoryController = null
+
+# Event log for the current turn, and finished logs by turn number
+var turn_log: PhaseEvents.PhaseLog = null
+var turn_logs: Dictionary = {}  # turn -> PhaseEvents.PhaseLog
 
 # State history tracking (indexed by turn number)
 var environment_history: Array[EnvironmentState] = []  # Historical environment states
@@ -69,6 +88,20 @@ func _ready() -> void:
 
 func _initialize_server_controllers() -> void:
 	"""Initialize server-side controllers - SERVER ONLY"""
+	if rng == null:
+		rng = RandomNumberGenerator.new()
+	dice = Dice.new(rng)
+	fire_geometry = FireGeometry.new(HexGrid.new())
+	gunnery_calculator = GunneryCalculator.new(self)
+	damage_controller = DamageController.new(self)
+	gunnery_resolver = GunneryResolver.new(self)
+	sail_controller = SailController.new(self)
+	drift_resolver = DriftResolver.new(self)
+	fouling_controller = FoulingController.new(self)
+	morale_controller = MoraleController.new(self)
+	victory_controller = VictoryController.new(self)
+	turn_log = PhaseEvents.PhaseLog.new()
+	turn_log.turn = 1
 	phase_controller = TurnPhaseController.new(self)
 	ship_controller = ShipStateController.new(self)
 	environment_controller = EnvironmentController.new(self)
@@ -110,11 +143,20 @@ func start_new_game(scenario_data: Dictionary) -> void:
 		return
 
 	active_scenario = scenario_data
+	# Mirrors of the phase controller's state start over with the game (the controller's
+	# turn_changed / phase_changed keep them in step from here on).
+	current_turn = 1
+	current_phase = GamePhase.SETUP
+	players_ready = [false, false] as Array[bool]
 
 	# Seed the shared RNG from scenario (default to 0 if no seed provided)
 	var seed_value: int = scenario_data.get("seed", 0)
 	rng = RandomNumberGenerator.new()
 	rng.seed = seed_value
+	dice = Dice.new(rng)
+	turn_log = PhaseEvents.PhaseLog.new()
+	turn_log.turn = 1
+	turn_logs.clear()
 	Trace.trace_log("GameState", "RNG seeded", seed_value)
 
 	# Clear any existing state history
@@ -130,6 +172,8 @@ func start_new_game(scenario_data: Dictionary) -> void:
 		environment.get_wind_speed_name(),
 		environment.wind_speed
 	])
+
+	game_started.emit(active_scenario)
 
 	# Start the game via phase controller
 	if phase_controller:
@@ -175,8 +219,18 @@ func get_phase_name() -> String:
 
 ## Ship Management Functions
 
-func add_ship(ship_state: ShipState) -> void:
+func add_ship(ship_state: ShipState) -> bool:
 	## Add a ship to the state container. Used by both server (setup) and client (sync).  SCV:ALLOW
+	## A ship whose id is already present, or whose hex another ship already occupies, is
+	## rejected (push_error, returns false) and not added.
+	if ships.has(ship_state.ship_id):
+		push_error("GameState: duplicate ship id '%s' rejected" % ship_state.ship_id)
+		return false
+	for other: ShipState in ships.values():
+		if other.hex_position == ship_state.hex_position:
+			push_error("GameState: ship '%s' starts on %s, already occupied by '%s'; rejected" % [
+				ship_state.ship_id, ship_state.hex_position, other.ship_id])
+			return false
 	ships[ship_state.ship_id] = ship_state
 
 	# Track by player
@@ -185,6 +239,7 @@ func add_ship(ship_state: ShipState) -> void:
 	ships_by_player[ship_state.player_id].append(ship_state.ship_id)
 
 	Trace.trace_log("GameState", "Added ship %s (player %d)" % [ship_state.ship_id, ship_state.player_id])
+	return true
 
 func remove_ship(ship_id: String) -> void:
 	## Remove a ship from the state container. Used by both server and client.  SCV:ALLOW
@@ -463,6 +518,24 @@ func _update_ship_from_data(ship: ShipState, data: Dictionary) -> void:
 		for hp in rigging_hp_data:
 			ship.rigging_current_hp.append(int(hp))
 	ship.hull_current_hp = data.get("hull_current_hp", ship.hull_current_hp)
-	ship.crew_count = data.get("crew_count", ship.crew_count)
-	ship.crew_morale = data.get("crew_morale", ship.crew_morale)
+	if data.has("crew_count"):
+		ship.crew_count = ShipState._int_array(data["crew_count"])
+	ship.marine_count = data.get("marine_count", ship.marine_count)
+	ship.crew_quality = data.get("crew_quality", ship.crew_quality)
+	ship.morale_rating = int(data.get("morale_rating", ship.morale_rating))
+	ship.status = int(data.get("status", ship.status)) as ShipState.Status
+	if data.has("guns_dismounted"):
+		ship.guns_dismounted = ShipState._int_array(data["guns_dismounted"])
+	if data.has("initial_broadside_fired"):
+		ship.initial_broadside_fired.clear()
+		for fired in data["initial_broadside_fired"]:
+			ship.initial_broadside_fired.append(bool(fired))
+	ship.sail_change = (data.get("sail_change", ship.sail_change) as Dictionary).duplicate(true)
+	ship.moved_this_turn = data.get("moved_this_turn", ship.moved_this_turn)
+	ship.pending_morale_checks = int(data.get("pending_morale_checks", ship.pending_morale_checks))
+	if data.has("morale_triggers_used"):
+		ship.morale_triggers_used.clear()
+		for trigger in data["morale_triggers_used"]:
+			ship.morale_triggers_used.append(str(trigger))
+	ship.unfoul_attempts = int(data.get("unfoul_attempts", ship.unfoul_attempts))
 	ship.plotted_actions = data.get("plotted_actions", ship.plotted_actions)

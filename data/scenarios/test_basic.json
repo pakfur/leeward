@@ -8,6 +8,7 @@
   "wind_direction_change": "none",
   "region": "oceanic",
   "sea_state": 1,
+  "turn_limit": 30,
   "map": {
 	"map_texture": "res://assets/textures/water_default.png",
 	"show_hex": true
@@ -20,6 +21,7 @@
   "ships": [
 	{
 	  "id": "player_ship",
+	  "ship_name": "HMS Lively",
 	  "player_id": 0,
 	  "ship_type": "frigate_38",
 	  "position": {
@@ -36,8 +38,9 @@
 	},
 	{
 	  "id": "enemy_ship",
+	  "ship_name": "Topaze",
 	  "player_id": 1,
-	  "ship_type": "corvette_24",
+	  "ship_type": "frigate_32",
 	  "position": {
 		"q": 8,
 		"r": 0

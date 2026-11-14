@@ -480,3 +480,14 @@ func _make_multi_impulse_log(impulse_count: int) -> MovementTypes.ResolutionLog:
 	result.final_facing = 0
 	log.add_result(result)
 	return log
+
+
+func test_aborted_playback_never_reports_completion() -> void:
+	var log = _make_single_move_log()
+	watch_signals(playback)
+	playback.play(log)
+	playback.abort()
+	await wait_seconds(1.0)
+	assert_signal_not_emitted(playback, "playback_completed", "leaving the game abandons playback")
+	assert_false(playback.is_playing())
+

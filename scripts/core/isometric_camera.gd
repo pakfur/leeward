@@ -15,7 +15,11 @@ extends Camera3D
 
 var camera_distance: float = 25.0
 var camera_target: Vector3 = Vector3.ZERO
-var camera_rotation_y: float = 45.0  # horizontal rotation around target
+## Horizontal orbit angle in degrees: the camera sits at azimuth (cos r, sin r) on the XZ plane
+## around its target. 90 puts it south of the target looking north, so north (-Z) is up on
+## screen and east (+X) is to the right — the default "north up" view.
+const NORTH_UP_ROTATION := 90.0
+var camera_rotation_y: float = NORTH_UP_ROTATION
 var is_panning: bool = false
 var is_rotating: bool = false
 var is_tweening: bool = false  # Flag to enable continuous updates during camera tweens
@@ -127,28 +131,24 @@ func zoom_out() -> void:
 	#print("Zoom out: %f -> %f" % [old_distance, camera_distance])
 
 func pan_camera(mouse_delta: Vector2) -> void:
-	# Convert screen space pan to world space, but only on XZ plane
-	var right = global_transform.basis.x
-	var forward = global_transform.basis.z
-
-	# Flatten vectors to XZ plane (remove Y component) to prevent zoom effect
-	right.y = 0
-	right = right.normalized()
-	forward.y = 0
-	forward = forward.normalized()
+	"""Grab-drag pan: the map follows the mouse. Works on the XZ plane only (no zoom effect)."""
+	var rad_rotation = deg_to_rad(camera_rotation_y)
+	# Ground-plane directions that appear as screen-right and screen-down. Derived from the
+	# orbit angle rather than the camera basis so they stay valid looking straight down.
+	var screen_right = Vector3(sin(rad_rotation), 0, -cos(rad_rotation))
+	var screen_down = Vector3(cos(rad_rotation), 0, sin(rad_rotation))
 
 	# Adjust pan speed by zoom level (higher speed for better responsiveness)
 	var adjusted_speed = pan_speed * camera_distance / initial_distance
 
-	# Pan on XZ plane only (no vertical movement)
-	camera_target -= right * mouse_delta.x * adjusted_speed * 0.05
-	camera_target -= forward * mouse_delta.y * adjusted_speed * 0.05
+	camera_target -= screen_right * mouse_delta.x * adjusted_speed * 0.05
+	camera_target -= screen_down * mouse_delta.y * adjusted_speed * 0.05
 
 	_update_camera_transform()
 
 func rotate_camera(mouse_delta: Vector2) -> void:
-	# Horizontal rotation (left-right mouse movement)
-	camera_rotation_y += mouse_delta.x * rotation_speed
+	# Horizontal rotation (left-right mouse movement): dragging right turns the map clockwise
+	camera_rotation_y -= mouse_delta.x * rotation_speed
 
 	# Vertical rotation (up-down mouse movement) - adjusts viewing angle
 	isometric_angle -= mouse_delta.y * rotation_speed
@@ -188,12 +188,14 @@ func center_on_ships(ship_positions: Array[Vector3]) -> void:
 	# At 85 degrees, we're almost looking straight down
 	# Distance calculation: use diagonal size with padding
 	var padding_factor = 2.0  # Extra padding for comfortable view
-	var required_distance = max(max_size * padding_factor, min_zoom)
+	# Never frame tighter than the single-ship focus distance (adjacent ships would otherwise
+	# zoom in to a few units).
+	var required_distance = max(max_size * padding_factor, focus_zoom_distance)
 
 	# Clamp to zoom limits
 	required_distance = clamp(required_distance, min_zoom, max_zoom)
 
-	# Set camera parameters
+	# Set camera parameters (pan/zoom/tilt only: rotation is left to the player)
 	camera_target = center
 	camera_distance = required_distance
 	isometric_angle = 85.0  # Reset to 85 degrees
@@ -201,10 +203,110 @@ func center_on_ships(ship_positions: Array[Vector3]) -> void:
 	_update_camera_transform()
 	Trace.trace_log("Camera", "Centered on %d ships at distance %f" % [ship_positions.size(), camera_distance])
 
+func is_world_pos_near_edge(world_pos: Vector3, edge_margin: float = 0.15) -> bool:
+	"""True if world_pos is off-screen, behind the camera, or within edge_margin (fraction of
+	the viewport size) of a screen edge."""
+	if is_position_behind(world_pos):
+		return true
+	var rect := get_viewport().get_visible_rect()
+	var screen_pos := unproject_position(world_pos)
+	var margin := rect.size * edge_margin
+	var inner := Rect2(rect.position + margin, rect.size - margin * 2.0)
+	return not inner.has_point(screen_pos)
+
+func pan_to_if_needed(world_pos: Vector3, edge_margin: float = 0.15) -> bool:
+	"""Smoothly pan so world_pos is centred, but only if it is off-screen or near the edge.
+	Never rotates and never changes zoom or tilt. Returns true if a pan was started."""
+	if not is_world_pos_near_edge(world_pos, edge_margin):
+		return false
+	var target_pos = world_pos
+	target_pos.y = 0.0
+	is_tweening = true
+	var tween = create_tween()
+	tween.set_ease(Tween.EASE_IN_OUT)
+	tween.set_trans(Tween.TRANS_CUBIC)
+	tween.tween_property(self, "camera_target", target_pos, focus_animation_duration)
+	tween.finished.connect(func():
+		is_tweening = false
+		_update_camera_transform()
+	)
+	return true
+
+## Where to put the camera so every point lands inside `safe_rect` (viewport pixels) less
+## `margin_px`: pan so the points' bounding box is centred in the safe rect and zoom OUT only
+## if they cannot fit at the current zoom (never zooms in, never rotates).
+## Returns {"target": Vector3, "distance": float}. Orthographic approximation at the ground plane.
+static func plan_frame(points: Array[Vector3], distance: float, world_per_px: float,
+		rotation_deg: float, viewport_size: Vector2, safe_rect: Rect2, margin_px: float,
+		max_distance: float) -> Dictionary:
+	var rad := deg_to_rad(rotation_deg)
+	var right := Vector3(sin(rad), 0, -cos(rad))
+	var down := Vector3(cos(rad), 0, sin(rad))
+	var min_r := INF
+	var max_r := -INF
+	var min_d := INF
+	var max_d := -INF
+	for p in points:
+		min_r = minf(min_r, p.dot(right))
+		max_r = maxf(max_r, p.dot(right))
+		min_d = minf(min_d, p.dot(down))
+		max_d = maxf(max_d, p.dot(down))
+	var avail := Vector2(maxf(safe_rect.size.x * 0.5 - margin_px, 1.0),
+		maxf(safe_rect.size.y * 0.5 - margin_px, 1.0))
+	var needed := maxf((max_r - min_r) * 0.5 / avail.x, (max_d - min_d) * 0.5 / avail.y)
+	var new_distance := distance
+	var wpp := world_per_px
+	if needed > world_per_px and world_per_px > 0.0:
+		new_distance = minf(distance * needed / world_per_px, max_distance)
+		wpp = world_per_px * new_distance / distance
+	var mid := right * ((min_r + max_r) * 0.5) + down * ((min_d + max_d) * 0.5)
+	var offset := safe_rect.get_center() - viewport_size * 0.5
+	var target := mid - right * offset.x * wpp - down * offset.y * wpp
+	target.y = 0.0
+	return {"target": target, "distance": new_distance}
+
+
+## Ground units per screen pixel at the current zoom.
+func world_per_pixel() -> float:
+	var height := get_viewport().get_visible_rect().size.y
+	return 2.0 * camera_distance * tan(deg_to_rad(fov) * 0.5) / maxf(height, 1.0)
+
+
+## Smoothly pan (and zoom out only if needed) so every world position is inside `safe_rect`
+## (viewport pixels) with `margin_px` to spare. Does nothing when they already are.
+## Never rotates or tilts. Returns true if the camera moves.
+func frame_points_if_needed(points: Array[Vector3], safe_rect: Rect2, margin_px: float = 60.0) -> bool:
+	if points.is_empty():
+		return false
+	var inner := safe_rect.grow(-margin_px)
+	var all_inside := true
+	for p in points:
+		if is_position_behind(p) or not inner.has_point(unproject_position(p)):
+			all_inside = false
+			break
+	if all_inside:
+		return false
+	var plan := plan_frame(points, camera_distance, world_per_pixel(), camera_rotation_y,
+		get_viewport().get_visible_rect().size, safe_rect, margin_px, max_zoom)
+	is_tweening = true
+	var tween = create_tween()
+	tween.set_parallel(true)
+	tween.set_ease(Tween.EASE_IN_OUT)
+	tween.set_trans(Tween.TRANS_CUBIC)
+	tween.tween_property(self, "camera_target", plan["target"], focus_animation_duration)
+	if not is_equal_approx(plan["distance"], camera_distance):
+		tween.tween_property(self, "camera_distance", plan["distance"], focus_animation_duration)
+	tween.finished.connect(func():
+		is_tweening = false
+		_update_camera_transform()
+	)
+	return true
+
 func focus_on_ship(world_pos: Vector3, ship_facing: int, zoom_distance: float = -1.0) -> void:
 	"""
 	Focus camera on a specific ship with smooth animation.
-	Ship will appear facing "up" on screen.
+	Ship will appear facing "up" on screen. NOTE: this rotates and zooms the camera, so normal
+	play does not call it (selection uses pan_to_if_needed); kept for tools/debugging.
 
 	Args:
 		world_pos: Ship's world position
@@ -215,10 +317,10 @@ func focus_on_ship(world_pos: Vector3, ship_facing: int, zoom_distance: float = 
 	var target_distance = focus_zoom_distance if zoom_distance < 0 else zoom_distance
 	target_distance = clamp(target_distance, min_zoom, max_zoom)
 
-	# Calculate camera rotation so ship faces "up" on screen
-	# Ship model rotation is: -facing * 60 + 90
-	# Camera should be positioned behind the ship, so add 180 degrees
-	var target_rotation = -ship_facing * 60.0 + 270.0
+	# Calculate camera rotation so ship faces "up" on screen.
+	# Hex facing f points at compass bearing 90 + 60f (0=E, 1=SE, ...); screen-up has bearing
+	# camera_rotation_y - 90, so the camera must sit at rotation 180 + 60f (behind the ship).
+	var target_rotation = ship_facing * 60.0 + 180.0
 
 	# Normalize rotation to 0-360 range
 	while target_rotation < 0:
@@ -276,17 +378,15 @@ func _update_camera_transform() -> void:
 	# Forward vector: from camera to target (look direction)
 	var forward = (camera_target - position).normalized()
 
-	# Right vector: perpendicular to forward, on the horizontal rotation circle
-	# This is tangent to the circle at the current rotation_y position
-	var right = Vector3(-sin(rad_rotation), 0, cos(rad_rotation)).normalized()
+	# Right vector: screen-right on the ground plane, tangent to the orbit circle.
+	# Independent of tilt, so there is no gimbal lock looking straight down.
+	var right = Vector3(sin(rad_rotation), 0, -cos(rad_rotation))
 
-	# Up vector: perpendicular to both forward and right
-	# Cross product order matters: forward × right gives up vector pointing "up" on screen
-	var up = forward.cross(right).normalized()
+	# Back vector (camera +Z): Godot cameras look along -Z.
+	var back = -forward
 
-	# Construct the basis (right, up, -forward for Godot's coordinate system)
-	# Note: Godot cameras look along -Z, so we use -forward for the Z axis
-	var new_basis = Basis(right, up, -forward)
+	# Up vector completes a RIGHT-HANDED basis: up = back x right (so right x up = back).
+	# A left-handed basis here renders the whole world mirrored.
+	var up = back.cross(right).normalized()
 
-	# Apply the basis to the camera
-	transform.basis = new_basis
+	transform.basis = Basis(right, up, back)

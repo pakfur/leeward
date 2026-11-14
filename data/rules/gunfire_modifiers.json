@@ -1,0 +1,12 @@
+{
+  "_doc": "Gunfire Modifiers (1997 Gunfire Results chart, p.110). crew_quality: 'select 1'. sections_firing keyed by sailor sections firing. rake / initial_broadside indexed by range-1 for ranges 1-5 (0 beyond range 5). two_targets applies to each target (chart: '-12 (ea.)'); one target with a half broadside (-8) is not carried here. plain_sail applies only at wind speed 2+ (chart footnote *). dismantling_shot ignores hull hits (chart footnote **). The chart's 'Dismasted: - Sea State' modifier is not a fixed number and is not carried here.",
+  "crew_quality": {"A": 6, "B": 4, "C": 2, "D": 0, "E": -2, "F": -4, "G": -6},
+  "sections_firing": {"4": 0, "3": -3, "2": -6, "1": -9},
+  "rake": [4, 4, 3, 2, 1],
+  "initial_broadside": [4, 4, 3, 2, 1],
+  "two_targets": -12,
+  "plain_sail": -1,
+  "dismantling_shot": 1,
+  "anchored": 1,
+  "wind_speed_4": -1
+}

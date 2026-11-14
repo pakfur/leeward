@@ -1,0 +1,9 @@
+{
+  "_doc": "Drifting table (d10, 1997 chart p.109). Arrays indexed by wind speed 0-4. A roll >= the number means the ship drifts; null = '-' (never drifts); 0 = 'auto' (always drifts). ns = the chart's 'Furled' row. class_drm: Class 3 = +1, Class 4 = +2 (other classes 0).",
+  "ps": [null, 4, 3, 2, 0],
+  "ms": [null, 6, 5, 4, 2],
+  "fs": [null, 7, 6, 5, 3],
+  "ns": [null, 8, 7, 6, 4],
+  "dismasted": [null, 10, 9, 8, 6],
+  "class_drm": {"3": 1, "4": 2}
+}

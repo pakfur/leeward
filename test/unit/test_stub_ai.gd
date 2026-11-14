@@ -56,6 +56,7 @@ func _make_ship(
 		"hull_hp": [5, 5, 5, 6],
 		"crew_count": [3, 3, 3, 3],
 		"marine_count": 2,
+		"gun_factors": {"lg": 6, "mg": 0, "cr": 4},
 	})
 	state.hex_position = hex_pos
 	state.facing = facing
@@ -63,7 +64,7 @@ func _make_ship(
 	state.sail_state = "MS"
 	state.rigging_current_hp = [5, 5, 6, 6] as Array[int]
 	state.hull_current_hp = [5, 5, 5, 6] as Array[int]
-	state.crew_count = [3, 3, 3] as Array[int]
+	state.crew_count = [3, 3, 3, 3] as Array[int]
 	state.marine_count = 2
 	state.crew_quality = "B"
 	return state
@@ -100,7 +101,7 @@ func test_multiple_ai_ships_all_plotted() -> void:
 	var p = _make_ship("p1", 0, Vector2i(0, 0), 3)
 	var a1 = _make_ship("ai1", 1, Vector2i(10, 0), 3)
 	var a2 = _make_ship("ai2", 1, Vector2i(10, 5), 3)
-	var a3 = _make_ship("ai3", 2, Vector2i(15, 0), 3)
+	var a3 = _make_ship("ai3", 2, Vector2i(0, -10), 1)
 	_add_ship(p)
 	_add_ship(a1)
 	_add_ship(a2)
@@ -119,6 +120,7 @@ func test_multiple_ai_ships_all_plotted() -> void:
 # ===========================================================================
 
 func test_forward_strategy_produces_straight_line() -> void:
+	stub_ai.strategy_override = "forward"
 	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 3, 2)
 	_add_ship(ai)
 
@@ -136,6 +138,7 @@ func test_forward_strategy_produces_straight_line() -> void:
 
 
 func test_forward_strategy_respects_ma() -> void:
+	stub_ai.strategy_override = "forward"
 	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 3, 4)
 	_add_ship(ai)
 
@@ -155,6 +158,7 @@ func test_forward_strategy_different_facings() -> void:
 			GameState.movement_plotting_controller.sessions.clear()
 			GameState.movement_plotting_controller.ship_sessions.clear()
 		stub_ai._request_counter = 0
+		stub_ai.strategy_override = "forward"
 
 		var ai = _make_ship("ai_f%d" % facing, 1, Vector2i(20, 20), facing, 2)
 		_add_ship(ai)
@@ -199,6 +203,7 @@ func test_no_sessions_left_after_multiple_ships() -> void:
 # ===========================================================================
 
 func test_plotted_path_matches_protocol_output() -> void:
+	stub_ai.strategy_override = "forward"
 	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 3, 2)
 	_add_ship(ai)
 
@@ -211,6 +216,7 @@ func test_plotted_path_matches_protocol_output() -> void:
 
 
 func test_ai_ship_can_be_resolved_after_plotting() -> void:
+	stub_ai.strategy_override = "forward"
 	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 3, 2)
 	_add_ship(ai)
 
@@ -277,6 +283,7 @@ func test_zero_ma_ship_submits_empty_plot() -> void:
 
 
 func test_idempotent_no_double_plot() -> void:
+	stub_ai.strategy_override = "forward"
 	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 3, 2)
 	_add_ship(ai)
 
@@ -288,3 +295,206 @@ func test_idempotent_no_double_plot() -> void:
 	stub_ai.plot_all_ai_ships()
 	var second_plot = ai.plotted_actions.movement
 	assert_eq(second_plot.size(), first_plot.size(), "Second plot should produce same result")
+
+
+# ===========================================================================
+# Engage strategy: closing
+# ===========================================================================
+
+func test_ai_closes_distance() -> void:
+	# Enemy 12 hexes off the AI's starboard beam: the AI must turn toward it, not just sail on.
+	var enemy_hex := HexGrid.DIRECTIONS[4] * 12
+	var player = _make_ship("p1", 0, enemy_hex, 3, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 3, 2)
+	_add_ship(player)
+	_add_ship(ai)
+	var start := hex_grid.hex_distance(ai.hex_position.x, ai.hex_position.y, enemy_hex.x, enemy_hex.y)
+
+	var rng = RandomNumberGenerator.new()
+	rng.seed = 7
+	var resolver = MovementResolver.new(GameState, rng)
+	for turn in range(3):
+		stub_ai.plot_all_ai_ships()
+		var ships: Array[ShipState] = [player, ai]
+		var log = resolver.run(ships, env)
+		resolver.apply_results(log, ships)
+
+	var end := hex_grid.hex_distance(ai.hex_position.x, ai.hex_position.y, enemy_hex.x, enemy_hex.y)
+	assert_lt(end, start, "AI should be closer after three turns (start %d, end %d)" % [start, end])
+
+
+func test_ai_turns_back_toward_enemy_astern() -> void:
+	# Wind from the east (0), speed 2. AI faces SE (1); the enemy lies due west.
+	var player = _make_ship("p1", 0, Vector2i(0, 0), 3, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(12, 0), 1, 2)
+	_add_ship(player)
+	_add_ship(ai)
+	var rng = RandomNumberGenerator.new()
+	rng.seed = 7
+	var resolver = MovementResolver.new(GameState, rng)
+	var best := 12
+	for turn in range(8):
+		stub_ai.plot_all_ai_ships()
+		var ships: Array[ShipState] = [player, ai]
+		var log = resolver.run(ships, env)
+		resolver.apply_results(log, ships)
+		best = mini(best, hex_grid.hex_distance(ai.hex_position.x, ai.hex_position.y, 0, 0))
+	assert_lt(best, 12, "AI facing away must come round and close within 8 turns")
+
+
+func test_engaged_ship_with_no_better_option_does_not_move() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 2)
+	var enemy = _make_ship("p1", 0, HexGrid.DIRECTIONS[1], 3, 0)
+	_add_ship(ai)
+	_add_ship(enemy)
+	stub_ai.plot_all_ai_ships()
+	assert_eq(ai.plotted_actions.movement.size(), 0, "Already broadside at range 1: hold")
+
+
+func test_engage_with_no_enemy_plots_nothing() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 3, 2)
+	_add_ship(ai)
+	stub_ai.plot_all_ai_ships()
+	assert_eq(ai.plotted_actions.movement.size(), 0, "No enemy, no movement")
+	assert_eq(GameState.movement_plotting_controller.sessions.size(), 0, "Session submitted and cleaned up")
+
+
+func test_engage_ignores_struck_enemy() -> void:
+	var struck = _make_ship("p1", 0, Vector2i(0, 0), 3, 0)
+	struck.status = ShipState.Status.STRUCK
+	_add_ship(struck)
+	var ai = _make_ship("ai1", 1, Vector2i(10, 0), 3, 2)
+	_add_ship(ai)
+	stub_ai.plot_all_ai_ships()
+	assert_eq(ai.plotted_actions.movement.size(), 0, "Struck enemies are not pursued")
+
+
+# ===========================================================================
+# Fire orders
+# ===========================================================================
+
+func _starboard_hex(origin: Vector2i, facing: int, steps: int) -> Vector2i:
+	# Facing 0 (E): directions 1 (SE) and 2 (SW) lie on the starboard beam arc edges.
+	return origin + HexGrid.DIRECTIONS[(facing + 1) % 6] * steps
+
+
+func _port_hex(origin: Vector2i, facing: int, steps: int) -> Vector2i:
+	return origin + HexGrid.DIRECTIONS[(facing + 5) % 6] * steps
+
+
+func test_ai_fires_at_best_target() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 0)
+	var near = _make_ship("near", 0, _starboard_hex(Vector2i.ZERO, 0, 2), 0, 0)
+	var far = _make_ship("far", 0, _starboard_hex(Vector2i.ZERO, 0, 6), 0, 0)
+	_add_ship(ai)
+	_add_ship(near)
+	_add_ship(far)
+
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+
+	assert_eq(orders.size(), 1, "One order")
+	assert_eq(orders[0]["ship_id"], "ai1")
+	assert_eq(orders[0]["side"], ShipState.STARBOARD)
+	assert_eq(orders[0]["target_id"], "near")
+	assert_eq(orders[0]["aim"], "low")
+	assert_eq(orders[0]["ammo"], "round")
+
+
+func test_ai_aims_high_beyond_range_9() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 0)
+	ai.ship.gun_factors = {"lg": 20, "mg": 0, "cr": 0}
+	var far = _make_ship("far", 0, _starboard_hex(Vector2i.ZERO, 0, 10), 0, 0)
+	_add_ship(ai)
+	_add_ship(far)
+
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+
+	assert_eq(orders.size(), 1, "Target at range 10 is fireable with strong guns")
+	assert_eq(orders[0]["aim"], "high")
+
+
+func test_ai_fires_both_broadsides_when_both_strong() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 0)
+	var s = _make_ship("s", 0, _starboard_hex(Vector2i.ZERO, 0, 2), 0, 0)
+	var p = _make_ship("p", 0, _port_hex(Vector2i.ZERO, 0, 2), 0, 0)
+	_add_ship(ai)
+	_add_ship(s)
+	_add_ship(p)
+
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+
+	assert_eq(orders.size(), 2, "Both broadsides fire")
+
+
+func test_ai_holds_second_broadside_when_penalty_wastes_it() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 0)
+	var strong = _make_ship("strong", 0, _starboard_hex(Vector2i.ZERO, 0, 2), 0, 0)
+	var weak = _make_ship("weak", 0, _port_hex(Vector2i.ZERO, 0, 13), 0, 0)
+	_add_ship(ai)
+	_add_ship(strong)
+	_add_ship(weak)
+
+	var calc: GunneryCalculator = GameState.gunnery_calculator
+	var weak_order := GunneryTypes.FireOrder.new()
+	weak_order.ship_id = "ai1"
+	weak_order.side = ShipState.PORT
+	weak_order.target_id = "weak"
+	weak_order.aim = "high"
+	var weak_preview := calc.preview(weak_order, true)
+	assert_true(weak_preview.can_fire, "Precondition: weak shot is legal")
+	assert_lt(weak_preview.mgn, 1, "Precondition: weak shot is wasted by the two-target penalty")
+
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+
+	assert_eq(orders.size(), 1, "Only the better broadside fires")
+	assert_eq(orders[0]["target_id"], "strong")
+
+
+func test_ai_orders_pass_validation() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 0)
+	var s = _make_ship("s", 0, _starboard_hex(Vector2i.ZERO, 0, 3), 0, 0)
+	var p = _make_ship("p", 0, _port_hex(Vector2i.ZERO, 0, 4), 0, 0)
+	_add_ship(ai)
+	_add_ship(s)
+	_add_ship(p)
+
+	var typed: Array[GunneryTypes.FireOrder] = []
+	for d in stub_ai.choose_fire_orders():
+		typed.append(GunneryTypes.FireOrder.from_dict(d))
+
+	assert_gt(typed.size(), 0, "Precondition: AI has orders")
+	assert_eq(GameState.gunnery_calculator.validate_orders(1, typed), "")
+
+
+func test_ai_with_no_targets_fires_nothing() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 0)
+	_add_ship(ai)
+	assert_eq(stub_ai.choose_fire_orders().size(), 0)
+
+
+func test_ai_with_no_movable_ships_does_not_error() -> void:
+	GameState.rng = RandomNumberGenerator.new()
+	GameState.rng.seed = 11
+	GameState.dice = Dice.new(GameState.rng)
+	var player = _make_ship("player_1", 0, Vector2i(5, 5), 3, 0)
+	var ai = _make_ship("ai_1", 1, _starboard_hex(Vector2i(5, 5), 0, 3), 0, 0)
+	ai.fouled_with = "ghost"
+	_add_ship(player)
+	_add_ship(ai)
+	GameState.start_new_game({"name": "t", "wind_direction": 0, "wind_speed": 2, "sea_state": 1})
+	# start_new_game may reposition nothing; make sure fouling stays for the test
+	ai.fouled_with = "ghost"
+	var pc = GameState.phase_controller
+
+	stub_ai.plot_all_ai_ships()
+	pc.player_submit_plan(0)
+	pc.player_submit_plan(1)
+	pc.on_playback_completed()
+	assert_eq(pc.current_phase, TurnPhaseController.GamePhase.COMBAT_RESOLUTION, "Combat declared")
+
+	# The controller invoked the AI's declaration on entering combat; the player now declares.
+	assert_eq(pc.player_submit_fire_orders(0, []), "")
+	if pc.combat_step == TurnPhaseController.CombatStep.RESOLVE:
+		pc.on_combat_playback_completed()
+
+	assert_eq(pc.current_phase, TurnPhaseController.GamePhase.POST_COMBAT, "Phase advanced")
