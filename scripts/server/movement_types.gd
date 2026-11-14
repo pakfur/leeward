@@ -421,6 +421,7 @@ class ShipResolutionResult extends RefCounted:
 	var tacking_failed: bool = false
 	var collided_with: String = ""
 	var fouled_with: String = ""
+	var blocked_by: String = ""  ## the ship whose hex this one could not enter (bear-off or collision)
 	var rigging_damage: int = 0
 	var stopped_at_impulse: int = -1
 
@@ -444,6 +445,8 @@ class ShipResolutionResult extends RefCounted:
 			d["collided_with"] = collided_with
 		if fouled_with != "":
 			d["fouled_with"] = fouled_with
+		if blocked_by != "":
+			d["blocked_by"] = blocked_by
 		if rigging_damage > 0:
 			d["rigging_damage"] = rigging_damage
 		if stopped_at_impulse >= 0:

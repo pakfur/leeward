@@ -9,6 +9,9 @@ extends Resource
 @export var wind_speed_change: String = "steady"  # "steady", "gusty"
 @export var region: String = "oceanic" # "oceanic", "coastal"
 @export var wind_direction_change: String = "none"  # "none", "veering", "backing"
+# The scenario's starting wind; high wind rolls step the wind back toward it
+@export var original_wind_direction: int = 0
+@export var original_wind_speed: int = 2
 
 # Sea State
 @export var sea_state: int = 1  # 0-3 (0=calm, 1=moderate, 2=rough, 3=storm)
@@ -43,6 +46,8 @@ func serialize() -> Dictionary:
 		"wind_speed_change": wind_speed_change,
 		"wind_direction_change": wind_direction_change,
 		"region": region,
+		"original_wind_direction": original_wind_direction,
+		"original_wind_speed": original_wind_speed,
 		"sea_state": sea_state,
 		"visibility": visibility,
 		"time_of_day": time_of_day,
@@ -58,6 +63,8 @@ static func deserialize(data: Dictionary) -> EnvironmentState:
 	state.wind_speed_change = data.get("wind_speed_change", "steady")
 	state.wind_direction_change = data.get("wind_direction_change", "none")
 	state.region = data.get("region", "oceanic")
+	state.original_wind_direction = data.get("original_wind_direction", state.wind_direction)
+	state.original_wind_speed = data.get("original_wind_speed", state.wind_speed)
 	state.sea_state = data.get("sea_state", 1)
 	state.visibility = data.get("visibility", "clear")
 	state.time_of_day = data.get("time_of_day", "day")
@@ -69,6 +76,8 @@ func initialize_from_scenario(scenario_data: Dictionary) -> void:
 	## One-time setup during game init, called from GameState.start_new_game() (guarded by is_server).  SCV:ALLOW
 	wind_direction = scenario_data.get("wind_direction", 0)
 	wind_speed = scenario_data.get("wind_speed", 2)
+	original_wind_direction = wind_direction
+	original_wind_speed = wind_speed
 	wind_speed_change = scenario_data.get("wind_speed_change", "steady")
 	region = scenario_data.get("region", "oceanic")
 	wind_direction_change = scenario_data.get("wind_direction_change", "none")

@@ -28,82 +28,83 @@ func tick_environment(env_state: EnvironmentState, _turn_number: int) -> void:
 	if not is_server:
 		return
 
-	var history: Array[EnvironmentState] = []
-	if game_state:
-		history = game_state.environment_history
-
-	_update_wind_speed(env_state, game_state.rng, history)
-	_update_wind_direction(env_state, game_state.rng, history)
-	_update_weather(env_state, game_state.rng, history)
+	var from_speed := env_state.wind_speed
+	var from_direction := env_state.wind_direction
+	_update_wind_speed(env_state)
+	_update_wind_direction(env_state)
+	_update_weather(env_state, game_state.rng)
+	_log_wind_change(env_state, from_speed, from_direction)
 
 	environment_updated.emit()
 
-func _update_wind_speed(env_state: EnvironmentState, rng: RandomNumberGenerator, history: Array[EnvironmentState]) -> void:
-	var original_wind_speed = env_state.wind_speed
-	if history.size() > 0 and history[0] != null:
-		original_wind_speed = history[0].wind_speed
+func _update_wind_speed(env_state: EnvironmentState) -> void:
+	var dice: Dice = game_state.dice
+	var original_wind_speed := env_state.original_wind_speed
 
 	var temp_wind_speed = env_state.wind_speed
-	var wind_speed_roll = rng.randi_range(1, 10) + rng.randi_range(1, 10)
-	var changes_threshold = 4 if env_state.wind_speed_change == "steady" else 6
+	var wind_speed_roll = dice.two_d10()
+	var changes_threshold = 1 if env_state.wind_speed_change == "steady" else 3
 
-	if wind_speed_roll < changes_threshold:
-		var changes = rng.randi_range(1, 10)
-		if changes < 5:
-			env_state.wind_speed += 1
-		else:
+	if wind_speed_roll <= changes_threshold:
+		# Chart follow-up d10: 0-4 decreases, 5-9 increases
+		if dice.d10() <= 4:
 			env_state.wind_speed -= 1
-	elif wind_speed_roll > 17:
+		else:
+			env_state.wind_speed += 1
+	elif wind_speed_roll >= 16:
+		# One step back toward the scenario's starting speed
 		if env_state.wind_speed > original_wind_speed:
 			env_state.wind_speed -= 1
-		if env_state.wind_speed < original_wind_speed:
+		elif env_state.wind_speed < original_wind_speed:
 			env_state.wind_speed += 1
 
 	env_state.wind_speed = clampi(env_state.wind_speed, 0, 4)
 	if temp_wind_speed != env_state.wind_speed:
 		Trace.trace_log("Environment", "Wind speed changed from %d to %d" % [temp_wind_speed, env_state.wind_speed])
 
-func _update_wind_direction(env_state: EnvironmentState, rng: RandomNumberGenerator, history: Array[EnvironmentState]) -> void:
-	var original_wind_direction = env_state.wind_direction
-	if history.size() > 0 and history[0] != null:
-		original_wind_direction = history[0].wind_direction
+func _update_wind_direction(env_state: EnvironmentState) -> void:
+	var dice: Dice = game_state.dice
+	var original_wind_direction := env_state.original_wind_direction
 
 	var temp_wind_direction = env_state.wind_direction
-	var wind_dir_roll = rng.randi_range(1, 10) + rng.randi_range(1, 10)
+	var wind_dir_roll = dice.two_d10()
+	var changes := false
 	match env_state.region:
 		"oceanic":
-			if wind_dir_roll < 4:
-				var wind_veer_roll = rng.randi_range(1, 10)
-				if wind_veer_roll < 6:
-					env_state.wind_direction = (env_state.wind_direction - 1 + 6) % 6
-				else:
-					env_state.wind_direction = (env_state.wind_direction + 1 + 6) % 6
-			else:
-				if wind_dir_roll > 17:
-					if env_state.wind_direction > original_wind_direction:
-						env_state.wind_direction = (env_state.wind_direction - 1 + 6) % 6
-					else:
-						if env_state.wind_direction < original_wind_direction:
-							env_state.wind_direction = (env_state.wind_direction + 1 + 6) % 6
-
+			changes = wind_dir_roll <= 1
 		"coastal":
-			if wind_dir_roll > 5 && wind_dir_roll < 8:
-				var wind_veer_roll = rng.randi_range(1, 10)
-				if wind_veer_roll < 6:
-					env_state.wind_direction = (env_state.wind_direction - 1 + 6) % 6
-				else:
-					env_state.wind_direction = (env_state.wind_direction + 1 + 6) % 6
-			else:
-				if wind_dir_roll > 17:
-					if env_state.wind_direction > original_wind_direction:
-						env_state.wind_direction = (env_state.wind_direction - 1 + 6) % 6
-					else:
-						if env_state.wind_direction < original_wind_direction:
-							env_state.wind_direction = (env_state.wind_direction + 1 + 6) % 6
+			changes = wind_dir_roll >= 2 and wind_dir_roll <= 3
+
+	if changes:
+		# Chart follow-up d10: 0-4 veers left, 5-9 veers right
+		if dice.d10() <= 4:
+			env_state.wind_direction = (env_state.wind_direction - 1 + 6) % 6
+		else:
+			env_state.wind_direction = (env_state.wind_direction + 1 + 6) % 6
+	elif wind_dir_roll >= 16:
+		# One 60 degree step back toward the scenario's starting direction, the shorter way round
+		# (when exactly opposite, it backs: -1)
+		var steps_right := (original_wind_direction - env_state.wind_direction + 6) % 6
+		if steps_right in [1, 2]:
+			env_state.wind_direction = (env_state.wind_direction + 1) % 6
+		elif steps_right in [3, 4, 5]:
+			env_state.wind_direction = (env_state.wind_direction - 1 + 6) % 6
 	if env_state.wind_direction != temp_wind_direction:
 		Trace.trace_log("Environment", "Wind direction changed from %d to %d" % [temp_wind_direction, env_state.wind_direction])
 
-func _update_weather(_env_state: EnvironmentState, _rng: RandomNumberGenerator, _history: Array[EnvironmentState]) -> void:
+## A WIND line in the turn log whenever the wind changes direction or speed.
+func _log_wind_change(env_state: EnvironmentState, from_speed: int, from_direction: int) -> void:
+	if env_state.wind_speed == from_speed and env_state.wind_direction == from_direction:
+		return
+	if game_state.get("turn_log") == null:
+		return
+	game_state.turn_log.add(PhaseEvents.Type.WIND, TurnPhaseController.GamePhase.ENVIRONMENT, "", {
+		"from_direction": from_direction, "to_direction": env_state.wind_direction,
+		"from_speed": from_speed, "to_speed": env_state.wind_speed,
+		"speed_name": env_state.get_wind_speed_name(),
+	})
+
+func _update_weather(_env_state: EnvironmentState, _rng: RandomNumberGenerator) -> void:
 	pass
 
 func force_update() -> void:

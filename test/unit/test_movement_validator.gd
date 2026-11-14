@@ -113,6 +113,30 @@ func test_remaining_ma_decrements_with_each_forward() -> void:
 	assert_eq(result1.remaining_ma, ma - 1, "MA should decrement by 1 after one forward move")
 
 
+func test_dismasted_ship_has_zero_ma() -> void:
+	var ship = _make_ship("F/F", "b")
+	var ss = _make_ship_state(ship, 0, 3, "MS")
+	for i in range(4):
+		ss.rigging_current_hp[i] = 0
+	var result = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, [])
+	assert_eq(result.remaining_ma, 0, "Dismasted ship gets MA 0")
+	assert_eq(mock_gs.ship_controller.get_movement_allowance(ss.ship_id), 0)
+
+
+func test_overcarried_sail_reads_ma_at_movement_sail_state() -> void:
+	var ship = _make_ship("F/F", "b")
+	var ss = _make_ship_state(ship, 0, 3, "PS")
+	var full = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, [])
+	ss.rigging_current_hp[0] = 0  # level 3: PS not available, read at MS
+	var ms_state = _make_ship_state(ship, 0, 3, "MS")
+	ms_state.rigging_current_hp[0] = 0
+	var expected = validator.calculate_valid_moves(ms_state, ms_state.hex_position, ms_state.facing, [])
+	var capped = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, [])
+	assert_eq(capped.remaining_ma, expected.remaining_ma)
+	assert_eq(ss.sail_state, "PS")
+	assert_true(capped.remaining_ma <= full.remaining_ma)
+
+
 # ============================================================================
 # Pivot caps
 # ============================================================================

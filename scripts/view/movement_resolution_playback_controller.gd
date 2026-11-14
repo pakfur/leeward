@@ -14,6 +14,7 @@ var _hex_grid: HexGrid = null
 var _ship_views: Dictionary = {}  # ship_id -> ShipView
 var _log: MovementTypes.ResolutionLog = null
 var _playing: bool = false
+var _aborted: bool = false  # the game is being left: stop and never report completion
 var _player_id: int = 0
 
 
@@ -32,14 +33,27 @@ func play(log: MovementTypes.ResolutionLog) -> void:
 	Trace.trace_log("Playback", "start", {"turn": log.turn, "max_impulses": log.max_impulses, "ships": log.ship_results.size()})
 	# Yield one frame so callers can set up signal listeners before we emit
 	await _yield_frame()
-	await _play_all_impulses()
+	if not _aborted:
+		await _play_all_impulses()
 	_playing = false
+	if _aborted:
+		return
 	Trace.trace_log("Playback", "complete", {"turn": log.turn})
 	playback_completed.emit()
 
 
 func is_playing() -> bool:
 	return _playing
+
+
+## Abandon the playback (leaving the game): no further steps, playback_completed never emitted.
+func abort() -> void:
+	_aborted = true
+	_playing = false
+
+
+func is_aborted() -> bool:
+	return _aborted
 
 
 ## ============================================================================
@@ -55,6 +69,8 @@ func _play_all_impulses() -> void:
 		await _play_event_batch(pre_events)
 
 	for impulse in range(_log.max_impulses):
+		if _aborted:
+			return
 		var impulse_events: Array = events_by_impulse.get(impulse, [])
 		if impulse_events.is_empty():
 			continue
@@ -115,6 +131,8 @@ func _collect_pre_movement_events() -> Array:
 ## ============================================================================
 
 func _animate_moves(move_events: Array) -> void:
+	if _aborted:
+		return
 	var tweens: Array = []
 	for ev in move_events:
 		var view: ShipView = _ship_views.get(ev.ship_id)
@@ -200,9 +218,10 @@ func _play_event_batch(events: Array) -> void:
 ## ============================================================================
 
 func _wait_ms(ms: float) -> void:
-	if not is_inside_tree():
+	if not is_inside_tree() or _aborted:
 		return
-	await get_tree().create_timer(ms / 1000.0).timeout
+	# process_always = false: the wait holds while the tree is paused (pause menu open).
+	await get_tree().create_timer(ms / 1000.0, false).timeout
 
 
 func _yield_frame() -> void:

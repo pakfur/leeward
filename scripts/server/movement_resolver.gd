@@ -316,6 +316,7 @@ func _resolve_collision_or_bearoff(
 	var loser: ShipState = ship_map[loser_id]
 	var loser_result: MovementTypes.ShipResolutionResult = results[loser_id]
 	var maneuverability: String = loser.ship.maneuverability if loser.ship else "b"
+	loser_result.blocked_by = blocker_id
 
 	if not _is_bearing_off_pivot_legal(loser, forward_since_turn.get(loser_id, 0)):
 		var deny_ev = MovementTypes.ResolutionEvent.new(
@@ -449,7 +450,12 @@ func _apply_collision(
 		rig_ev.detail = "rigging_loss=%d from sail_state=%s" % [rigging_loss, state_a.sail_state]
 		result_a.events.append(rig_ev)
 
-	var fouled: bool = _roll_fouling(state_a, ship_map[ship_b_id])
+	# Only a free, unfouled pair can foul (as in DriftResolver._try_foul): a ship already fouled
+	# with a third ship, before or earlier in this resolution, keeps its partner and no roll is made.
+	var state_b: ShipState = ship_map[ship_b_id]
+	var either_fouled: bool = state_a.fouled_with != "" or state_b.fouled_with != "" \
+			or result_a.fouled_with != "" or result_b.fouled_with != ""
+	var fouled: bool = not either_fouled and roll_fouling(state_a, state_b)
 	if fouled:
 		result_a.fouled_with = ship_b_id
 		result_b.fouled_with = ship_a_id
@@ -477,10 +483,26 @@ func _collision_rigging_loss(ship_state: ShipState) -> int:
 	return 0
 
 
-func _roll_fouling(ship_a: ShipState, ship_b: ShipState) -> bool:
+## Fouling roll after a collision or a blocked drift (Close Action 1997 Collision Resolution
+## chart). True when the two ships foul: d10 (0-9) + modifiers >= 6, where each ship at MS adds 1
+## and each ship at PS adds 2. A dismasted ship never fouls (no die drawn).
+## Collision (drifting == false): the die is rng.randi_range(0, 9) from the resolver's own RNG,
+## keeping movement resolution self-contained and deterministic.
+## Drifting: the die comes from game_state.dice and the drifting ship takes a further -1.
+func roll_fouling(ship_a: ShipState, ship_b: ShipState, drifting: bool = false) -> bool:
 	if _is_dismasted(ship_a) or _is_dismasted(ship_b):
 		return false
-	return rng.randf() <= 0.5
+	var modifier: int = _fouling_sail_modifier(ship_a) + _fouling_sail_modifier(ship_b)
+	if drifting:
+		return game_state.dice.d10() + modifier - 1 >= 6
+	return rng.randi_range(0, 9) + modifier >= 6
+
+
+func _fouling_sail_modifier(ship_state: ShipState) -> int:
+	match ship_state.sail_state.to_upper():
+		"MS": return 1
+		"PS": return 2
+	return 0
 
 
 func _is_dismasted(ship_state: ShipState) -> bool:
@@ -654,6 +676,9 @@ func _get_luffing_facing(_ship_state: ShipState, environment: EnvironmentState) 
 
 
 func _get_plotted_steps(ship_state: ShipState) -> Array:
+	## Fouled and struck ships cannot move: any plot is ignored (defence behind the plotting check).
+	if ship_state.fouled_with != "" or ship_state.is_struck():
+		return []
 	return ship_state.plotted_actions.get("movement", [])
 
 
@@ -685,12 +710,15 @@ func _wind_direction() -> int:
 @warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) -> void:
 	var sc = game_state.ship_controller if game_state else null
+	if game_state and game_state.get("turn_log") != null:
+		log_outcomes(log, ships, game_state.turn_log)  # before the plots are cleared
 	for ship_state in ships:
 		var result = log.get_result(ship_state.ship_id)
 		if result == null:
 			continue
 		var sid = ship_state.ship_id
 		if sc:
+			sc.set_moved_this_turn(sid, _count_hexes_moved(result) > 0)
 			sc.set_ship_position(sid, result.final_hex)
 			sc.set_ship_facing(sid, result.final_facing)
 			if result.immobilized:
@@ -707,6 +735,13 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			push_error("MovementResolver: No ship_controller available")
 
 func _apply_rigging_damage(ship_id: String, damage: int, sc: ShipStateController) -> void:
+	## Collision rigging loss follows the damage rules (dismasting sets NS and notes a morale
+	## check; the loss is logged). The direct fallback is only for resolvers built without one.
+	var damage_controller = game_state.get("damage_controller")
+	if damage_controller != null and game_state.get("turn_log") != null:
+		damage_controller.apply_hits(ship_id, damage, 0, 0, "other",
+				TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION)
+		return
 	var ship_state = game_state.get_ship(ship_id)
 	if not ship_state:
 		return
@@ -726,3 +761,60 @@ func _count_hexes_moved(result: MovementTypes.ShipResolutionResult) -> int:
 		if ev.event_type == MovementTypes.ResolutionEventType.MOVE and ev.from_hex != ev.to_hex:
 			count += 1
 	return count
+
+
+## Name what happened to each ship in the turn log, in ship order: a failed tack or a ship left in
+## irons, a collision (logged for the ship that ran into the other), movement cut short of the plot,
+## and fouling (once per pair). Reads each ship's plot, so call it before the plots are cleared.
+@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
+func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], turn_log: PhaseEvents.PhaseLog) -> void:
+	var phase := TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
+	var fouled_logged := {}
+	for ship_state in ships:
+		var sid := ship_state.ship_id
+		var result: MovementTypes.ShipResolutionResult = log.get_result(sid)
+		if result == null:
+			continue
+		if result.tacking_failed:
+			turn_log.add(PhaseEvents.Type.IN_IRONS, phase, sid, {"cause": "tack"})
+		elif result.immobilized:
+			turn_log.add(PhaseEvents.Type.IN_IRONS, phase, sid, {"cause": "irons"})
+		for ev in result.events:
+			if ev.event_type == MovementTypes.ResolutionEventType.COLLISION and ev.detail.begins_with("collided with"):
+				var at := _collision_hex(log, result.collided_with, ev)
+				turn_log.add(PhaseEvents.Type.COLLISION, phase, sid, {"hex": {"q": at.x, "r": at.y}},
+					result.collided_with)
+		var planned: int = _get_plotted_steps(ship_state).size()
+		if not result.tacking_failed and planned > 0 and _count_hexes_moved(result) < planned:
+			var data := {"moved": _count_hexes_moved(result), "planned": planned}
+			var cause := stop_cause(result)
+			if not cause.is_empty():
+				data["cause"] = cause["cause"]
+			turn_log.add(PhaseEvents.Type.STOPPED_SHORT, phase, sid, data, str(cause.get("other", "")))
+		if result.fouled_with != "" and not fouled_logged.has(sid):
+			turn_log.add(PhaseEvents.Type.FOULED, phase, sid, {"cause": "collision"}, result.fouled_with)
+			fouled_logged[sid] = true
+			fouled_logged[result.fouled_with] = true
+
+
+## Why a ship's movement ended before its plot did, from its resolution result alone:
+## {"cause": "collision", "other": id} when it collided (either ship), {"cause": "bore_off",
+## "other": id} when it bore off to avoid the ship in its way, {} when the result names no cause.
+static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary:
+	if result.collided_with != "":
+		return {"cause": "collision", "other": result.collided_with}
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.STOPPED and ev.success:
+			return {"cause": "bore_off", "other": result.blocked_by}
+	return {}
+
+
+## Where the other ship lay when this one ran into it (its own collision event), else where this ship was.
+@warning_ignore("shadowed_global_identifier")
+func _collision_hex(log: MovementTypes.ResolutionLog, other_id: String, ev: MovementTypes.ResolutionEvent) -> Vector2i:
+	var other: MovementTypes.ShipResolutionResult = log.get_result(other_id)
+	if other:
+		for other_ev in other.events:
+			if other_ev.event_type == MovementTypes.ResolutionEventType.COLLISION and other_ev.impulse == ev.impulse:
+				return other_ev.from_hex
+	return ev.to_hex

@@ -110,8 +110,12 @@ func test_low_rigging_quality_reduces_options() -> void:
 	assert_eq(ma, 0, "L/F, C, ws1, rq1, fs should be 0")
 
 func test_rigging_quality_2_close_hauled() -> void:
-	var ma = dm.get_movement_allowance("F/F", 2, "C", "ps", 2)
-	assert_eq(ma, 1, "F/F, C, ws2, rq2, ps should be 1")
+	var ma = dm.get_movement_allowance("F/F", 2, "C", "fs", 2)
+	assert_eq(ma, 1, "F/F, C, ws2, 2 sections, fs should be 1 (chart)")
+
+func test_low_rigging_levels_use_fs_key_per_chart() -> void:
+	assert_eq(dm.get_movement_allowance("F/F", 3, "B", "fs", 1), 3, "F/F, B, ws3, 1 section, fs")
+	assert_eq(dm.get_movement_allowance("L/F", 4, "R", "fs", 2), 3, "L/F, R, ws4, 2 sections, fs")
 
 func test_rigging_quality_3_broad_reach() -> void:
 	var ma = dm.get_movement_allowance("F/F", 2, "B", "ms", 3)
@@ -152,8 +156,8 @@ func test_wind_speed_max_boundary() -> void:
 
 func test_rigging_quality_min_boundary() -> void:
 	var ma = dm.get_movement_allowance("F/F", 2, "B", "fs", 1)
-	# rq1 for F/F B ws2 only has "ps" key, fs is missing → 0
-	assert_eq(ma, 0, "Rigging quality 1 with fs should return 0 (not in table)")
+	# Chart: F-F, B, wind 2, 1 rigging section, fs = 2
+	assert_eq(ma, 2, "Rigging level 1 with fs should read the chart value")
 
 func test_rigging_quality_max_boundary() -> void:
 	var ma = dm.get_movement_allowance("F/F", 2, "B", "fs", 4)

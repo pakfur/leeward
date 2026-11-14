@@ -6,6 +6,9 @@ extends Node
 signal phase_changed(new_phase: int)
 signal turn_changed(turn_number: int)
 signal resolution_log_ready(log: MovementTypes.ResolutionLog)
+signal fire_declaration_requested()
+signal combat_log_ready(log: PhaseEvents.PhaseLog)
+signal game_over(result: Dictionary)
 
 enum GamePhase {
 	SETUP,
@@ -21,11 +24,19 @@ enum GamePhase {
 	END_TURN
 }
 
+## Steps inside COMBAT_RESOLUTION: orders are declared (hidden, simultaneous), then resolved.
+enum CombatStep { NONE, DECLARE, RESOLVE }
+
 var current_phase: GamePhase = GamePhase.SETUP
 var current_turn: int = 0
 var players_ready: Array[bool] = [false, false]
 var is_server: bool = true  # Set to true on server, false on clients
 var _pending_resolution_log: MovementTypes.ResolutionLog = null
+var combat_step: CombatStep = CombatStep.NONE
+var _fire_orders: Array = [[], []]  # per player: Array[GunneryTypes.FireOrder]
+var _fire_ready: Array[bool] = [false, false]
+## Set when END_TURN finds a victory: {"winner", "reason", "points", "turn"}. {} while the game runs.
+var game_result: Dictionary = {}
 
 # Reference to game state (authoritative on server)
 var game_state: Node = null
@@ -40,9 +51,16 @@ func start_new_game() -> void:
 		return
 
 	current_turn = 1
+	game_result = {}
+	players_ready = [false, false] as Array[bool]
+	combat_step = CombatStep.NONE
+	_fire_orders = [[], []]
+	_fire_ready = [false, false]
+	_pending_resolution_log = null
 	current_phase = GamePhase.SETUP  # Start in SETUP so advance_phase() enters ENVIRONMENT
 
 	Trace.trace_log("TurnPhase", "Game started - Turn: %d" % current_turn)
+	turn_changed.emit(current_turn)  # listeners (and GameState's mirror) see turn 1 of the new game
 	advance_phase()  # This will transition SETUP -> ENVIRONMENT
 
 func advance_phase() -> void:
@@ -50,6 +68,8 @@ func advance_phase() -> void:
 	if not is_server:
 		push_error("TurnPhaseController: Cannot advance phase on client")
 		return
+	if not game_result.is_empty():
+		return  # Game over: the phase stays END_TURN
 
 	match current_phase:
 		GamePhase.SETUP:
@@ -71,7 +91,7 @@ func advance_phase() -> void:
 		GamePhase.MESSAGE_DELIVERY:
 			_enter_post_combat_phase()
 		GamePhase.POST_COMBAT:
-			_enter_end_turn_phase()
+			push_warning("TurnPhaseController: POST_COMBAT waits for player_end_turn(); advance_phase ignored")
 		GamePhase.END_TURN:
 			_start_new_turn()
 
@@ -117,6 +137,9 @@ func player_submit_plan(player_id: int) -> bool:
 		push_error("TurnPhaseController: Cannot submit plan on client")
 		return false
 
+	if not game_result.is_empty():
+		return false
+
 	if current_phase != GamePhase.PLANNING:
 		push_error("[Server] Cannot submit plan outside PLANNING phase")
 		return false
@@ -143,6 +166,10 @@ func _enter_movement_resolution_phase() -> void:
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: MOVEMENT_RESOLUTION")
 
+	# Plotted sail changes start now, before movement resolution clears the plots
+	if game_state.sail_controller:
+		game_state.sail_controller.begin_plotted_changes()
+
 	if game_state.movement_resolver and game_state.environment:
 		var all_ships = game_state.get_all_ships()
 		@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
@@ -157,6 +184,9 @@ func _enter_movement_resolution_phase() -> void:
 func on_playback_completed() -> void:
 	"""Called by the view layer after resolution playback finishes.
 	Applies results to state and advances to the next phase."""
+	if not is_server:
+		push_error("TurnPhaseController: Cannot complete movement playback on client")
+		return
 	if current_phase != GamePhase.MOVEMENT_RESOLUTION:
 		push_error("TurnPhaseController: on_playback_completed called outside MOVEMENT_RESOLUTION")
 		return
@@ -168,11 +198,97 @@ func on_playback_completed() -> void:
 	advance_phase()
 
 func _enter_combat_resolution_phase() -> void:
-	"""SERVER ONLY: Enter combat resolution phase"""
+	"""SERVER ONLY: Enter combat resolution phase.
+	Skipped entirely when no ship has a legal shot. Otherwise waits in DECLARE for both
+	players' fire orders, then resolves them (RESOLVE) and waits for the view to finish
+	playback via on_combat_playback_completed()."""
 	current_phase = GamePhase.COMBAT_RESOLUTION
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: COMBAT_RESOLUTION")
-	# TODO: Resolve gunnery, marine fire, boarding
+
+	var calculator = game_state.gunnery_calculator
+	if calculator == null or not calculator.any_eligible_shot():
+		combat_step = CombatStep.NONE
+		advance_phase()
+		return
+
+	combat_step = CombatStep.DECLARE
+	_fire_orders = [[], []]
+	_fire_ready = [false, false]
+	fire_declaration_requested.emit()
+	if game_state.stub_ai:
+		game_state.stub_ai.submit_fire_orders()
+
+func player_submit_fire_orders(player_id: int, orders: Array) -> String:
+	"""SERVER ONLY: Validate and store a player's fire orders (Array of FireOrder dictionaries).
+	Returns "" on success, otherwise the reason it was rejected (nothing changes on rejection).
+	A later valid submission replaces an earlier one until both players are ready."""
+	if not is_server:
+		push_error("TurnPhaseController: Cannot submit fire orders on client")
+		return "fire orders can only be submitted on the server"
+	if not game_result.is_empty():
+		return "the game is over"
+	if current_phase != GamePhase.COMBAT_RESOLUTION or combat_step != CombatStep.DECLARE:
+		return "fire orders are not being accepted now"
+	if player_id < 0 or player_id >= _fire_ready.size():
+		return "invalid player %d" % player_id
+
+	var typed: Array[GunneryTypes.FireOrder] = []
+	for entry in orders:
+		if not entry is Dictionary:
+			return "malformed fire order"
+		typed.append(GunneryTypes.FireOrder.from_dict(entry))
+
+	var reason: String = game_state.gunnery_calculator.validate_orders(player_id, typed)
+	if reason != "":
+		return reason
+
+	_fire_orders[player_id] = typed
+	_fire_ready[player_id] = true
+	Trace.trace_log("TurnPhase", "Player %d declared %d fire orders" % [player_id, typed.size()])
+
+	if _fire_ready.all(func(is_ready): return is_ready):
+		_resolve_combat()
+	return ""
+
+func _resolve_combat() -> void:
+	"""SERVER ONLY: Resolve all declared fire simultaneously, then wait for playback."""
+	combat_step = CombatStep.RESOLVE
+	var all_orders: Array[GunneryTypes.FireOrder] = []
+	for player_orders in _fire_orders:
+		all_orders.append_array(player_orders)
+	_log_held_fire(all_orders)
+	game_state.gunnery_resolver.resolve(all_orders, GamePhase.COMBAT_RESOLUTION)
+	Trace.trace_log("TurnPhase", "COMBAT_RESOLUTION resolved", {"orders": all_orders.size()})
+	combat_log_ready.emit(game_state.turn_log)
+
+func _log_held_fire(orders: Array[GunneryTypes.FireOrder]) -> void:
+	"""SERVER ONLY: Log HOLD_FIRE for every ship (both players, ascending ship_id) that had an
+	eligible shot but was given no fire order. Runs before resolution, so eligibility reflects
+	the state the orders were declared against."""
+	var ordered := {}
+	for order in orders:
+		ordered[order.ship_id] = true
+	var ids: Array = []
+	for ship: ShipState in game_state.get_all_ships():
+		ids.append(ship.ship_id)
+	ids.sort()
+	for ship_id: String in ids:
+		if ordered.has(ship_id):
+			continue
+		if game_state.gunnery_calculator.eligible_shots(ship_id).is_empty():
+			continue
+		game_state.turn_log.add(PhaseEvents.Type.HOLD_FIRE, GamePhase.COMBAT_RESOLUTION, ship_id)
+
+func on_combat_playback_completed() -> void:
+	"""Called by the view layer after combat playback finishes. Advances past combat."""
+	if not is_server:
+		push_error("TurnPhaseController: Cannot complete combat playback on client")
+		return
+	if current_phase != GamePhase.COMBAT_RESOLUTION or combat_step != CombatStep.RESOLVE:
+		push_error("TurnPhaseController: on_combat_playback_completed called outside combat RESOLVE")
+		return
+	combat_step = CombatStep.NONE
 	advance_phase()
 
 func _enter_drift_calculation_phase() -> void:
@@ -180,7 +296,7 @@ func _enter_drift_calculation_phase() -> void:
 	current_phase = GamePhase.DRIFT_CALCULATION
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: DRIFT_CALCULATION")
-	# TODO: Resolve drifting/fouling
+	game_state.drift_resolver.resolve(GamePhase.DRIFT_CALCULATION)
 	advance_phase()
 
 func _enter_status_adjustment_phase() -> void:
@@ -188,6 +304,10 @@ func _enter_status_adjustment_phase() -> void:
 	current_phase = GamePhase.STATUS_ADJUSTMENT
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: STATUS_ADJUSTMENT")
+	if game_state.fouling_controller:
+		game_state.fouling_controller.resolve_unfouling(current_phase)
+	if game_state.sail_controller:
+		game_state.sail_controller.advance_changes(current_phase)
 	# TODO: Resolve explosions, sinking, repairs, crew reorg, anchors
 	advance_phase()
 
@@ -196,7 +316,8 @@ func _enter_morale_check_phase() -> void:
 	current_phase = GamePhase.MORALE_CHECK
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: MORALE_CHECK")
-	# TODO: Update crew morale
+	if game_state.morale_controller:
+		game_state.morale_controller.resolve_checks(current_phase)
 	advance_phase()
 
 func _enter_message_delivery_phase() -> void:
@@ -208,23 +329,51 @@ func _enter_message_delivery_phase() -> void:
 	advance_phase()
 
 func _enter_post_combat_phase() -> void:
-	"""SERVER ONLY: Enter post combat phase"""
+	"""SERVER ONLY: Enter post combat phase and wait for the player's End Turn"""
 	current_phase = GamePhase.POST_COMBAT
 	phase_changed.emit(current_phase)
-	Trace.trace_log("TurnPhase", "Phase: POST_COMBAT - Player interaction required")
+	Trace.trace_log("TurnPhase", "Phase: POST_COMBAT - waiting for End Turn")
 	# TODO: Allow grappling/ungrappling, unfouling, fire fighting
-	# Server waits for manual advance
+
+func player_end_turn(player_id: int) -> bool:
+	"""SERVER ONLY: The human player ends the turn. Only valid in POST_COMBAT; the AI needs no call."""
+	if not is_server:
+		push_error("TurnPhaseController: Cannot end turn on client")
+		return false
+	if not game_result.is_empty() or current_phase != GamePhase.POST_COMBAT:
+		return false
+	if player_id != 0:
+		return false
+	Trace.trace_log("TurnPhase", "Player %d ended the turn" % player_id)
+	_enter_end_turn_phase()
+	return true
 
 func _enter_end_turn_phase() -> void:
-	"""SERVER ONLY: Enter end turn phase"""
+	"""SERVER ONLY: Enter end turn phase - stop with a result, or roll over to the next turn"""
 	current_phase = GamePhase.END_TURN
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: END_TURN")
-	# TODO: Check victory/defeat conditions
+
+	var result: Dictionary = game_state.victory_controller.check(current_turn)
+	if result.is_empty():
+		_start_new_turn()
+		return
+
+	game_result = result
+	game_state.turn_log.add(PhaseEvents.Type.VICTORY, current_phase, "",
+			{"winner": result["winner"], "reason": result["reason"]})
+	game_state.turn_logs[current_turn] = game_state.turn_log
+	Trace.trace_log("TurnPhase", "Game over", result)
+	game_over.emit(result)
 
 func _start_new_turn() -> void:
 	"""SERVER ONLY: Start a new turn"""
+	for ship: ShipState in game_state.get_all_ships():
+		game_state.ship_controller.clear_turn_flags(ship.ship_id)
+	game_state.turn_logs[current_turn] = game_state.turn_log
 	current_turn += 1
+	game_state.turn_log = PhaseEvents.PhaseLog.new()
+	game_state.turn_log.turn = current_turn
 	turn_changed.emit(current_turn)
 	Trace.trace_log("TurnPhase", "=== Turn %d ===" % current_turn)
 	# Directly enter environment phase (we're already inside advance_phase() call chain)
@@ -239,7 +388,8 @@ func serialize_phase_state() -> Dictionary:
 	return {
 		"current_phase": current_phase,
 		"current_turn": current_turn,
-		"players_ready": players_ready
+		"players_ready": players_ready,
+		"combat_step": combat_step
 	}
 
 func apply_phase_state(data: Dictionary) -> void:
@@ -247,6 +397,7 @@ func apply_phase_state(data: Dictionary) -> void:
 	current_phase = data.get("current_phase", GamePhase.SETUP)
 	current_turn = data.get("current_turn", 0)
 	players_ready = data.get("players_ready", [false, false])
+	combat_step = data.get("combat_step", CombatStep.NONE)
 
 	# Emit signals so UI can update
 	phase_changed.emit(current_phase)

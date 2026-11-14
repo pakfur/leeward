@@ -1,0 +1,5 @@
+{
+  "_doc": "Crew Loss table (d6, 1997 chart p.110). A d6 roll <= sailor_max loses a sailor box; higher loses a marine box. Gunfire at hull: S 1-5, M 6. All other causes: S 1-3, M 4-6.",
+  "gunfire_at_hull": {"sailor_max": 5},
+  "other": {"sailor_max": 3}
+}

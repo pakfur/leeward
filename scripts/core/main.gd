@@ -22,6 +22,9 @@ func _load_splash_screen() -> void:
 func _on_play_requested() -> void:
 	"""User clicked Play - show scenario selection"""
 	Trace.trace_log("Main", "Loading scenario selection")
+	_show_scenario_selection()
+
+func _show_scenario_selection() -> void:
 	_change_scene(SCENARIO_SELECTION)
 
 	if current_scene:
@@ -36,6 +39,14 @@ func _on_scenario_selected(scenario_name: String) -> void:
 	GameState.selected_scenario = scenario_name
 
 	_change_scene(GAME_SCENE)
+
+	if current_scene:
+		current_scene.back_to_scenarios_requested.connect(_on_back_to_scenarios)
+
+func _on_back_to_scenarios() -> void:
+	"""Game finished - return to scenario selection"""
+	Trace.trace_log("Main", "Returning to scenario selection")
+	_show_scenario_selection()
 
 func _on_back_to_menu() -> void:
 	"""Return to main menu"""

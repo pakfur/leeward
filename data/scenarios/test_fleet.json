@@ -1,6 +1,6 @@
 {
-  "name": "Test Scenario - Four Ships",
-  "description": "Basic test scenario with four opposing ships for development testing",
+  "name": "Test Scenario - Six Ships",
+  "description": "Basic test scenario with six ships (two player, four enemy) for development testing",
   "seed": 42,
   "wind_direction": 0,
   "wind_speed": 2,
@@ -8,6 +8,7 @@
   "wind_direction_change": "none",
   "region": "oceanic",
   "sea_state": 1,
+  "turn_limit": 30,
   "map": {
 	"map_texture": "res://assets/textures/water_default.png",
 	"show_hex": true
@@ -20,6 +21,7 @@
   "ships": [
 	{
 	  "id": "player_ship_1",
+	  "ship_name": "HMS Lively",
 	  "player_id": 0,
 	  "ship_type": "frigate_38",
 	  "position": {
@@ -36,6 +38,7 @@
 	},
 	{
 	  "id": "player_ship_2",
+	  "ship_name": "HMS Phoebe",
 	  "player_id": 0,
 	  "ship_type": "frigate_38",
 	  "position": {
@@ -52,8 +55,9 @@
 	},
 	{
 	  "id": "enemy_ship_1",
+	  "ship_name": "Topaze",
 	  "player_id": 1,
-	  "ship_type": "corvette_24",
+	  "ship_type": "frigate_32",
 	  "position": {
 		"q": 8,
 		"r": 0
@@ -67,9 +71,10 @@
 	  "crew_morale": 4
 	},
 	{
-	  "id": "enemy_ship_1",
+	  "id": "enemy_ship_2",
+	  "ship_name": "Vestale",
 	  "player_id": 1,
-	  "ship_type": "corvette_24",
+	  "ship_type": "frigate_32",
 	  "position": {
 		"q": 7,
 		"r": 2
@@ -83,9 +88,10 @@
 	  "crew_morale": 4
 	},
 	{
-	  "id": "enemy_ship_2",
+	  "id": "enemy_ship_3",
+	  "ship_name": "Amphitrite",
 	  "player_id": 1,
-	  "ship_type": "corvette_24",
+	  "ship_type": "frigate_32",
 	  "position": {
 		"q": 9,
 		"r": 1
@@ -99,12 +105,13 @@
 	  "crew_morale": 4
 	},
 	{
-	  "id": "enemy_ship_3",
+	  "id": "enemy_ship_4",
+	  "ship_name": "Pique",
 	  "player_id": 1,
-	  "ship_type": "corvette_24",
+	  "ship_type": "frigate_32",
 	  "position": {
 		"q": 8,
-		"r": 0
+		"r": 1
 	  },
 	  "facing": 3,
 	  "speed": 0,

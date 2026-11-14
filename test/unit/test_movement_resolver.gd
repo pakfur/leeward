@@ -5,6 +5,7 @@ extends GutTest
 var resolver: MovementResolver
 var rng: RandomNumberGenerator
 var env: EnvironmentState
+var _saved_turn_log: PhaseEvents.PhaseLog
 
 
 func before_all() -> void:
@@ -23,6 +24,13 @@ func before_each() -> void:
 	env.sea_state = 1
 	GameState.environment = env
 	GameState.ships.clear()
+	# apply_results logs collision damage through DamageController
+	_saved_turn_log = GameState.turn_log
+	GameState.turn_log = PhaseEvents.PhaseLog.new()
+
+
+func after_each() -> void:
+	GameState.turn_log = _saved_turn_log
 
 
 func _make_ship_def(maneuverability: String = "C", speed_type: String = "F/F", ship_class: int = 3) -> Ship:
@@ -595,24 +603,84 @@ func test_dismasted_ships_cannot_foul() -> void:
 
 	for _i in range(20):
 		rng.seed = _i
-		var fouled = resolver._roll_fouling(state_a, state_b)
+		var fouled = resolver.roll_fouling(state_a, state_b)
 		assert_false(fouled, "Dismasted ship should never foul (seed=%d)" % _i)
 
 
-func test_fouling_roll_50_percent() -> void:
+## Collision fouling (1997 Collision Resolution chart): d10 0-9 from the resolver's own rng,
+## fouled on 6+, +1 per ship at MS, +2 per ship at PS, nothing for FS; no drifting penalty.
+func _fouls_at_roll(sail_a: String, sail_b: String, die: int) -> bool:
 	var state_a = _make_ship_state(Vector2i(5, 5), 0, 1, "C", "ship_a")
 	var state_b = _make_ship_state(Vector2i(5, 6), 3, 1, "C", "ship_b")
+	state_a.sail_state = sail_a
+	state_b.sail_state = sail_b
+	# Find a seed whose first randi_range(0, 9) is the wanted die value.
+	for seed_val in range(1000):
+		var probe := RandomNumberGenerator.new()
+		probe.seed = seed_val
+		if probe.randi_range(0, 9) == die:
+			rng.seed = seed_val
+			return resolver.roll_fouling(state_a, state_b)
+	fail_test("No seed produces die %d" % die)
+	return false
 
-	var fouled_count: int = 0
-	var trials: int = 1000
-	for i in range(trials):
+
+func test_collision_fouling_both_fs_needs_6_or_more() -> void:
+	for die in range(10):
+		assert_eq(_fouls_at_roll("FS", "FS", die), die >= 6, "FS/FS die %d" % die)
+
+
+func test_collision_fouling_both_ms_needs_4_or_more() -> void:
+	for die in range(10):
+		assert_eq(_fouls_at_roll("MS", "MS", die), die >= 4, "MS/MS die %d" % die)
+
+
+func test_collision_fouling_ps_counts_two_each() -> void:
+	assert_true(_fouls_at_roll("PS", "FS", 4), "PS+FS: 4+2 = 6")
+	assert_false(_fouls_at_roll("PS", "FS", 3), "PS+FS: 3+2 = 5")
+	assert_true(_fouls_at_roll("PS", "PS", 2), "PS+PS: 2+4 = 6")
+
+
+func test_collision_fouling_dismasted_never_fouls() -> void:
+	var state_a = _make_ship_state(Vector2i(5, 5), 0, 1, "C", "ship_a")
+	var state_b = _make_ship_state(Vector2i(5, 6), 3, 1, "C", "ship_b")
+	state_b.sail_state = "PS"
+	var dismasted: Array[int] = [0, 0, 0, 0]
+	state_b.rigging_current_hp = dismasted
+	state_a.sail_state = "PS"
+	for i in range(20):
 		rng.seed = i
-		if resolver._roll_fouling(state_a, state_b):
-			fouled_count += 1
+		assert_false(resolver.roll_fouling(state_a, state_b), "seed %d" % i)
 
-	var ratio: float = float(fouled_count) / float(trials)
-	assert_true(ratio > 0.4 and ratio < 0.6,
-		"Fouling should be ~50%%, got %.1f%%" % (ratio * 100))
+
+# ===========================================================================
+# Movement lock: fouled and struck ships ignore plotted movement
+# ===========================================================================
+
+func test_fouled_ship_ignores_plotted_movement() -> void:
+	var state = _make_ship_state()
+	state.fouled_with = "other"
+	_plot_straight(state, 3)
+	var ships: Array[ShipState] = [state]
+	var log = resolver.run(ships, env)
+	var result = log.get_result("test_ship_1")
+	assert_eq(result.final_hex, Vector2i(5, 5), "Fouled ship stays in place")
+	resolver.apply_results(log, ships)
+	assert_eq(state.hex_position, Vector2i(5, 5))
+	assert_false(state.moved_this_turn, "Fouled ship did not move")
+
+
+func test_struck_ship_ignores_plotted_movement() -> void:
+	var state = _make_ship_state()
+	state.status = ShipState.Status.STRUCK
+	_plot_straight(state, 3)
+	var ships: Array[ShipState] = [state]
+	var log = resolver.run(ships, env)
+	var result = log.get_result("test_ship_1")
+	assert_eq(result.final_hex, Vector2i(5, 5), "Struck ship stays in place")
+	resolver.apply_results(log, ships)
+	assert_eq(state.hex_position, Vector2i(5, 5))
+	assert_false(state.moved_this_turn, "Struck ship did not move")
 
 
 # ===========================================================================
@@ -749,6 +817,88 @@ func test_apply_results_applies_rigging_damage() -> void:
 		initial_total += hp
 
 	assert_eq(initial_total - total_hp, 4, "Should have lost 4 rigging HP")
+
+
+func _apply_collision_loss(state: ShipState, loss: int) -> void:
+	var result = MovementTypes.ShipResolutionResult.new(state.ship_id)
+	result.final_hex = state.hex_position
+	result.final_facing = state.facing
+	result.collided_with = "other"
+	result.rigging_damage = loss
+	var log = MovementTypes.ResolutionLog.new(1)
+	log.add_result(result)
+	var ships: Array[ShipState] = [state]
+	resolver.apply_results(log, ships)
+
+
+func test_collision_loss_comes_off_lowest_section_first() -> void:
+	var state = _make_ship_state()
+	_apply_collision_loss(state, 4)
+	assert_eq(state.rigging_current_hp, [1, 5, 6, 6] as Array[int], "section 1 loses the boxes")
+	assert_eq(state.sail_state, "MS", "not dismasted: sail unchanged")
+	assert_eq(state.pending_morale_checks, 0)
+
+
+func test_collision_dismasting_follows_the_damage_rules() -> void:
+	var state = _make_ship_state()
+	var rigging: Array[int] = [0, 0, 1, 2]
+	state.rigging_current_hp = rigging
+	_apply_collision_loss(state, 4)
+	assert_true(state.is_dismasted(), "the last rigging boxes are gone")
+	assert_eq(state.sail_state, "NS", "a dismasted ship carries no sail")
+	assert_eq(state.pending_morale_checks, 1, "one 'dismasted' morale check noted")
+	var damage: Array = GameState.turn_log.of_type(PhaseEvents.Type.DAMAGE)
+	assert_eq(damage.size(), 1, "one DAMAGE event")
+	if damage.size() == 1:
+		assert_eq(damage[0].ship_id, "test_ship_1")
+		assert_eq(damage[0].data["rigging"], 3, "the boxes actually removed")
+		assert_eq(damage[0].phase, TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION)
+
+
+# ===========================================================================
+# Collision fouling: a ship already fouled with a third ship keeps its partner
+# ===========================================================================
+
+## Runs _apply_collision between ship_a and ship_b (both at PS, so fouling succeeds on 2+)
+## for seeds 0-19; returns how many seeds fouled the pair.
+func _collision_foulings(b_already_fouled_in_state: bool, b_already_fouled_this_turn: bool) -> int:
+	var count := 0
+	for seed_val in range(20):
+		GameState.ships.clear()
+		var state_a = _make_ship_state(Vector2i(4, 5), 0, 1, "C", "ship_a")
+		var state_b = _make_ship_state(Vector2i(5, 5), 3, 0, "C", "ship_b")
+		state_a.sail_state = "PS"
+		state_b.sail_state = "PS"
+		if b_already_fouled_in_state:
+			state_b.fouled_with = "ship_c"
+		var result_a = MovementTypes.ShipResolutionResult.new("ship_a")
+		var result_b = MovementTypes.ShipResolutionResult.new("ship_b")
+		if b_already_fouled_this_turn:
+			result_b.fouled_with = "ship_c"
+		var test_rng = RandomNumberGenerator.new()
+		test_rng.seed = seed_val
+		var test_resolver = MovementResolver.new(GameState, test_rng)
+		test_resolver._apply_collision("ship_a", "ship_b", 0,
+			{"ship_a": state_a, "ship_b": state_b}, {"ship_a": result_a, "ship_b": result_b},
+			{"ship_a": state_a.hex_position, "ship_b": state_b.hex_position}, {})
+		if result_a.fouled_with != "":
+			count += 1
+			assert_eq(result_b.fouled_with, "ship_a", "a new fouling is mutual")
+		elif b_already_fouled_this_turn:
+			assert_eq(result_b.fouled_with, "ship_c", "the earlier fouling is kept")
+	return count
+
+
+func test_collision_fouls_free_ships() -> void:
+	assert_gt(_collision_foulings(false, false), 0, "control: free ships at PS do foul")
+
+
+func test_collision_does_not_foul_ship_fouled_with_a_third() -> void:
+	assert_eq(_collision_foulings(true, false), 0, "ship_b stays fouled with ship_c only")
+
+
+func test_collision_does_not_foul_ship_fouled_earlier_this_resolution() -> void:
+	assert_eq(_collision_foulings(false, true), 0, "ship_b keeps the fouling from this turn")
 
 
 # ===========================================================================
@@ -1011,3 +1161,21 @@ func test_bearing_off_pivot_legal_roll_fails_causes_collision() -> void:
 	assert_false(has_pivot_denied, "Pivot should be legal (enough forward hexes)")
 	assert_true(has_bearoff_roll, "Should have attempted bearing-off roll")
 	assert_true(has_collision, "Failed bearing-off roll should result in collision")
+
+
+# ===========================================================================
+# moved_this_turn
+# ===========================================================================
+
+func test_apply_results_sets_moved_this_turn() -> void:
+	var mover = _make_ship_state(Vector2i(5, 5), 0, 3, "C", "mover")
+	var idle = _make_ship_state(Vector2i(5, 9), 0, 3, "C", "idle")
+	_plot_straight(mover, 2)
+	idle.moved_this_turn = true  # stale flag must be overwritten
+	var ships: Array[ShipState] = [mover, idle]
+
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+
+	assert_true(mover.moved_this_turn, "Ship that advanced has moved_this_turn")
+	assert_false(idle.moved_this_turn, "Ship with no plot has moved_this_turn false")

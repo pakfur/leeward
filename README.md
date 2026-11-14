@@ -29,16 +29,16 @@ This phase establishes the foundational systems for the game:
 - **Planning Panel** - Plot movement and sail changes (`scripts/ui/planning_panel.gd`)
 
 #### Game Loop (Phases)
-1. **ENVIRONMENT** - Wind updates (stubbed)
+1. **ENVIRONMENT** - Wind updates (implemented)
 2. **PLANNING** - Players plot actions (implemented)
-3. **MOVEMENT_RESOLUTION** - Execute movement (stubbed)
-4. **COMBAT_RESOLUTION** - Resolve combat (stubbed)
-5. **DRIFT_CALCULATION** - Handle drifting ships (stubbed)
-6. **STATUS_ADJUSTMENT** - Apply repairs, damage (stubbed)
-7. **MORALE_CHECK** - Update crew morale (stubbed)
+3. **MOVEMENT_RESOLUTION** - Execute movement (implemented)
+4. **COMBAT_RESOLUTION** - Declare fire, then resolve gunnery and damage (implemented)
+5. **DRIFT_CALCULATION** - Handle drifting ships (implemented)
+6. **STATUS_ADJUSTMENT** - Unfouling and sail changes (implemented; repairs not yet)
+7. **MORALE_CHECK** - Morale checks and striking (implemented)
 8. **MESSAGE_DELIVERY** - Flag signals (stubbed)
-9. **POST_COMBAT** - Player actions (stubbed)
-10. **END_TURN** - Victory checks (stubbed)
+9. **POST_COMBAT** - Review the log, End Turn (implemented)
+10. **END_TURN** - Victory checks (implemented)
 
 #### Data-Driven Design
 - **Movement Allowance Table** - `data/rules/movement_allowance.json`

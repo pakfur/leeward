@@ -31,6 +31,7 @@ func before_each() -> void:
 	# Seed all RNGs for determinism in tests
 	if not GameState.rng:
 		GameState.rng = RandomNumberGenerator.new()
+		GameState.dice = Dice.new(GameState.rng)
 	GameState.rng.seed = 100
 
 	var test_rng = RandomNumberGenerator.new()
@@ -132,13 +133,8 @@ func _run_one_turn(phase_controller: TurnPhaseController) -> void:
 	assert_eq(phase_controller.current_phase, TurnPhaseController.GamePhase.POST_COMBAT,
 		"Should be in POST_COMBAT after stubbed phases")
 
-	# POST_COMBAT → END_TURN (manual advance required)
-	phase_controller.advance_phase()
-	assert_eq(phase_controller.current_phase, TurnPhaseController.GamePhase.END_TURN,
-		"Should be in END_TURN")
-
-	# END_TURN → new turn → ENVIRONMENT (auto-advances) → PLANNING
-	phase_controller.advance_phase()
+	# POST_COMBAT waits for End Turn; no victory, so the next turn starts (ENVIRONMENT auto-advances)
+	phase_controller.player_end_turn(0)
 	assert_eq(phase_controller.current_phase, TurnPhaseController.GamePhase.PLANNING,
 		"Should be back in PLANNING for next turn")
 
@@ -253,6 +249,7 @@ func test_deterministic_resolution_with_same_seed() -> void:
 		# Deterministic seeds — same for both runs
 		if not GameState.rng:
 			GameState.rng = RandomNumberGenerator.new()
+			GameState.dice = Dice.new(GameState.rng)
 		GameState.rng.seed = 500
 
 		var test_rng = RandomNumberGenerator.new()
@@ -284,8 +281,7 @@ func test_deterministic_resolution_with_same_seed() -> void:
 				run_log.append(turn_data)
 
 			pc.on_playback_completed()
-			pc.advance_phase()  # POST_COMBAT → END_TURN
-			pc.advance_phase()  # END_TURN → new turn → ENVIRONMENT → PLANNING
+			pc.player_end_turn(0)  # POST_COMBAT → END_TURN → new turn → ENVIRONMENT → PLANNING
 
 		logs.append(run_log)
 
@@ -293,3 +289,25 @@ func test_deterministic_resolution_with_same_seed() -> void:
 	for i in range(logs[0].size()):
 		assert_eq(logs[0][i], logs[1][i],
 			"Turn %d resolution should be identical across runs" % (i + 1))
+
+
+func test_new_game_resets_every_turn_and_phase_mirror() -> void:
+	_setup_two_ship_scenario()
+	var pc = GameState.phase_controller
+	_start_game()
+	for i in range(3):
+		_run_one_turn(pc)
+	assert_eq(GameState.current_turn, 4, "GameState mirrors the turn during the game")
+	pc.game_result = {"winner": 0, "reason": "all struck"}  # as if game 1 had ended
+	GameState.players_ready = [true, true] as Array[bool]
+
+	_start_game()
+
+	assert_eq(GameState.current_turn, 1, "GameState.current_turn starts again at 1")
+	assert_eq(GameState.current_turn, pc.current_turn)
+	assert_eq(GameState.current_phase, GameState.GamePhase.PLANNING)
+	assert_eq(int(GameState.current_phase), int(pc.current_phase))
+	assert_eq(GameState.turn_log.turn, 1)
+	assert_eq(GameState.turn_logs.size(), 0)
+	assert_true(pc.game_result.is_empty())
+	assert_eq(GameState.players_ready, [false, false] as Array[bool])

@@ -58,6 +58,7 @@ func _ready() -> void:
 	if game_state:
 		game_state.phase_changed.connect(_on_phase_changed)
 		game_state.turn_changed.connect(_on_turn_changed)
+		game_state.game_started.connect(_on_game_started)
 
 	advance_phase_btn.pressed.connect(_on_advance_phase_pressed)
 	advance_turn_btn.pressed.connect(_on_advance_turn_pressed)
@@ -75,11 +76,12 @@ func _ready() -> void:
 	Trace.trace_added.connect(_on_trace_added)
 	tree_exiting.connect(_on_tree_exiting)
 
-	# Store initial scenario for reset
-	if game_state:
-		initial_scenario = game_state.active_scenario.duplicate(true)
-
 	_log("Developer UI initialized. Press F12 to toggle.")
+
+## Store the starting scenario for Reset when the game starts (at _ready GameState still holds
+## the previous game's scenario).
+func _on_game_started(scenario: Dictionary) -> void:
+	initial_scenario = scenario.duplicate(true)
 
 func _input(event: InputEvent) -> void:
 	# F12 toggles visibility even when this window has focus

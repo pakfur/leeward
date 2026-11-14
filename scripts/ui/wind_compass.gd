@@ -56,26 +56,20 @@ func _update_camera_rotation() -> void:
 
 func _update_compass_rotations() -> void:
 	"""Update needle and wind icon rotations based on camera orientation"""
+	# The camera's screen-up points at compass bearing (camera_rotation_y - 90): rotation 90
+	# is the default north-up view. A world bearing b (clockwise from north) therefore shows
+	# on screen at b - (camera_rotation_y - 90), clockwise from screen-up.
+	var screen_up_bearing = camera_rotation_y - 90.0
 
-	# North needle: rotate to compensate for camera rotation
-	# So it always points north regardless of camera angle
+	# North needle (texture points up): bearing 0
 	if north_needle:
-		north_needle.rotation = deg_to_rad(-camera_rotation_y)
+		north_needle.rotation = deg_to_rad(-screen_up_bearing)
 
-	# Wind icon: show wind direction relative to north, compensated for camera
+	# Wind icon: a rim marker (texture at the top, pointing inward) placed on the side the wind
+	# blows FROM. Hex direction d (0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE) has bearing 90 + 60d.
 	if wind_icon:
-		# Convert hex direction to world angle (0=E is 0°, goes clockwise)
-		var wind_angle_world = wind_direction * 60.0
-
-		# Adjust for coordinate system (hex 0=E is at 0°, but we want N as reference)
-		# In hex system: 0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE
-		# We want to display relative to North, so rotate by 90° and compensate camera
-		wind_angle_world = wind_angle_world - 90.0  # Convert E-based to N-based
-
-		# Compensate for camera rotation
-		var wind_angle_screen = wind_angle_world - camera_rotation_y
-
-		wind_icon.rotation = deg_to_rad(wind_angle_screen)
+		var wind_from_bearing = 90.0 + wind_direction * 60.0
+		wind_icon.rotation = deg_to_rad(wind_from_bearing - screen_up_bearing)
 
 func set_wind_direction(direction: int) -> void:
 	"""Update the displayed wind direction (0-5 hex direction)"""

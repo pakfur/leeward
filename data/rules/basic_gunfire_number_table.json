@@ -1,0 +1,26 @@
+{
+  "_doc": "Basic Gunfire Number (BGN) Determination Table (1997 chart, p.111). One row per printed TGF band (31+ is tgf_max 999). bgn[i] is range i+1; null = grey box (cannot fire). french[j] is range 11+j: the small numbers printed for French guns (where a cell prints one number it is used for both).",
+  "rows": [
+    {"tgf_min": 1, "tgf_max": 1, "bgn": [3, 2, 2, 1, 1, 0, 0, null, null, null, null, null, null, null, null], "french": [null, null, null, null, null]},
+    {"tgf_min": 2, "tgf_max": 2, "bgn": [8, 7, 6, 5, 4, 3, 2, 1, 0, null, null, null, null, null, null], "french": [null, null, null, null, null]},
+    {"tgf_min": 3, "tgf_max": 3, "bgn": [11, 10, 9, 8, 7, 5, 4, 3, 2, 0, null, null, null, null, null], "french": [null, null, null, null, null]},
+    {"tgf_min": 4, "tgf_max": 4, "bgn": [13, 12, 11, 10, 9, 7, 5, 4, 3, 2, 0, null, null, null, null], "french": [1, null, null, null, null]},
+    {"tgf_min": 5, "tgf_max": 5, "bgn": [15, 14, 13, 12, 11, 9, 7, 5, 4, 3, 2, 0, null, null, null], "french": [3, 1, null, null, null]},
+    {"tgf_min": 6, "tgf_max": 6, "bgn": [17, 16, 15, 14, 13, 11, 9, 7, 5, 4, 3, 2, 0, null, null], "french": [4, 3, 1, null, null]},
+    {"tgf_min": 7, "tgf_max": 7, "bgn": [18, 17, 16, 15, 14, 12, 10, 8, 6, 5, 4, 3, 2, 0, null], "french": [5, 4, 3, 1, null]},
+    {"tgf_min": 8, "tgf_max": 8, "bgn": [19, 18, 17, 16, 15, 13, 11, 9, 7, 6, 5, 4, 3, 1, 0], "french": [6, 5, 4, 2, 1]},
+    {"tgf_min": 9, "tgf_max": 9, "bgn": [20, 19, 18, 17, 16, 14, 12, 10, 8, 7, 6, 5, 4, 2, 0], "french": [7, 6, 5, 3, 1]},
+    {"tgf_min": 10, "tgf_max": 10, "bgn": [21, 20, 19, 18, 17, 15, 13, 11, 9, 8, 7, 6, 5, 3, 1], "french": [8, 7, 6, 4, 2]},
+    {"tgf_min": 11, "tgf_max": 11, "bgn": [22, 21, 20, 19, 18, 16, 14, 12, 10, 9, 8, 7, 5, 4, 2], "french": [9, 8, 6, 5, 3]},
+    {"tgf_min": 12, "tgf_max": 12, "bgn": [23, 22, 21, 20, 19, 17, 15, 13, 11, 10, 9, 7, 6, 5, 3], "french": [10, 8, 7, 6, 4]},
+    {"tgf_min": 13, "tgf_max": 14, "bgn": [24, 23, 22, 21, 20, 18, 16, 14, 12, 11, 9, 8, 7, 6, 4], "french": [10, 9, 8, 7, 5]},
+    {"tgf_min": 15, "tgf_max": 16, "bgn": [25, 24, 23, 22, 21, 19, 17, 15, 13, 12, 10, 9, 8, 7, 5], "french": [11, 10, 9, 8, 6]},
+    {"tgf_min": 17, "tgf_max": 18, "bgn": [26, 25, 24, 23, 22, 20, 18, 16, 14, 13, 11, 10, 9, 7, 6], "french": [12, 11, 10, 8, 7]},
+    {"tgf_min": 19, "tgf_max": 20, "bgn": [27, 26, 25, 24, 23, 21, 19, 17, 15, 14, 12, 11, 10, 8, 7], "french": [13, 12, 11, 9, 8]},
+    {"tgf_min": 21, "tgf_max": 22, "bgn": [28, 27, 26, 25, 24, 22, 20, 18, 16, 15, 13, 12, 11, 9, 8], "french": [14, 13, 12, 10, 9]},
+    {"tgf_min": 23, "tgf_max": 24, "bgn": [29, 28, 27, 26, 25, 23, 21, 19, 17, 16, 14, 13, 12, 10, 8], "french": [15, 14, 13, 11, 9]},
+    {"tgf_min": 25, "tgf_max": 27, "bgn": [30, 29, 28, 27, 26, 24, 22, 20, 18, 17, 15, 14, 13, 11, 9], "french": [16, 15, 14, 12, 10]},
+    {"tgf_min": 28, "tgf_max": 30, "bgn": [31, 30, 29, 28, 27, 25, 23, 21, 19, 18, 16, 15, 14, 12, 10], "french": [17, 16, 15, 13, 11]},
+    {"tgf_min": 31, "tgf_max": 999, "bgn": [32, 31, 30, 29, 28, 26, 24, 22, 20, 19, 17, 16, 15, 13, 11], "french": [18, 17, 16, 14, 12]}
+  ]
+}

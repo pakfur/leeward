@@ -82,13 +82,15 @@ assets/ui/compass/                  - Compass image assets
 
 2. **North Needle Rotation** (`wind_compass.gd:62-63`)
    - Rotates opposite to the camera rotation to stay fixed in world space
-   - Formula: `needle.rotation = -camera_rotation_y`
+   - `camera_rotation_y = 90` is the default north-up view; screen-up points at bearing `camera_rotation_y - 90`
+   - Formula: `needle.rotation = -(camera_rotation_y - 90°)`
 
 3. **Wind Direction Rotation** (`wind_compass.gd:66-78`)
    - Converts hex direction (0-5) to world angle
    - Adjusts for coordinate system (E-based to N-based)
    - Compensates for camera rotation
-   - Formula: `wind_icon.rotation = (wind_direction * 60° - 90°) - camera_rotation_y`
+   - The wind icon is a rim marker on the side the wind blows FROM; hex direction d has bearing `90° + d * 60°`
+   - Formula: `wind_icon.rotation = (90° + wind_direction * 60°) - (camera_rotation_y - 90°)`
 
 4. **Server-Authoritative Updates** (`wind_compass.gd:95-97`)
    - Wind direction comes from `GameState.wind_direction`
@@ -100,12 +102,11 @@ assets/ui/compass/                  - Compass image assets
 **Hex Direction to Angle:**
 - Hex directions: 0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE
 - Each hex face = 60° apart
-- Base angle = `direction * 60°`
+- Hex direction d points at compass bearing `90° + d * 60°` (E = 90°, SE = 150°, ...)
 
 **Coordinate System Adjustment:**
-- Hex system is E-based (0° = East)
-- Compass display is N-based (0° = North)
-- Adjustment: subtract 90° to convert
+- World: +X east, -Z north (`HexGrid.axial_to_world`); the camera basis is right-handed, so
+  the screen is not mirrored and clockwise hex order reads clockwise on screen
 
 **Camera Compensation:**
 - Subtract camera rotation to keep icon fixed in world space

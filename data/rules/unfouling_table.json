@@ -1,0 +1,4 @@
+{
+  "_doc": "Unfouling table (d10, 1997 chart p.109). success_max[i] is the highest roll that succeeds on game-turn i+1 of the attempt (1, 2, 3+): <=2, <=3, <=4.",
+  "success_max": [2, 3, 4]
+}
