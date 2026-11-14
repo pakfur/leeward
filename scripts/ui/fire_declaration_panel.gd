@@ -48,6 +48,15 @@ var _building: bool = false
 # Pure presentation helpers (unit tested)
 # ============================================================================
 
+## The footer under the ship list, matching the current choice.
+static func footer_text(order_count: int, changed: bool) -> String:
+	if order_count == 0:
+		return "Holding all fire. Pick a target row to fire."
+	if changed:
+		return "You changed the target. Pick any row to change it again."
+	return "Your best shot is chosen; the other broadside holds fire. Pick any row to change it."
+
+
 ## ship_id -> "Topaze — 32-gun Frigate": target rows name each ship with its type.
 static func target_names(ships: Array) -> Dictionary:
 	var names := {}
@@ -331,7 +340,7 @@ func _clear() -> void:
 	error_label.visible = false
 	fire_button.disabled = false
 	fire_button.text = fire_button_text(0)
-	instructions_label.text = "Your best shot is chosen; the other broadside holds fire. Pick any row to change it."
+	instructions_label.text = footer_text(1, false)
 
 
 func _add_ship(ship_state: ShipState, shots_by_side: Dictionary) -> void:
@@ -349,7 +358,7 @@ func _add_ship(ship_state: ShipState, shots_by_side: Dictionary) -> void:
 	box.add_child(header)
 
 	var entry := {"name": ship_state.ship_name, "header": header,
-		"shots": shots_by_side, "sides": {}, "widgets": {}}
+		"shots": shots_by_side, "sides": {}, "widgets": {}, "defaults": {}}
 	_ships[ship_id] = entry
 	_ship_order.append(ship_id)
 
@@ -371,6 +380,7 @@ func _add_ship(ship_state: ShipState, shots_by_side: Dictionary) -> void:
 			continue
 		var ranked: Array = ranked_by_side[side]
 		var start_target: String = str(ranked[0]["target_id"]) if side == firing_side else ""
+		entry["defaults"][side] = start_target
 		entry["sides"][side] = {"target_id": start_target, "aim": GunneryTypes.AIM_LOW,
 			"ammo": GunneryTypes.AMMO_ROUND, "want_high": false, "want_dismantling": false}
 		entry["widgets"][side] = _build_side(box, ship_id, side, ranked)
@@ -461,11 +471,23 @@ func _on_side_changed(ship_id: String, _side: int) -> void:
 
 func _update_fire_button() -> void:
 	if fire_button.text != "Orders submitted":
-		fire_button.text = fire_button_text(get_all_orders().size())
+		var order_count := get_all_orders().size()
+		fire_button.text = fire_button_text(order_count)
+		instructions_label.text = footer_text(order_count, targets_changed())
 	if two_target_label:
 		two_target_label.text = two_target_note(DataManager.combat_tables.flat_modifier("two_targets")) \
 			if DataManager.combat_tables else ""
 		two_target_label.visible = any_ship_fires_both()
+
+
+## True once the player picked a target (or hold fire) other than the one chosen for them.
+func targets_changed() -> bool:
+	for ship_id in _ship_order:
+		var entry: Dictionary = _ships[ship_id]
+		for side in entry["sides"]:
+			if entry["sides"][side]["target_id"] != entry["defaults"].get(side, ""):
+				return true
+	return false
 
 
 ## True while some listed ship has a target on both broadsides.

@@ -190,3 +190,11 @@ func test_target_names_give_name_and_type() -> void:
 	var s := ShipState.new()
 	s.ship = Ship.from_dict({"ship_id": "e1", "player_id": 1, "ship_name": "Topaze", "name": "32-gun Frigate"})
 	assert_eq(FirePanel.target_names([s]), {"e1": "Topaze — 32-gun Frigate"})
+
+
+func test_footer_follows_the_selection() -> void:
+	assert_string_contains(FirePanel.footer_text(1, false), "best shot is chosen")
+	assert_string_contains(FirePanel.footer_text(1, true), "You changed the target")
+	assert_string_contains(FirePanel.footer_text(0, true), "Holding all fire")
+	assert_string_contains(FirePanel.footer_text(0, false), "Holding all fire")
+	assert_false(FirePanel.footer_text(0, true).contains("best shot"), "no best-shot hint while holding fire")
