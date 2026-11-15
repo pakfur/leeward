@@ -103,6 +103,8 @@ func _initialize_server_controllers() -> void:
 	sail_controller = SailController.new(self)
 	crew_task_controller = CrewTaskController.new(self)
 	crew_task_controller.register_handler(SailController.CODE, sail_controller)
+	crew_task_controller.register_handler(TackCrewHandler.CODE, TackCrewHandler.new(self))
+	crew_task_controller.register_handler(ReorganizeHandler.CODE, ReorganizeHandler.new(self))
 	drift_resolver = DriftResolver.new(self)
 	fouling_controller = FoulingController.new(self)
 	morale_controller = MoraleController.new(self)

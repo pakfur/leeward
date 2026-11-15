@@ -89,6 +89,17 @@ func current_plan(ship_id: String) -> Dictionary:
 	return CrewRules.normalize(ship, CrewRules.plan_of(ship), CrewRules.context(game_state, ship))
 
 
+## Sections the ship's crew plan puts at the braces (T) if its movement plot holds a turn at MA 0
+## (for the planning tacking note, shown while that turn is being plotted). Pure query.
+func planned_tack_sections(ship_id: String) -> int:
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null:
+		return 0
+	var ctx := CrewRules.context(game_state, ship)
+	ctx["ma0_turn_plotted"] = true
+	return CrewRules.tack_sections_in(CrewRules.normalize(ship, CrewRules.plan_of(ship), ctx))
+
+
 ## End of PLANNING: normalize every ship's plan against its final movement plot.
 func finalize_plots() -> void:
 	if not is_server:
@@ -204,7 +215,7 @@ func advance_tasks(phase: int) -> void:
 			var plotted := true
 			for section in task.get("sections", []):
 				plotted = plotted and ship.plotted_sections.has(int(section))
-			if not plotted:
+			if not plotted or not h.counts_turn(ship, task):
 				continue
 			sc.update_task(ship_id, seq, {"done": int(task.get("done", 0)) + 1})
 			var current := ship.task_by_seq(seq)

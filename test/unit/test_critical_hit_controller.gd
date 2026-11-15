@@ -285,11 +285,104 @@ func test_wheel_shot_away_sets_flag() -> void:
 	assert_true(b.is_poor_maneuvering())
 
 
-func test_hull_four_crew_disorganized_loses_one_sailor_only() -> void:
-	# Spec Q6: only the box loss; disorganization is not simulated.
+func _ro_task(ship: ShipState, section: int) -> Dictionary:
+	var task := ship.task_of(section)
+	return task if task.get("code", "") == "RO" else {}
+
+
+## One later g-t for the crew-task engine: flags cleared, tasks begun and counted.
+func _crew_turn() -> void:
+	for ship_id in GameState.ships:
+		GameState.ship_controller.clear_turn_flags(ship_id)
+	GameState.current_turn += 1
+	GameState.crew_task_controller.begin_turn_tasks(TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION)
+	GameState.crew_task_controller.advance_tasks(TurnPhaseController.GamePhase.STATUS_ADJUSTMENT)
+
+
+func test_hull_four_disorganizes_the_highest_sailor_section() -> void:
+	# Hull #4 (class 3): 1 sailor box lost (lowest section first), then the highest-numbered sailor
+	# section not already disorganized must reorganize: RO, 5 g-t's +- SK (CQ D: 5).
 	_crit([2, 2], _ctx("low"))
 	assert_eq(b.crew_count, [2, 3, 3, 3] as Array[int])
-	assert_eq(_crit_events()[0].data["note"], "not_simulated")
+	assert_false(_crit_events()[0].data.has("note"), "no 'not yet simulated' note")
+	assert_eq(_crit_events()[0].data["section"], 3)
+	assert_true(b.is_disorganized(3), "S4 is disorganized")
+	var ro := _ro_task(b, 3)
+	assert_true(bool(ro["forced"]))
+	assert_eq(b.task_turns_required(ro), 5)
+	assert_false(b.critical_effects.any(func(e): return e.get("id") == "crew_disorganized"),
+		"not a critical effect: an RO task")
+	assert_eq(b.sections_able_to_fire(), 3, "S4 does not serve the guns (spec 0.3 #3)")
+	assert_true(CrewRules.locked_sections(b).has(3), "the RO section cannot be moved")
+
+
+func test_hull_four_cancels_a_task_and_reorganizes_from_the_next_turn() -> void:
+	# Spec §8 #14 (hull #4; Majestic g-t 16): CQ B, S4 on RS 2 of 3. 1 sailor box lost; RS ends;
+	# S4 in RO needing 5 - 2 = 3, done 0 (the g-t of the hit does not count); free after 3 more.
+	b.crew_quality = "B"
+	var rs: int = GameState.ship_controller.add_task("b_ship", {"code": "RS", "sections": [3], "params": {}})
+	GameState.ship_controller.update_task("b_ship", rs, {"done": 2})
+	b.plotted_sections = [3] as Array[int]
+	_crit([2, 2], _ctx("low"))
+	assert_eq(b.crew_count, [2, 3, 3, 3] as Array[int])
+	assert_eq(b.task_by_seq(rs)["ended"], "crew disorganized")
+	var ro := _ro_task(b, 3)
+	assert_eq(b.task_turns_required(ro), 3)
+	GameState.crew_task_controller.advance_tasks(TurnPhaseController.GamePhase.STATUS_ADJUSTMENT)
+	assert_eq(int(_ro_task(b, 3)["done"]), 0, "the g-t of the hit does not count (spec 0.3 #3)")
+	_crew_turn()
+	_crew_turn()
+	assert_eq(int(_ro_task(b, 3)["done"]), 2)
+	assert_true(b.is_disorganized(3))
+	_crew_turn()
+	assert_false(b.is_disorganized(3), "reorganized after 3 more g-t's")
+	var crew := GameState.turn_log.of_type(PhaseEvents.Type.CREW_TASK)
+	assert_eq(crew[-1].data["code"], "RO")
+	assert_eq(crew[-1].data["state"], "completed")
+
+
+func test_hull_four_twice_disorganizes_the_next_section() -> void:
+	# Spec §8 #15 (hull #4 "not already disorganized"): S4 is in RO, so S3 is disorganized.
+	_crit([2, 2], _ctx("low"))
+	_crit([2, 2], _ctx("low"))
+	assert_true(b.is_disorganized(3))
+	assert_true(b.is_disorganized(2))
+	assert_eq(b.crew_count, [1, 3, 3, 3] as Array[int])
+	assert_eq(b.sections_able_to_fire(), 2)
+
+
+func test_hull_four_cancels_a_shared_sail_change() -> void:
+	# Spec §8 #18 (5.F.9a): S4 shares an MS->PS change with S3; the change ends for both.
+	b.sail_state = "MS"
+	CrewFixtures.give_sail_change(b, "PS", [2, 3])
+	_crit([2, 2], _ctx("low"))
+	assert_false(b.has_sail_change())
+	assert_eq(b.task_of(2), {}, "S3 is free")
+	assert_true(b.is_disorganized(3))
+	var sail := _events(PhaseEvents.Type.SAIL_CHANGE)
+	assert_eq(sail.size(), 1)
+	assert_eq(sail[0].data["cancelled"], "crew disorganized")
+
+
+func test_hull_four_with_no_sailor_section_left_loses_only_the_box() -> void:
+	# Hull #4: no sailor section with boxes after the loss: nobody to disorganize.
+	b.crew_count = [1, 0, 0, 0] as Array[int]
+	_crit([2, 2], _ctx("low"))
+	assert_eq(b.crew_count, [0, 0, 0, 0] as Array[int])
+	assert_eq(_crit_events()[0].data["section"], -1)
+	assert_eq(b.tasks_with("RO").size(), 0)
+
+
+func test_reorganize_turns_by_crew_quality() -> void:
+	# Spec §8 #16 (10.G.4 examples): RO is 5 +- SK g-t's: CQ A 2, CQ E 6.
+	assert_eq(DataManager.combat_tables.task_turns("RO", "A"), 2)
+	assert_eq(DataManager.combat_tables.task_turns("RO", "E"), 6)
+
+
+func test_hull_four_log_text_names_the_section() -> void:
+	_crit([2, 2], _ctx("low"))
+	var text := _crit_events()[0].to_text({"b_ship": "Bellona"})
+	assert_string_contains(text, "crew disorganized: S4 must reorganize")
 
 
 func test_hull_five_leadership_marine_and_mc() -> void:
@@ -477,10 +570,42 @@ func test_destroyed_ship_rolls_no_fixes() -> void:
 
 # --- rigging results ---
 
-func test_rigging_three_signal_halyards_one_box_at_ms_no_entry() -> void:
+func test_rigging_three_signal_halyards_one_box_at_ms_and_entry() -> void:
+	# Rigging #3: 1R at MS; the halyards stay cut until fixed (8.D.5).
 	_crit([1, 2], _ctx())
 	assert_eq(b.rigging_current_hp, [4, 5, 6, 6] as Array[int])
-	assert_eq(b.critical_effects.size(), 0)
+	assert_true(b.has_critical("signal_halyards_cut"))
+	assert_false(_crit_events()[0].data.has("note"))
+
+
+func test_rigging_three_signal_halyards_fixed_on_two_at_cq_d() -> void:
+	# Spec §8 #19 (rigging #3, 8.D.5): fix roll on the Unfouling table, 1st attempt <= 2; CQ D
+	# (SK 0), d10 2: 2 <= 2, fixed.
+	_crit([1, 2], _ctx())
+	_dice.queue([2])
+	crits.resolve_fixes(PHASE)
+	assert_false(b.has_critical("signal_halyards_cut"))
+	var fixed := _events(PhaseEvents.Type.CRITICAL_FIXED)
+	assert_eq(fixed.size(), 1)
+	assert_eq(fixed[0].data["result_id"], "signal_halyards_cut")
+	assert_true(fixed[0].data["success"])
+
+
+func test_rigging_three_signal_halyards_three_fails_first_attempt() -> void:
+	# 8.D.5: d10 3 + SK 0 = 3 > 2 on the first attempt: still cut.
+	_crit([1, 2], _ctx())
+	_dice.queue([3])
+	crits.resolve_fixes(PHASE)
+	assert_true(b.has_critical("signal_halyards_cut"))
+
+
+func test_signal_halyards_dismasted_ship_still_rolls() -> void:
+	# Rigging #3: "Dismasted ships must fix signal halyards normally."
+	GameState.ship_controller.add_critical_effect("b_ship", {"id": "signal_halyards_cut", "turn": 2})
+	b.rigging_current_hp = [0, 0, 0, 0] as Array[int]
+	_dice.queue([1])
+	crits.resolve_fixes(PHASE)
+	assert_false(b.has_critical("signal_halyards_cut"))
 
 
 func test_rigging_three_signal_halyards_nothing_at_fs() -> void:

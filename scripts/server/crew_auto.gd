@@ -8,7 +8,8 @@ extends RefCounted
 ##   A1 fires (phase 4);
 ##   A2 other tasks in progress continue with the same sections;
 ##   A3 the ordered sail change, 1 or 2 sections in worker order;
-##   A4 tacking crew (phase 2); A5 repairs (phase 5);
+##   A4 tacking crew: when the movement plot holds a turn at MA 0, as many of 3 sections as are
+##      free, in worker order (5.D.2a); A5 repairs (phase 5);
 ##   A6 everyone else: sailors serve the guns, the marines are at marine fire.
 ## Worker order: M (unless held back, CrewRules.marines_held_back), then S4, S3, S2, S1. Marines
 ## first because they cost no gunfire; then the highest sailors, which crew losses reach last.
@@ -47,6 +48,11 @@ static func allocate(ship: ShipState, orders: Dictionary, ctx: Dictionary) -> Di
 			for k in range(needed):
 				taken[workers[k]] = {"code": SailController.CODE,
 					"params": {"target": str(orders.get("sail_target", ""))}}
+	# A4: the braces, for a turn at MA 0 (5.D.2a: the Tacking table assumes 3 sections).
+	if bool(ctx.get("ma0_turn_plotted", false)):
+		var hands := CrewRules.worker_order(ship, ctx, taken)
+		for k in range(mini(TackCrewHandler.max_sections(), hands.size())):
+			taken[hands[k]] = {"code": TackCrewHandler.CODE, "params": {}}
 	# A6: the rest stay unplotted.
 	var auto: Array[int] = []
 	for section in range(ShipState.MARINES + 1):

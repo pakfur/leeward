@@ -42,8 +42,10 @@ const IGNORED_RUDDER_DESTROYED := "rudder already destroyed"
 const IGNORED_RUDDER_JAMMED := "rudder already jammed"
 
 ## 8.D.5: lasting effects fixed by a roll on the Unfouling table in STATUS_ADJUSTMENT.
-## signal_halyards_cut is deferred (spec Q16) and never recorded.
-const FIXABLE_IDS: Array[String] = ["broadside_obscured", "braces_cut", "lines_jammed", "rudder_jammed"]
+## signal_halyards_cut is recorded and fixed (rigging #3; a dismasted ship still rolls), but there is
+## no signalling yet for it to block (crew-tasks spec §0.2, critical-hits spec Q16).
+const FIXABLE_IDS: Array[String] = ["broadside_obscured", "braces_cut", "lines_jammed", "rudder_jammed",
+	"signal_halyards_cut"]
 
 ## Hull #12: scenario years up to this one take the explosion DRM (spec Q14)
 const EARLY_YEAR := 1783
@@ -53,6 +55,9 @@ const REASON_EXPLOSION := "explosion"
 ## CRITICAL_ENDED reasons
 const ENDED_EXPIRED := "expired"
 const ENDED_DISMASTED := "dismasted"
+
+## Crew-task cancellation reason for a section disorganized by hull #4.
+const CANCEL_DISORGANIZED := "crew disorganized"
 
 ## CRITICAL_HIT "note" values (deferred or unimplemented parts of a result)
 const NOTE_NOT_SIMULATED := "not_simulated"
@@ -342,9 +347,10 @@ func _resolve_rigging(ship_id: String, row: Dictionary, data: Dictionary, ctx: D
 			if data["falls"]:
 				_cross_out_rigging(ship_id, ctx, phase)
 		"signal_halyards_cut":
-			# Deferred (spec Q16): only the box loss; no effect entry, no fix roll.
+			# 1R at MS or PS; no new messages until fixed (8.D.5 roll). Signalling (ch. 11) is not
+			# implemented, so the entry blocks nothing yet.
 			_rigging_boxes(ship_id, int(row.get("rigging", {}).get(sail, 0)), ctx, phase)
-			data["note"] = NOTE_NOT_SIMULATED
+			sc.add_critical_effect(ship_id, {"id": "signal_halyards_cut", "turn": turn})
 		"braces_cut":
 			sc.add_critical_effect(ship_id, {"id": "braces_cut", "turn": turn})
 		"lines_jammed":
@@ -443,12 +449,11 @@ func _resolve_hull(ship_id: String, row: Dictionary, data: Dictionary, ctx: Dict
 		"wheel_shot_away":
 			sc.set_wheel_shot_away(ship_id, true)
 		"crew_disorganized":
-			# Deferred (spec Q6): only the sailor box.
 			var sailors := int(row.get("sailors_by_class", {}).get(str(_ship_class(ship)), 0))
 			if sailors > 0:
 				game_state.damage_controller.apply_crew_boxes(ship_id, sailors, false, phase,
 						str(ctx.get("source_id", "")))
-			data["note"] = NOTE_NOT_SIMULATED
+			_disorganize(ship_id, data, phase)
 		"leadership_casualties":
 			_leadership(ship_id, row, data, ctx, phase)
 		"hull_structural_damage":
@@ -532,6 +537,24 @@ func explosion_modifier(ship: ShipState, fires_before: int, row: Dictionary = {}
 # --- shared result parts ---
 
 ## Rigging #8 / Hull #5: one marine box (none for class 4; a sailor if no marines), and an MC.
+## Hull #4: the highest-numbered sailor section with boxes that is not already disorganized ends
+## its task (a sail change it shares ends for both sections, 5.F.9a) and must reorganize: a forced
+## RO task of 5 g-t's ± SK, counted from the next g-t. With no such section only the box is lost.
+func _disorganize(ship_id: String, data: Dictionary, phase: int) -> void:
+	var ship: ShipState = game_state.get_ship(ship_id)
+	var ctc: CrewTaskController = game_state.get("crew_task_controller")
+	if ship == null or ctc == null or ship.is_out_of_play():
+		return
+	for section in range(ShipState.SAILOR_SECTIONS - 1, -1, -1):
+		if ship.section_alive(section) and not ship.is_disorganized(section):
+			data["section"] = section
+			ctc.cancel_section(ship_id, section, CANCEL_DISORGANIZED, phase)
+			ctc.force_task(ship_id, [section], ReorganizeHandler.CODE,
+				{"reason": ReorganizeHandler.REASON_DISORGANIZED}, phase)
+			return
+	data["section"] = -1
+
+
 func _leadership(ship_id: String, row: Dictionary, data: Dictionary, ctx: Dictionary,
 		phase: int) -> void:
 	var ship: ShipState = game_state.get_ship(ship_id)

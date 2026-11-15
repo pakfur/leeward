@@ -114,3 +114,14 @@ func test_head_to_wind_note_shown_whenever_the_plotted_heading_is_into_the_wind(
 func test_no_head_to_wind_note_off_the_wind() -> void:
 	assert_eq(PlanningText.plot_note("", "C"), "")
 	assert_eq(PlanningText.plot_note("note", "B"), "note")
+
+
+# --- Tacking note (5.D.2a: crew sections at the braces) ----------------------------------------
+
+func test_tacking_note_names_the_crew_and_the_full_crew_chance() -> void:
+	assert_eq(PlanningText.tacking_note(0.6, 2, 0.8), "Tack: 60 % with 2 at the braces (3: 80 %)")
+	assert_eq(PlanningText.tacking_note(0.3, 0, 0.9), "Tack: 30 % with 0 at the braces (3: 90 %)")
+
+
+func test_tacking_note_full_crew_has_no_comparison() -> void:
+	assert_eq(PlanningText.tacking_note(0.9, 3, 0.9), "Tack: 90 % with 3 at the braces")

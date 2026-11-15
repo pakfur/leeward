@@ -404,6 +404,10 @@ class PhaseEvent extends RefCounted:
 					result += " — %s (d10 %s, speed %d)" % [
 						"the mast goes" if data.get("falls", false) else "the mast stands",
 						str(sub[0]), int(data["speed"])]
+			"crew_disorganized":
+				var section := int(data.get("section", -1))
+				if section >= 0 and section < ShipState.SECTION_NAMES.size():
+					result += ": %s must reorganize" % ShipState.SECTION_NAMES[section]
 			"waterline_damage":
 				if data.has("pumps"):
 					result += ", %s to the pumps" % PhaseEvents.plural(int(data["pumps"]), "sailor box", "sailor boxes")

@@ -15,6 +15,7 @@ extends RefCounted
 const STATION_GUNS := "guns"
 const STATION_MARINE_FIRE := "marine_fire"
 const STATION_SAILS := "sails"
+const STATION_BRACES := "braces"
 ## Codes whose sections are locked once begun (5.F.9: a sail change must be completed).
 const LOCKED_CODES: Array[String] = ["SAIL"]
 ## Critical effects whose 8.D.5 fix roll the marines would spoil if busy (+1, "marines not avail.").
@@ -29,7 +30,8 @@ const HOLD_ENEMY := "enemy alongside"
 
 
 ## Facts about the ship's situation the rules read (spec §3.2). Pure read of game_state.
-## ma0_turn_plotted is for the T task (phase 2) and is always false for now.
+## ma0_turn_plotted: the stored movement plot begins with a turn at MA 0 (5.D.1), so the Braces (T)
+## station is open (MovementResolver.plots_ma0_turn, the test the Tacking roll uses).
 static func context(game_state: Node, ship: ShipState) -> Dictionary:
 	var nearest := -1
 	if game_state != null and game_state.get("fire_geometry") != null:
@@ -40,8 +42,14 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 			if r >= 0 and (nearest < 0 or r < nearest):
 				nearest = r
 	var turn = game_state.get("current_turn") if game_state != null else null
+	var ma0_turn := false
+	var steps: Array = ship.plotted_actions.get("movement", [])
+	if not steps.is_empty() and game_state != null and game_state.get("ship_controller") != null \
+			and not ship.is_out_of_play():
+		ma0_turn = MovementResolver.plots_ma0_turn(ship, steps,
+			game_state.ship_controller.get_movement_allowance(ship.ship_id))
 	return {
-		"ma0_turn_plotted": false,
+		"ma0_turn_plotted": ma0_turn,
 		"plotted_mps": (ship.plotted_actions.get("movement", []) as Array).size(),
 		"nearest_enemy": nearest,
 		"enemy_in_gun_range": nearest >= 0 and nearest <= FireRules.MAX_RANGE,
@@ -129,8 +137,18 @@ static func default_plan(ship: ShipState, _ctx: Dictionary) -> Dictionary:
 	return {"assignments": assignments, "orders": {"sail_target": ""}}
 
 
+## Sections the plan puts at the braces (T).
+static func tack_sections_in(plan: Dictionary) -> int:
+	var count := 0
+	var assignments: Dictionary = plan.get("assignments", {})
+	for section in assignments:
+		if str(assignments[section].get("code", "")) == TackCrewHandler.CODE:
+			count += 1
+	return count
+
+
 ## "" when `section` may go to `station_id` in `plan`, else the reason (quoting the rule).
-static func refusal(ship: ShipState, plan: Dictionary, _ctx: Dictionary, section: int, station_id: String) -> String:
+static func refusal(ship: ShipState, plan: Dictionary, ctx: Dictionary, section: int, station_id: String) -> String:
 	var name: String = ShipState.SECTION_NAMES[section] if section >= 0 and section <= ShipState.MARINES else "?"
 	if section < 0 or section > ShipState.MARINES:
 		return "Unknown crew section"
@@ -168,6 +186,16 @@ static func refusal(ship: ShipState, plan: Dictionary, _ctx: Dictionary, section
 			if on_sails >= needed:
 				return "Sails aloft is full (%d %s)." % [needed, "section" if needed == 1 else "sections"]
 			return ""
+		STATION_BRACES:
+			if not bool(ctx.get("ma0_turn_plotted", false)):
+				return "Plot a turn at MA 0 first: the braces are manned only to tack (5.D.1)."
+			var at_braces := tack_sections_in(plan)
+			var current: Dictionary = plan.get("assignments", {}).get(section, {})
+			if str(current.get("code", "")) == TackCrewHandler.CODE:
+				at_braces -= 1
+			if at_braces >= TackCrewHandler.max_sections():
+				return "Braces (tacking) is full (%d sections)." % TackCrewHandler.max_sections()
+			return ""
 	return "Unknown station"
 
 
@@ -187,6 +215,8 @@ static func assign(ship: ShipState, plan: Dictionary, ctx: Dictionary, section: 
 		STATION_SAILS:
 			result["assignments"][section] = {"code": SailController.CODE,
 				"params": {"target": str(result["orders"].get("sail_target", ""))}}
+		STATION_BRACES:
+			result["assignments"][section] = {"code": TackCrewHandler.CODE, "params": {}}
 	return result
 
 
@@ -223,6 +253,7 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 	# (4) manual: drop what the rules refuse
 	var sail_target := str(orders.get("sail_target", ""))
 	var on_sails := 0
+	var at_braces := 0
 	var sections: Array = assignments.keys()
 	sections.sort()
 	for section in sections:
@@ -241,6 +272,14 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 			else:
 				on_sails += 1
 				entry["params"] = {"target": sail_target}
+		elif code == TackCrewHandler.CODE:
+			if not bool(ctx.get("ma0_turn_plotted", false)):
+				why = "No turn at MA 0 is plotted (5.D.1)"
+			elif at_braces >= TackCrewHandler.max_sections():
+				why = "Braces (tacking) is full"
+			else:
+				at_braces += 1
+				entry["params"] = {}
 		else:
 			var live := ship.task_of(section)
 			if live.is_empty() or str(live.get("code", "")) != code:

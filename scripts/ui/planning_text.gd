@@ -71,6 +71,15 @@ static func steering_note(poor_maneuvering: bool, chance: float, pending_turn: i
 	return "\n".join(lines)
 
 
+## The tacking note for a turn at MA 0 (5.D.2a): "Tack: 60 % with 2 at the braces (3: 80 %)";
+## with a full crew at the braces only the first part.
+static func tacking_note(chance: float, sections: int, full_chance: float, full_sections: int = 3) -> String:
+	var text := "Tack: %d %% with %d at the braces" % [int(round(chance * 100.0)), sections]
+	if sections < full_sections:
+		text += " (%d: %d %%)" % [full_sections, int(round(full_chance * 100.0))]
+	return text
+
+
 const IRONS_NOTE := "Head to wind: the ship will be in irons and movement ends here."
 
 

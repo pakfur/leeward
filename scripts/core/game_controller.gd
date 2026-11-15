@@ -1073,20 +1073,24 @@ func _update_tacking_display(is_tacking: bool) -> void:
 	if not current_planning_ui or not movement_client:
 		return
 	if not is_tacking:
-		current_planning_ui.update_tacking_state(false, 0.0)
+		current_planning_ui.update_tacking_state(false)
 		return
 
 	var ship_state = GameState.get_ship(movement_client.active_ship_id)
 	if not ship_state or not ship_state.ship:
-		current_planning_ui.update_tacking_state(false, 0.0)
+		current_planning_ui.update_tacking_state(false)
 		return
 
-	# Read-only query: the Tacking chart with this ship's DRMs, as the resolver will roll it  SCV:ALLOW
-	var probability: float = GameState.movement_resolver.tacking_chance(ship_state)
-	Trace.trace_log("GameController", "Turn at MA=0: %s, success chance %.0f%%" % [
-		ship_state.ship_id, probability * 100.0
+	# Read-only queries: the sections the crew plan puts at the braces for a turn at MA 0, and the
+	# Tacking chart with this ship's DRMs for that many and for a full crew of 3 (5.D.2a).
+	var sections: int = GameState.crew_task_controller.planned_tack_sections(ship_state.ship_id)
+	var probability: float = GameState.movement_resolver.tacking_chance(ship_state, sections)
+	var full: float = GameState.movement_resolver.tacking_chance(ship_state, TackCrewHandler.max_sections())
+	Trace.trace_log("GameController", "Turn at MA=0: %s, %d at the braces, success chance %.0f%%" % [
+		ship_state.ship_id, sections, probability * 100.0
 	])
-	current_planning_ui.update_tacking_state(true, probability)
+	current_planning_ui.update_tacking_state(true,
+		PlanningText.tacking_note(probability, sections, full, TackCrewHandler.max_sections()))
 
 
 ## Steering damage (hull #2, #3; 6.F): the Poor Maneuvering chance for a turn, a turn left over from

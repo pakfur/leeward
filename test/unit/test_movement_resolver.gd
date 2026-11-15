@@ -1,6 +1,9 @@
 extends GutTest
 ## Tests for MovementResolver - single-ship and multi-ship impulse resolution
 ## Covers: straight movement, tacking, in-irons, contested hex, bearing off, collision, fouling
+## Ships are made with three crew sections at the braces (a live T task, as Automatic crew places
+## for a turn at MA 0), so the Tacking roll has no crew-section DRM unless a test changes it (5.D.2a).
+const CrewFixtures = preload("res://test/unit/crew_fixtures.gd")
 
 var resolver: MovementResolver
 var rng: RandomNumberGenerator
@@ -92,6 +95,7 @@ func _make_ship_state(
 	state.crew_count = crew
 	state.marine_count = 2
 	state.crew_quality = crew_quality
+	CrewFixtures.give_tack_crew(state, 3)
 	GameState.ships[ship_id] = state
 	return state
 
@@ -387,6 +391,87 @@ func test_tacking_drm_compound() -> void:
 	var compound_rigging: Array[int] = [0, 5, 6, 0]
 	state.rigging_current_hp = compound_rigging
 	assert_eq(resolver._calculate_tacking_drm(state), 3, "SK -2 + towing 1 + 2 rigging lost 4")
+
+
+# ===========================================================================
+# Crew sections at the braces (5.D.2a; crew-tasks spec §3.6, §8 #10-12)
+# ===========================================================================
+
+func test_tack_crew_drm_two_per_section_short_up_to_six() -> void:
+	# 5.D.2a: the table assumes 3 CSs plotted to "T"; +2 per CS not plotted, at most +6 (the
+	# chart's "up to +8" is a misprint).
+	assert_eq(MovementResolver.tack_crew_drm(3), 0)
+	assert_eq(MovementResolver.tack_crew_drm(2), 2)
+	assert_eq(MovementResolver.tack_crew_drm(1), 4)
+	assert_eq(MovementResolver.tack_crew_drm(0), 6)
+	assert_eq(MovementResolver.tack_crew_drm(5), 0, "never a bonus")
+
+
+func test_tacking_drm_one_section_at_the_braces() -> void:
+	# Spec §8 #10 (5.D.2a; Majestic g-t 18): 1 CS at T, CQ B, no rigging lost, at WF=L, not in
+	# irons: -2 (SK) +4 = +2.
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3)
+	CrewFixtures.give_tack_crew(state, 1)
+	assert_eq(resolver._calculate_tacking_drm(state), 2)
+
+
+func test_tacking_drm_no_section_at_the_braces_is_six_not_eight() -> void:
+	# Spec §8 #11 (5.D.2a erratum): no CS at T: +6, so CQ B at WF=L is -2 +6 = +4.
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3)
+	CrewFixtures.give_tack_crew(state, 0)
+	assert_eq(state.tack_sections(), 0)
+	assert_eq(resolver._calculate_tacking_drm(state), 4)
+	assert_eq(resolver._calculate_tacking_drm(state, 0), 4, "an explicit planned count")
+
+
+func test_tacking_chance_prince_example_three_sections() -> void:
+	# Spec §8 #12 (5.D.3 example, Prince): type A, WS 3, CQ B, 3 CS at T, at WF=L: chart <= 6,
+	# DRM -2: d10 0-8 succeed, 90 %.
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3, "A")
+	env.wind_speed = 3
+	assert_almost_eq(resolver.tacking_chance(state), 0.9, 0.001)
+	assert_almost_eq(resolver.tacking_chance(state, 3), 0.9, 0.001)
+
+
+func test_tacking_chance_with_planned_sections() -> void:
+	# Same ship with 1 CS planned at the braces: DRM -2 +4 = +2, d10 + 2 <= 6: 0-4, 50 %;
+	# with none, +4: 0-2, 30 %.
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3, "A")
+	env.wind_speed = 3
+	assert_almost_eq(resolver.tacking_chance(state, 1), 0.5, 0.001)
+	assert_almost_eq(resolver.tacking_chance(state, 0), 0.3, 0.001)
+
+
+func test_tack_without_crew_at_the_braces_can_fail_where_a_full_crew_passes() -> void:
+	# Type D at WS 3 needs <= 9. CQ B at WF=L: with 3 CS the DRM is -2 and every roll passes; with
+	# none it is +4, so a d10 of 6 or more fails (5.D.2a).
+	var seed_value := -1
+	for candidate in range(1, 2000):
+		var probe := RandomNumberGenerator.new()
+		probe.seed = candidate
+		if probe.randi_range(0, 9) >= 6:
+			seed_value = candidate
+			break
+	var state = _make_ship_state(Vector2i(5, 5), 0, 2, "D")
+	env.wind_speed = 3
+	_plot_turn(state, 1)
+	rng.seed = seed_value
+	assert_false(_run_one(state).tacking_failed, "3 at the braces: passes")
+	CrewFixtures.give_tack_crew(state, 0)
+	_plot_turn(state, 1)
+	rng.seed = seed_value
+	assert_true(_run_one(state).tacking_failed, "nobody at the braces: d10 >= 6 + 4 > 9 fails")
+
+
+func test_plots_ma0_turn() -> void:
+	# 5.D.1: a plot that starts with a turn while the MA is 0 needs a Tacking roll.
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3)
+	var turn := [{"hex": {"q": 5, "r": 5}, "facing": 1}]
+	var ahead := [{"hex": {"q": 6, "r": 5}, "facing": 0}]
+	assert_true(MovementResolver.plots_ma0_turn(state, turn, 0))
+	assert_false(MovementResolver.plots_ma0_turn(state, turn, 2), "MA above 0: an ordinary turn")
+	assert_false(MovementResolver.plots_ma0_turn(state, ahead, 0))
+	assert_false(MovementResolver.plots_ma0_turn(state, [], 0))
 
 
 # ===========================================================================

@@ -15,7 +15,7 @@ const SAIL_ORDER: Array[String] = ["NS", "FS", "MS", "PS"]
 ## max_turns_per_gt() when nothing limits turning
 const UNLIMITED_TURNS := -1
 ## Lasting critical-hit effects kept in critical_effects (one-shot results leave no entry).
-## crew_disorganized is deferred (spec §0 Q6) and not listed.
+## crew_disorganized (hull #4) is not an effect: it is a forced RO crew task (is_disorganized).
 const CRITICAL_EFFECT_IDS: Array[String] = [
 	"signal_halyards_cut", "braces_cut", "lines_jammed", "broadside_obscured",
 	"sheets_cut", "shrouds_severed", "rudder_jammed",

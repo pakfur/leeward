@@ -26,3 +26,23 @@ static func give_sail_change(ship: ShipState, target: String, sections: Array, d
 ## Orders a sail change in the ship's plot (crew_orders.sail_target).
 static func order_sail(ship: ShipState, target: String) -> void:
 	ship.plotted_actions["crew_orders"] = {"sail_target": target}
+
+
+## Puts `count` sections at the braces this g-t (a live T task, as begin_turn_tasks makes for a
+## turn at MA 0): M, S4, S3 in worker order. The Tacking roll then has the crew-section DRM
+## +2 x (3 - count) (5.D.2a). count 0 removes the T task.
+static func give_tack_crew(ship: ShipState, count: int = 3) -> void:
+	for k in range(ship.crew_tasks.size() - 1, -1, -1):
+		if ship.crew_tasks[k].get("code", "") == "T":
+			ship.crew_tasks.remove_at(k)
+	if count <= 0:
+		return
+	var sections: Array = [ShipState.MARINES, 3, 2].slice(0, count)
+	ship.task_seq += 1
+	ship.crew_tasks.append(ShipState.crew_task_from({
+		"seq": ship.task_seq, "code": "T", "sections": sections, "done": 0, "started_turn": 1,
+		"params": {}, "forced": false, "marines_available": false, "ended": "",
+	}))
+	for section in sections:
+		if not ship.plotted_sections.has(int(section)):
+			ship.plotted_sections.append(int(section))

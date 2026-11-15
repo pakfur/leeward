@@ -5,6 +5,7 @@ extends GutTest
 ## and the Tacking/Bearing Off chart DRMs. Expected values from the rules and the p.109/p.112-113
 ## charts; spec test rows are named where they apply.
 
+const CrewFixtures = preload("res://test/unit/crew_fixtures.gd")
 const PORT := 0
 const STARBOARD := 1
 
@@ -73,6 +74,7 @@ func _ship(maneuverability: String = "B", crew_quality: String = "E", facing: in
 	state.crew_count = [3, 3, 3, 3] as Array[int]
 	state.marine_count = 2
 	state.crew_quality = crew_quality
+	CrewFixtures.give_tack_crew(state, 3)  # three at the braces: no 5.D.2a DRM
 	GameState.ships[ship_id] = state
 	return state
 

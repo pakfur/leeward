@@ -230,3 +230,92 @@ func test_guns_preview_counts_lost_sections_as_missing() -> void:
 	assert_eq(guns["missing"], [{"section": 0, "why": "lost"}, {"section": 1, "why": "SAIL"}])
 	plan = {"assignments": {1: {}, 2: {}, 3: {}}}
 	assert_eq(CrewRules.guns_preview(ship, plan)["modifier"], null, "no sailor section left: cannot fire")
+
+
+# --- A4 tacking crew (5.D.2a; spec §3.3, §3.6) ---
+
+func _ma0_ctx() -> Dictionary:
+	var ctx := _ctx()
+	ctx["ma0_turn_plotted"] = true
+	return ctx
+
+
+func test_a4_three_sections_at_the_braces_in_worker_order() -> void:
+	# Spec §3.3 A4: a turn at MA 0 plotted: as many of 3 sections as are free, M, S4, S3.
+	var result := CrewAuto.allocate(ship, _orders(""), _ma0_ctx())
+	var sections: Array = result["assignments"].keys()
+	sections.sort()
+	assert_eq(sections, [2, 3, ShipState.MARINES])
+	for section in sections:
+		assert_eq(result["assignments"][section]["code"], "T")
+	var guns := CrewRules.guns_preview(ship, {"assignments": result["assignments"]})
+	assert_eq(guns["modifier"], -6, "S4 and S3 at the braces do not serve the guns (4.B.4)")
+
+
+func test_a4_no_turn_at_ma0_no_braces() -> void:
+	assert_eq(CrewAuto.allocate(ship, _orders(""), _ctx())["assignments"], {})
+
+
+func test_a4_after_tasks_in_progress_and_held_back_marines() -> void:
+	# Spec §8 #20 (no fire yet: phase 4): S1 on RR in progress keeps it (A2); an adjacent enemy
+	# holds the marines back; T gets S4, S3, S2.
+	_make_ship("enemy", 1, Vector2i(0, 1))
+	GameState.ship_controller.add_task("own", {"code": "RR", "sections": [0], "params": {}})
+	var result := CrewAuto.allocate(ship, _orders(""), _ma0_ctx())
+	assert_eq(result["assignments"][0]["code"], "RR")
+	var braces: Array = []
+	for section in result["assignments"]:
+		if result["assignments"][section]["code"] == "T":
+			braces.append(section)
+	braces.sort()
+	assert_eq(braces, [1, 2, 3])
+
+
+func test_a4_comes_after_the_ordered_sail_change() -> void:
+	# A3 before A4: MS->PS takes M and S4; the braces get S3, S2, S1.
+	var result := CrewAuto.allocate(ship, _orders("PS"), _ma0_ctx())
+	assert_eq(result["assignments"][ShipState.MARINES]["code"], "SAIL")
+	assert_eq(result["assignments"][3]["code"], "SAIL")
+	assert_eq(CrewRules.tack_sections_in(result), 3)
+
+
+func test_a4_only_free_sections() -> void:
+	# Fewer than 3 sections left: as many as there are.
+	ship.crew_count = [0, 0, 0, 3] as Array[int]
+	ship.marine_count = 0
+	var result := CrewAuto.allocate(ship, _orders(""), _ma0_ctx())
+	assert_eq(result["assignments"], {3: {"code": "T", "params": {}}})
+
+
+# --- Braces station, manual plans ---
+
+func test_braces_refused_without_a_turn_at_ma0() -> void:
+	ship.crew_auto = false
+	var plan := {"assignments": {}, "orders": _orders("")}
+	assert_eq(CrewRules.refusal(ship, plan, _ctx(), 3, CrewRules.STATION_BRACES),
+		"Plot a turn at MA 0 first: the braces are manned only to tack (5.D.1).")
+	assert_eq(CrewRules.refusal(ship, plan, _ma0_ctx(), 3, CrewRules.STATION_BRACES), "")
+
+
+func test_braces_hold_three_sections() -> void:
+	# crew_tasks.json T: 1-3 sections (5.D.2a assumes 3).
+	ship.crew_auto = false
+	var plan := {"assignments": {}, "orders": _orders("")}
+	for section in [ShipState.MARINES, 3, 2]:
+		plan = CrewRules.assign(ship, plan, _ma0_ctx(), section, CrewRules.STATION_BRACES)
+	assert_eq(CrewRules.tack_sections_in(plan), 3)
+	assert_eq(CrewRules.refusal(ship, plan, _ma0_ctx(), 1, CrewRules.STATION_BRACES),
+		"Braces (tacking) is full (3 sections).")
+	assert_eq(CrewRules.refusal(ship, plan, _ma0_ctx(), 2, CrewRules.STATION_BRACES), "",
+		"a section already there may be placed again")
+
+
+func test_manual_normalize_drops_braces_without_a_turn_at_ma0() -> void:
+	ship.crew_auto = false
+	var plan := {"assignments": {3: {"code": "T", "params": {}}, 2: {"code": "T", "params": {}}},
+		"orders": _orders("")}
+	var kept := CrewRules.normalize(ship, plan, _ma0_ctx())
+	assert_eq(CrewRules.tack_sections_in(kept), 2)
+	var dropped := CrewRules.normalize(ship, plan, _ctx())
+	assert_eq(dropped["assignments"], {})
+	assert_eq(dropped["warnings"].size(), 2)

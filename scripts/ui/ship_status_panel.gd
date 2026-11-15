@@ -125,6 +125,27 @@ static func sail_change_line(s: ShipState) -> String:
 	return ""
 
 
+## One line per crew task other than a sail change (which has sail_change_line): sections in
+## reorganization (hull #4) with their progress, the sections at the braces this turn.
+static func crew_task_lines(s: ShipState) -> Array[String]:
+	var lines: Array[String] = []
+	for task in s.crew_tasks:
+		if task.get("ended", "") != "":
+			continue
+		var names: Array[String] = []
+		for section in task.get("sections", []):
+			if int(section) >= 0 and int(section) < ShipState.SECTION_NAMES.size():
+				names.append(ShipState.SECTION_NAMES[int(section)])
+		var crew := " ".join(names)
+		match str(task.get("code", "")):
+			ReorganizeHandler.CODE:
+				lines.append("%s reorganizing, %d of %d turns" % [crew, int(task.get("done", 0)),
+					s.task_turns_required(task)])
+			TackCrewHandler.CODE:
+				lines.append("%s at the braces (tacking)" % crew)
+	return lines
+
+
 static func badges(s: ShipState) -> Array[String]:
 	var result: Array[String] = []
 	if s.fouled_with != "":
@@ -156,6 +177,8 @@ static func critical_lines(s: ShipState) -> Array[String]:
 				lines.append("Sheets cut: −1 MP and −1 acceleration next turn")
 			"shrouds_severed":
 				lines.append("Shrouds severed: −1 MP")
+			"signal_halyards_cut":
+				lines.append("Signal halyards cut: no new signals (fix roll in maintenance)")
 			"rudder_jammed":
 				var way := "straight" if side < 0 else ("to port" if side == ShipState.PORT else "to starboard")
 				lines.append("Rudder jammed %s (fix roll in maintenance)" % way)
@@ -238,6 +261,7 @@ func _update_display() -> void:
 		var change := sail_change_line(s)
 		if change != "":
 			extra.append(change)
+		extra.append_array(crew_task_lines(s))
 		extra.append_array(critical_lines(s))
 		_extra_label.text = "\n".join(extra)
 

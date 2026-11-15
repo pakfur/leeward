@@ -522,6 +522,15 @@ Every phase: GUT tests with `ScriptedDice` (d10 = 0–9), `make test`, both vali
 - **Phase-1 subset of `CrewRules`.** `context`, `plan_of`, `locked_sections`, `marines_held_back`, `worker_order`, `default_plan`, `refusal`, `assign`, `normalize`, `guns_preview` for the stations Guns, Marine fire and Sails. `stations`, `progress_warning`, `summary` and `fire_draft` come with phases 3–4; `ctx.ma0_turn_plotted` is always false until phase 2.
 - `checked_sections` and `ShipStateController.mark_section_checked` exist and are serialized; nothing sets them until phase 5.
 
+**Phase 2 as built (2026-11-15).**
+- **Handlers.** T is `TackCrewHandler` (`tack_crew_handler.gd`, `one_turn`, at most 3 sections), RO is `ReorganizeHandler` (`reorganize_handler.gd`, `forced`, not `abandonable`, `fire_exempt`). The handler interface gains `counts_turn(ship, task) -> bool` (default true), checked by `advance_tasks`; RO returns false in the g-t it began (`started_turn`), which is how "counted from the next g-t" (0.3 #3) is done.
+- **`ctx.ma0_turn_plotted`** reads the stored movement plot with `MovementResolver.plots_ma0_turn(ship, steps, ma)`, the test the Tacking roll itself uses (`_find_tacking_impulse` now calls it). The DRM is `MovementResolver.tack_crew_drm(n)`, with the 3 and the +2 from `crew_tasks.json`.
+- **Braces station rules** are in `CrewRules` already (`STATION_BRACES`, `refusal`, `assign`, manual `normalize` drops T with no MA-0 turn), so phase 3 only draws them. Because a manual plan is normalized when stored, a T placed before the movement plot holds the MA-0 turn is dropped; phase 3's overlay should place T after the turn is plotted, or `plot_crew` should keep T until `finalize_plots`. Automatic (the only mode until phase 3) is unaffected.
+- **Planning note.** The movement plot being drawn is not stored yet, so the note asks `CrewTaskController.planned_tack_sections(ship_id)`: the stored crew plan normalized as if an MA-0 turn were plotted. Text: `PlanningText.tacking_note`; with 3 at the braces the "(3: …)" comparison is left out.
+- **Hull #4** logs the disorganized section in the CRITICAL_HIT event (`section`, −1 when none), shown as "crew disorganized: S4 must reorganize". The cancelled task logs reason "crew disorganized"; the RO task's `params.reason` is `crew_disorganized`.
+- **Status panel.** `ShipStatusPanel.crew_task_lines`: "S4 reorganizing, 0 of 3 turns" (g-t's done of needed at the current CQ) and, while a T task is live, "M S4 S3 at the braces (tacking)"; `critical_lines` gains "Signal halyards cut: no new signals (fix roll in maintenance)".
+- **Tests.** Movement-resolver and steering fixtures give each ship three sections at the braces (`CrewFixtures.give_tack_crew`), so their tacking outcomes are unchanged; the crew DRM has its own tests.
+
 The boarding spec's phases follow phase 3 (they need the overlay's Boarders station) and phase 4 (`is_burning`).
 
 ---

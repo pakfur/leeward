@@ -1423,11 +1423,12 @@ func _roll_tacking(
 
 
 ## Chance (0.0-1.0) that a turn at MA=0 by this ship succeeds now, with the chart DRMs. Pure query,
-## used by the planning screen.
-func tacking_chance(ship_state: ShipState) -> float:
+## used by the planning screen. `sections` is the number of crew sections at the braces (5.D.2a);
+## -1 reads the ship's live T task.
+func tacking_chance(ship_state: ShipState, sections: int = -1) -> float:
 	var wind_speed: int = game_state.environment.wind_speed if game_state and game_state.environment else 0
 	var number: int = _tacking_number(ship_state, wind_speed)
-	var drm: int = _calculate_tacking_drm(ship_state)
+	var drm: int = _calculate_tacking_drm(ship_state, sections)
 	var wins: int = 0
 	for d10 in range(10):
 		if _tack_succeeds(d10, drm, number):
@@ -1445,10 +1446,13 @@ func _tack_succeeds(d10: int, drm: int, number: int) -> bool:
 	return number >= 0 and (d10 == 0 or d10 + drm <= number)
 
 
-## Tacking DRMs from the chart (5.D.2, 5.D.6). Leeward has no crew-task plotting, so every ship
-## counts as having its crew sections plotted to "T" (no +2s). Reversing tack does not exist yet.
-func _calculate_tacking_drm(ship_state: ShipState) -> int:
+## Tacking DRMs from the chart (5.D.2, 5.D.6). 5.D.2a: the chart assumes 3 crew sections plotted
+## to "T"; +2 for each one short, up to +6 (the chart's "up to +8" is a misprint). `sections` is the
+## count at the braces; -1 reads the ship's live T task (ShipState.tack_sections()). Reversing tack
+## does not exist yet.
+func _calculate_tacking_drm(ship_state: ShipState, sections: int = -1) -> int:
 	var drm: int = DataManager.combat_tables.skill_modifier(ship_state.crew_quality)
+	drm += tack_crew_drm(ship_state.tack_sections() if sections < 0 else sections)
 
 	if ship_state.ship:
 		var rigging_max = ship_state.ship.rigging_hp
@@ -1659,13 +1663,25 @@ func _get_plotted_steps(ship_state: ShipState) -> Array:
 ## turning out of irons, or any other turn by a ship whose MA is 0. Such a turn is the ship's first
 ## (and only) step. -1 when the plot needs no roll.
 func _find_tacking_impulse(ship_state: ShipState, steps: Array) -> int:
-	if steps.is_empty():
-		return -1
-	if int(steps[0].get("facing", ship_state.facing)) == ship_state.facing:
-		return -1
-	if game_state.ship_controller.get_movement_allowance(ship_state.ship_id) != 0:
+	if steps.is_empty() or not plots_ma0_turn(ship_state, steps,
+			game_state.ship_controller.get_movement_allowance(ship_state.ship_id)):
 		return -1
 	return 0
+
+
+## Whether `steps` (a movement plot) begin with a turn and the ship's MA is 0 (5.D.1): the turn
+## must pass a Tacking roll. Pure; CrewRules uses it for the Braces (T) station.
+static func plots_ma0_turn(ship_state: ShipState, steps: Array, movement_allowance: int) -> bool:
+	if steps.is_empty() or movement_allowance != 0:
+		return false
+	return int(steps[0].get("facing", ship_state.facing)) != ship_state.facing
+
+
+## 5.D.2a: +2 per crew section short of the 3 the Tacking table assumes, at most +6.
+static func tack_crew_drm(sections: int) -> int:
+	var assumed: int = int(DataManager.combat_tables.crew_task("T").get("assumed_sections", 3))
+	var per_section: int = int(DataManager.combat_tables.crew_task("T").get("drm_per_section_short", 2))
+	return per_section * clampi(assumed - sections, 0, assumed)
 
 
 ## ============================================================================

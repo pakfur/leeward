@@ -37,6 +37,12 @@ func turns_required(ship: ShipState, task: Dictionary) -> int:
 	return ship.task_turns_required(task)
 
 
+## Whether this g-t counts towards the task (advance_tasks), when its sections were plotted.
+## RO does not count the g-t it began in.
+func counts_turn(_ship: ShipState, _task: Dictionary) -> bool:
+	return true
+
+
 ## Whether plotted `params` continue `task` (same identifying parameter, e.g. the sail target).
 func same_task(_task: Dictionary, _params: Dictionary) -> bool:
 	return true

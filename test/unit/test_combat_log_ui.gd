@@ -397,6 +397,23 @@ func test_critical_lines_one_per_lasting_effect() -> void:
 	assert_eq(StatusPanel.critical_lines(s), [
 		"Starboard broadside −2: obscured by fallen rigging (fix roll in maintenance)",
 		"Rudder jammed to port (fix roll in maintenance)",
+		"Signal halyards cut: no new signals (fix roll in maintenance)",
 		"Wheel shot away: one turn per turn, poor maneuvering",
 		"Afire ×1 (fire is not yet simulated)",
-	] as Array[String], "Deferred effects (signal halyards) show nothing")
+	] as Array[String])
+
+
+func test_crew_task_lines_reorganizing_and_braces() -> void:
+	# Hull #4: a section in RO shows its progress (CQ B: 5 - 2 = 3 g-t's); T sections this turn.
+	var s := _make_ship()
+	s.crew_quality = "B"
+	assert_eq(StatusPanel.crew_task_lines(s), [] as Array[String])
+	s.crew_tasks = [
+		{"seq": 1, "code": "RO", "sections": [3], "done": 2, "params": {"reason": "crew_disorganized"}, "ended": ""},
+		{"seq": 2, "code": "T", "sections": [4, 2], "done": 0, "params": {}, "ended": ""},
+		{"seq": 3, "code": "RO", "sections": [1], "done": 1, "params": {}, "ended": "completed"},
+	] as Array[Dictionary]
+	assert_eq(StatusPanel.crew_task_lines(s), [
+		"S4 reorganizing, 2 of 3 turns",
+		"M S3 at the braces (tacking)",
+	] as Array[String])

@@ -293,13 +293,13 @@ func set_collision_warning(text: String) -> void:
 		collision_label.text = text
 		collision_label.visible = text != ""
 
-func update_tacking_state(is_tacking: bool, probability: float) -> void:
+## The tacking note (PlanningText.tacking_note) for a turn at MA 0; hidden when not tacking.
+func update_tacking_state(is_tacking: bool, text: String = "") -> void:
 	if not tacking_label:
 		return
 	tacking_label.visible = is_tacking
 	if is_tacking:
-		var pct = int(probability * 100.0)
-		tacking_label.text = "Tacking: %d%% success" % pct
+		tacking_label.text = text
 
 ## Steering damage note (PlanningText.steering_note); "" hides it.
 func update_steering_state(text: String) -> void:

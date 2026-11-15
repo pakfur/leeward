@@ -290,3 +290,51 @@ func test_old_save_sail_change_becomes_a_task() -> void:
 	assert_eq(info["sections"], [3, 2])
 	assert_eq(restored.ordered_sail_target(), "FS")
 	assert_false(restored.plotted_actions.has("sail_change"))
+
+
+# --- Tacking crew (5.D.1-2; spec §3.6) ---
+
+func _wind_into_the_bow() -> EnvironmentState:
+	# Wind from E (0) with the ship facing E: WF=L, MA 0 (5.D.1).
+	var env := EnvironmentState.new()
+	env.wind_direction = 0
+	env.wind_speed = 2
+	return env
+
+
+func test_context_sees_a_turn_at_ma0() -> void:
+	var old_env := GameState.environment
+	GameState.environment = _wind_into_the_bow()
+	ship.facing = 0
+	GameState.ship_controller.set_plotted_movement("crew_ship", [{"hex": {"q": 0, "r": 0}, "facing": 1}])
+	assert_true(CrewRules.context(GameState, ship)["ma0_turn_plotted"])
+	GameState.ship_controller.set_plotted_movement("crew_ship", [])
+	assert_false(CrewRules.context(GameState, ship)["ma0_turn_plotted"])
+	GameState.environment = old_env
+
+
+func test_braces_sections_do_not_fire_that_turn() -> void:
+	# Spec §8 #13 (0.3 #2; Majestic g-t 17): Automatic puts M, S4, S3 at the braces for a turn at
+	# MA 0; S4 and S3 do not serve the guns that g-t, whatever the tack does; T ends with the g-t.
+	var old_env := GameState.environment
+	GameState.environment = _wind_into_the_bow()
+	ship.facing = 0
+	GameState.ship_controller.set_plotted_movement("crew_ship", [{"hex": {"q": 0, "r": 0}, "facing": 1}])
+	assert_eq(ctrl.planned_tack_sections("crew_ship"), 3)
+	ctrl.begin_turn_tasks(MOVE)
+	assert_eq(ship.tack_sections(), 3)
+	assert_eq(ship.sections_able_to_fire(), 2, "S1 and S2 only: -6")
+	ctrl.advance_tasks(STATUS)
+	assert_eq(ship.tack_sections(), 0, "T lasts one g-t")
+	assert_eq(ship.sections_able_to_fire(), 2, "still silent this g-t")
+	_next_turn()
+	assert_eq(ship.sections_able_to_fire(), 4)
+	GameState.environment = old_env
+
+
+func test_planned_tack_sections_counts_free_sections() -> void:
+	# The planning note's count: M and S4 are altering sail (locked, A0) and S2 is lost, so only
+	# S3 and S1 are free for the braces (A4).
+	CrewFixtures.give_sail_change(ship, "PS", [ShipState.MARINES, 3], 1, false)
+	ship.crew_count = [3, 0, 3, 3] as Array[int]
+	assert_eq(ctrl.planned_tack_sections("crew_ship"), 2, "S3 and S1 are free")
