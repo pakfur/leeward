@@ -164,12 +164,12 @@ func _plot_turn(state: ShipState, new_facing: int) -> Vector2i:
 	return turn_hex
 
 
-## A seed whose first randf() is at most `limit`, so a tacking roll against a high threshold passes.
-func _seed_with_low_first_roll(limit: float) -> int:
+## A seed whose first d10 (randi_range(0, 9)) is not 0, so a natural-0 success cannot rescue a roll.
+func _seed_without_natural_zero() -> int:
 	for s in range(1, 1000):
 		var probe = RandomNumberGenerator.new()
 		probe.seed = s
-		if probe.randf() <= limit:
+		if probe.randi_range(0, 9) != 0:
 			return s
 	return 1
 
@@ -189,11 +189,8 @@ func _has_event(result, event_type) -> bool:
 func test_tack_from_luffing_rolls_and_completes_turn() -> void:
 	# Wind from E (0), facing E = WF L, MA 0. The ship luffed last turn (speed 2), so it is not in irons.
 	var state = _make_ship_state(Vector2i(5, 5), 0, 2, "D")
-	env.wind_speed = 3  # D at WS 3: 90% (DRM +0.1 at L)
+	env.wind_speed = 3  # D at WS 3: <=9; CQ B (SK -2) at WF=L: DRM -2, so every roll passes
 	var turn_hex = _plot_turn(state, 1)
-
-	rng.seed = _seed_with_low_first_roll(0.5)
-	resolver = MovementResolver.new(GameState, rng)
 	var result = _run_one(state)
 
 	assert_true(_has_event(result, MovementTypes.ResolutionEventType.TACKING_ROLL),
@@ -205,12 +202,15 @@ func test_tack_from_luffing_rolls_and_completes_turn() -> void:
 
 
 func test_failed_tack_erases_the_turn() -> void:
-	# Maneuver A at WS 1 is 20%; three rigging sections gone (+0.6) and WF L (+0.1) make it impossible.
+	# Maneuver A at WS 1 needs <=2; CQ B (-2) and three rigging sections gone (+6) give +4,
+	# so only a natural 0 could pass, and the seed avoids one.
 	var state = _make_ship_state(Vector2i(5, 5), 0, 2, "A")
 	env.wind_speed = 1
 	var damaged: Array[int] = [0, 0, 0, 6]
 	state.rigging_current_hp = damaged
 	_plot_turn(state, 5)
+	rng.seed = _seed_without_natural_zero()
+	resolver = MovementResolver.new(GameState, rng)
 
 	var result = _run_one(state)
 
@@ -255,11 +255,8 @@ func test_in_irons_without_a_plotted_turn_stays_in_irons() -> void:
 
 func test_in_irons_plotted_turn_can_turn_out() -> void:
 	var state = _make_ship_state(Vector2i(5, 5), 0, 0, "D")
-	env.wind_speed = 3  # 90%, DRM +0.2 (L and in irons)
+	env.wind_speed = 3  # <=9; CQ B (-2) in irons (+1): DRM -1, so every roll passes
 	var turn_hex = _plot_turn(state, 5)
-
-	rng.seed = _seed_with_low_first_roll(0.5)
-	resolver = MovementResolver.new(GameState, rng)
 	var result = _run_one(state)
 
 	assert_true(_has_event(result, MovementTypes.ResolutionEventType.TACKING_ROLL), "Turning out of irons rolls")
@@ -282,50 +279,48 @@ func test_not_in_irons_when_off_the_wind() -> void:
 # ===========================================================================
 
 func test_tacking_drm_with_lost_rigging() -> void:
+	# Facing W, wind from E: not at WF=L (-2); CQ B (-2); two sections lost (+4)
 	var state = _make_ship_state(Vector2i(5, 5), 3, 3)
 	var damaged_rigging: Array[int] = [5, 0, 6, 0]
 	state.rigging_current_hp = damaged_rigging
-	var drm = resolver._calculate_tacking_drm(state)
-	assert_almost_eq(drm, 0.4, 0.001, "Two destroyed rigging sections = +0.4 DRM")
+	assert_eq(resolver._calculate_tacking_drm(state), 0, "-2 SK -2 off the wind +4 rigging")
 
 
 func test_tacking_drm_with_towing() -> void:
 	var state = _make_ship_state(Vector2i(5, 5), 3, 3)
 	state.towing = true
-	var drm = resolver._calculate_tacking_drm(state)
-	assert_almost_eq(drm, 0.1, 0.001, "Towing adds +0.1 DRM")
+	assert_eq(resolver._calculate_tacking_drm(state), -3, "-2 SK -2 off the wind +1 towing")
 
 
-func test_tacking_drm_facing_luffing() -> void:
-	var state = _make_ship_state()
-	state.facing = 0
+func test_tacking_drm_at_wind_facing_l() -> void:
+	var state = _make_ship_state()  # facing E into a wind from E, speed 3
 	env.wind_direction = 0
-	var drm = resolver._calculate_tacking_drm(state)
-	assert_almost_eq(drm, 0.1, 0.001, "Facing L adds +0.1 DRM")
+	assert_eq(resolver._calculate_tacking_drm(state), -2, "At WF=L only the SK mod applies")
 
 
 func test_tacking_drm_in_irons() -> void:
 	var state = _make_ship_state(Vector2i(5, 5), 0, 0)
 	env.wind_direction = 0
-	var drm = resolver._calculate_tacking_drm(state)
-	assert_almost_eq(drm, 0.2, 0.001, "L (+0.1) and in irons (+0.1)")
+	assert_eq(resolver._calculate_tacking_drm(state), -1, "SK -2, in irons +1")
 
 
 func test_tacking_drm_healthy_ship_not_luffing() -> void:
 	var state = _make_ship_state(Vector2i(5, 5), 3, 3)
-	var drm = resolver._calculate_tacking_drm(state)
-	assert_almost_eq(drm, 0.0, 0.001, "Healthy ship not luffing has 0 DRM")
+	assert_eq(resolver._calculate_tacking_drm(state), -4, "SK -2, not at WF=L -2")
+
+
+func test_tacking_drm_crew_quality() -> void:
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3, "C", "test_ship_1", 3, "G")
+	assert_eq(resolver._calculate_tacking_drm(state), 3, "CQ G: SK +3")
 
 
 func test_tacking_drm_compound() -> void:
 	var state = _make_ship_state()
-	state.facing = 0
 	env.wind_direction = 0
 	state.towing = true
 	var compound_rigging: Array[int] = [0, 5, 6, 0]
 	state.rigging_current_hp = compound_rigging
-	var drm = resolver._calculate_tacking_drm(state)
-	assert_almost_eq(drm, 0.6, 0.001, "L(0.1) + towing(0.1) + 2 rigging lost(0.4) = 0.6")
+	assert_eq(resolver._calculate_tacking_drm(state), 3, "SK -2 + towing 1 + 2 rigging lost 4")
 
 
 # ===========================================================================
@@ -699,11 +694,21 @@ func test_bearing_off_uses_crew_quality_and_maneuverability() -> void:
 	var state_good = _make_ship_state(Vector2i(5, 5), 0, 1, "A", "ship_good", 3, "A")
 	var state_poor = _make_ship_state(Vector2i(5, 5), 0, 1, "D", "ship_poor", 3, "F")
 
-	var good_threshold = DataManager.get_bearing_off_probability("A", "A")
-	var poor_threshold = DataManager.get_bearing_off_probability("F", "D")
+	var good_number = DataManager.get_bearing_off_number("A", "A")
+	var poor_number = DataManager.get_bearing_off_number("F", "D")
 
-	assert_true(good_threshold > poor_threshold,
-		"Better crew/maneuverability should have higher bearing off probability")
+	assert_true(good_number > poor_number,
+		"Better crew/maneuverability should need a less demanding roll")
+
+
+func test_bearing_off_drm_by_mps_plotted() -> void:
+	var state = _make_ship_state()
+	_plot_straight(state, 3)
+	assert_eq(resolver._bearing_off_drm(state), 0, "1-3 MPs plotted: no DRM")
+	_plot_straight(state, 4)
+	assert_eq(resolver._bearing_off_drm(state), 1, "4-6 MPs plotted: +1")
+	_plot_straight(state, 7)
+	assert_eq(resolver._bearing_off_drm(state), 2, "7+ MPs plotted: +2")
 
 
 # ===========================================================================
@@ -1089,7 +1094,7 @@ func test_bearing_off_pivot_legal_roll_fails_causes_collision() -> void:
 
 	var blocker = _make_ship_state(blocker_pos, 1, 0, "C", "blocker")
 
-	# crew G, maneuverability A = very low bearing-off probability
+	# crew G, maneuverability D: bearing off needs a d10 of 0 or 1
 	var mover = _make_ship_state(start_pos, 0, 1, "D", "mover", 3, "G")
 	mover.ship = Ship.from_dict({
 		"ship_id": "mover",
@@ -1112,7 +1117,7 @@ func test_bearing_off_pivot_legal_roll_fails_causes_collision() -> void:
 		{"hex": {"q": blocker_pos.x, "r": blocker_pos.y}, "facing": 0},
 	]
 
-	# Find a seed where bearing-off roll fails (G/D threshold = 0.333)
+	# Find a seed where bearing-off roll fails (G/D: <=1)
 	var found_fail_seed: int = -1
 	for seed_val in range(200):
 		var test_rng = RandomNumberGenerator.new()

@@ -171,10 +171,11 @@ Loaded by `CombatTables` (`DataManager.combat_tables`). Never take numbers from 
 - `drifting_table.json`: sail state × wind speed number, class DRMs → `drift_number`, `drift_class_drm`.
 - `unfouling_table.json`: success threshold by attempt → `unfouling_success_max(attempt)`.
 - `crew_quality_table.json`: gunnery and SK modifiers by quality letter → `crew_quality_modifier`, `skill_modifier`.
+- `tacking_table.json` and `bearing_off_table.json` (loaded by `DataManager`, not `CombatTables`): the TACKING and BEARING OFF d10 charts, stored as the chart's "roll ≤ n" numbers. `MovementResolver` applies the chart DRMs.
 
 Validate after edits: `python3 .claude/skills/validate-rule-table/scripts/validate_combat.py` (row counts, BGN band gaps/order, result-string syntax, unexpected damage dips; exit 1 on error). Run both validators; `make test` covers spot-checked cells (`test_combat_tables.gd`).
 
-Other rule lookups on `DataManager`: `get_speed_change(change_type, maneuverability)`, `get_tacking_percent(maneuverability, wind_speed)`, `get_min_heading_change_movement_required(direction, ship_speed, maneuverability)`.
+Other rule lookups on `DataManager`: `get_speed_change(change_type, maneuverability)`, `get_tacking_number(maneuverability, wind_speed)` (d10 ≤ n succeeds; -1 at WS 0; `get_tacking_percent` is the base chance for display), `get_bearing_off_number(crew_quality, maneuverability)` (d10 ≤ n; -1 = NA), `get_min_heading_change_movement_required(direction, ship_speed, maneuverability)`.
 
 ### Ship Definitions (`data/rules/ships.json`)
 

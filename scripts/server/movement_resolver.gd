@@ -336,11 +336,14 @@ func _resolve_collision_or_bearoff(
 		_apply_collision(loser_id, blocker_id, impulse, ship_map, results, current_hexes, stopped)
 		return
 
+	# Bearing Off table (6.D.2): d10 (0-9) + DRMs <= the chart number succeeds; NA never does.
 	var crew_quality: String = loser.crew_quality
-	var threshold: float = DataManager.get_bearing_off_probability(crew_quality, maneuverability)
-
-	var roll_value: float = rng.randf()
-	var success: bool = roll_value <= threshold
+	var number: int = DataManager.get_bearing_off_number(crew_quality, maneuverability)
+	var drm: int = _bearing_off_drm(loser)
+	var d10: int = rng.randi_range(0, 9)
+	var success: bool = number >= 0 and d10 + drm <= number
+	var roll_value: float = float(d10)
+	var threshold: float = float(number)
 
 	var ev = MovementTypes.ResolutionEvent.new(
 		loser_id, impulse, MovementTypes.ResolutionEventType.BEARING_OFF_ROLL
@@ -351,7 +354,7 @@ func _resolve_collision_or_bearoff(
 	ev.roll = roll_value
 	ev.threshold = threshold
 	ev.success = success
-	ev.detail = "crew=%s maneuver=%s roll=%.3f threshold=%.3f" % [crew_quality, maneuverability, roll_value, threshold]
+	ev.detail = "crew=%s maneuver=%s d10=%d drm=%+d needed<=%d" % [crew_quality, maneuverability, d10, drm, number]
 	loser_result.events.append(ev)
 
 	if success:
@@ -574,19 +577,19 @@ func _remain_in_irons(ship_state: ShipState, result: MovementTypes.ShipResolutio
 	result.events.append(imm_ev)
 
 
+## Tacking table (5.D.2): d10 (0-9) + DRMs <= the chart number succeeds; a natural 0 always succeeds.
 func _roll_tacking(
 	ship_state: ShipState,
 	environment: EnvironmentState,
 	result: MovementTypes.ShipResolutionResult,
 	impulse: int
 ) -> bool:
-	var drm: float = _calculate_tacking_drm(ship_state)
+	var drm: int = _calculate_tacking_drm(ship_state)
 	var maneuverability: String = ship_state.ship.maneuverability if ship_state.ship else "b"
-	var threshold: float = DataManager.get_tacking_percent(maneuverability, environment.wind_speed)
+	var number: int = DataManager.get_tacking_number(maneuverability, environment.wind_speed)
 
-	var roll_value: float = rng.randf()
-	var adjusted: float = roll_value + drm
-	var success: bool = adjusted <= threshold
+	var d10: int = rng.randi_range(0, 9)
+	var success: bool = number >= 0 and (d10 == 0 or d10 + drm <= number)
 
 	var ev = MovementTypes.ResolutionEvent.new(
 		ship_state.ship_id, impulse, MovementTypes.ResolutionEventType.TACKING_ROLL
@@ -594,10 +597,10 @@ func _roll_tacking(
 	ev.from_hex = ship_state.hex_position
 	ev.to_hex = ship_state.hex_position
 	ev.facing = ship_state.facing
-	ev.roll = roll_value
-	ev.threshold = threshold
+	ev.roll = float(d10)
+	ev.threshold = float(number)
 	ev.success = success
-	ev.detail = "drm=%.2f adjusted=%.2f threshold=%.2f" % [drm, adjusted, threshold]
+	ev.detail = "d10=%d drm=%+d needed<=%d" % [d10, drm, number]
 	result.events.append(ev)
 
 	if not success:
@@ -613,8 +616,11 @@ func _roll_tacking(
 	return success
 
 
-func _calculate_tacking_drm(ship_state: ShipState) -> float:
-	var drm: float = 0.0
+## Tacking DRMs from the chart (5.D.2, 5.D.6). Leeward has no crew-task plotting, so every ship
+## counts as having its crew sections plotted to "T" (no +2s). Reversing tack and rudder damage do
+## not exist yet.
+func _calculate_tacking_drm(ship_state: ShipState) -> int:
+	var drm: int = DataManager.combat_tables.skill_modifier(ship_state.crew_quality)
 
 	if ship_state.ship:
 		var rigging_max = ship_state.ship.rigging_hp
@@ -622,20 +628,29 @@ func _calculate_tacking_drm(ship_state: ShipState) -> float:
 			var max_hp: int = rigging_max[i] if i < rigging_max.size() else 0
 			var cur_hp: int = ship_state.rigging_current_hp[i] if i < ship_state.rigging_current_hp.size() else 0
 			if max_hp > 0 and cur_hp <= 0:
-				drm += 0.2
+				drm += 2  # each rigging section lost
 
 	var wind_facing: String = _get_ship_wind_facing(ship_state)
-	if wind_facing == "L":
-		drm += 0.1
-
-	# In irons: +1 on the d10 (5.D.6)
-	if ship_state.speed == 0 and wind_facing == "L":
-		drm += 0.1
+	if wind_facing != "L":
+		drm -= 2  # ship not at WF=L (errata 5.D.2b)
+	elif ship_state.speed == 0:
+		drm += 1  # in irons (5.D.6)
 
 	if ship_state.towing:
-		drm += 0.1
+		drm += 1
 
 	return drm
+
+
+## Bearing Off DRMs (6.D.2): MPs plotted this g-t 4-6 = +1, 7+ = +2. Rudder damage and poor
+## maneuvering need critical hits, which do not exist yet.
+func _bearing_off_drm(ship_state: ShipState) -> int:
+	var mps: int = _get_plotted_steps(ship_state).size()
+	if mps >= 7:
+		return 2
+	if mps >= 4:
+		return 1
+	return 0
 
 
 ## ============================================================================

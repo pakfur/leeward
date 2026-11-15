@@ -26,7 +26,7 @@ These are the gaps and differences that most change how a game plays out, in rou
 | 4 | Blocked wind (wind shadow) is absent. Ships sailing in the lee of others lose no MA. | 5.G | Missing | New |
 | 5 | Boarding, grappling, capture and prize crews are absent, so a struck ship is the end state. | 8.C, 10.A–H | Missing | Known |
 | 6 | Fire, explosions and repairs are absent, so all damage is permanent. | 8.E, 8.F | Missing | Known |
-| 7 | Bearing off is cut down. The player has no choice, the ship makes no turn when it succeeds (it just stops), and the odds come from a home-made probability table rather than the printed d10 chart. ✔ | 6.D.2–4 | Differs | New |
+| 7 | Bearing off is cut down. The player has no choice, and the ship makes no turn when it succeeds (it just stops). **Odds fixed:** the roll now uses the printed d10 chart and its plotted-MP DRM. ✔ | 6.D.2–4 | Differs (odds fixed) | New |
 | 8 | Collision rigging loss is a fixed 2/4/6 boxes, taken by one ship only. The rules use d6−1, d6+1 or 2d6, and both ships roll when they run into each other. ✔ | 6.E.3 | Differs | New |
 | 9 | Speed is measured in hexes moved ahead, not in MPs (turns are not counted). This lowers the base for acceleration and deceleration. A "fast-tack" +1 MA bonus that is not in the rules has been added. ✔ | 5.E.2, 5.B.3 | Differs | New |
 | 10 | Wind changes take effect in the same turn they are rolled, not the next, so players get no warning. ✔ | 3.B.6 | Differs | New |
@@ -91,19 +91,19 @@ These are the gaps and differences that most change how a game plays out, in rou
 | **5.B.3** How MA is spent ✔ | MA caps hexes ahead in the current WF. Turns use MPs against the speed band only. | Turns also cost 1 MA (`remaining = max_ma − spent`), with a free pivot when MA runs out. | Plots that mix turns and moves ahead give different totals. | `movement_validator.gd:150-190` |
 | **5.B.3** "Never gain MPs by turning to a faster WF" ✔ | Explicit rule. | +1 MA "fast-tack bonus" when the first pivot goes from C to B. | Ships gain MA that the rules forbid. | `movement_validator.gd:156-161` |
 | **5.C.3–4** Turn spacing | Applies across turn boundaries, and the table is indexed by this turn's plotted speed. | Reset every turn, and indexed by last turn's speed. | A ship can turn at the end of one turn and again at the start of the next. | `movement_validator.gd:194-200, 313-327` |
-| **5.D.1–3** Tacking at MA 0 ✔ | Roll d10 on the Tacking table, with DRMs for CSs on "T", CQ, not at WF=L (−2) and rigging. If the roll fails, the turn is erased. | **Roll now fixed:** it runs for any turn plotted at MA 0, a failure erases the turn, and the ship moves no further that g-t. **Still different:** the roll is a 0–1 float check against a percentage, with ad-hoc DRMs (+0.2 per rigging section lost, +0.1 at WF=L, +0.1 in irons) and no CS or CQ terms. Reverse tack is not modelled. | Odds are not comparable with the d10 chart. | `movement_resolver.gd` (`_find_tacking_impulse`, `_calculate_tacking_drm`) |
-| **5.D.6** Turning out of irons ✔ | The player plots a turn and rolls with +1 DRM. On success the ship turns. | **Fixed:** the validator offers a ship in irons its two turns, and the plotted turn goes through the Tacking roll with the in-irons DRM. A ship that plots no turn stays in irons. | Matches, apart from the roll mechanics noted under 5.D.1–3. | `movement_validator.gd`, `movement_resolver.gd` (`_remain_in_irons`) |
+| **5.D.1–3** Tacking at MA 0 ✔ | Roll d10 on the Tacking table, with DRMs for SK, CSs not plotted to "T", rigging lost, in irons, towing, reversing tack, rudder, and not at WF=L (−2). A natural 0 always succeeds. If the roll fails, the turn is erased. | **Fixed:** the roll runs for any turn plotted at MA 0, uses the transcribed chart (`tacking_table.json`, which had stored every value 10% low) and applies the chart DRMs for SK, rigging, in irons, towing and not at WF=L. A natural 0 succeeds, and the ship moves no further that g-t. **Still missing:** the CS-plotted DRM (no crew tasks, so every ship counts as fully plotted), reverse tack, and rudder damage. | Matches, apart from the missing DRMs. | `movement_resolver.gd` (`_roll_tacking`, `_calculate_tacking_drm`) |
+| **5.D.6** Turning out of irons ✔ | The player plots a turn and rolls with +1 DRM. On success the ship turns. | **Fixed:** the validator offers a ship in irons its two turns, and the plotted turn goes through the Tacking roll with the +1 in-irons DRM. A ship that plots no turn stays in irons. | Matches. | `movement_validator.gd`, `movement_resolver.gd` (`_remain_in_irons`) |
 | **5.E.2** Definition of speed ✔ | Total MPs used, turns included. | Hexes moved ahead only (`_count_hexes_moved`). | Next turn's acceleration and deceleration band sits lower after any turn. | `movement_resolver.gd:726` |
 | **5.A.4 / 5.E** Deceleration minimum | The ship must use at least last speed − decel. | `validate_submission` is a stub that always succeeds. **?** Whether the plotting UI enforces `min_ma` was not traced. | Ships may be able to stop dead from high speed. | `movement_validator.gd:90-98, 140` |
 | **6.C.2c** Contested hex, class bonus ✔ | +1 per class *larger* (class 1 is the largest). | **Fixed:** +1 per class larger. | Matches. | `movement_resolver.gd` (`_calculate_contest_drm_relative`) |
-| **6.D** Bearing off ✔ | The player chooses whether to bear off. Roll d10 against the Bearing Off table, with a plotted-speed DRM. On success the ship turns in an eligible direction and then meets its deceleration minimum. | Always attempted when eligible. The chance comes from `bearing_off_table.json` (a CQ × maneuverability probability marked "derived") checked with `randf()`. On success the ship just stops, with the same facing. | Odds differ, ships never turn away, and a player can never choose to ram. | `movement_resolver.gd:318-365` |
+| **6.D** Bearing off ✔ | The player chooses whether to bear off. Roll d10 against the Bearing Off table, with +1/+2 DRMs for 4–6/7+ MPs plotted. On success the ship turns in an eligible direction and then meets its deceleration minimum. | **Odds fixed:** `bearing_off_table.json` now holds the printed chart (it was a home-made d6 formula), with NA meaning the ship cannot bear off, plus the plotted-MP DRM. **Still different:** the attempt is always made when eligible, and on success the ship just stops, with the same facing. | Ships never turn away, and a player can never choose to ram. | `movement_resolver.gd` (`_resolve_collision_or_bearoff`, `_bearing_off_drm`) |
 | **6.E.3** Collision rigging loss ✔ | d6−1 (FS), d6+1 (MS), 2d6 (PS), taken by the ship pointing at the other, or by both ships when they run into each other. | Fixed at 2, 4 or 6, applied to the moving ship only. | No variance, and head-on collisions are one-sided. | `movement_resolver.gd:478-483` |
 | **6.G.2** Failure to plot ✔ | The ship continues at last turn's speed. | The ship stays where it is (`SKIP_NO_PLOT`) and its speed becomes 0. | A ship whose player does not plot stops dead. Matters for the AI and for timeouts. | `movement_resolver.gd:55-67` |
-| **7.E.2** Rake geometry ✔? | Target within 5 hexes, with the firer outside **all** of the target's fire arcs, or directly ahead or astern. | Firer within **30°** of the target's bow or stern line, boundary excluded. | Probably fewer rakes than the rules give. A broadside arc covers 60°–120° off the bow, so "outside all arcs" suggests ±60°. Check against Diagram 20. | `fire_geometry.gd:40-49` |
+| **7.E.2** Rake geometry ✔ | Target within 5 hexes, with the firer outside **all** of the target's fire arcs, or directly ahead or astern. Broadside arcs cover 60°–120° off the bow, so the rake zone is the remaining 60° either side of the bow and stern line. Diagram 20's shaded bow-tie agrees. | Firer within **30°** of the target's bow or stern line, boundary excluded. | **Too narrow:** ships between 30° and 60° off the target's bow or stern get no rake. | `fire_geometry.gd` (`rake_type`) |
 | **7.C.12g** Two targets | The rule text says −10. | −12. The chart wins (already decided). | Recorded only. | `gunfire_modifiers.json` |
 | **8.A.1 / 8.A.6** Who may drift ✔? | A stopped ship. A fouled pair that includes a ship that moved does not drift (example 2). | A ship drifts if it did not move, **or** collided, **or** is fouled. | Fouled ships drift in cases where the rules hold them. Depends on reading "stopped". | `drift_resolver.gd:68-72` |
-| **8.D.1** Unfouling DRMs **?** | "DRMs (All Uses)" column on the chart. | The crew-quality SK modifier only. The rules example (B3 needs "<2") cannot be reconciled with the code from the text alone. | Needs checking against the chart scan. | `fouling_controller.gd:42-47` |
-| **9.B.1** Morale checks for lost sections **?** | One MC for each "@" printed on the ship log. | Hardcoded: hull sections 1, 2 and 3 give 1, 1 and 2 checks, and each crew section gives 1. | Correct only if the log layout matches. Check against the ship-log image. | `damage_controller.gd:7, 89-114` |
+| **8.D.1** Unfouling DRMs ✔ | Chart: ≤2/≤3/≤4 by attempt. DRMs (all uses): ± SK, +1 if marines not available. Ungrappling-only DRMs don't apply to fouling. | Same thresholds, ± SK. "Marines not available" can't arise because marine tasks don't exist. | Matches. | `fouling_controller.gd` |
+| **9.B.1** Morale checks for lost sections ✔ | The ship log shows hull sections 1, 2 and 3 with 1, 1 and 2 MC marks (section 4 strikes), each sailor section and the marines with 1, and dismasting with 1. | The same counts: `HULL_MORALE_CHECKS = [1, 1, 2]`, 1 per emptied crew section including marines, and 1 on dismasting. | Matches. | `damage_controller.gd` |
 | **9.C.3** Firing on struck ships ✔ | Struck ships "cannot do anything". The rules do not say they cannot be fired on. | Struck ships cannot be targeted. | Deliberate (see §4). It removes the option of shooting at a struck ship. | `gunnery_calculator.gd:28-29` |
 
 ---
@@ -135,16 +135,20 @@ Implemented with essentially the same outcome as the rules:
 - Simultaneous fire with stern rakes, then bow rakes, then everything else in order (7.C.2).
 - LOS blocked by ships in between (7.B.7–9).
 - Drift odds, the downwind-first order, the blocked-drift foul roll, and fouled pairs drifting together (8.A.1–4, 8.A.6).
-- Unfouling chances that rise with each attempt (8.D.1–3).
+- Unfouling chances that rise with each attempt, with the SK DRM (8.D.1–3).
+- Morale-check counts for lost sections, matching the ship log (9.B.1).
+- Tacking roll and DRMs at MA 0, apart from the crew-section, reverse-tack and rudder DRMs (5.D.1–2, 5.D.6).
 - Morale: d10 ≥ MR passes, a failure lowers CQ one step, a failure at CQ G strikes, the dismasting and raked-while-dismasted triggers, striking when all hull or all crew boxes are gone (9.A–9.C).
-- Wind direction and speed rolls with the 16+ step back toward the starting wind, oceanic/coastal and steady/gusty frequencies, and direction rolls continuing at WS 0 (3.C, 3.D.1–2). **?** The thresholds were not checked against the red-sheet scans.
+- Wind direction and speed rolls with the 16+ step back toward the starting wind, oceanic/coastal and steady/gusty frequencies, and direction rolls continuing at WS 0 (3.C, 3.D.1–2). The thresholds match the chart.
 
 ---
 
-## 6. Suggested next checks (need the chart or diagram images)
+## 6. Items settled from the chart scans
 
-1. Diagram 20 (rake region): settles whether ±30° is too narrow.
-2. Ship-log "@" layout: settles the morale-check counts for lost sections.
-3. Unfouling, Tacking and Bearing Off charts: settle the DRMs and thresholds.
-4. Collision Resolution chart: settles the fouling modifiers (MS +1, PS +2, drifting −1).
-5. The wind-change thresholds on the red sheet.
+The combat chart (`docs/combat_tables_1.jpeg`), the ship log and Diagram 20 settled every item that depended on a chart or diagram. Two items marked "?" remain open: the deceleration minimum (5.A.4), which needs the plotting UI traced, and who may drift (8.A.1), which depends on how "stopped" is read.
+
+- **Tacking and Bearing Off:** the transcriptions were wrong and are now fixed (see §3).
+- **Collision Resolution:** fouling on d10 + DRMs ≥ 6, with MS +1, PS +2 and drifting −1, matches the code. Rigging loss of d6−1/d6+1/2d6 confirms the 6.E.3 difference (the code uses fixed 2/4/6).
+- **Unfouling, Drifting, Wind Speed Change and Wind Direction Change:** match their JSON files and the code.
+- **Morale-check counts:** match the ship log (9.B.1).
+- **Rake region:** confirmed too narrow (7.E.2).

@@ -133,42 +133,35 @@ func load_tacking_table(file_path: String = "res://data/rules/tacking_table.json
 		push_error("Tacking table JSON must be a dictionary")
 		return false
 
-func get_tacking_percent(maneuverability: String, wind_speed: int) -> float:
-	"""Look up tacking failure percentage from the table.
-
-	maneuverability: 'a' through 'd' (case-insensitive)
-	wind_speed: 0-4 (0 returns 0.0; 1-4 indexes into the array)
-	"""
+## Tacking table number (5.D.2): the highest d10 roll (0-9) that succeeds before DRMs.
+## -1 at wind speed 0, where ships may not turn (5.D.1a).
+func get_tacking_number(maneuverability: String, wind_speed: int) -> int:
 	var maneuverability_lower = maneuverability.to_lower()
 	assert(
 		maneuverability_lower == "a" or maneuverability_lower == "b" or
 		maneuverability_lower == "c" or maneuverability_lower == "d",
 		"Invalid maneuverability '%s'. Valid values: a, b, c, d" % maneuverability
 	)
-
 	assert(
 		wind_speed >= 0 and wind_speed <= 4,
 		"Invalid wind_speed %d. Valid range: 0-4" % wind_speed
 	)
-
 	if wind_speed == 0:
-		return 0.0
-
+		return -1
 	if not tacking_table.has(maneuverability_lower):
 		push_error("Tacking table missing maneuverability: %s" % maneuverability_lower)
-		return 0.0
-
+		return -1
 	var wind_array = tacking_table[maneuverability_lower]
-	if not wind_array is Array:
-		push_error("Tacking table: maneuverability '%s' value is not an Array" % maneuverability_lower)
-		return 0.0
+	if not wind_array is Array or wind_speed - 1 >= wind_array.size():
+		push_error("Tacking table: bad row for maneuverability '%s'" % maneuverability_lower)
+		return -1
+	return int(wind_array[wind_speed - 1])
 
-	var index = wind_speed - 1
-	if index < 0 or index >= wind_array.size():
-		push_error("Tacking table: wind_speed %d out of range for maneuverability '%s'" % [wind_speed, maneuverability_lower])
-		return 0.0
 
-	return float(wind_array[index])
+## Base chance (0.0-1.0) that a turn at MA=0 succeeds, before DRMs: d10 roll <= number. For display.
+func get_tacking_percent(maneuverability: String, wind_speed: int) -> float:
+	var number := get_tacking_number(maneuverability, wind_speed)
+	return clampf((number + 1) / 10.0, 0.0, 1.0)
 
 func load_turning_table(file_path: String = "res://data/rules/turning_table.json") -> bool:
 	"""Load the turning table from JSON"""
@@ -279,36 +272,25 @@ func load_bearing_off_table(file_path: String = "res://data/rules/bearing_off_ta
 		push_error("Bearing off table JSON must be a dictionary")
 		return false
 
-func get_bearing_off_probability(crew_quality: String, maneuverability: String) -> float:
+## Bearing Off table number (6.D.2): the highest d10 roll (0-9) that succeeds before DRMs.
+## -1 where the chart reads NA (the ship cannot bear off).
+func get_bearing_off_number(crew_quality: String, maneuverability: String) -> int:
 	var crew_quality_upper = crew_quality.to_upper()
 	assert(
-		crew_quality_upper == "A" or crew_quality_upper == "B" or crew_quality_upper == "C" or
-		crew_quality_upper == "D" or crew_quality_upper == "E" or crew_quality_upper == "F" or
-		crew_quality_upper == "G",
+		crew_quality_upper in ["A", "B", "C", "D", "E", "F", "G"],
 		"Invalid crew_quality '%s'. Valid values: A, B, C, D, E, F, G" % crew_quality
 	)
-
 	var maneuverability_lower = maneuverability.to_lower()
 	assert(
-		maneuverability_lower == "a" or maneuverability_lower == "b" or
-		maneuverability_lower == "c" or maneuverability_lower == "d",
+		maneuverability_lower in ["a", "b", "c", "d"],
 		"Invalid maneuverability '%s'. Valid values: a, b, c, d" % maneuverability
 	)
-
-	if not bearing_off_table.has(crew_quality_upper):
-		push_error("Bearing off table missing crew_quality: %s" % crew_quality_upper)
-		return 0.0
-
-	var maneuverability_dict = bearing_off_table[crew_quality_upper]
-	if not maneuverability_dict is Dictionary:
-		push_error("Bearing off table: crew_quality '%s' value is not a Dictionary" % crew_quality_upper)
-		return 0.0
-
-	if not maneuverability_dict.has(maneuverability_lower):
-		push_error("Bearing off table missing maneuverability '%s' for crew_quality '%s'" % [maneuverability_lower, crew_quality_upper])
-		return 0.0
-
-	return float(maneuverability_dict[maneuverability_lower])
+	var row = bearing_off_table.get(crew_quality_upper)
+	if not row is Dictionary or not row.has(maneuverability_lower):
+		push_error("Bearing off table missing %s/%s" % [crew_quality_upper, maneuverability_lower])
+		return -1
+	var value = row[maneuverability_lower]
+	return -1 if value == null else int(value)
 
 func load_ship_definitions(file_path: String = "res://data/rules/ships.json") -> bool:
 	"""Load ship definitions from JSON and convert to Ship instances"""

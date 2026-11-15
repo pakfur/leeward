@@ -228,14 +228,10 @@ func test_session_tracking_fields_after_undo() -> void:
 
 func test_tacking_probability_lookup() -> void:
 	# Verify DataManager returns expected tacking percentages
-	var prob_b_ws3 = DataManager.get_tacking_percent("b", 3)
-	assert_eq(prob_b_ws3, 0.7, "Maneuverability b, wind speed 3 should be 70%")
-
-	var prob_a_ws1 = DataManager.get_tacking_percent("a", 1)
-	assert_eq(prob_a_ws1, 0.2, "Maneuverability a, wind speed 1 should be 20%")
-
-	var prob_d_ws4 = DataManager.get_tacking_percent("d", 4)
-	assert_eq(prob_d_ws4, 0.8, "Maneuverability d, wind speed 4 should be 80%")
+	# Chart: roll <= number on a 0-9 d10, so <=7 is 80%
+	assert_almost_eq(DataManager.get_tacking_percent("b", 3), 0.8, 0.001, "b at WS 3: <=7 = 80%")
+	assert_almost_eq(DataManager.get_tacking_percent("a", 1), 0.3, 0.001, "a at WS 1: <=2 = 30%")
+	assert_almost_eq(DataManager.get_tacking_percent("d", 4), 0.9, 0.001, "d at WS 4: <=8 = 90%")
 
 
 func test_tacking_probability_wind_speed_zero() -> void:
