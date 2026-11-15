@@ -107,6 +107,16 @@ func test_rake_stern_adjacent_astern() -> void:
 	assert_eq(geo.rake_type_ships(Vector2i.ZERO, 0, firer), "stern")
 
 
+func test_rake_stern_by_clause_b_when_a_firer_hex_is_in_an_arc() -> void:
+	# Firer bow (-2,1) facing SE: its stern (-2,0) is the hex directly astern of the target's stern
+	# (-1,0) (7.E.2b). Clause a fails: (-2,1) is in the target's stern-battery starboard arc.
+	var firer: Array[Vector2i] = [Vector2i(-2, 1), HexGrid.stern_of(Vector2i(-2, 1), 1)]
+	assert_eq(firer[1], Vector2i(-2, 0), "setup: firer stern")
+	assert_eq(firer[1], Vector2i(-1, 0) + _n(3), "setup: directly astern of the target's stern")
+	assert_eq(geo.bearing_side(Vector2i(-1, 0), 0, firer[0]), ShipState.STARBOARD, "setup: bow in an arc")
+	assert_eq(geo.rake_type_ships(Vector2i.ZERO, 0, firer), "stern")
+
+
 func test_rake_bow_dead_ahead() -> void:
 	var firer: Array[Vector2i] = [_steps(0, 2), _n(0)]
 	assert_eq(geo.rake_type_ships(Vector2i.ZERO, 0, firer), "bow")
