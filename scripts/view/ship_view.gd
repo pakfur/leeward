@@ -19,6 +19,8 @@ const ENEMY_COLOR := Color(1.0, 0.3, 0.3)
 const HUMAN_PLAYER_ID := 0
 ## Above the fire arcs and the target outline drawn by HexOverlay, so the owner always shows.
 const OWNER_RING_RENDER_PRIORITY := 3
+const OWNER_RING_MID_RADIUS := 0.75  # torus centre line (inner 0.68, outer 0.82), before stretching
+const OWNER_RING_CLEARANCE := 0.2    # water between the bow or stern and the ring
 var _owner_ring: MeshInstance3D = null   # coloured ring on the water around the ship
 var _owner_pennant: MeshInstance3D = null  # coloured pennant at the masthead (hidden when struck)
 var _owner_player_id: int = -1
@@ -56,6 +58,9 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	# Update position
 	_update_position_from_state(ship_state, hex_grid)
 
+	# Owner marker (ring + pennant) in the owner's colour; before the rotation, which turns the ring
+	_update_owner_marker(ship_state.player_id)
+
 	# Update rotation
 	_update_rotation_from_state(ship_state)
 
@@ -63,9 +68,6 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	if _spec:
 		_rigging_level = ship_state.rigging_level()
 		ProceduralShipBuilder.apply_state(model_node, _spec, ship_state.sail_state, _rigging_level)
-
-	# Owner marker (ring + pennant) in the owner's colour
-	_update_owner_marker(ship_state.player_id)
 
 	# Struck ships look different (flag + desaturated); the ring keeps the owner's colour
 	_update_struck_visual(ship_state.is_struck())
@@ -89,7 +91,10 @@ func _update_owner_marker(player_id: int) -> void:
 		ring.outer_radius = 0.82
 		ring.rings = 48
 		_owner_ring.mesh = ring
-		_owner_ring.scale = Vector3(1.0, 0.15, 1.0)  # flatten onto the water
+		# Flatten onto the water and stretch along the keel (local Z, turned with the hull in
+		# _sync_ring_heading) so the ring goes round the whole two-hex hull with a little water clear.
+		var keel_reach := (_spec.length * 0.5 + OWNER_RING_CLEARANCE) if _spec else OWNER_RING_MID_RADIUS
+		_owner_ring.scale = Vector3(1.0, 0.15, maxf(1.0, keel_reach / OWNER_RING_MID_RADIUS))
 		_owner_ring.position = Vector3(0, 0.12, 0)
 		var ring_material := StandardMaterial3D.new()
 		ring_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -148,13 +153,8 @@ func _update_struck_visual(struck: bool) -> void:
 
 func _update_position_from_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	"""Calculate and set position based on ship state"""
-	# Position based on ship size: a 1-hex ship is centred in its hex; the 2-hex branch is
-	# unused until ships become 2-hex (docs/superpowers/plans/2026-11-14-two-hex-ships.md)
-	if ship_state.get_ship_size() == 1:
-		base_position = hex_grid.axial_to_world(ship_state.hex_position.x, ship_state.hex_position.y)
-	else:
-		# 2-hex ship: position on edge between this hex and the one in facing direction
-		base_position = hex_grid.axial_to_edge_world(ship_state.hex_position.x, ship_state.hex_position.y, ship_state.facing)
+	# The model is centred midway between its bow hex (hex_position) and its stern hex.
+	base_position = hex_grid.ship_center_world(ship_state.hex_position, ship_state.facing)
 
 	base_position.y = 0.0  # Ship center at waterline, hull extends above/below
 	_update_wave_position()
@@ -167,6 +167,12 @@ func _update_rotation_from_state(ship_state: ShipState) -> void:
 	var angle_deg = -ship_state.facing * 60.0 - 90.0
 	if model_node:
 		model_node.rotation_degrees = Vector3(0, angle_deg, 0)
+	_sync_ring_heading()
+
+func _sync_ring_heading() -> void:
+	"""Turn the owner ring with the hull (heading only: it stays flat on the water)."""
+	if _owner_ring and model_node:
+		_owner_ring.rotation_degrees = Vector3(0, model_node.rotation_degrees.y, 0)
 
 func _create_ship_model(ship_state: ShipState) -> void:
 	"""Build the procedural placeholder model for this ship."""
@@ -183,7 +189,8 @@ func _masthead_position(aft: float) -> Vector3:
 	return Vector3(0, _spec.standing_masthead_y(_rigging_level) + 0.05, _spec.mast_z[_spec.main_mast()] + aft)
 
 func _add_click_collision() -> void:
-	"""Add a static body so the camera raycast in game_controller can pick this ship."""
+	"""Add a static body so the camera raycast in game_controller can pick this ship. The box runs
+	the hull's length (into both hexes) and sits on the model, so it turns with the keel."""
 	var body := StaticBody3D.new()
 	body.name = "ClickBody"
 	var shape := CollisionShape3D.new()
@@ -192,7 +199,7 @@ func _add_click_collision() -> void:
 	shape.shape = box
 	shape.position = Vector3(0, _spec.masthead_y() / 2.0, 0)
 	body.add_child(shape)
-	add_child(body)
+	model_node.add_child(body)
 
 func _update_wave_position() -> void:
 	"""Update ship position and rotation based on wave motion (visual only)"""
@@ -224,3 +231,4 @@ func _update_wave_position() -> void:
 	if model_node:
 		var facing_angle = model_node.rotation_degrees.y
 		model_node.rotation = Vector3(tilt_forward, deg_to_rad(facing_angle), tilt_side)
+		_sync_ring_heading()  # follows the playback's turn tween too

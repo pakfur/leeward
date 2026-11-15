@@ -317,7 +317,7 @@ func test_ship_view_position_updated_after_move() -> void:
 	pb.play(log)
 	await wait_for_signal(pb.playback_completed, 5.0)
 
-	var expected_pos = hex_grid.axial_to_world(6, 5)
+	var expected_pos = hex_grid.ship_center_world(Vector2i(6, 5), 0)
 	expected_pos.y = 0.0
 	assert_almost_eq(view.base_position.x, expected_pos.x, 0.1, "x position should match target")
 	assert_almost_eq(view.base_position.z, expected_pos.z, 0.1, "z position should match target")
@@ -379,6 +379,59 @@ func test_ship_view_facing_updated_after_turn() -> void:
 	var expected_angle = -1 * 60.0 - 90.0  # facing 1 -> -150 degrees
 	if view.model_node:
 		assert_almost_eq(view.model_node.rotation_degrees.y, expected_angle, 1.0, "facing should match target")
+
+
+func test_playback_turn_keeps_bow_hex() -> void:
+	var ship_state := _two_hex_state("pivoting_ship", Vector2i(5, 5), 0)
+	var view := ShipView.new()
+	add_child_autofree(view)
+	view.initialize(ship_state, hex_grid)
+	var pb = MovementResolutionPlaybackController.new(hex_grid, {"pivoting_ship": view}, 0)
+	add_child_autofree(pb)
+
+	var log = MovementTypes.ResolutionLog.new(1)
+	log.max_impulses = 1
+	var result = MovementTypes.ShipResolutionResult.new("pivoting_ship")
+	result.final_hex = Vector2i(5, 5)
+	result.final_facing = 1
+	# A turn: the bow stays in its hex and the stern swings round it.
+	var turn_ev = MovementTypes.ResolutionEvent.new("pivoting_ship", 0, MovementTypes.ResolutionEventType.MOVE)
+	turn_ev.from_hex = Vector2i(5, 5)
+	turn_ev.to_hex = Vector2i(5, 5)
+	turn_ev.from_facing = 0
+	turn_ev.facing = 1
+	result.events.append(turn_ev)
+	log.add_result(result)
+
+	pb.play(log)
+	await wait_for_signal(pb.playback_completed, 5.0)
+
+	var expected := hex_grid.ship_center_world(Vector2i(5, 5), 1)
+	assert_almost_eq(view.base_position.x, expected.x, 0.01, "centre between the same bow and the swung stern")
+	assert_almost_eq(view.base_position.z, expected.z, 0.01)
+	assert_almost_eq(view.model_node.rotation_degrees.y, -1 * 60.0 - 90.0, 1.0, "now facing SE")
+
+
+func _two_hex_state(ship_id: String, bow: Vector2i, facing: int) -> ShipState:
+	var ship_state = ShipState.new()
+	ship_state.ship = Ship.from_dict({
+		"ship_id": ship_id,
+		"player_id": 0,
+		"ship_name": ship_id,
+		"ship_type": "frigate_38",
+		"rating": 38,
+		"class": 3,
+		"rigging_hp": [5, 5, 6, 6],
+		"hull_hp": [5, 5, 5, 6],
+		"crew_count": [3, 3, 3],
+		"marine_count": 2,
+	})
+	ship_state.hex_position = bow
+	ship_state.facing = facing
+	ship_state.sail_state = "MS"
+	ship_state.rigging_current_hp = [5, 5, 6, 6] as Array[int]
+	ship_state.hull_current_hp = [5, 5, 5, 6] as Array[int]
+	return ship_state
 
 
 ## ============================================================================

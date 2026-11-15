@@ -95,6 +95,7 @@ func show_valid_hexes(hexes: Array, hex_grid: HexGrid, collision_hexes: Array = 
 		_add_hex_mesh(valid_hexes_node, world_pos, hex_grid.hex_size, material)
 
 
+## One hex per plotted step: the ship's bow hex after it (a turn keeps the bow hex).
 func show_plotted_path(steps: Array, hex_grid: HexGrid) -> void:
 	clear_plotted_path()
 
@@ -122,7 +123,8 @@ func show_blocked_hexes(hex_positions: Array[Vector2i], hex_grid: HexGrid) -> vo
 		_add_hex_mesh(blocked_hexes_node, world_pos, hex_grid.hex_size, _blocked_material)
 
 
-## Draw one broadside's fire arc in that side's colour (BroadsideColors): a faint fill and an
+## Draw one broadside's fire arc (for a two-hex ship the caller passes the union of the bow and
+## stern battery hexes, GameController.broadside_arc) in that side's colour (BroadsideColors): a faint fill and an
 ## opaque rim, so the arc reads as the same colour as the fire panel's swatch on any water.
 ## Arcs accumulate until clear_arcs().
 func show_arc(hexes: Array[Vector2i], side: int) -> void:

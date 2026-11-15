@@ -74,13 +74,14 @@ static func instructions(needing: int, total: int, unable: int) -> String:
 	return "All ships have orders. Press End Planning."
 
 
-## Offered hexes that currently hold another ship: hex -> that ship's name.
+## Hexes that currently hold another ship (its bow or stern): hex -> that ship's name.
 ## `hexes` are Vector2i; `ships` are ShipState; the plotting ship itself is ignored.
 static func occupied_hexes(hexes: Array, ships: Array, active_ship_id: String) -> Dictionary:
 	var by_hex := {}
 	for ship in ships:
 		if ship.ship_id != active_ship_id:
-			by_hex[ship.hex_position] = ship.ship_name
+			for h in ship.occupied_hexes():  # bow and stern
+				by_hex[h] = ship.ship_name
 	var result := {}
 	for hex in hexes:
 		if by_hex.has(hex):

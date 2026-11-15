@@ -88,15 +88,10 @@ func stern_hex() -> Vector2i:
 func occupied_hexes() -> Array[Vector2i]:
 	return [hex_position, stern_hex()]
 
+## Hexes the ship covers, for the view (model length): every ship is two hexes, bow and stern
+## (see occupied_hexes()).
 func get_ship_size() -> int:
-	# Display size only; ships physically occupy two hexes (see occupied_hexes()).
-	# Stays 1 until the view is converted to two-hex ships.
-	return 1
-	#"""Determine ship size in hexes based on type"""
-	#if "corvette" in ship_type.to_lower():
-		#return 1
-	#else:
-		#return 2
+	return 2
 
 func is_struck() -> bool:
 	return status == Status.STRUCK

@@ -71,6 +71,19 @@ func test_collision_stop_short_and_fouling_are_logged_in_order() -> void:
 	])
 
 
+func test_collision_is_logged_at_the_hex_hit_even_a_stern() -> void:
+	# b's bow is at (3,0) facing E, its stern at (2,0): a, at (1,0) facing E, runs into the stern.
+	var log := _collision_log(false)
+	for ev in log.get_result("b").events:
+		ev.from_hex = Vector2i(3, 0)
+		ev.facing = 0
+	var ships: Array[ShipState] = [_ship("a", 3), _ship("b", 0)]
+	resolver.log_outcomes(log, ships, turn_log)
+	var collisions := turn_log.of_type(PhaseEvents.Type.COLLISION)
+	assert_eq(collisions.size(), 1)
+	assert_eq(collisions[0].to_text({"a": "Alpha", "b": "Bravo"}), "Alpha collides with Bravo at (2, 0)")
+
+
 func test_fouling_is_logged_once_per_pair() -> void:
 	var ships: Array[ShipState] = [_ship("b", 0), _ship("a", 3)]
 	resolver.log_outcomes(_collision_log(true), ships, turn_log)

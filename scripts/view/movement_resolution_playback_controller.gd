@@ -130,6 +130,9 @@ func _collect_pre_movement_events() -> Array:
 ## Animation
 ## ============================================================================
 
+## Each MOVE step is one tween per ship: an ahead step slides the ship one hex along its keel; a
+## turn keeps the bow hex and swings the stern round it. The ship view is placed by its centre,
+## midway between bow and stern (HexGrid.ship_center_world), so both are driven from the bow.
 func _animate_moves(move_events: Array) -> void:
 	if _aborted:
 		return
@@ -139,36 +142,45 @@ func _animate_moves(move_events: Array) -> void:
 		if not view or not _hex_grid:
 			continue
 
-		var from_world: Vector3 = _hex_grid.axial_to_world(ev.from_hex.x, ev.from_hex.y)
-		var to_world: Vector3 = _hex_grid.axial_to_world(ev.to_hex.x, ev.to_hex.y)
-		from_world.y = 0.0
-		to_world.y = 0.0
+		var from_bow: Vector3 = _hex_grid.axial_to_world(ev.from_hex.x, ev.from_hex.y)
+		var to_bow: Vector3 = _hex_grid.axial_to_world(ev.to_hex.x, ev.to_hex.y)
+		var from_angle: float = _model_angle(ev.from_facing)
+		if view.model_node:
+			from_angle = view.model_node.rotation_degrees.y
+		var to_angle: float = from_angle + _shortest_angle(from_angle, _model_angle(ev.facing))
 
 		var tween: Tween = view.create_tween()
 		tween.set_ease(Tween.EASE_IN_OUT)
 		tween.set_trans(Tween.TRANS_SINE)
-
-		# Animate position
-		tween.tween_property(view, "base_position", to_world, IMPULSE_DURATION_MS / 1000.0)
-
-		# Animate facing if changed
-		var target_angle: float = -ev.facing * 60.0 - 90.0
-		if view.model_node:
-			var current_angle: float = view.model_node.rotation_degrees.y
-			var diff: float = _shortest_angle(current_angle, target_angle)
-			if abs(diff) > 0.5:
-				tween.parallel().tween_property(
-					view.model_node, "rotation_degrees",
-					Vector3(0, current_angle + diff, 0),
-					IMPULSE_DURATION_MS / 1000.0
-				)
-
+		tween.tween_method(_pose_ship.bind(view, from_bow, to_bow, from_angle, to_angle),
+			0.0, 1.0, IMPULSE_DURATION_MS / 1000.0)
 		tweens.append(tween)
 
 	# Wait for all tweens to finish
 	for tween in tweens:
 		if tween.is_running():
 			await tween.finished
+
+
+## Model Y rotation (degrees) for a facing; matches ShipView._update_rotation_from_state.
+static func _model_angle(facing: int) -> float:
+	return -facing * 60.0 - 90.0
+
+
+## Pose `view` a fraction `t` of the way through a step: the bow slides from `from_bow` to
+## `to_bow` (both world positions of hex centres) while the heading turns from `from_angle` to
+## `to_angle`; the centre lies half a hex astern of the bow along the current heading.
+func _pose_ship(t: float, view: ShipView, from_bow: Vector3, to_bow: Vector3, from_angle: float, to_angle: float) -> void:
+	if not is_instance_valid(view):
+		return
+	var angle := lerpf(from_angle, to_angle, t)
+	var rad := deg_to_rad(angle)
+	var astern := Vector3(sin(rad), 0.0, cos(rad))  # the model's +Z (its bow is -Z) in world space
+	var bow := from_bow.lerp(to_bow, t)
+	var half_length := _hex_grid.hex_size * HexGrid.SQRT3 / 2.0
+	view.base_position = Vector3(bow.x, 0.0, bow.z) + astern * half_length
+	if view.model_node:
+		view.model_node.rotation_degrees = Vector3(0, angle, 0)
 
 
 func _shortest_angle(from_deg: float, to_deg: float) -> float:

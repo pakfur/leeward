@@ -1,6 +1,8 @@
 extends GutTest
 ## Tests for FireGeometry: broadside arcs, battery bearing, range, rakes, line of sight.
 
+const GameControllerScript = preload("res://scripts/core/game_controller.gd")
+
 var grid: HexGrid
 var geo: FireGeometry
 
@@ -188,3 +190,24 @@ func test_broadside_hexes_starboard_range_two() -> void:
 	for h in hexes:
 		assert_eq(geo.bearing_side(Vector2i.ZERO, 0, h), ShipState.STARBOARD, "hex %s" % h)
 		assert_true(grid.hex_distance(0, 0, h.x, h.y) <= 2)
+
+
+# --- arc drawn for a broadside (GameController.broadside_arc) ---
+
+func test_arc_hexes_union_of_batteries() -> void:
+	var ship := ShipState.new()
+	ship.hex_position = Vector2i(0, 0)
+	ship.facing = 0
+	var arc: Array[Vector2i] = GameControllerScript.broadside_arc(geo, ship, ShipState.STARBOARD)
+	var own := ship.occupied_hexes()
+	for battery in own:
+		for h in geo.broadside_hexes(battery, 0, ShipState.STARBOARD, FireGeometry.MAX_RANGE):
+			if not own.has(h):
+				assert_true(arc.has(h), "hex %s of the battery at %s" % [h, battery])
+	for h in arc:
+		assert_false(own.has(h), "never the ship's own hexes")
+		assert_true(geo.in_battery_arc(own[0], 0, ShipState.STARBOARD, h) or geo.in_battery_arc(own[1], 0, ShipState.STARBOARD, h),
+			"hex %s bears from one of the batteries" % h)
+	var stern_only := HexGrid.stern_of(Vector2i.ZERO, 0) + _steps(2, 3)
+	assert_true(arc.has(stern_only), "a hex only the stern battery covers is drawn")
+	assert_false(geo.broadside_hexes(Vector2i.ZERO, 0, ShipState.STARBOARD).has(stern_only))

@@ -968,7 +968,7 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 			turn_log.add(PhaseEvents.Type.IN_IRONS, phase, sid, {"cause": "irons"})
 		for ev in result.events:
 			if ev.event_type == MovementTypes.ResolutionEventType.COLLISION and ev.detail.begins_with("collided with"):
-				var at := _collision_hex(log, result.collided_with, ev)
+				var at := _collision_hex(ev)
 				turn_log.add(PhaseEvents.Type.COLLISION, phase, sid, {"hex": {"q": at.x, "r": at.y}},
 					result.collided_with)
 		var planned: int = _get_plotted_steps(ship_state).size()
@@ -1000,12 +1000,7 @@ static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary
 	return {}
 
 
-## Where the other ship lay when this one ran into it (its own collision event), else where this ship was.
-@warning_ignore("shadowed_global_identifier")
-func _collision_hex(log: MovementTypes.ResolutionLog, other_id: String, ev: MovementTypes.ResolutionEvent) -> Vector2i:
-	var other: MovementTypes.ShipResolutionResult = log.get_result(other_id)
-	if other:
-		for other_ev in other.events:
-			if other_ev.event_type == MovementTypes.ResolutionEventType.COLLISION and other_ev.impulse == ev.impulse:
-				return other_ev.from_hex
-	return ev.to_hex
+## The hex this ship ran into: the one ahead of its bow (a collision only ever comes from an ahead
+## step), which may be the other ship's bow or its stern.
+func _collision_hex(ev: MovementTypes.ResolutionEvent) -> Vector2i:
+	return ev.from_hex + HexGrid.DIRECTIONS[ev.facing]
