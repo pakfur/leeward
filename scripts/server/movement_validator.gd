@@ -205,7 +205,7 @@ func _calculate_real_valid_hexes(
 	# Forward move: always available if remaining_ma > 0
 	if ps.remaining_ma > 0:
 		var forward_hex = hex_grid.get_neighbor(ps.current_hex.x, ps.current_hex.y, ps.current_facing)
-		var forward_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.FORWARD, ps.current_facing, 1)
+		var forward_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.FORWARD, ps.current_facing, 1, forward_hex)
 		result.forward.append(MovementTypes.ValidMove.new(forward_hex, MovementTypes.MoveType.FORWARD, forward_meta))
 
 	# Pivot rules
@@ -284,27 +284,37 @@ func _add_pivot_options(
 	allow_port: bool,
 	allow_starboard: bool
 ) -> void:
+	var port_facing = (ps.current_facing + 5) % 6
+	var starboard_facing = (ps.current_facing + 1) % 6
+	if allow_port and not _stern_in_bounds(ps.current_hex, port_facing):
+		allow_port = false
+	if allow_starboard and not _stern_in_bounds(ps.current_hex, starboard_facing):
+		allow_starboard = false
+
 	if allow_port:
-		var port_facing = (ps.current_facing + 5) % 6
 		var port_hex = hex_grid.get_neighbor(ps.current_hex.x, ps.current_hex.y, port_facing)
 		var port_wf = hex_grid.get_wind_facing(port_facing, ps.wind_direction)
 
-		var port_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.PORT, port_facing, pivot_cost)
+		var port_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.PORT, port_facing, pivot_cost, ps.current_hex)
 		result.port = MovementTypes.ValidMove.new(port_hex, MovementTypes.MoveType.PORT, port_meta)
 
 		if port_wf == "L":
 			Trace.trace_log("MovementValidator", "Ship %s: port pivot into luffing (L) — will end movement" % ship_state.ship_id)
 
 	if allow_starboard:
-		var starboard_facing = (ps.current_facing + 1) % 6
 		var starboard_hex = hex_grid.get_neighbor(ps.current_hex.x, ps.current_hex.y, starboard_facing)
 		var starboard_wf = hex_grid.get_wind_facing(starboard_facing, ps.wind_direction)
 
-		var starboard_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.STARBOARD, starboard_facing, pivot_cost)
+		var starboard_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.STARBOARD, starboard_facing, pivot_cost, ps.current_hex)
 		result.starboard = MovementTypes.ValidMove.new(starboard_hex, MovementTypes.MoveType.STARBOARD, starboard_meta)
 
 		if starboard_wf == "L":
 			Trace.trace_log("MovementValidator", "Ship %s: starboard pivot into luffing (L) — will end movement" % ship_state.ship_id)
+
+
+## A turn pivots on the bow (5.C.2): it is offered only if the swung stern stays on the map.
+func _stern_in_bounds(bow: Vector2i, new_facing: int) -> bool:
+	return Occupancy.in_bounds(HexGrid.stern_of(bow, new_facing), game_state.active_scenario)
 
 
 func _get_min_forward_for_pivot(

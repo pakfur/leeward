@@ -13,6 +13,7 @@ class MockGameState extends Node:
 	var environment: EnvironmentState = null
 	var ship_controller: ShipStateController = null
 	var ships: Dictionary = {}
+	var active_scenario: Dictionary = {}
 	func _init() -> void:
 		environment = EnvironmentState.new()
 		ship_controller = ShipStateController.new(self)
@@ -146,9 +147,9 @@ func test_max_two_pivots_per_turn() -> void:
 	var ss = _make_ship_state(ship, 0, 4, "MS")
 
 	# Build path: pivot starboard, forward (to satisfy min-forward), pivot starboard
-	var hex1 = hex_grid.get_neighbor(ss.hex_position.x, ss.hex_position.y, 1)  # starboard
+	var hex1 = ss.hex_position  # a turn pivots on the bow hex (5.C.2)
 	var hex2 = hex_grid.get_neighbor(hex1.x, hex1.y, 1)  # forward in new facing
-	var hex3 = hex_grid.get_neighbor(hex2.x, hex2.y, 2)  # starboard again
+	var hex3 = hex2  # second turn, bow unchanged
 
 	var path: Array[MovementTypes.PlotStep] = [
 		MovementTypes.PlotStep.new(hex1, 1, MovementTypes.MoveType.STARBOARD),
@@ -167,7 +168,7 @@ func test_no_consecutive_pivots() -> void:
 	var ss = _make_ship_state(ship, 0, 4, "MS")
 
 	# Path: one pivot
-	var hex1 = hex_grid.get_neighbor(ss.hex_position.x, ss.hex_position.y, 1)
+	var hex1 = ss.hex_position  # a turn pivots on the bow hex (5.C.2)
 	var path: Array[MovementTypes.PlotStep] = [
 		MovementTypes.PlotStep.new(hex1, 1, MovementTypes.MoveType.STARBOARD),
 	]
@@ -192,7 +193,7 @@ func test_pivot_into_luffing_ends_movement() -> void:
 	# Pivot port: facing 4 -> 3 (port = -1 mod 6 = +5 mod 6)
 	# Port from facing 4: (4 + 5) % 6 = 3. Wind is 3. So facing == wind = luffing.
 	var port_facing = (4 + 5) % 6  # = 3
-	var port_hex = hex_grid.get_neighbor(ss.hex_position.x, ss.hex_position.y, port_facing)
+	var port_hex = ss.hex_position  # a turn pivots on the bow hex (5.C.2)
 	var path: Array[MovementTypes.PlotStep] = [
 		MovementTypes.PlotStep.new(port_hex, port_facing, MovementTypes.MoveType.PORT),
 	]
@@ -253,10 +254,10 @@ func test_turn_at_ma_zero_ends_the_move() -> void:
 	var first = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, [])
 	var turn: MovementTypes.ValidMove = first.valid_hexes.starboard
 	var path: Array[MovementTypes.PlotStep] = [
-		MovementTypes.PlotStep.new(turn.hex, turn.metadata.resulting_facing, turn.move)
+		MovementTypes.PlotStep.new(turn.metadata.resulting_hex, turn.metadata.resulting_facing, turn.move)
 	]
 
-	var result = validator.calculate_valid_moves(ss, turn.hex, turn.metadata.resulting_facing, path)
+	var result = validator.calculate_valid_moves(ss, turn.metadata.resulting_hex, turn.metadata.resulting_facing, path)
 	assert_false(result.valid_hexes.has_any_moves(), "No moves after a turn made at MA=0")
 
 
@@ -313,7 +314,7 @@ func test_fast_tack_bonus_c_to_b() -> void:
 
 	# Now simulate the starboard pivot to facing 5
 	var starboard_facing = 5
-	var starboard_hex = hex_grid.get_neighbor(ss.hex_position.x, ss.hex_position.y, starboard_facing)
+	var starboard_hex = ss.hex_position  # a turn pivots on the bow hex (5.C.2)
 	var path: Array[MovementTypes.PlotStep] = [
 		MovementTypes.PlotStep.new(starboard_hex, starboard_facing, MovementTypes.MoveType.STARBOARD),
 	]
@@ -344,7 +345,7 @@ func test_ma_recalculates_on_pivot() -> void:
 
 	# Pivot port from 5 to 4. (5+5)%6 = 4
 	var new_facing = 4
-	var pivot_hex = hex_grid.get_neighbor(ss.hex_position.x, ss.hex_position.y, new_facing)
+	var pivot_hex = ss.hex_position  # a turn pivots on the bow hex (5.C.2)
 	var path: Array[MovementTypes.PlotStep] = [
 		MovementTypes.PlotStep.new(pivot_hex, new_facing, MovementTypes.MoveType.PORT),
 	]
@@ -397,7 +398,7 @@ func test_min_forward_before_second_pivot() -> void:
 	var ss = _make_ship_state(ship, 0, 6, "MS")  # fast, facing E (Running)
 
 	# First pivot
-	var hex1 = hex_grid.get_neighbor(ss.hex_position.x, ss.hex_position.y, 1)
+	var hex1 = ss.hex_position  # a turn pivots on the bow hex (5.C.2)
 	var path: Array[MovementTypes.PlotStep] = [
 		MovementTypes.PlotStep.new(hex1, 1, MovementTypes.MoveType.STARBOARD),
 	]
@@ -450,3 +451,35 @@ func test_can_submit_always_true() -> void:
 	]
 	var result2 = validator.calculate_valid_moves(ss, hex1, 0, path)
 	assert_true(result2.can_submit, "can_submit should remain true mid-path")
+
+
+# ============================================================================
+# Turns pivot on the bow (5.C.2)
+# ============================================================================
+
+func test_turn_keeps_bow_hex() -> void:
+	mock_gs.environment.wind_direction = 3
+	var ss = _make_ship_state(_make_ship("F/F", "b"), 0, 3, "MS")  # bow (5,5), facing E
+
+	var valid = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, []).valid_hexes
+
+	assert_not_null(valid.starboard, "Starboard turn offered")
+	assert_eq(valid.starboard.metadata.resulting_hex, Vector2i(5, 5), "The bow stays in its hex")
+	assert_eq(valid.starboard.metadata.resulting_facing, 1)
+	assert_eq(valid.starboard.hex, Vector2i(5, 6), "The click target is the hex the bow will point at")
+	assert_eq(valid.port.metadata.resulting_hex, Vector2i(5, 5))
+	assert_eq(valid.port.hex, Vector2i(6, 4), "Port keeps a distinct click target")
+	assert_eq(valid.forward[0].metadata.resulting_hex, Vector2i(6, 5), "A forward move ends in the hex it enters")
+
+
+func test_turn_refused_when_stern_off_map() -> void:
+	mock_gs.environment.wind_direction = 3
+	mock_gs.active_scenario = {"map_bounds": {"width": 10, "height": 10}}  # q -5..4, r -5..4
+	var ss = _make_ship_state(_make_ship("F/F", "b"), 0, 3, "MS")
+	ss.hex_position = Vector2i(4, 4)
+
+	var valid = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, []).valid_hexes
+
+	# Port turn to facing 5 would swing the stern to (3,5), off the map.
+	assert_null(valid.port, "Turn whose new stern is off the map is not offered")
+	assert_not_null(valid.starboard, "Turn whose stern stays on the map is offered (stern at (4,3))")

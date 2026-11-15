@@ -198,7 +198,7 @@ func _strategy_engage(
 		var best: MovementTypes.ValidMove = null
 		var best_score := 0
 		for move in current_valid.get_all_valid_moves():
-			var move_score := _score_position(move.hex, move.metadata.resulting_facing, enemy.hex_position, occupied)
+			var move_score := _score_position(move.metadata.resulting_hex, move.metadata.resulting_facing, enemy.hex_position, occupied)
 			if best == null or _option_beats(move, move_score, best, best_score, current_facing):
 				best = move
 				best_score = move_score
@@ -214,7 +214,7 @@ func _strategy_engage(
 		current_version = selected.session_version
 		current_valid = selected.valid_next_hexes
 		can_submit = selected.can_submit
-		current_hex = best.hex
+		current_hex = best.metadata.resulting_hex
 		current_facing = best.metadata.resulting_facing
 
 	return current_version

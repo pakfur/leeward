@@ -19,24 +19,28 @@ class MoveMetadata extends RefCounted:
 	var move_type: MoveType = MoveType.NONE     
 	var resulting_facing: int = 0        # Ship facing after this move (0-5)
 	var ma_cost: int = 1                 # Movement allowance cost
+	var resulting_hex: Vector2i = Vector2i.ZERO  # Bow hex after this move (a turn keeps the bow hex; 5.C.2)
 
-	func _init(p_move_type: MoveType = MoveType.NONE, p_resulting_facing: int = 0, p_ma_cost: int = 1) -> void:
+	func _init(p_move_type: MoveType = MoveType.NONE, p_resulting_facing: int = 0, p_ma_cost: int = 1, p_resulting_hex: Vector2i = Vector2i.ZERO) -> void:
 		move_type = p_move_type
 		resulting_facing = p_resulting_facing
 		ma_cost = p_ma_cost
+		resulting_hex = p_resulting_hex
 
 	func to_dict() -> Dictionary:
 		return {
 			"move_type": move_type,
 			"resulting_facing": resulting_facing,
-			"ma_cost": ma_cost
+			"ma_cost": ma_cost,
+			"resulting_hex": {"q": resulting_hex.x, "r": resulting_hex.y}
 		}
 
 	static func from_dict(data: Dictionary) -> MoveMetadata:
 		return MoveMetadata.new(
 			data.get("move_type", ""),
 			data.get("resulting_facing", 0),
-			data.get("ma_cost", 1)
+			data.get("ma_cost", 1),
+			Vector2i(int(data.get("resulting_hex", {}).get("q", 0)), int(data.get("resulting_hex", {}).get("r", 0)))
 		)
 
 

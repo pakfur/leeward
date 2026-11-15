@@ -498,3 +498,24 @@ func test_ai_with_no_movable_ships_does_not_error() -> void:
 		pc.on_combat_playback_completed()
 
 	assert_eq(pc.current_phase, TurnPhaseController.GamePhase.POST_COMBAT, "Phase advanced")
+
+
+# ===========================================================================
+# Turns pivot on the bow (5.C.2)
+# ===========================================================================
+
+func test_plot_step_stores_bow_hex() -> void:
+	env.wind_direction = 3
+	var ship = _make_ship("p1", 0, Vector2i(5, 5), 0, 3)
+	_add_ship(ship)
+	var controller: MovementPlottingController = GameState.movement_plotting_controller
+	var started = controller.handle_start_plotting(0, "p1", "req_start")
+	var target: Vector2i = started.valid_next_hexes.starboard.hex
+	assert_eq(target, Vector2i(5, 6), "Click target is the hex the bow will point at")
+
+	var response = controller.handle_select_hex(started.session_id, started.session_version, target, "req_turn")
+
+	assert_false(response is MovementTypes.PlottingErrorResponse)
+	var step: MovementTypes.PlotStep = response.plotted_path.back()
+	assert_eq(step.hex, Vector2i(5, 5), "The stored step is the unchanged bow hex")
+	assert_eq(step.facing, 1)

@@ -14,6 +14,7 @@ class MockGameState extends Node:
 	var environment: EnvironmentState = null
 	var ship_controller: ShipStateController = null
 	var ships: Dictionary = {}
+	var active_scenario: Dictionary = {}
 	func _init() -> void:
 		environment = EnvironmentState.new()
 		ship_controller = ShipStateController.new(self)
@@ -87,16 +88,16 @@ func test_turning_into_the_wind_is_not_yet_a_tacking_roll() -> void:
 
 	# Step 1: pivot port, facing 5→4 = NW = C
 	var port_facing1 = (5 + 5) % 6  # = 4
-	var hex1 = hex_grid.get_neighbor(ss.hex_position.x, ss.hex_position.y, port_facing1)
+	var hex1 = ss.hex_position  # a turn pivots on the bow hex (5.C.2)
 	var wf_after_pivot1 = hex_grid.get_wind_facing(port_facing1, 3)
 	assert_eq(wf_after_pivot1, "C", "First pivot reaches close-hauled")
 
 	# Step 2: forward in facing 4
-	var hex2 = hex_grid.get_neighbor(hex1.x, hex1.y, port_facing1)
+	var hex2 = hex_grid.get_neighbor(hex1.x, hex1.y, port_facing1)  # forward in the new facing
 
 	# Step 3: pivot port, facing 4→3 = W = L (luffing)
 	var port_facing2 = (4 + 5) % 6  # = 3
-	var hex3 = hex_grid.get_neighbor(hex2.x, hex2.y, port_facing2)
+	var hex3 = hex2  # a turn pivots on the bow hex (5.C.2)
 
 	var wf_luffing = hex_grid.get_wind_facing(port_facing2, 3)
 	assert_eq(wf_luffing, "L", "Second pivot should reach luffing")
@@ -125,7 +126,7 @@ func test_no_tacking_before_luffing_pivot() -> void:
 
 	# Pivot port 5→4 (NW) = C — no luffing, only 1 pivot
 	var port_facing1 = (5 + 5) % 6  # = 4
-	var hex1 = hex_grid.get_neighbor(ss.hex_position.x, ss.hex_position.y, port_facing1)
+	var hex1 = ss.hex_position  # a turn pivots on the bow hex (5.C.2)
 
 	var path: Array[MovementTypes.PlotStep] = [
 		MovementTypes.PlotStep.new(hex1, port_facing1, MovementTypes.MoveType.PORT),
@@ -143,9 +144,9 @@ func test_no_tacking_with_two_pivots_no_luffing() -> void:
 	var ship = _make_ship("F/F", "d")
 	var ss = _make_ship_state(ship, 0, 4, "MS")
 
-	var hex1 = hex_grid.get_neighbor(ss.hex_position.x, ss.hex_position.y, 1)
+	var hex1 = ss.hex_position  # a turn pivots on the bow hex (5.C.2)
 	var hex2 = hex_grid.get_neighbor(hex1.x, hex1.y, 1)
-	var hex3 = hex_grid.get_neighbor(hex2.x, hex2.y, 2)
+	var hex3 = hex2
 
 	var path: Array[MovementTypes.PlotStep] = [
 		MovementTypes.PlotStep.new(hex1, 1, MovementTypes.MoveType.STARBOARD),
@@ -189,11 +190,11 @@ func test_session_recompute_clears_tacking_on_undo() -> void:
 	var hex1 = hex_grid.get_neighbor(5, 5, port_facing1)
 	session.select_hex(hex1, port_facing1, vnh, true, MovementTypes.MoveType.PORT)
 
-	var hex2 = hex_grid.get_neighbor(hex1.x, hex1.y, port_facing1)
+	var hex2 = hex_grid.get_neighbor(hex1.x, hex1.y, port_facing1)  # forward in the new facing
 	session.select_hex(hex2, port_facing1, vnh, true, MovementTypes.MoveType.FORWARD)
 
 	var port_facing2 = (4 + 5) % 6  # = 3
-	var hex3 = hex_grid.get_neighbor(hex2.x, hex2.y, port_facing2)
+	var hex3 = hex2  # a turn pivots on the bow hex (5.C.2)
 	session.select_hex(hex3, port_facing2, vnh, true, MovementTypes.MoveType.PORT)
 
 	# Manually set tacking (as controller would after validator)

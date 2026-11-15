@@ -1227,3 +1227,19 @@ func test_tacking_chance_zero_in_calm() -> void:
 	var state = _make_ship_state(Vector2i(5, 5), 0, 3, "A")
 	env.wind_speed = 0
 	assert_almost_eq(resolver.tacking_chance(state), 0.0, 0.001)
+
+
+func test_turn_step_keeps_bow_hex_and_applies_new_facing() -> void:
+	# A plotted turn pivots on the bow (5.C.2): the step's hex is the unchanged bow hex.
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3)
+	GameState.ship_controller.set_plotted_movement(state.ship_id, [
+		{"hex": {"q": 5, "r": 5}, "facing": 1, "move_type": MovementTypes.MoveType.STARBOARD},
+	])
+	var ships: Array[ShipState] = [state]
+
+	var log = resolver.run(ships, env)
+	var result = log.get_result("test_ship_1")
+
+	assert_eq(result.final_hex, Vector2i(5, 5), "The bow stays put")
+	assert_eq(result.final_facing, 1, "The new facing is applied in place")
+	assert_false(result.immobilized)
