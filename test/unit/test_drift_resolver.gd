@@ -336,6 +336,67 @@ func test_fouled_pair_blocked_member_holds_both() -> void:
 	assert_string_contains(by_ship["a"].to_text({}), "held back by b")
 
 
+# --- two-hex footprints ------------------------------------------------------
+
+func test_drift_moves_bow_and_stern() -> void:
+	var s := _make_ship("a", Vector2i(5, 5))
+	var bow := s.hex_position
+	var stern := s.stern_hex()
+	_dice.queue([3])
+	resolver.resolve(PHASE)
+	assert_eq(s.hex_position, _downwind(bow))
+	assert_eq(s.stern_hex(), _downwind(stern))
+	assert_eq(_drift_events()[0].data["to"], {"q": 4, "r": 5}, "to is the new bow hex")
+
+
+func test_drift_blocked_by_ship_at_stern_target() -> void:
+	var drifter := _make_ship("a", Vector2i(5, 5))  # bow (5,5), stern (5,4)
+	var blocker := _make_ship("b", Vector2i(4, 4))  # holds (4,4) and (4,3), not the bow target
+	blocker.moved_this_turn = true
+	_dice.queue([9, 0])
+	resolver.resolve(PHASE)
+	assert_eq(drifter.hex_position, Vector2i(5, 5))
+	var ev: PhaseEvents.PhaseEvent = _drift_events()[0]
+	assert_eq(ev.data["blocked"], "ship")
+	assert_eq(ev.target_id, "b")
+
+
+func test_drift_blocked_when_stern_leaves_map() -> void:
+	GameState.active_scenario = {"map_bounds": {"width": 100, "height": 100}}
+	var s := _make_ship("a", Vector2i(-49, 0))
+	s.facing = 0  # stern to the west at (-50, 0); its downwind hex is off the map
+	_dice.queue([9])
+	resolver.resolve(PHASE)
+	assert_eq(s.hex_position, Vector2i(-49, 0))
+	assert_eq(_drift_events()[0].data["blocked"], "map edge")
+
+
+func test_fouled_pair_drifts_as_four_hexes() -> void:
+	var a := _make_ship("a", Vector2i(5, 5))
+	var b := _make_ship("b", Vector2i(4, 5))
+	_foul_together(a, b)
+	_dice.queue([3])
+	resolver.resolve(PHASE)
+	assert_eq(a.hex_position, Vector2i(4, 5), "partners' own hexes do not block each other")
+	assert_eq(b.hex_position, Vector2i(3, 5))
+	# Third ship on the far stern target of the pair: (3,4) is b's stern shifted downwind.
+	var c := _make_ship("c", Vector2i(3, 4))
+	c.moved_this_turn = true
+	a.hex_position = Vector2i(5, 5)
+	b.hex_position = Vector2i(4, 5)
+	GameState.turn_log = PhaseEvents.PhaseLog.new()
+	_dice.queue([9])
+	resolver.resolve(PHASE)
+	assert_eq(a.hex_position, Vector2i(5, 5))
+	assert_eq(b.hex_position, Vector2i(4, 5))
+	var by_ship := {}
+	for ev in _drift_events():
+		by_ship[ev.ship_id] = ev
+	assert_eq(by_ship["b"].data["blocked"], "ship")
+	assert_eq(by_ship["b"].target_id, "c")
+	assert_eq(by_ship["a"].data["blocked"], "partner")
+
+
 # --- plotting lock -----------------------------------------------------------
 
 func _start_plotting(state: ShipState) -> MovementTypes.PlottingResponse:

@@ -99,21 +99,30 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 	var blocked := ""
 	var blocker: ShipState = null
 	if drifts:
+		## The whole footprint shifts one hex downwind. The group's own hexes never block.
+		var group_ids: Array = []
+		for ship in group:
+			group_ids.append(ship.ship.ship_id)
+		var others: Dictionary = Occupancy.build(game_state.get_all_ships(), group_ids)
 		for ship in group:
 			var sid: String = ship.ship.ship_id
 			var target: Vector2i = _hex_grid.get_neighbor(ship.hex_position.x, ship.hex_position.y, downwind_dir)
 			targets[sid] = target
-			if not _in_bounds(target):
-				blocked = "map edge"
-				own_block[sid] = "map edge"
-				continue
-			var occupant: ShipState = _occupant(target, group)
-			if occupant != null:
-				own_block[sid] = "ship"
-				own_blocker[sid] = occupant.ship.ship_id
-				if blocked != "map edge":
-					blocked = "ship"
-					blocker = occupant
+			for hex in ship.occupied_hexes():
+				var shifted: Vector2i = _hex_grid.get_neighbor(hex.x, hex.y, downwind_dir)
+				if not _in_bounds(shifted):
+					blocked = "map edge"
+					own_block[sid] = "map edge"
+					own_blocker.erase(sid)
+					break
+				if others.has(shifted) and own_block.get(sid, "") != "ship":
+					var occupant: ShipState = game_state.get_ship(others[shifted])
+					own_block[sid] = "ship"
+					own_blocker[sid] = occupant.ship.ship_id
+					if blocked != "map edge":
+						blocked = "ship"
+						if blocker == null:
+							blocker = occupant
 
 	var moved: bool = drifts and blocked == ""
 	# The fouling roll comes after the drift roll (dice order unchanged); its outcome is logged on
@@ -167,15 +176,6 @@ func _try_foul(drifter: ShipState, other: ShipState) -> Variant:
 	game_state.ship_controller.set_fouled_with(a, b)
 	game_state.ship_controller.set_fouled_with(b, a)
 	return true
-
-
-func _occupant(hex: Vector2i, ignore: Array[ShipState]) -> ShipState:
-	for ship in game_state.get_all_ships():
-		if ship in ignore:
-			continue
-		if ship.hex_position == hex:
-			return ship
-	return null
 
 
 func _in_bounds(hex: Vector2i) -> bool:
