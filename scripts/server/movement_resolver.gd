@@ -166,10 +166,10 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 
 
 ## One resolution of every ship's steps (`amended` overrides a ship's plot; `cycle_breaks` and
-## `settled_contests`, see ResolutionPass). Returns {"results", "max_impulses", "rollbacks", "contests", "failed_cycles"}; when
-## an overlap fails its check the pass stops there and "rollbacks" lists the turns to undo; when a cycle
-## went wrong it stops there and "failed_cycles" lists the cycles to break; "contests" lists the stern
-## contests rolled (see ResolutionPass.contests).
+## `settled_contests`, see ResolutionPass). Returns {"results", "max_impulses", "rollbacks", "contests",
+## "failed_cycles"}; when an overlap fails its check the pass stops there and "rollbacks" lists the
+## turns to undo; when a cycle went wrong it stops there and "failed_cycles" lists the cycles to break;
+## "contests" lists the stern contests rolled (see ResolutionPass.contests).
 func _resolve_pass(
 	ships: Array[ShipState],
 	ship_map: Dictionary,
@@ -329,7 +329,8 @@ func _resolve_impulse(p: ResolutionPass, impulse: int, ships: Array[ShipState]) 
 	# only after that ship's own step, so the result does not depend on ship order, and an old stern is
 	# known to be vacated or kept. In a cycle (head-on bows, or each ship entering the next one's old
 	# stern) no group is ready and the group holding the lowest ship id goes, so the result does not
-	# depend on ship order either.
+	# depend on ship order either. Letting it go assumes the ship whose old stern it enters leaves it;
+	# when that ship is stopped after all, the pass is replayed with the cycle broken (see run()).
 	var pending: Array = []
 	for entered in stern_targets:
 		pending.append({"stern": true, "hex": entered, "ids": stern_targets[entered]})
