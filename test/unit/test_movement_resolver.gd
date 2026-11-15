@@ -1194,3 +1194,36 @@ func test_apply_results_sets_moved_this_turn() -> void:
 
 	assert_true(mover.moved_this_turn, "Ship that advanced has moved_this_turn")
 	assert_false(idle.moved_this_turn, "Ship with no plot has moved_this_turn false")
+
+
+# ===========================================================================
+# Tacking chance shown on the planning screen
+# ===========================================================================
+
+func test_tacking_chance_applies_chart_drms() -> void:
+	# Type A at WS 1 needs <=2; CQ B at WF=L (not in irons): DRM -2, so d10 0-4 succeed
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3, "A")
+	env.wind_speed = 1
+	assert_almost_eq(resolver.tacking_chance(state), 0.5, 0.001)
+
+
+func test_tacking_chance_in_irons() -> void:
+	# Same ship stopped head to wind: +1 in irons, DRM -1, so d10 0-3 succeed
+	var state = _make_ship_state(Vector2i(5, 5), 0, 0, "A")
+	env.wind_speed = 1
+	assert_almost_eq(resolver.tacking_chance(state), 0.4, 0.001)
+
+
+func test_tacking_chance_natural_zero_floor() -> void:
+	# CQ G (+3) and three rigging sections lost (+6): only a natural 0 succeeds
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3, "A", "test_ship_1", 3, "G")
+	env.wind_speed = 1
+	var damaged: Array[int] = [0, 0, 0, 6]
+	state.rigging_current_hp = damaged
+	assert_almost_eq(resolver.tacking_chance(state), 0.1, 0.001)
+
+
+func test_tacking_chance_zero_in_calm() -> void:
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3, "A")
+	env.wind_speed = 0
+	assert_almost_eq(resolver.tacking_chance(state), 0.0, 0.001)

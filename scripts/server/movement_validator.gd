@@ -127,9 +127,6 @@ func _build_plotting_state(
 			if wf_after == "L":
 				ps.luffing_ended = true
 
-			# Check for tacking: pivot to L then same direction again
-			if ps.pivots_used >= 2 and ps.luffing_ended:
-				ps.is_tacking_attempt = true
 
 	# Calculate MA at current facing
 	var wind_facing = hex_grid.get_wind_facing(current_facing, ps.wind_direction)
@@ -178,12 +175,16 @@ func _build_plotting_state(
 
 	ps.remaining_ma = max(0, ps.max_ma - ma_spent)
 
+	# A ship starting at MA=0 can only turn, and that turn needs a Tacking roll (5.D.1): the planning
+	# screen shows the chance. Ships may not turn in calm (5.D.1a).
+	var start_wf = hex_grid.get_wind_facing(ship_state.facing, ps.wind_direction)
+	var starts_at_ma_zero: bool = _lookup_ma(ps.speed_type, ps.wind_speed, start_wf, ps.sail_state, ps.rigging_quality) == 0
+	ps.is_tacking_attempt = starts_at_ma_zero and ps.wind_speed > 0
+
 	# A turn made at MA=0 is the ship's whole move for the g-t (5.D.3 example: "it cannot move any further").
-	if not path_so_far.is_empty():
+	if starts_at_ma_zero and not path_so_far.is_empty():
 		var first_type = path_so_far[0].move_type
-		var first_is_pivot = first_type == MovementTypes.MoveType.PORT or first_type == MovementTypes.MoveType.STARBOARD
-		var start_wf = hex_grid.get_wind_facing(ship_state.facing, ps.wind_direction)
-		if first_is_pivot and _lookup_ma(ps.speed_type, ps.wind_speed, start_wf, ps.sail_state, ps.rigging_quality) == 0:
+		if first_type == MovementTypes.MoveType.PORT or first_type == MovementTypes.MoveType.STARBOARD:
 			ps.ma_zero_turn_ended = true
 			ps.remaining_ma = 0
 
@@ -223,6 +224,10 @@ func _calculate_real_valid_hexes(
 
 	# Luffing ended movement
 	if ps.luffing_ended:
+		can_pivot = false
+
+	# No turning in calm (5.D.1a)
+	if ps.wind_speed <= 0:
 		can_pivot = false
 
 	# Min forward-hex requirement from turning table

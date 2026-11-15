@@ -74,10 +74,11 @@ func after_each() -> void:
 # Tacking attempt detection
 # ============================================================================
 
-func test_tacking_attempt_detected_on_pivot_through_luffing() -> void:
+func test_turning_into_the_wind_is_not_yet_a_tacking_roll() -> void:
 	# Wind from W (3). Ship facing NE (5) = broad reach (B).
 	# Pivot port 5→4 (NW) = C. Forward. Pivot port 4→3 (W) = L (luffing).
-	# After 2 pivots with luffing on 2nd: is_tacking_attempt should be true.
+	# Turning into WF=L just stops the ship (5.D.3); the Tacking roll comes next g-t, when the
+	# ship turns on from MA=0.
 	var ship = _make_ship("F/F", "d")
 	var ss = _make_ship_state(ship, 5, 4, "MS")
 
@@ -107,7 +108,14 @@ func test_tacking_attempt_detected_on_pivot_through_luffing() -> void:
 	]
 
 	var result = validator.calculate_valid_moves(ss, hex3, port_facing2, path)
-	assert_true(result.is_tacking_attempt, "Should detect tacking attempt after pivot through luffing")
+	assert_false(result.is_tacking_attempt, "No roll this g-t: the ship has MA and luffs to a stop")
+	assert_false(result.valid_hexes.has_any_moves(), "Movement ends at WF=L")
+
+	# Next g-t the ship starts at WF=L with MA=0: its turn is a tacking attempt
+	ss.facing = port_facing2
+	ss.hex_position = hex3
+	var next_turn = validator.calculate_valid_moves(ss, hex3, port_facing2, [])
+	assert_true(next_turn.is_tacking_attempt, "Turning on from WF=L rolls on the Tacking table")
 
 
 func test_no_tacking_before_luffing_pivot() -> void:

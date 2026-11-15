@@ -999,11 +999,10 @@ func _update_tacking_display(is_tacking: bool) -> void:
 		current_planning_ui.update_tacking_state(false, 0.0)
 		return
 
-	var maneuverability = ship_state.ship.maneuverability.to_lower()
-	var wind_speed = GameState.environment.wind_speed if GameState.environment else 2
-	var probability = DataManager.get_tacking_percent(maneuverability, wind_speed)
-	Trace.trace_log("GameController", "Tacking attempt: %s, maneuverability=%s, wind_speed=%d, probability=%.0f%%" % [
-		ship_state.ship_id, maneuverability, wind_speed, probability * 100.0
+	# Read-only query: the Tacking chart with this ship's DRMs, as the resolver will roll it  SCV:ALLOW
+	var probability: float = GameState.movement_resolver.tacking_chance(ship_state)
+	Trace.trace_log("GameController", "Turn at MA=0: %s, success chance %.0f%%" % [
+		ship_state.ship_id, probability * 100.0
 	])
 	current_planning_ui.update_tacking_state(true, probability)
 

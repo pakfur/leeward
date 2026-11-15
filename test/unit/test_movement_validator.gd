@@ -219,6 +219,32 @@ func test_in_irons_may_plot_one_turn() -> void:
 	assert_true(result.can_submit, "In-irons ship can submit (no movement)")
 
 
+func test_ship_at_ma_zero_is_flagged_for_the_tacking_roll() -> void:
+	mock_gs.environment.wind_direction = 0
+	var ship = _make_ship("F/F", "b")
+	var ss = _make_ship_state(ship, 0, 2, "MS")  # head to wind: MA 0
+	var result = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, [])
+	assert_true(result.is_tacking_attempt, "A turn from MA=0 will roll on the Tacking table")
+
+
+func test_ship_with_movement_allowance_is_not_flagged() -> void:
+	mock_gs.environment.wind_direction = 0
+	var ship = _make_ship("F/F", "b")
+	var ss = _make_ship_state(ship, 3, 2, "MS")  # running before the wind
+	var result = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, [])
+	assert_false(result.is_tacking_attempt, "Ordinary turns need no roll")
+
+
+func test_no_turning_in_calm() -> void:
+	mock_gs.environment.wind_direction = 0
+	mock_gs.environment.wind_speed = 0
+	var ship = _make_ship("F/F", "b")
+	var ss = _make_ship_state(ship, 0, 2, "MS")
+	var result = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, [])
+	assert_false(result.valid_hexes.has_any_moves(), "No moves or turns at WS 0 (5.D.1a)")
+	assert_false(result.is_tacking_attempt, "No tacking chance to show in calm")
+
+
 func test_turn_at_ma_zero_ends_the_move() -> void:
 	# 5.D.3 example: after a turn at MA=0 the ship cannot move any further that g-t
 	mock_gs.environment.wind_direction = 0

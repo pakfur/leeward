@@ -585,11 +585,10 @@ func _roll_tacking(
 	impulse: int
 ) -> bool:
 	var drm: int = _calculate_tacking_drm(ship_state)
-	var maneuverability: String = ship_state.ship.maneuverability if ship_state.ship else "b"
-	var number: int = DataManager.get_tacking_number(maneuverability, environment.wind_speed)
+	var number: int = _tacking_number(ship_state, environment.wind_speed)
 
 	var d10: int = rng.randi_range(0, 9)
-	var success: bool = number >= 0 and (d10 == 0 or d10 + drm <= number)
+	var success: bool = _tack_succeeds(d10, drm, number)
 
 	var ev = MovementTypes.ResolutionEvent.new(
 		ship_state.ship_id, impulse, MovementTypes.ResolutionEventType.TACKING_ROLL
@@ -614,6 +613,29 @@ func _roll_tacking(
 		result.events.append(imm_ev)
 
 	return success
+
+
+## Chance (0.0-1.0) that a turn at MA=0 by this ship succeeds now, with the chart DRMs. Pure query,
+## used by the planning screen.
+func tacking_chance(ship_state: ShipState) -> float:
+	var wind_speed: int = game_state.environment.wind_speed if game_state and game_state.environment else 0
+	var number: int = _tacking_number(ship_state, wind_speed)
+	var drm: int = _calculate_tacking_drm(ship_state)
+	var wins: int = 0
+	for d10 in range(10):
+		if _tack_succeeds(d10, drm, number):
+			wins += 1
+	return wins / 10.0
+
+
+func _tacking_number(ship_state: ShipState, wind_speed: int) -> int:
+	var maneuverability: String = ship_state.ship.maneuverability if ship_state.ship else "b"
+	return DataManager.get_tacking_number(maneuverability, wind_speed)
+
+
+## d10 (0-9) + DRMs <= the chart number succeeds; a natural 0 always does. No number (calm): never.
+func _tack_succeeds(d10: int, drm: int, number: int) -> bool:
+	return number >= 0 and (d10 == 0 or d10 + drm <= number)
 
 
 ## Tacking DRMs from the chart (5.D.2, 5.D.6). Leeward has no crew-task plotting, so every ship
