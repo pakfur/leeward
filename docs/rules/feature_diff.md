@@ -72,7 +72,6 @@ These are the gaps and differences that most change how a game plays out, in rou
 | Exceptions to being in irons (WS just rose from 0, cut cable, anchored) | 3.D.4c, 5.D.4 | A ship at WF=L with speed 0 always counts as in irons. |
 | Reverse tack | 5.D.3 | |
 | Contested-hex winner may force the loser into the hex | 6.C.3 | The winner always enters. |
-| Overlapping ships and stern-vs-stern contests | 6.B, 6.C.5 | Implemented in Phase 2 (overlap with rollback, stern contests). |
 | Order of bear-off resolution and the once-per-turn limit | 6.D.3b–c, 6.D.5 | Hexes are resolved in dictionary order. |
 | Game ends by mutual agreement, or when one side has no ship that can move and fight | 2.A.1 | Leeward ends only when a side is all struck, or at `turn_limit`. A side that is dismasted but not struck keeps the game going. |
 | Struck ships count as CQ G | 9.C.4 | Only matters once firefighting and ungrappling exist. |
