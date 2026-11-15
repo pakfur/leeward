@@ -2,6 +2,8 @@ extends GutTest
 ## Tests for ShipView's owner marker (ring + pennant in the owner's colour) and that a ship
 ## at hex (0,0) is positioned there (the origin used to be treated as "unset").
 
+const MinimapScript = preload("res://scripts/ui/minimap.gd")
+
 var hex_grid: HexGrid
 
 
@@ -75,6 +77,45 @@ func test_struck_ship_keeps_owner_ring_and_hides_pennant() -> void:
 	assert_almost_eq(c.g, ShipView.ENEMY_COLOR.g, 0.01)
 	assert_false(view.model_node.get_node("OwnerPennant").visible, "colours struck: pennant hidden")
 	assert_not_null(view.model_node.get_node_or_null("StruckFlag"), "white flag shown")
+
+
+func test_destroyed_ship_becomes_a_wreck() -> void:
+	var state := _make_state("e", 1, Vector2i(2, 2))
+	var view := _make_view(state)
+	var hull := view.model_node.get_node("Hull") as MeshInstance3D
+	state.status = ShipState.Status.DESTROYED
+	view.sync_to_state(state, hex_grid)
+	assert_true(view.is_wrecked())
+	assert_false(view.get_node("OwnerRing").visible, "no owner ring on a wreck")
+	assert_false(view.model_node.get_node("OwnerPennant").visible)
+	assert_null(view.model_node.get_node_or_null("StruckFlag"))
+	var debris := view.get_node_or_null("WreckDebris")
+	assert_not_null(debris, "debris on the water")
+	assert_eq(debris.get_child_count(), ShipView.WRECK_DEBRIS_COUNT)
+	for child in view.model_node.get_children():
+		if child is MeshInstance3D and child.name.begins_with("Sail") and child.visible:
+			fail_test("sail %s still set on a wreck" % child.name)
+	assert_lt((hull.material_override as StandardMaterial3D).albedo_color.get_luminance(), 0.1, "charred")
+	# Syncing again does not add a second set of debris.
+	view.sync_to_state(state, hex_grid)
+	assert_eq(view.get_node("WreckDebris").get_child_count(), ShipView.WRECK_DEBRIS_COUNT)
+
+
+func test_struck_then_destroyed_drops_the_white_flag() -> void:
+	var state := _make_state("e", 1, Vector2i(2, 2))
+	var view := _make_view(state)
+	state.status = ShipState.Status.STRUCK
+	view.sync_to_state(state, hex_grid)
+	state.status = ShipState.Status.DESTROYED
+	view.sync_to_state(state, hex_grid)
+	assert_null(view.model_node.get_node_or_null("StruckFlag"))
+
+
+func test_minimap_icon_is_grey_for_a_wreck() -> void:
+	var state := _make_state("e", 1, Vector2i(2, 2))
+	assert_eq(MinimapScript.icon_color(state), ShipView.ENEMY_COLOR)
+	state.status = ShipState.Status.DESTROYED
+	assert_eq(MinimapScript.icon_color(state), MinimapScript.DESTROYED_ICON_COLOR)
 
 
 func test_ship_moved_to_origin_hex_is_positioned_there() -> void:

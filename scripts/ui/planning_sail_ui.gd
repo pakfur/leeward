@@ -37,6 +37,8 @@ static func target_button_text(target: String, cost: Dictionary) -> String:
 
 
 static func status_badge(ship: ShipState) -> String:
+	if ship.is_destroyed():
+		return "DESTROYED"
 	if ship.is_struck():
 		return "STRUCK"
 	if ship.is_dismasted():
@@ -52,6 +54,7 @@ static func can_plot_movement(ship: ShipState) -> bool:
 
 static func movement_block_reason(ship: ShipState) -> String:
 	match status_badge(ship):
+		"DESTROYED": return "Ship has been destroyed."
 		"STRUCK": return "Ship has struck its colours and cannot move."
 		"DISMASTED": return "Ship is dismasted and cannot move."
 		"FOULED": return "Ship is fouled with %s and cannot move until it breaks free." % ship.fouled_with
@@ -70,7 +73,7 @@ static func sail_row(ship: ShipState, targets: Array, costs: Dictionary) -> Dict
 		"hint": "",
 		"buttons": [],
 	}
-	if ship.is_struck():
+	if ship.is_out_of_play():
 		return row
 	if not ship.sail_change.is_empty():
 		row["mode"] = Mode.PROGRESS

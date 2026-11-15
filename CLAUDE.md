@@ -103,7 +103,7 @@ Managed by `TurnPhaseController`. All phases do real work except MESSAGE_DELIVER
 - **MOVEMENT_RESOLUTION**: `SailController.begin_plotted_changes()` starts plotted sail changes, then the movement resolver runs (sets `moved_this_turn`). Waits for the view to call `on_playback_completed()`, which applies results. **Bearing off (6.D)** is the owner's decision: ships of players in `bear_off_prompt_player_ids` (GameController sets `[0]`; empty in headless tests) stop the resolution at a potential collision — `run()` returns a log with `pending_bear_off` (a `MovementTypes.BearOffSituation`), the view plays it up to that segment and calls `on_playback_paused()`, which emits `bear_off_decision_requested`; `player_submit_bear_off(player_id, ship_id, choice)` ("port"/"starboard"/"collide"; returns "" or a reason) re-runs the resolver with the answers so far (`_bear_off_decisions`, same RNG start, so the prefix repeats) and the new log has `resume_impulse` = that segment. Other ships decide by `StubAI.bear_off_choice` (always bears off when a turn is legal; never rams). Success amends the plot (turn, then ahead to the deceleration minimum) and replays like an overlap rollback; once per g-t. Tests that want a plain collision pass `{ship_id: {"choice": "collide", "segment": n}}` as `run()`'s third argument.
 - **COMBAT_RESOLUTION**: fire declaration is a step inside this phase (targets are chosen after movement). If `gunnery_calculator.any_eligible_shot()` is false the phase is skipped (`combat_step` stays `NONE`). Otherwise `DECLARE`: emits `fire_declaration_requested`, the AI submits via `StubAI.submit_fire_orders()`, the player via `player_submit_fire_orders(player_id, orders)` (returns "" or a rejection reason; orders are hidden until both are in). Then `RESOLVE`: `gunnery_resolver.resolve()` computes all shots against start-of-step state, applies damage, emits `combat_log_ready`; waits for the view to call `on_combat_playback_completed()`.
 - **DRIFT_CALCULATION**: `drift_resolver.resolve()` for stopped ships.
-- **STATUS_ADJUSTMENT**: `fouling_controller.resolve_unfouling()`, then `sail_controller.advance_changes()` (sail changes complete here).
+- **STATUS_ADJUSTMENT**: `fouling_controller.resolve_unfouling()`, then `critical_hit_controller.resolve_fixes()` (8.D.5 fix rolls for lasting crit effects; sheets cut expires), then `sail_controller.advance_changes()` (sail changes complete here).
 - **MORALE_CHECK**: `morale_controller.resolve_checks()` rolls the checks noted during the turn; failures lower crew quality or strike the ship.
 - **POST_COMBAT**: waits for the player to press End Turn (`player_end_turn(0)`); `advance_phase()` is ignored here. No timer.
 - **END_TURN**: `victory_controller.check(turn)`. A non-empty result is stored in `phase_controller.game_result`, `game_over` is emitted, and the loop stops (phase stays END_TURN, `advance_phase`/submits are refused). Otherwise flags are cleared and the next turn begins.
@@ -123,13 +123,14 @@ All except `dice` (takes the RNG) and `fire_geometry` (takes a `HexGrid`) take `
 - `gunnery_calculator` (`GunneryCalculator`): pure queries, no dice, no mutation (declaration rules delegated to the static `FireRules`) — `preview(order, two_targets)` gives a `ShotPreview` (modified gunfire number + modifier breakdown), `eligible_shots`, `any_eligible_shot`, `validate_orders`. Types in `gunnery_types.gd` (`FireOrder`, `ShotPreview`; aims `low`/`high`, ammo `round`/`dismantling`).
 - `gunnery_resolver` (`GunneryResolver`): rolls and applies a set of `FireOrder`s simultaneously, logging each shot.
 - `damage_controller` (`DamageController`): applies rigging/hull/crew boxes (lowest section first), dismounts guns on hull-section loss, notes morale checks, strikes ships.
+- `critical_hit_controller` (`CriticalHitController`): critical hits (7.D.7–12) — the gunfire crit roll (natural 6, then CH d6 + `ch_modifier` ≤ CH#), the Rigging/Hull Crit tables by aim, a FIFO queue of rigging/hull checks for emptied sections (`DamageController` queues them; `drain` chains 7.D.12), lasting effects in `ShipState.critical_effects` (read via `ShipState` helpers: `obscured_penalty`, `critical_mp_loss`, `max_turns_per_gt`, …), hull #12 explosion → DESTROYED, and `resolve_fixes` (8.D.5) in STATUS_ADJUSTMENT. Tables in `data/rules/critical_hits_table.json` and `poor_maneuvering_table.json`. Deferred: crew disorganized, the hull #10 fire roll, signal halyards (see `feature_diff.md` §2.2).
 - `sail_controller` (`SailController`): plots, progresses and cancels sail changes (`plot_sail_change`, `begin_plotted_changes`, `advance_changes`).
 - `drift_resolver` (`DriftResolver`): drift of stopped ships, collision/fouling on blocked drift.
 - `fouling_controller` (`FoulingController`): unfouling rolls for fouled pairs.
 - `morale_controller` (`MoraleController`): rolls noted morale checks, lowers crew quality, strikes at quality G.
 - `victory_controller` (`VictoryController`): `check(turn)` returns `{}` or `{winner, reason, points, turn}`; optional scenario `turn_limit`.
 - `stub_ai` (`StubAI`): drives the real plotting protocol (default strategy `engage`: close, present a broadside within `FIRING_RANGE`; a second bearing battery is worth less than two hexes of range) and submits fire orders (best modified number per broadside, a split side when no full broadside bears, at most two targets; low inside range 10).
-- `turn_log` / `turn_logs`: current and past `PhaseEvents.PhaseLog` (events: FIRE, HOLD_FIRE, DAMAGE, GUNS_DISMOUNTED, MORALE_NOTED, MORALE_CHECK, STRIKE, DRIFT, FOULED, UNFOUL, SAIL_CHANGE, VICTORY, COLLISION, STOPPED_SHORT, IN_IRONS, WIND, TURN_UNDONE; see `PhaseEvents.Type`).
+- `turn_log` / `turn_logs`: current and past `PhaseEvents.PhaseLog` (events: FIRE, HOLD_FIRE, DAMAGE, GUNS_DISMOUNTED, MORALE_NOTED, MORALE_CHECK, STRIKE, DRIFT, FOULED, UNFOUL, SAIL_CHANGE, VICTORY, COLLISION, STOPPED_SHORT, IN_IRONS, WIND, TURN_UNDONE, FIRE_STARTED, DESTROYED and the critical-hit events; see `PhaseEvents.Type`).
 
 ### Dice
 
@@ -181,13 +182,13 @@ Other rule lookups on `DataManager`: `get_speed_change(change_type, maneuverabil
 
 ### Ship Definitions (`data/rules/ships.json`)
 
-Ship ids: `frigate_38`, `frigate_32`, `ship_of_line_74` (`corvette_24` was removed — no chart row). Each has: name, nationality, rating, class (2–3), maneuverability, speed_type, draft, `freeboard`, `rigging_hp[4]`, `hull_hp[4]`, `crew_count[4]`, `marine_count`, `gun_factors` (`{"lg","mg","cr"}`: gun factors **per side**, long guns / medium / carronades), `ch_modifier` (critical-hit modifier, stored, unused until Milestone 2), `lower_deck_modifier` (stored, unused), `point_costs` (victory-point cost keyed `"<crew quality><morale rating>"`, e.g. `"B3"`). `armament` is display-only history. French-gunned ships use the second BGN value at ranges 11–15 (`Ship.is_french_gunned()`).
+Ship ids: `frigate_38`, `frigate_32`, `ship_of_line_74` (`corvette_24` was removed — no chart row). Each has: name, nationality, rating, class (2–3), maneuverability, speed_type, draft, `freeboard`, `rigging_hp[4]`, `hull_hp[4]`, `crew_count[4]`, `marine_count`, `gun_factors` (`{"lg","mg","cr"}`: gun factors **per side**, long guns / medium / carronades), `ch_modifier` (critical-hit modifier, added to the CH d6, 7.D.11), `lower_deck_modifier` (stored, unused), `point_costs` (victory-point cost keyed `"<crew quality><morale rating>"`, e.g. `"B3"`). `armament` is display-only history. French-gunned ships use the second BGN value at ranges 11–15 (`Ship.is_french_gunned()`).
 
 `ShipState` combat/turn-loop fields (all mutated only via `ShipStateController`): `status` (`ACTIVE`/`STRUCK`), `guns_dismounted[2]` and `initial_broadside_fired[2]` (per side), `sail_change` (`{}` or `{target, turns_left, sections}`), `moved_this_turn`, `pending_morale_checks` + `morale_triggers_used`, `unfoul_attempts`, `starting_crew_quality`. `crew_count` is four sailor sections, `marine_count` separate, both initialised from the ship definition; `morale_rating` is 2–6 (higher is worse) and never changes; `crew_quality` is a letter A–G and falls on failed morale checks.
 
 ### Scenarios (`data/scenarios/*.json`)
 
-Wind conditions, map config, ship placements with position (q,r), facing, sail state, crew quality/morale.
+Wind conditions, map config, ship placements with position (q,r), facing, sail state, crew quality/morale. Optional `turn_limit` and `year` (integer; ≤ 1783 gives the hull #12 explosion roll −1; absent = no year DRM). Full schema: `.claude/skills/scenario-creator/SKILL.md`.
 
 ## Conventions and Gotchas
 
@@ -213,6 +214,7 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 
 ### Ship Status
 - A STRUCK ship cannot move, fire, change sail or unfoul and is not a valid target, but it still drifts and blocks line of sight and hexes.
+- A DESTROYED ship (hull critical #12 explosion, `DamageController.destroy`) is out of play like a struck one and counts as lost for victory, but it never drifts, fouls (its partner is freed when it blows up) or takes damage; both its hexes still block movement and line of sight. `ShipState.is_out_of_play()` = struck or destroyed — use it for "cannot act / not a target / lost" checks, and `is_struck()` only where a wreck must differ (drift). `ShipView` shows a procedural wreck; the minimap icon goes grey.
 - A fouled ship (`fouled_with != ""`) cannot plot or execute movement (plotting returns `SHIP_FOULED`); it can still fire and be fired on. Dismasted and struck ships also refuse plots (`SHIP_DISMASTED`, `SHIP_STRUCK`).
 - A `ShipState` whose `rigging_current_hp` is all zeros is **dismasted** (level 0, movement allowance 0). Test fixtures must set rigging explicitly.
 
@@ -248,7 +250,7 @@ Run the `scv-reviewer` agent as a **final step** before reporting any planned wo
 ### Known Limitations
 - Moves ahead are not limited to the map bounds (a bow may be plotted off the map), but a turn whose stern would leave the map is refused; drift treats the map edge as blocked.
 - The stub AI stalls instead of tacking when the wind blows straight against its approach.
-- Not implemented (Milestone 2): critical hits (CH# is stored only), fire, sinking, boarding, marine fire, repairs, grappling, manual crew tasks. Milestone 3 items (anchoring, lower-deck guns, chase guns, medium guns, class 4 ships) are also absent.
+- Not implemented (Milestone 2): fire (hull #12 counts `fires` and rolls the explosion only), sinking, boarding, marine fire, repairs, grappling, manual crew tasks. Milestone 3 items (anchoring, lower-deck guns, chase guns, medium guns, class 4 ships) are also absent.
 
 ### Developer UI
 - Press **F12** in-game to toggle the debug inspection panel

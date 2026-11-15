@@ -154,6 +154,16 @@ func test_struck_ship_clears_pending_without_rolling() -> void:
 	assert_eq(ship.crew_quality, "D")
 
 
+func test_destroyed_ship_clears_pending_without_rolling() -> void:
+	var ship := _make_ship("a", "D", 4, 2)
+	ship.status = ShipState.Status.DESTROYED
+	_dice.queue([0, 0])
+	controller.resolve_checks(PHASE)
+	assert_eq(_dice.remaining(), 2)
+	assert_eq(ship.pending_morale_checks, 0)
+	assert_eq(ship.crew_quality, "D")
+
+
 func test_ships_roll_in_ship_id_order() -> void:
 	var b := _make_ship("b", "D", 4, 1, 1)
 	var a := _make_ship("a", "D", 4, 1, 0)

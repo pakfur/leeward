@@ -218,12 +218,19 @@ func _create_ship_icon(ship_id: String) -> void:
 	icon.texture = ImageTexture.create_from_image(img)
 
 	# Owner colour, shared with the main-map ring/pennant (green = player, red = enemy)
-	icon.modulate = ShipView.owner_color(ship.player_id)
+	icon.modulate = icon_color(ship)
 
 	ship_layer.add_child(icon)
 	ship_icons[ship_id] = icon
 
 	Trace.trace_log("MiniMap", "Created icon for ship %s" % ship_id)
+
+## Grey for a destroyed ship (the wreck), else the owner colour.
+const DESTROYED_ICON_COLOR := Color(0.45, 0.45, 0.45)
+
+static func icon_color(ship: ShipState) -> Color:
+	return DESTROYED_ICON_COLOR if ship.is_destroyed() else ShipView.owner_color(ship.player_id)
+
 
 ## Where a ship's icon goes in world space: the centre of its two hexes (bow and stern), as on the
 ## main map.
@@ -239,6 +246,7 @@ func _update_ship_positions() -> void:
 			continue
 
 		var icon = ship_icons[ship_id]
+		icon.modulate = icon_color(ship)
 
 		# Same hex -> world mapping as the main map (pointy-top axial; x east, z south),
 		# and the minimap draws +X right and +Z down, i.e. north up like the main camera.

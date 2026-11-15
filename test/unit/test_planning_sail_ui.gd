@@ -99,6 +99,16 @@ func test_struck_ship_has_no_sail_control() -> void:
 	assert_eq(row["buttons"].size(), 0)
 
 
+func test_destroyed_ship_has_no_sail_control_and_cannot_plot() -> void:
+	var state := _ship("MS")
+	state.status = ShipState.Status.DESTROYED
+	var row := PlanningSailUi.sail_row(state, ["FS"], {"FS": {"turns": 1, "sections": 1}})
+	assert_eq(row["mode"], PlanningSailUi.Mode.NONE)
+	assert_eq(PlanningSailUi.status_badge(state), "DESTROYED")
+	assert_false(PlanningSailUi.can_plot_movement(state))
+	assert_eq(PlanningSailUi.movement_block_reason(state), "Ship has been destroyed.")
+
+
 func test_no_targets_means_no_control() -> void:
 	var row := PlanningSailUi.sail_row(_ship("NS"), [], {})
 	assert_eq(row["mode"], PlanningSailUi.Mode.NONE)

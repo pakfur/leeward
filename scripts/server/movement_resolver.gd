@@ -18,6 +18,9 @@ var game_state: Node = null
 var hex_grid: HexGrid = null
 var _explicit_rng: RandomNumberGenerator = null
 var _plot_validator: MovementValidator = null  # the turning rules for bearing off (see _validator)
+## ship_id -> true for poor-maneuvering ships whose turn at MA 0 failed its Poor Maneuvering roll
+## this run (6.F.5): the turn fails even if the Tacking roll passes. Set by run().
+var _steering_failed_tacks: Dictionary = {}
 
 
 ## One resolution pass (see run()): every ship's steps, pose and progress, and the overlap bookkeeping
@@ -138,9 +141,21 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 	var ship_map: Dictionary = {}
 	var plotted: Dictionary = {}
 	var step_bound: int = 0
+	# Poor maneuvering (6.F.3-5) is rolled first, for each turn of each poor-maneuvering ship in ship
+	# order, before the passes: a failed roll changes the plot itself (one hex ahead, then the turn, the
+	# last MP dropped), so every pass and every rollback starts from that plot, and the replays from
+	# rng_start never roll it again. A roll is logged only if the ship reaches that segment.
+	var steering: Dictionary = {}  # ship_id -> _roll_poor_maneuvering result
+	_steering_failed_tacks = {}
 	for ship_state in ships:
 		ship_map[ship_state.ship_id] = ship_state
 		plotted[ship_state.ship_id] = _get_plotted_steps(ship_state)
+		if ship_state.is_poor_maneuvering():
+			var pm: Dictionary = _roll_poor_maneuvering(ship_state, plotted[ship_state.ship_id])
+			steering[ship_state.ship_id] = pm
+			plotted[ship_state.ship_id] = pm.steps
+			if pm.tack_failed:
+				_steering_failed_tacks[ship_state.ship_id] = true
 		# An amended plot is never longer than the plot or the deceleration minimum.
 		step_bound += maxi(plotted[ship_state.ship_id].size(), _deceleration_minimum(ship_state))
 	var pass_limit: int = (step_bound + 1) * (step_bound + 1)
@@ -204,6 +219,8 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 		log.max_impulses = maxi(log.max_impulses, rollbacks[sid].segment + 2)
 	for contest in undone_contests:
 		_record_undone_contest(results, contest)
+	for sid in steering:
+		_record_steering(ship_map[sid], results[sid], steering[sid], amended.get(sid, plotted[sid]), amended.has(sid))
 	for sid in results:
 		log.add_result(results[sid])
 
@@ -336,6 +353,16 @@ func _resolve_impulse(p: ResolutionPass, impulse: int, ships: Array[ShipState]) 
 		if tacking_impulse >= 0 and impulse == tacking_impulse:
 			var result: MovementTypes.ShipResolutionResult = p.results[sid]
 			var tack_success: bool = _roll_tacking(ship_state, p.environment, result, impulse)
+			if tack_success and _steering_failed_tacks.has(sid):
+				# 6.F.5: a poor-maneuvering ship at MA 0 turns only if both rolls succeed.
+				tack_success = false
+				var imm_ev = MovementTypes.ResolutionEvent.new(sid, impulse,
+					MovementTypes.ResolutionEventType.IMMOBILIZED)
+				imm_ev.from_hex = p.current_hexes[sid]
+				imm_ev.to_hex = p.current_hexes[sid]
+				imm_ev.facing = ship_state.facing
+				imm_ev.detail = "poor maneuvering failed"
+				result.events.append(imm_ev)
 			if not tack_success:
 				# The plotted turn is erased (5.D.1): the ship keeps its hex and heading.
 				result.final_hex = p.current_hexes[sid]
@@ -744,8 +771,8 @@ func _amended_steps(ship_state: ShipState, steps: Array, rollback: Dictionary) -
 func _deceleration_minimum(ship_state: ShipState, facing: int = -1) -> int:
 	if game_state.ship_controller.get_movement_allowance(ship_state.ship_id, facing) == 0:
 		return 0
-	var maneuverability: String = ship_state.ship.maneuverability if ship_state.ship else "b"
-	return maxi(ship_state.speed - DataManager.get_speed_change("deceleration", maneuverability), 0)
+	var decel: int = game_state.ship_controller.speed_change_limits(ship_state).decel
+	return maxi(ship_state.speed - decel, 0)
 
 
 ## True when the ship executed every step before `segment` in the final pass, so it stood in the
@@ -1244,6 +1271,8 @@ static func collision_rigging_loss(sail_state: String, d6_a: int, d6_b: int) -> 
 
 ## Rolls the collision rigging loss with the resolver's own RNG (only the dice the sail state needs).
 func _roll_collision_rigging_loss(ship_state: ShipState) -> int:
+	if ship_state.is_destroyed():
+		return 0  # a wreck takes no damage
 	var sail: String = ship_state.sail_state.to_upper()
 	if not sail in ["FS", "MS", "PS"]:
 		return 0
@@ -1271,6 +1300,8 @@ func _runs_into(p: ResolutionPass, seg: Segment, sid: String, other_id: String) 
 ## keeping movement resolution self-contained and deterministic.
 ## Drifting: the die comes from game_state.dice and the drifting ship takes a further -1.
 func roll_fouling(ship_a: ShipState, ship_b: ShipState, drifting: bool = false) -> bool:
+	if ship_a.is_destroyed() or ship_b.is_destroyed():
+		return false  # a wreck never fouls (no die drawn)
 	if _is_dismasted(ship_a) or _is_dismasted(ship_b):
 		return false
 	var modifier: int = _fouling_sail_modifier(ship_a) + _fouling_sail_modifier(ship_b)
@@ -1415,8 +1446,7 @@ func _tack_succeeds(d10: int, drm: int, number: int) -> bool:
 
 
 ## Tacking DRMs from the chart (5.D.2, 5.D.6). Leeward has no crew-task plotting, so every ship
-## counts as having its crew sections plotted to "T" (no +2s). Reversing tack and rudder damage do
-## not exist yet.
+## counts as having its crew sections plotted to "T" (no +2s). Reversing tack does not exist yet.
 func _calculate_tacking_drm(ship_state: ShipState) -> int:
 	var drm: int = DataManager.combat_tables.skill_modifier(ship_state.crew_quality)
 
@@ -1437,21 +1467,161 @@ func _calculate_tacking_drm(ship_state: ShipState) -> int:
 	if ship_state.towing:
 		drm += 1
 
+	if ship_state.rudder_destroyed:
+		drm += 3  # Rudder Destroyed (hull #2)
+
 	return drm
 
 
 ## Bearing Off DRMs (6.D.2): MPs plotted this g-t 4-6 = +1, 7+ = +2. `mps` is the steps the pass
 ## resolves (the plot as amended after a rollback, 6.B.4: "change all ship logs to reflect the actual
-## moves"); -1 counts the ship's plot. Rudder damage and poor maneuvering need critical hits, which do
-## not exist yet.
+## moves"); -1 counts the ship's plot. Rudder Destroyed or Jammed +3, Poor Maneuvering +1 (so a
+## destroyed rudder is +4, spec Q9).
 func _bearing_off_drm(ship_state: ShipState, mps: int = -1) -> int:
 	if mps < 0:
 		mps = _get_plotted_steps(ship_state).size()
+	var drm := 0
 	if mps >= 7:
-		return 2
-	if mps >= 4:
-		return 1
-	return 0
+		drm = 2
+	elif mps >= 4:
+		drm = 1
+	if ship_state.rudder_destroyed or ship_state.rudder_jam_direction() != ShipState.RUDDER_NOT_JAMMED:
+		drm += 3
+	if ship_state.is_poor_maneuvering():
+		drm += 1
+	return drm
+
+
+## ============================================================================
+## Poor maneuvering (6.F)
+## ============================================================================
+
+## The Poor Maneuvering roll for each plotted turn (6.F.3): d10 (0-9) <= the chart number (crew
+## quality x maneuver type) turns as plotted. A failure moves one hex ahead first and drops the last
+## MP plotted; with the rudder destroyed (hull #2) the ship rolls again at each further hex until it
+## succeeds, with the wheel shot away (hull #3) it turns after the one hex. A failed turn pushed off
+## the end of the plot carries over to the next g-t's first MP (6.F.4), which turns without a roll, as
+## does a turn left over from the last g-t (ShipState.pending_turn). A turn at MA 0 also rolls here,
+## and must pass both this and the Tacking roll (6.F.5); it never moves ahead.
+## Rolls from the resolver's `rng`. Returns {steps, events: [POOR_MANEUVERING_ROLL], carried: the
+## turn carried to the next g-t (-1 none), tack_rolled, tack_failed}.
+func _roll_poor_maneuvering(ship_state: ShipState, steps: Array) -> Dictionary:
+	var out := {"steps": steps, "events": [], "carried": -1, "tack_rolled": false, "tack_failed": false}
+	if steps.is_empty():
+		return out
+	var turns: Array = _step_turns(ship_state, steps)  # -1 ahead, PORT or STARBOARD per step
+	var pending: int = ship_state.pending_turn
+	if _find_tacking_impulse(ship_state, steps) == 0:
+		if pending >= 0 and turns[0] == pending:
+			return out  # the turn left over from last g-t needs no roll (6.F.5)
+		out.tack_rolled = true
+		out.tack_failed = not _roll_steering(ship_state, 0, out.events, "turn at MA 0")
+		return out
+	var plotted_count: int = turns.size()
+	var changed := false
+	var i := 0
+	while i < turns.size():
+		var turn: int = turns[i]
+		if turn < 0 or (i == 0 and turn == pending):
+			i += 1
+			continue
+		var carried: bool = i + 1 >= plotted_count
+		if _roll_steering(ship_state, i, out.events, "carried over" if carried else "one hex ahead"):
+			i += 1
+			continue
+		turns.insert(i, -1)
+		turns.resize(plotted_count)
+		changed = true
+		if carried:
+			out.carried = turn
+			break
+		# The turn now follows the extra hex: a destroyed rudder rolls for it again there.
+		i += 1 if ship_state.rudder_destroyed else 2
+	if changed:
+		out.steps = _steps_from_turns(ship_state, turns)
+	return out
+
+
+## One Poor Maneuvering roll for the turn on `segment`; logs it in `events` and returns success.
+## `on_fail` tells what a failure does ("one hex ahead", "carried over", "turn at MA 0").
+func _roll_steering(ship_state: ShipState, segment: int, events: Array, on_fail: String) -> bool:
+	var number: int = poor_maneuvering_number(ship_state)
+	var d10: int = rng.randi_range(0, 9)
+	var ev = MovementTypes.ResolutionEvent.new(ship_state.ship_id, segment,
+		MovementTypes.ResolutionEventType.POOR_MANEUVERING_ROLL)
+	ev.roll = float(d10)
+	ev.threshold = float(number)
+	ev.success = d10 <= number
+	ev.detail = "" if ev.success else on_fail
+	events.append(ev)
+	return ev.success
+
+
+func poor_maneuvering_number(ship_state: ShipState) -> int:
+	var maneuverability: String = ship_state.ship.maneuverability if ship_state.ship else "b"
+	return DataManager.combat_tables.poor_maneuvering_number(ship_state.crew_quality, maneuverability)
+
+
+## Chance (0.0-1.0) that a poor-maneuvering ship's plotted turn succeeds on its roll (6.F.3); 1.0
+## for a ship that is not poor maneuvering. Pure query, used by the planning screen.
+func poor_maneuvering_chance(ship_state: ShipState) -> float:
+	if not ship_state.is_poor_maneuvering():
+		return 1.0
+	return clampf((poor_maneuvering_number(ship_state) + 1) / 10.0, 0.0, 1.0)
+
+
+## Per step of a plot: -1 for a step ahead, else the side it turns to (PORT or STARBOARD).
+func _step_turns(ship_state: ShipState, steps: Array) -> Array:
+	var turns: Array = []
+	var facing: int = ship_state.facing
+	for step in steps:
+		var step_facing: int = int(step.get("facing", facing))
+		if step_facing == facing:
+			turns.append(-1)
+		else:
+			turns.append(ShipState.PORT if step_facing == (facing + 5) % 6 else ShipState.STARBOARD)
+		facing = step_facing
+	return turns
+
+
+## The plot steps (bow hex and facing after each) for a list of -1 / PORT / STARBOARD.
+func _steps_from_turns(ship_state: ShipState, turns: Array) -> Array:
+	var steps: Array = []
+	var bow: Vector2i = ship_state.hex_position
+	var facing: int = ship_state.facing
+	for turn in turns:
+		if turn < 0:
+			bow += HexGrid.DIRECTIONS[facing]
+		else:
+			facing = (facing + 5) % 6 if turn == ShipState.PORT else (facing + 1) % 6
+		steps.append({"hex": {"q": bow.x, "r": bow.y}, "facing": facing})
+	return steps
+
+
+## Put a ship's Poor Maneuvering rolls into its final result, each only if the ship reached that
+## segment, and set the turn it carries to the next g-t (6.F.4-5): a turn pushed off the end of a plot
+## the ship sailed in full, or a turn at MA 0 that failed after a roll; a ship whose left-over turn at
+## MA 0 then fails its Tacking roll starts again (6.F.5 "reset").
+func _record_steering(ship_state: ShipState, result: MovementTypes.ShipResolutionResult, pm: Dictionary,
+		steps: Array, amended: bool) -> void:
+	for ev in pm.events:
+		if not _reached_segment(result, ev.impulse):
+			continue
+		var bow: Vector2i = ship_state.hex_position
+		var facing: int = ship_state.facing
+		for move in result.events:
+			if move.event_type == MovementTypes.ResolutionEventType.MOVE and move.impulse < ev.impulse:
+				bow = move.to_hex
+				facing = move.facing
+		ev.from_hex = bow
+		ev.to_hex = bow
+		ev.facing = facing
+		_insert_at_segment_start(result, ev.impulse, [ev])
+	if pm.tack_rolled:
+		var failed: bool = pm.tack_failed or result.tacking_failed
+		result.pending_turn = _step_turns(ship_state, pm.steps)[0] if failed else -1
+	elif pm.carried >= 0 and not amended and _reached_segment(result, steps.size()):
+		result.pending_turn = pm.carried
 
 
 ## ============================================================================
@@ -1478,8 +1648,9 @@ func _mps_plotted(ship_state: ShipState, steps_by_ship: Dictionary) -> int:
 
 
 func _get_plotted_steps(ship_state: ShipState) -> Array:
-	## Fouled and struck ships cannot move: any plot is ignored (defence behind the plotting check).
-	if ship_state.fouled_with != "" or ship_state.is_struck():
+	## Fouled, struck and destroyed ships cannot move: any plot is ignored (defence behind the
+	## plotting check).
+	if ship_state.fouled_with != "" or ship_state.is_out_of_play():
 		return []
 	return ship_state.plotted_actions.get("movement", [])
 
@@ -1515,12 +1686,19 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			# 5.E.2: speed is the MPs used (turns included) once the ship has moved ahead; a ship that
 			# only turns, or does not move, is stopped.
 			var moved_ahead: bool = _count_hexes_moved(result) > 0
+			var rudder_irons: bool = _rudder_irons(ship_state, result)
+			var last_step: int = _last_step_direction(result)
+			if last_step != NO_STEP:
+				sc.set_last_step_direction(sid, last_step)
+			if ship_state.pending_turn != result.pending_turn:
+				sc.set_pending_turn(sid, result.pending_turn)
 			sc.set_moved_this_turn(sid, moved_ahead)
 			sc.set_ship_position(sid, result.final_hex)
 			sc.set_ship_facing(sid, result.final_facing)
 			if result.immobilized:
 				sc.set_immobilized(sid, true)
-			sc.set_ship_speed(sid, _count_steps_executed(result) if moved_ahead else 0)
+			# A ship with its rudder destroyed that enters WF=L is in irons at once (hull #2): stopped.
+			sc.set_ship_speed(sid, _count_steps_executed(result) if moved_ahead and not rudder_irons else 0)
 			if result.collided_with != "":
 				sc.set_collision_this_turn(sid, true)
 			if result.fouled_with != "":
@@ -1530,6 +1708,31 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			sc.clear_plotted_actions(sid)
 		else:
 			push_error("MovementResolver: No ship_controller available")
+
+## _last_step_direction when the ship executed no step.
+const NO_STEP := -2
+
+## The direction of the ship's last executed step (-1 ahead, PORT, STARBOARD), NO_STEP if none.
+func _last_step_direction(result: MovementTypes.ShipResolutionResult) -> int:
+	var direction: int = NO_STEP
+	for ev in result.events:
+		if ev.event_type != MovementTypes.ResolutionEventType.MOVE:
+			continue
+		if ev.facing == ev.from_facing:
+			direction = -1
+		else:
+			direction = ShipState.PORT if ev.facing == (ev.from_facing + 5) % 6 else ShipState.STARBOARD
+	return direction
+
+
+## Hull #2: a ship whose rudder is destroyed and which turned into WF=L this g-t is in irons.
+## Call before the ship's facing is updated.
+func _rudder_irons(ship_state: ShipState, result: MovementTypes.ShipResolutionResult) -> bool:
+	if not ship_state.rudder_destroyed or result.final_facing == ship_state.facing:
+		return false
+	var wind_dir: int = game_state.environment.wind_direction if game_state and game_state.environment else 0
+	return hex_grid.get_wind_facing(result.final_facing, wind_dir) == "L"
+
 
 func _apply_rigging_damage(ship_id: String, damage: int, sc: ShipStateController) -> void:
 	## Collision rigging loss follows the damage rules (dismasting sets NS and notes a morale
@@ -1586,6 +1789,12 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 			turn_log.add(PhaseEvents.Type.IN_IRONS, phase, sid, {"cause": "tack"})
 		elif result.immobilized:
 			turn_log.add(PhaseEvents.Type.IN_IRONS, phase, sid, {"cause": "irons"})
+		elif _rudder_irons(ship_state, result):
+			turn_log.add(PhaseEvents.Type.IN_IRONS, phase, sid, {"cause": "rudder"})
+		for ev in result.events:
+			if ev.event_type == MovementTypes.ResolutionEventType.POOR_MANEUVERING_ROLL:
+				turn_log.add(PhaseEvents.Type.POOR_MANEUVERING, phase, sid, {"roll": int(ev.roll),
+					"needed": int(ev.threshold), "success": ev.success, "outcome": ev.detail})
 		for ev in result.events:
 			if ev.event_type == MovementTypes.ResolutionEventType.BEARING_OFF_ROLL:
 				turn_log.add(PhaseEvents.Type.BEAR_OFF, phase, sid, {"choice": ev.detail.get_slice(" ", 0),

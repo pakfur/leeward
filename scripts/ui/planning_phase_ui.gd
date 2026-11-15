@@ -27,6 +27,7 @@ const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
 @onready var submit_button: Button = %SubmitButton
 @onready var cancel_button: Button = %CancelButton
 @onready var tacking_label: Label = %TackingLabel
+@onready var steering_label: Label = %SteeringLabel
 @onready var ma_limit_label: Label = %MALimitLabel
 @onready var collision_label: Label = %CollisionLabel
 @onready var allowance_note_label: Label = %AllowanceNoteLabel
@@ -271,6 +272,7 @@ func hide_plotting_controls() -> void:
 	set_allowance_note("")
 	if tacking_label:
 		tacking_label.visible = false
+	update_steering_state("")
 	set_collision_warning("")
 
 func update_plotting_state(plotted_path_arr: Array, remaining_ma_val: int, can_submit_val: bool) -> void:
@@ -298,6 +300,13 @@ func update_tacking_state(is_tacking: bool, probability: float) -> void:
 	if is_tacking:
 		var pct = int(probability * 100.0)
 		tacking_label.text = "Tacking: %d%% success" % pct
+
+## Steering damage note (PlanningText.steering_note); "" hides it.
+func update_steering_state(text: String) -> void:
+	if not steering_label:
+		return
+	steering_label.text = text
+	steering_label.visible = text != ""
 
 func mark_ship_submitted(ship_id: String) -> void:
 	submitted_ships[ship_id] = true

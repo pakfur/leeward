@@ -862,11 +862,12 @@ func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_va
 		var speed_last_turn: int = ship_state.speed if ship_state else 0
 		var accel := 0
 		if ship_state and ship_state.ship:
-			accel = DataManager.get_speed_change("acceleration", ship_state.ship.maneuverability.to_lower())
+			accel = GameState.ship_controller.get_speed_change_limits(ship_id).accel  # read-only  SCV:ALLOW
 		var can_submit_val: bool = movement_client.can_submit if movement_client else false
 		current_planning_ui.show_plotting_controls(ship_id, remaining_ma_val, table_ma, speed_last_turn, accel,
 			can_submit_val)
 		_update_tacking_display(is_tacking)
+		_update_steering_display()
 	_rebuild_hover_candidates(vnh)
 	_show_collision_warning(_last_hover_hex)
 
@@ -903,6 +904,7 @@ func _show_plot_step(plotted_path: Array, vnh: MovementTypes.ValidNextHexes, can
 		current_planning_ui.set_allowance_note(PlanningText.plot_note(
 			_track_allowance_change(plotted_path, remaining_ma_val), _plotted_heading_code(plotted_path)))
 		_update_tacking_display(is_tacking)
+		_update_steering_display()
 	_rebuild_hover_candidates(vnh)
 	_show_collision_warning(_last_hover_hex)
 
@@ -1084,6 +1086,21 @@ func _update_tacking_display(is_tacking: bool) -> void:
 		ship_state.ship_id, probability * 100.0
 	])
 	current_planning_ui.update_tacking_state(true, probability)
+
+
+## Steering damage (hull #2, #3; 6.F): the Poor Maneuvering chance for a turn, a turn left over from
+## last g-t, or the direction a jammed rudder holds. Hidden for a ship with sound steering.
+func _update_steering_display() -> void:
+	if not current_planning_ui or not movement_client:
+		return
+	var ship_state = GameState.get_ship(movement_client.active_ship_id)
+	if not ship_state or not ship_state.ship:
+		current_planning_ui.update_steering_state("")
+		return
+	# Read-only query: the Poor Maneuvering chart, as the resolver will roll it  SCV:ALLOW
+	var chance: float = GameState.movement_resolver.poor_maneuvering_chance(ship_state)
+	current_planning_ui.update_steering_state(PlanningText.steering_note(ship_state.is_poor_maneuvering(),
+		chance, ship_state.pending_turn, ship_state.rudder_jam_direction(), ship_state.rudder_destroyed))
 
 
 ## Hexes to mark as blocked around the plotting ship: the forward / port / starboard neighbours the

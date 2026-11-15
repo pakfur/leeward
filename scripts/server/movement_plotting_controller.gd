@@ -58,6 +58,8 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 	# Fouled, struck and dismasted ships cannot plot movement
 	if ship_state.fouled_with != "":
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_FOULED", "Ship %s is fouled with %s and cannot move" % [ship_id, ship_state.fouled_with])
+	if ship_state.is_destroyed():
+		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_DESTROYED", "Ship %s has been destroyed and cannot move" % ship_id)
 	if ship_state.is_struck():
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_STRUCK", "Ship %s has struck its colours and cannot move" % ship_id)
 	if ship_state.is_dismasted():

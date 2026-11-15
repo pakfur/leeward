@@ -40,6 +40,7 @@ const NO_SHOT_RANGE := "out of range"
 const NO_SHOT_LOS := "line of sight blocked"
 const NO_SHOT_CREW := "no crew to serve the guns"
 const NO_SHOT_STRUCK := "struck"
+const NO_SHOT_DESTROYED := "destroyed"
 const NO_SHOT_NO_ENEMY := "no enemy afloat"
 
 @onready var ship_list_container: VBoxContainer = %ShipListContainer
@@ -338,6 +339,8 @@ static func no_shot_reason(reasons: Array) -> String:
 			break
 	if chosen == "":
 		return NO_SHOT_ARC
+	if chosen.contains("destroyed"):
+		return NO_SHOT_DESTROYED
 	if chosen.contains("struck"):
 		return NO_SHOT_STRUCK
 	if chosen.contains("line of sight"):
@@ -364,7 +367,7 @@ static func nearest_enemy(ship: ShipState, all_ships: Array, grid: HexGrid) -> S
 		return null
 	var geometry := FireGeometry.new(grid)
 	for other: ShipState in all_ships:
-		if other.player_id == ship.player_id or other.is_struck():
+		if other.player_id == ship.player_id or other.is_out_of_play():
 			continue
 		var d := geometry.range_between(ship.occupied_hexes(), other.occupied_hexes())
 		if d < best or (d == best and other.ship_id < nearest.ship_id):
@@ -377,6 +380,8 @@ static func nearest_enemy(ship: ShipState, all_ships: Array, grid: HexGrid) -> S
 ## broadsides against its nearest enemy, mapped by no_shot_reason(). `calculator` is a
 ## GunneryCalculator (anything with preview(order)).
 static func ship_no_shot_reason(ship: ShipState, all_ships: Array, calculator, grid: HexGrid) -> String:
+	if ship.is_destroyed():
+		return NO_SHOT_DESTROYED
 	if ship.is_struck():
 		return NO_SHOT_STRUCK
 	var reasons: Array = []

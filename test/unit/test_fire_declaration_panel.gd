@@ -242,6 +242,17 @@ func test_ship_no_shot_reason_for_struck_ships_and_no_enemy() -> void:
 	assert_eq(FirePanel.ship_no_shot_reason(own, [own], calc, grid), "struck")
 
 
+func test_destroyed_ship_has_no_shot_and_is_no_enemy() -> void:
+	var own := _state("o", "HMS Phoebe", 0, Vector2i(0, 0))
+	var wreck := _state("w", "Wreck", 1, Vector2i(3, 0))
+	var grid := HexGrid.new(1.0)
+	wreck.status = ShipState.Status.DESTROYED
+	assert_null(FirePanel.nearest_enemy(own, [own, wreck], grid), "a wreck is not an enemy afloat")
+	own.status = ShipState.Status.DESTROYED
+	assert_eq(FirePanel.ship_no_shot_reason(own, [own], FakeCalculator.new(), grid), "destroyed")
+	assert_eq(FirePanel.no_shot_reason(["a destroyed ship cannot fire or be fired on"]), "destroyed")
+
+
 func test_more_below_hint_only_while_content_is_hidden_below() -> void:
 	assert_true(FirePanel.more_below(0, 300, 800))
 	assert_true(FirePanel.more_below(400, 300, 800))

@@ -144,9 +144,9 @@ static func playback_events(turn_log: PhaseEvents.PhaseLog) -> Array[PhaseEvents
 	return result
 
 
-## Damage and strikes change what ships look like, so the views are re-synced after them.
+## Damage, strikes and explosions change what ships look like, so the views are re-synced after them.
 static func syncs_views(event: PhaseEvents.PhaseEvent) -> bool:
-	return event.type == PhaseEvents.Type.DAMAGE or event.type == PhaseEvents.Type.STRIKE
+	return event.type in [PhaseEvents.Type.DAMAGE, PhaseEvents.Type.STRIKE, PhaseEvents.Type.DESTROYED]
 
 
 ## ship_id -> "<name> (yours)" / "<name> (enemy)". The suffix is always added so ships that

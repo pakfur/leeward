@@ -262,3 +262,13 @@ func test_suppressing_hides_every_status_and_keeps_the_pin() -> void:
 func test_motion_line_gives_speed_and_point_of_sail() -> void:
 	assert_eq(ShipStatusBars.motion_text(2, "Broad Reach"), "2 · Broad Reach")
 	assert_eq(ShipStatusBars.motion_text(0, ""), "0", "no wind known: speed alone")
+
+
+func test_last_line_shows_destroyed_or_struck_instead_of_speed() -> void:
+	var s := ShipState.new()
+	s.speed = 2
+	assert_eq(ShipStatusBars.last_line(s, "Reach"), ["Speed", "2 · Reach"] as Array[String])
+	s.status = ShipState.Status.STRUCK
+	assert_eq(ShipStatusBars.last_line(s, "Reach"), ["Status", "Struck"] as Array[String])
+	s.status = ShipState.Status.DESTROYED
+	assert_eq(ShipStatusBars.last_line(s, "Reach"), ["Status", "Destroyed"] as Array[String])

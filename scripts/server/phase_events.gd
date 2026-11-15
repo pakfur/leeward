@@ -12,6 +12,13 @@ enum Type {
 	COLLISION, STOPPED_SHORT, IN_IRONS, WIND,
 	TURN_UNDONE,  # a plotted turn rolled back or lost to a stern contest; the ship sailed on ahead instead
 	BEAR_OFF,  # a potential collision (6.D): {choice: port/starboard/collide, success, roll, needed, drm}
+	CRITICAL_ROLL,  # 7.D.11 after a natural 6: {d6, ch_mod, ch_number, hit}
+	CRITICAL_HIT,  # a critical hit or Rigging/Hull Check result (see CriticalHitController)
+	CRITICAL_FIXED,  # 8.D.5 fix roll: {result_id, side, roll, modifier, needed, attempt, success}
+	CRITICAL_ENDED,  # a lasting critical effect ended without a roll: {result_id, side, reason}
+	POOR_MANEUVERING,  # 6.F.3 roll for a plotted turn: {roll, needed, success, outcome}
+	FIRE_STARTED,  # a ship is afire (hull #12; fire is not simulated): {fires, result_id}
+	DESTROYED,  # the ship blew up (hull #12) and is out of play: {reason}; target_id: freed fouling partner
 }
 
 const MODIFIER_LABELS := {
@@ -25,6 +32,7 @@ const MODIFIER_LABELS := {
 	"dismantling_shot": "dismantling shot",
 	"wind_speed_4": "wind speed 4",
 	"dismasted": "dismasted",
+	"broadside_obscured": "broadside obscured",
 }
 
 const SIDE_NAMES := ["port", "starboard"]
@@ -42,12 +50,61 @@ const SAIL_CANCEL_REASONS := {
 	"crew lost": "the crew working the sails were lost",
 	"struck": "the ship has struck",
 	"dismasted": "the ship is dismasted",
+	"lines jammed": "the lines are jammed",
+	"destroyed": "the ship has been destroyed",
 }
 
 const STRIKE_REASONS := {
 	"hull destroyed": "hull destroyed",
 	"no crew": "no crew left",
 	"morale": "the crew's morale broke",
+	"waterline": "not enough crew to man the pumps",
+}
+
+## Critical-hit result ids (critical_hits_table.json) in plain words.
+const CRITICAL_RESULT_NAMES := {
+	"mast_may_fall": "mast may fall",
+	"signal_halyards_cut": "signal halyards cut",
+	"braces_cut": "braces cut",
+	"lines_jammed": "lines jammed",
+	"broadside_obscured": "broadside obscured",
+	"sheets_cut": "sheets cut",
+	"leadership_casualties": "leadership casualties",
+	"shrouds_severed": "shrouds severed",
+	"yard_shot_away": "yard shot away",
+	"stays_cut": "stays cut",
+	"mast_falls_on_deck": "mast falls on deck",
+	"rudder": "rudder hit",
+	"wheel_shot_away": "wheel shot away",
+	"crew_disorganized": "crew disorganized",
+	"hull_structural_damage": "hull structural damage",
+	"rigging_damage": "rigging damage",
+	"guns_dismounted": "guns dismounted",
+	"minor_explosion": "minor explosion",
+	"waterline_damage": "waterline damage",
+	"afire_major_explosion": "afire, major explosion",
+}
+
+const CRITICAL_NOTES := {
+	"not_simulated": "not yet simulated",
+	"fire_not_simulated": "fire roll not yet simulated",
+	"not_implemented": "not yet implemented",
+	"sinking_not_simulated": "sinking not yet simulated",
+}
+
+## CRITICAL_FIXED: what the crew fixes, per fixable effect id (broadside_obscured adds the side).
+const CRITICAL_FIX_OBJECTS := {
+	"broadside_obscured": "broadside obscured",
+	"braces_cut": "the cut braces",
+	"lines_jammed": "the jammed lines",
+	"rudder_jammed": "the jammed rudder",
+	"signal_halyards_cut": "the cut signal halyards",
+}
+
+## CRITICAL_ENDED reasons
+const CRITICAL_END_REASONS := {
+	"expired": "repaired",
+	"dismasted": "cleared (the ship is dismasted)",
 }
 
 const VICTORY_REASONS := {
@@ -116,6 +173,8 @@ static func morale_trigger_text(trigger: String) -> String:
 		return "raked while dismasted"
 	if trigger == "crew_4":
 		return "all marines lost"
+	if trigger.begins_with("crit_"):
+		return "critical hit"
 	if trigger.begins_with("hull_") and trigger.substr(5).is_valid_int():
 		return "%s hull section lost" % _ordinal(int(trigger.substr(5)) - 1)
 	if trigger.begins_with("crew_") and trigger.substr(5).is_valid_int():
@@ -166,14 +225,36 @@ class PhaseEvent extends RefCounted:
 				return _damage_text(who)
 			Type.GUNS_DISMOUNTED:
 				var guns := int(data.get("amount", 0))
-				return "%s has %s dismounted on each broadside" % [
-					who, PhaseEvents.plural(guns, "gun") if data.has("amount") else "guns"]
+				var side_idx := int(data.get("side", -1))
+				var where := "each broadside"
+				if side_idx >= 0 and side_idx < PhaseEvents.SIDE_NAMES.size():
+					where = "the %s broadside" % PhaseEvents.SIDE_NAMES[side_idx]
+				return "%s has %s dismounted on %s" % [
+					who, PhaseEvents.plural(guns, "gun") if data.has("amount") else "guns", where]
+			Type.CRITICAL_ROLL:
+				return _critical_roll_text(who)
+			Type.CRITICAL_HIT:
+				return _critical_hit_text(who)
+			Type.CRITICAL_FIXED:
+				return _critical_fixed_text(who)
+			Type.CRITICAL_ENDED:
+				var id := str(data.get("result_id", ""))
+				var reason := str(data.get("reason", "expired"))
+				return "%s: %s %s" % [who, PhaseEvents.CRITICAL_RESULT_NAMES.get(id, id.replace("_", " ")),
+					PhaseEvents.CRITICAL_END_REASONS.get(reason, "ended (%s)" % reason)]
 			Type.MORALE_NOTED:
 				var times := "" if int(data.get("count", 1)) <= 1 else " %s" % PhaseEvents.times_text(int(data["count"]))
 				return "%s must check morale%s (%s)" % [who, times,
 					PhaseEvents.morale_trigger_text(str(data.get("trigger", "")))]
 			Type.MORALE_CHECK:
 				return _morale_check_text(who)
+			Type.FIRE_STARTED:
+				return "%s is afire (not yet simulated)" % who
+			Type.DESTROYED:
+				var text := "%s explodes and is destroyed" % who
+				if target_id != "":
+					text += "; %s is no longer fouled with her" % other
+				return text
 			Type.STRIKE:
 				return "%s strikes her colours (%s)" % [who,
 					PhaseEvents.STRIKE_REASONS.get(str(data.get("reason", "")), str(data.get("reason", "cause unknown")))]
@@ -192,7 +273,11 @@ class PhaseEvent extends RefCounted:
 			Type.IN_IRONS:
 				if data.get("cause", "") == "tack":
 					return "%s misses stays and is in irons" % who
+				if data.get("cause", "") == "rudder":
+					return "%s turns into the wind with no rudder and is in irons" % who
 				return "%s is still in irons" % who
+			Type.POOR_MANEUVERING:
+				return _poor_maneuvering_text(who)
 			Type.WIND:
 				return _wind_text()
 			Type.BEAR_OFF:
@@ -204,6 +289,123 @@ class PhaseEvent extends RefCounted:
 			Type.VICTORY:
 				return _victory_text()
 		return "%s: event %d" % [who, type]
+
+	## "X's damaged steering fails the turn (7 > 5) — one hex ahead" (6.F.3), or "answers the helm".
+	func _poor_maneuvering_text(who: String) -> String:
+		var roll := int(data.get("roll", 0))
+		var needed := int(data.get("needed", 0))
+		if data.get("success", false):
+			return "%s's damaged steering answers the helm (%d ≤ %d)" % [who, roll, needed]
+		var text := "%s's damaged steering fails the turn (%d > %d)" % [who, roll, needed]
+		match str(data.get("outcome", "")):
+			"one hex ahead":
+				return text + " — one hex ahead"
+			"carried over":
+				return text + " — one hex ahead; the turn carries over to next turn"
+		return text
+
+	## "X: critical hit roll 3 -2 = 1 ≤ 4 — critical hit!" or "… 6 +0 = 6 > 4, no critical".
+	func _critical_roll_text(who: String) -> String:
+		var d6 := int(data.get("d6", 0))
+		var mod := int(data.get("ch_mod", 0))
+		var needed := int(data.get("ch_number", 0))
+		var sum := "%d %+d = %d" % [d6, mod, d6 + mod]
+		if data.get("hit", false):
+			return "%s: critical hit roll %s ≤ %d — critical hit!" % [who, sum, needed]
+		return "%s: critical hit roll %s > %d, no critical" % [who, sum, needed]
+
+	## "X fixes the port broadside obscured (3 -2 = 1 ≤ 2)" or
+	## "X fails to fix the jammed lines (7 -2 = 5 > 2)" (8.D.5, Unfouling table).
+	func _critical_fixed_text(who: String) -> String:
+		var id := str(data.get("result_id", ""))
+		var what: String = PhaseEvents.CRITICAL_FIX_OBJECTS.get(id, id.replace("_", " "))
+		var side := int(data.get("side", -1))
+		if id == "broadside_obscured":
+			what = "the %s%s" % [PhaseEvents.SIDE_NAMES[side] + " " if side == 0 or side == 1 else "", what]
+		var roll := int(data.get("roll", 0))
+		var mod := int(data.get("modifier", 0))
+		var needed := int(data.get("needed", 0))
+		var sum := "%d %+d = %d" % [roll, mod, roll + mod]
+		if data.get("success", false):
+			return "%s fixes %s (%s ≤ %d)" % [who, what, sum, needed]
+		return "%s fails to fix %s (%s > %d)" % [who, what, sum, needed]
+
+	## "X: hull critical 9 — guns dismounted −2 (port)", "X: rigging check 4 — lines jammed",
+	## "X: rigging critical 4 — braces cut (ignored: dismasted)".
+	func _critical_hit_text(who: String) -> String:
+		var roll := _val("roll")
+		var what := ""
+		match str(data.get("source", "")):
+			"rigging_check":
+				what = "rigging check %s" % roll
+			"hull_check":
+				what = "hull check %s" % roll
+			"hull_7":
+				what = "rigging critical %s (from hull damage)" % roll
+			_:
+				what = "%s critical %s" % [str(data.get("table", "")), roll]
+		var id := str(data.get("result_id", ""))
+		var result: String = PhaseEvents.CRITICAL_RESULT_NAMES.get(id, id.replace("_", " "))
+		var side := int(data.get("side", -1))
+		var side_text := ""
+		if side == 0 or side == 1:
+			side_text = PhaseEvents.SIDE_NAMES[side]
+		elif side == 2:
+			side_text = "both broadsides"
+		var sub: Array = data.get("sub_rolls", [])
+		match id:
+			"rudder":
+				if data.get("converted", false):
+					result = "rudder hit from ahead — 1 hull box instead"
+				elif data.has("rudder"):
+					var state := str(data["rudder"])
+					if data.has("jam"):
+						var jam := int(data["jam"])
+						state += " " + ("to " + PhaseEvents.SIDE_NAMES[jam] if jam == 0 or jam == 1 else "amidships")
+					result = "rudder %s (d6 %s)" % [state, str(sub[0]) if not sub.is_empty() else "?"]
+			"guns_dismounted", "minor_explosion":
+				if data.has("guns"):
+					result += " −%d" % int(data["guns"])
+			"afire_major_explosion":
+				if data.has("guns"):
+					result += " −%d guns" % int(data["guns"])
+				if data.has("explosion"):
+					var ex: Dictionary = data["explosion"]
+					var detail := "2d10 %d %+d = %d" % [int(ex["roll"]),
+						int(ex["modifier"]), int(ex["total"])]
+					if ex.get("explodes", false):
+						result += " — she explodes (%s < class %d)" % [detail, int(ex["needed"])]
+					else:
+						result += " — no explosion (%s, not below class %d)" % [detail, int(ex["needed"])]
+			"broadside_obscured":
+				if side_text != "":
+					result = "%s broadside obscured" % side_text
+					side_text = ""
+			"yard_shot_away":
+				side_text = ""
+				result += " (both broadsides obscured)"
+			"mast_may_fall":
+				if data.has("needed") and not sub.is_empty():
+					var total := int(sub[0]) + int(data.get("modifier", 0))
+					result += " — %s (d6 %s %+d = %d, needs %d)" % [
+						"the mast falls" if data.get("falls", false) else "it holds",
+						str(sub[0]), int(data.get("modifier", 0)), total, int(data["needed"])]
+			"stays_cut":
+				if data.has("speed") and not sub.is_empty():
+					result += " — %s (d10 %s, speed %d)" % [
+						"the mast goes" if data.get("falls", false) else "the mast stands",
+						str(sub[0]), int(data["speed"])]
+			"waterline_damage":
+				if data.has("pumps"):
+					result += ", %s to the pumps" % PhaseEvents.plural(int(data["pumps"]), "sailor box", "sailor boxes")
+		var text := "%s: %s — %s" % [who, what, result]
+		if side_text != "":
+			text += " (%s)" % side_text
+		if data.has("ignored"):
+			text += " (ignored: %s)" % str(data["ignored"])
+		if data.has("note"):
+			text += " (%s)" % PhaseEvents.CRITICAL_NOTES.get(str(data["note"]), str(data["note"]))
+		return text
 
 	## "X bears off to starboard to avoid Y (rolled 2, needed ≤ 5)", "X fails to bear off …", or
 	## "X holds course into Y".

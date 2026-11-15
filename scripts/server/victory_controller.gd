@@ -2,9 +2,9 @@ class_name VictoryController
 extends RefCounted
 ## VictoryController - Close Action 1997 victory points (section 12.1).
 ## A side scores a fraction of each enemy ship's point value: all of it once the ship has
-## struck, otherwise a share for each rigging, hull and crew section that is completely
-## destroyed. The game ends when a side has no ship left unstruck, or at the scenario's
-## turn limit. Pure queries: nothing here mutates game state.
+## struck or been destroyed (hull #12), otherwise a share for each rigging, hull and crew section
+## that is completely destroyed. The game ends when a side has no ship left in play (every ship
+## struck or destroyed), or at the scenario's turn limit. Pure queries: nothing here mutates game state.
 
 ## Share of a ship's value lost per destroyed section (rigging 1-3, rigging 4, hull 1-3, hull 4)
 const RIGGING_SHARES: Array[float] = [0.05, 0.05, 0.05, 0.10]
@@ -22,7 +22,7 @@ func _init(p_game_state: Node) -> void:
 func points_lost(ship: ShipState) -> float:
 	## Points the enemy scores for this ship.
 	var value: float = ship.ship.point_value(ship.starting_crew_quality, ship.morale_rating)
-	if ship.is_struck():
+	if ship.is_out_of_play():
 		return value
 	var share := 0.0
 	for i in range(mini(ship.rigging_current_hp.size(), RIGGING_SHARES.size())):
@@ -66,7 +66,7 @@ func check(turn: int) -> Dictionary:
 func _is_defeated(player_id: int) -> bool:
 	## A side with no ships at all counts as defeated.
 	for ship: ShipState in game_state.get_player_ships(player_id):
-		if not ship.is_struck():
+		if not ship.is_out_of_play():
 			return false
 	return true
 

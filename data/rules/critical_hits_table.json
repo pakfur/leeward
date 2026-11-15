@@ -1,0 +1,36 @@
+{
+	"_doc": "Rigging and Hull Critical Hits tables, Close Action 1997 (docs/rules/images/rigging-critical-hits.jpg p.112, hull-critical-hits.jpg p.113). crit = 2d6 (2-12) row; check = d6 RC/HC column -> crit row. flags: D = does not apply if firing dismantling shot; diamond = ignore if the target became dismasted in the current combat phase. Rigging crits never occur on a ship dismasted before the current combat phase. *_by_class keys are ship classes 1-4. Effects are applied by code; the fields here are the chart's numbers.",
+	"rigging": {
+		"check": {"1": 2, "2": 3, "3": 4, "4": 5, "5": 6, "6": 7},
+		"crit": {
+			"2":  {"id": "mast_may_fall", "flags": ["diamond", "D"], "fall_at": 8, "drm": {"ms": 1, "ps": 2, "per_section_lost": 1, "ws4": 1, "ws_le_1": -1}},
+			"3":  {"id": "signal_halyards_cut", "flags": [], "rigging": {"fs": 0, "ms": 1, "ps": 1}, "fixable": true},
+			"4":  {"id": "braces_cut", "flags": ["diamond"], "accel_max": 1, "decel_max": 1, "fixable": true},
+			"5":  {"id": "lines_jammed", "flags": ["diamond"], "fixable": true},
+			"6":  {"id": "broadside_obscured", "flags": [], "rigging": {"fs": 0, "ms": 1, "ps": 2}, "gunfire": -2, "port_max": 3, "fixable": true},
+			"7":  {"id": "sheets_cut", "flags": ["diamond"], "mp": -1, "accel": -1, "turns": 1, "max_per_turn": 1},
+			"8":  {"id": "leadership_casualties", "flags": [], "marines_by_class": {"1": 1, "2": 1, "3": 1, "4": 0}, "mc": 1},
+			"9":  {"id": "shrouds_severed", "flags": ["diamond"], "rigging_all": 1, "mp": -1},
+			"10": {"id": "yard_shot_away", "flags": ["D"], "rigging": {"fs": 1, "ms": 2, "ps": 3}, "gunfire": -2, "fixable": true},
+			"11": {"id": "stays_cut", "flags": ["diamond"], "extra_rigging": 1, "mc": 1},
+			"12": {"id": "mast_falls_on_deck", "flags": ["D"], "crew_by_class": {"1": 3, "2": 3, "3": 2, "4": 1}, "mc": 1}
+		}
+	},
+	"hull": {
+		"check": {"1": 5, "2": 6, "3": 7, "4": 8, "5": 8, "6": 9},
+		"crit": {
+			"2":  {"id": "rudder", "flags": ["D"], "destroyed_max": 3, "bow_hull": 1},
+			"3":  {"id": "wheel_shot_away", "flags": []},
+			"4":  {"id": "crew_disorganized", "flags": [], "sailors_by_class": {"1": 1, "2": 1, "3": 1, "4": 0}, "reorganize_turns": 5},
+			"5":  {"id": "leadership_casualties", "flags": [], "marines_by_class": {"1": 1, "2": 1, "3": 1, "4": 0}, "mc": 1},
+			"6":  {"id": "hull_structural_damage", "flags": ["D"], "hull": 1},
+			"7":  {"id": "rigging_damage", "flags": []},
+			"8":  {"id": "guns_dismounted", "flags": ["D"], "guns": 1},
+			"9":  {"id": "guns_dismounted", "flags": ["D"], "guns": 2},
+			"10": {"id": "minor_explosion", "flags": ["D"], "hull": 1, "guns": 2, "fire_at": 6, "fire_mc": 1},
+			"11": {"id": "waterline_damage", "flags": ["D"], "pumps_by_class": {"1": 4, "2": 3, "3": 2, "4": 1}},
+			"12": {"id": "afire_major_explosion", "flags": ["D"], "hull": 1, "guns_both": 2, "mc": 1,
+				"explode_drm": {"A": 3, "B": 2, "C": 1, "D": 0, "E": -1, "F": -2, "G": -3, "per_fire": -2, "year_le_1783": -1}}
+		}
+	}
+}

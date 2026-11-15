@@ -40,9 +40,15 @@ Create a new scenario JSON file in `data/scenarios/`.
     "height": 100
   },
   "minimap_texture": "",
+  "turn_limit": 30,
+  "year": 1798,
   "ships": []
 }
 ```
+
+Optional fields: `turn_limit` (integer, game ends at that turn; omit for no limit) and `year`
+(integer, the battle's year; when present and ≤ 1783 a hull critical #12 explosion roll takes −1,
+Hull Critical Hits table; omit it and no year DRM applies).
 
 Each ship entry:
 

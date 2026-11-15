@@ -130,3 +130,24 @@ func test_no_prompt_for_players_not_wired_in() -> void:
 	_setup()
 	pc._enter_movement_resolution_phase()
 	assert_true(_logs[0].is_complete(), "The AI rule decides: no pause")
+
+
+func test_the_rerun_repeats_the_dice_before_the_decision() -> void:
+	# A poor-maneuvering third ship rolls for its turn on segment 0, before the decision: the re-run
+	# after the answer must roll the same die (the log already played up to the decision).
+	_setup()
+	var other := _make_ship("helm", 1, Vector2i(5, 9), 3, 2)
+	other.wheel_shot_away = true
+	other.plotted_actions.movement = [{"hex": {"q": 5, "r": 9}, "facing": 2},
+		{"hex": {"q": 4, "r": 10}, "facing": 2}]
+	pc._enter_movement_resolution_phase()
+	var first := _steering_roll(_logs[0].get_result("helm"))
+	assert_eq(pc.player_submit_bear_off(0, "mine", MovementTypes.BEAR_OFF_COLLIDE), "")
+	assert_eq(_steering_roll(_logs[1].get_result("helm")), first, "same Poor Maneuvering die")
+
+
+func _steering_roll(result: MovementTypes.ShipResolutionResult) -> int:
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.POOR_MANEUVERING_ROLL:
+			return int(ev.roll)
+	return -1

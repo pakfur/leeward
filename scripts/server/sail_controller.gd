@@ -5,6 +5,10 @@ extends RefCounted
 ## sailor sections, which cannot then serve the guns), and completes in STATUS_ADJUSTMENT.
 ## All mutations go through ShipStateController.
 
+## Cancellation reason (5.F.9c): a Lines Jammed critical hit (Rigging #5) abandons a change in
+## progress and forbids new ones until fixed (8.D.5) or the ship is dismasted.
+const CANCEL_LINES_JAMMED := "lines jammed"
+
 var is_server: bool = true
 var game_state: Node = null
 
@@ -17,7 +21,8 @@ func available_targets(ship_id: String) -> Array[String]:
 	## States one step from the carried sail, not above what the rigging can carry.
 	var result: Array[String] = []
 	var ship: ShipState = game_state.get_ship(ship_id)
-	if ship == null or ship.is_struck() or ship.is_dismasted() or not ship.sail_change.is_empty():
+	if ship == null or ship.is_out_of_play() or ship.is_dismasted() or not ship.sail_change.is_empty() \
+			or ship.has_critical("lines_jammed"):
 		return result
 	var current := ShipState.SAIL_ORDER.find(ship.sail_state.to_upper())
 	var limit := ShipState.SAIL_ORDER.find(ship.max_sail_state())
@@ -57,10 +62,14 @@ func plot_sail_change(player_id: int, ship_id: String, target: String) -> String
 	if target == "":
 		game_state.ship_controller.set_plotted_sail_change(ship_id, "")
 		return ""
+	if ship.is_destroyed():
+		return "Ship is destroyed"
 	if ship.is_struck():
 		return "Ship has struck"
 	if ship.is_dismasted():
 		return "Ship is dismasted"
+	if ship.has_critical("lines_jammed"):
+		return "Lines jammed"
 	if not ship.sail_change.is_empty():
 		return "A sail change is already in progress"
 	if not target in available_targets(ship_id):
@@ -81,6 +90,9 @@ func begin_plotted_changes() -> void:
 			continue
 		var ship_id: String = ship.ship_id
 		game_state.ship_controller.set_plotted_sail_change(ship_id, "")
+		if ship.has_critical("lines_jammed"):
+			_log(ship, target, 0, phase, CANCEL_LINES_JAMMED)
+			continue
 		if not target in available_targets(ship_id):
 			_log(ship, target, 0, phase, "not available")
 			continue
@@ -123,11 +135,30 @@ func advance_changes(phase: int) -> void:
 			{"from": from_state, "to": target, "turns_left": 0})
 
 
+## Abandons the change in progress at once (e.g. Lines Jammed, 5.F.9c) and logs SAIL_CHANGE
+## with `reason`. Returns false when there was none.
+func cancel_change(ship_id: String, reason: String, phase: int) -> bool:
+	if not is_server:
+		push_error("SailController: Cannot cancel sail change on client")
+		return false
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null or ship.sail_change.is_empty():
+		return false
+	var change: Dictionary = ship.sail_change
+	game_state.ship_controller.set_sail_change(ship_id, {})
+	_log(ship, str(change.get("target", "")), int(change.get("turns_left", 0)), phase, reason)
+	return true
+
+
 func _cancel_reason(ship: ShipState, change: Dictionary) -> String:
+	if ship.is_destroyed():
+		return "destroyed"
 	if ship.is_struck():
 		return "struck"
 	if ship.is_dismasted():
 		return "dismasted"
+	if ship.has_critical("lines_jammed"):
+		return CANCEL_LINES_JAMMED
 	for section in change.get("sections", []):
 		if ship.crew_count[section] <= 0:
 			return "crew lost"

@@ -27,6 +27,11 @@ func _init(p_game_state: Node) -> void:
 ##   2. one d6 per slashed token, columns in order fs, ms, ps, tokens left to right
 ##   3. the half-box d6, only when a furled target's rigging is odd
 ##   4. crew-loss d6s, rolled inside DamageController.apply_hits
+##   5. the critical-hit d6, only when the gunnery d6 is a natural 6 (and not dismantling shot
+##      aimed low, which causes no hull crits, 7.C.12b), and only if the target has not struck
+##   6. on a critical hit, the 2d6 crit roll and the result's own sub-rolls (CriticalHitController)
+##   7. the Rigging/Hull Check d6s (and their sub-rolls) for the sections the shot and its crit
+##      emptied, in queue order (CriticalHitController.drain)
 ## A shot with fgn < 1 rolls only the gunnery d6.
 func resolve(orders: Array[GunneryTypes.FireOrder], phase: int) -> void:
 	if not is_server:
@@ -132,14 +137,22 @@ func _resolve_shot(shot: Dictionary, phase: int) -> void:
 		"rigging": rigging,
 		"hull": hull,
 		"crew": crew,
+		"ch_number": DataManager.combat_tables.critical_hit_number(fgn),
 	}, order.target_id)
 	if fgn < 1:
 		return
 
+	var crits: CriticalHitController = game_state.critical_hit_controller
+	var ctx := crits.shot_context(order, preview.rake, target_dismasted)
+	ctx["fgn"] = fgn
+	ctx["d6"] = d6
+	# Hold the check queue: the shot's own crit (7.D.11) is rolled before the Rigging/Hull
+	# Checks its damage caused; release() then drains them.
+	crits.hold()
 	var hull_fire := order.ammo == GunneryTypes.AMMO_ROUND and order.aim == GunneryTypes.AIM_LOW
 	var cause := "gunfire_at_hull" if hull_fire else "other"
 	game_state.damage_controller.apply_hits(order.target_id, rigging, hull, crew, cause, phase,
-			order.ship_id)
+			order.ship_id, ctx)
 
 	if preview.rake != "" and target_dismasted:
 		var turn: int = game_state.phase_controller.current_turn
@@ -147,3 +160,6 @@ func _resolve_shot(shot: Dictionary, phase: int) -> void:
 		if game_state.ship_controller.note_morale_check(order.target_id, trigger):
 			game_state.turn_log.add(PhaseEvents.Type.MORALE_NOTED, phase, order.target_id,
 					{"trigger": trigger, "count": 1})
+
+	crits.check_gunfire_crit(ctx, phase)
+	crits.release(phase)

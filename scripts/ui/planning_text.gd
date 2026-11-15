@@ -51,6 +51,26 @@ static func allowance_change_note(before: int, after: int, old_code: String, new
 		ShipIndicatorModel.point_of_sail_label(new_code).to_lower()]
 
 
+## The steering line of the plotting panel (hull #2, #3; 6.F), "" for sound steering.
+## `jam` is ShipState.rudder_jam_direction(); `pending_turn` ShipState.pending_turn.
+static func steering_note(poor_maneuvering: bool, chance: float, pending_turn: int, jam: int,
+		rudder_destroyed: bool) -> String:
+	var lines: PackedStringArray = []
+	if pending_turn == 0 or pending_turn == 1:
+		lines.append("Left-over turn to %s: must be the first move, succeeds without a roll." %
+			PhaseEvents.SIDE_NAMES[pending_turn])
+	if poor_maneuvering:
+		var cause := "Rudder destroyed" if rudder_destroyed else "Wheel shot away"
+		lines.append("%s: one 60° turn per game turn, %d%% to turn as plotted (else one hex ahead first)." % [
+			cause, int(round(chance * 100.0))])
+	if jam == -1:
+		lines.append("Rudder jammed amidships: no turns.")
+	elif jam == 0 or jam == 1:
+		lines.append("Rudder jammed to %s: turns only that way, at least once if moving." %
+			PhaseEvents.SIDE_NAMES[jam])
+	return "\n".join(lines)
+
+
 const IRONS_NOTE := "Head to wind: the ship will be in irons and movement ends here."
 
 

@@ -109,6 +109,12 @@ func test_struck_ship_loses_full_value() -> void:
 	assert_eq(controller.points_lost(ship), 38.0)
 
 
+func test_destroyed_ship_loses_full_value() -> void:
+	var ship := _make_ship("a", 0)
+	ship.status = ShipState.Status.DESTROYED
+	assert_eq(controller.points_lost(ship), 38.0)
+
+
 func test_rigging_one_and_hull_one_lost_is_fifteen_percent() -> void:
 	var ship := _make_ship("a", 0)
 	ship.rigging_current_hp[0] = 0
@@ -163,6 +169,23 @@ func test_both_sides_struck_equal_is_a_draw() -> void:
 	var result: Dictionary = controller.check(2)
 	assert_eq(result["winner"], -1)
 	assert_eq(result["reason"], "all struck")
+
+
+func test_side_of_struck_and_destroyed_ships_loses() -> void:
+	_make_ship("a", 0)
+	_strike(_make_ship("b", 1))
+	_make_ship("c", 1).status = ShipState.Status.DESTROYED
+	var result: Dictionary = controller.check(4)
+	assert_eq(result["winner"], 0)
+	assert_eq(result["reason"], "all struck")
+	assert_eq(result["points"][0], 76.0)
+
+
+func test_game_continues_while_one_ship_is_in_play() -> void:
+	_make_ship("a", 0)
+	_make_ship("b", 1)
+	_make_ship("c", 1).status = ShipState.Status.DESTROYED
+	assert_eq(controller.check(4), {})
 
 
 func test_turn_limit_decides_on_points_scored() -> void:

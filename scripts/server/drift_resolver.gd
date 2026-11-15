@@ -2,7 +2,7 @@ class_name DriftResolver
 extends RefCounted
 ## DriftResolver - Drift of stopped ships (Close Action 1997, 10).
 ## A ship that did not move forward this turn, was in a collision, or is fouled rolls a d10 on the
-## Drifting table. On a success it drifts one hex downwind, keeping its facing. A drift into an
+## Drifting table. A destroyed ship (wreck) never drifts or fouls, but it blocks drift. On a success it drifts one hex downwind, keeping its facing. A drift into an
 ## occupied hex or off the map is blocked; drifting onto a ship may foul the two, and the drift
 ## line itself names the ship in the way and says whether they fouled.
 ## All mutations go through ShipStateController.
@@ -68,6 +68,9 @@ func _projection(ship: ShipState, downwind_vector: Vector3) -> float:
 
 
 func _is_eligible(group: Array[ShipState]) -> bool:
+	for ship in group:
+		if ship.is_destroyed():
+			return false  # a wreck never drifts (its fouling was cleared when it blew up)
 	for ship in group:
 		if not ship.moved_this_turn or ship.collision_this_turn or ship.fouled_with != "":
 			return true
@@ -235,6 +238,8 @@ func _try_foul(drifter: ShipState, other: ShipState) -> Variant:
 		return null
 	if drifter.is_dismasted() or other.is_dismasted():
 		return null
+	if drifter.is_destroyed() or other.is_destroyed():
+		return null  # a wreck never fouls
 	if not game_state.movement_resolver.roll_fouling(drifter, other, true):
 		return false
 	var a: String = drifter.ship.ship_id

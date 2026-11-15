@@ -21,7 +21,7 @@ const FIRING_RANGE_WEIGHT := 2
 const SECOND_BATTERY_BONUS := 3
 
 ## Plotting errors for ships that legitimately cannot move; the AI skips them without error.
-const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_STRUCK", "SHIP_DISMASTED"]
+const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED"]
 
 var game_state: Node = null
 var _request_counter: int = 0
@@ -228,6 +228,17 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 
 	var submit_response := controller.handle_submit_movement(session_id, version, _next_request_id())
 
+	if submit_response is MovementTypes.PlottingErrorResponse \
+			and (submit_response as MovementTypes.PlottingErrorResponse).error_code == "RUDDER_JAMMED":
+		# The course found never turned the way the jammed rudder holds (hull #2): stay put instead.
+		Trace.trace_log("StubAI", "rudder jammed, holding position", {"ship_id": ship_id})
+		controller.handle_cancel_plotting(session_id, _next_request_id())
+		var restart := controller.handle_start_plotting(player_id, ship_id, _next_request_id())
+		if restart is MovementTypes.PlottingStartedResponse:
+			var again := restart as MovementTypes.PlottingStartedResponse
+			submit_response = controller.handle_submit_movement(again.session_id, again.session_version,
+				_next_request_id())
+
 	if submit_response is MovementTypes.PlottingErrorResponse:
 		var err := submit_response as MovementTypes.PlottingErrorResponse
 		push_error("StubAI: submit failed for %s: %s" % [ship_id, err.message])
@@ -328,7 +339,7 @@ func _nearest_enemy(ship_state: ShipState) -> ShipState:
 	var nearest: ShipState = null
 	var nearest_distance := 0
 	for other in game_state.get_all_ships():
-		if other.player_id == ship_state.player_id or other.is_struck():
+		if other.player_id == ship_state.player_id or other.is_out_of_play():
 			continue
 		var distance: int = game_state.fire_geometry.range_between(ship_state.occupied_hexes(), other.occupied_hexes())
 		if nearest == null or distance < nearest_distance \

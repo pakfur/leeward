@@ -202,6 +202,18 @@ func test_badges_for_fouled_struck_and_dismasted() -> void:
 	assert_eq(StatusPanel.badges(s), ["FOULED", "STRUCK", "DISMASTED"])
 
 
+func test_destroyed_ship_badge_and_movement_line() -> void:
+	var s := _make_ship()
+	s.status = ShipState.Status.DESTROYED
+	assert_eq(StatusPanel.badges(s), ["DESTROYED"])
+	assert_eq(StatusPanel.movement_line(s, 4), "Cannot move (destroyed)")
+
+
+func test_explosion_resyncs_ship_views() -> void:
+	var ev := PhaseEvents.PhaseLog.new().add(PhaseEvents.Type.DESTROYED, 4, "s1", {"reason": "explosion"})
+	assert_true(CombatLogPanel.syncs_views(ev))
+
+
 func test_identity_line_shows_owner_and_type_only_when_it_differs() -> void:
 	var s := _make_ship()
 	assert_eq(StatusPanel.identity_line(s), "Yours · 38-gun Frigate")
@@ -367,3 +379,22 @@ func test_earlier_turns_label_hidden_on_turn_one_even_with_logs_left_from_anothe
 	GameState.turn_logs = saved_logs
 	GameState.turn_log = saved_log
 	GameState.current_turn = saved_turn
+
+
+
+func test_critical_lines_one_per_lasting_effect() -> void:
+	var s := _make_ship()
+	assert_eq(StatusPanel.critical_lines(s), [] as Array[String], "No crits, no lines")
+	s.critical_effects = [
+		{"seq": 0, "id": "broadside_obscured", "side": ShipState.STARBOARD},
+		{"seq": 1, "id": "rudder_jammed", "side": ShipState.PORT},
+		{"seq": 2, "id": "signal_halyards_cut", "side": -1},
+	] as Array[Dictionary]
+	s.wheel_shot_away = true
+	s.fires = 1
+	assert_eq(StatusPanel.critical_lines(s), [
+		"Starboard broadside −2: obscured by fallen rigging (fix roll in maintenance)",
+		"Rudder jammed to port (fix roll in maintenance)",
+		"Wheel shot away: one turn per turn, poor maneuvering",
+		"Afire ×1 (fire is not yet simulated)",
+	] as Array[String], "Deferred effects (signal halyards) show nothing")

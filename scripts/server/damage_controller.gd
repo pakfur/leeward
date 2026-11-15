@@ -5,6 +5,8 @@ extends RefCounted
 
 ## Morale checks noted when hull section 1, 2 or 3 is emptied
 const HULL_MORALE_CHECKS: Array[int] = [1, 1, 2]
+## DAMAGE "cause" for boxes lost to a critical hit (7.D.12)
+const CAUSE_CRITICAL := "critical"
 
 var is_server: bool = true
 var game_state: Node = null
@@ -14,8 +16,13 @@ func _init(p_game_state: Node) -> void:
 	game_state = p_game_state
 
 
+## Marks out boxes, lowest-numbered section first. Each rigging section and hull section 1-3
+## emptied queues a Rigging/Hull Check (7.D.7, 7.D.8a, 7.D.12) on the CriticalHitController with
+## `ctx` (the shot's critical context, see CriticalHitController; {} outside gunfire). The queue
+## is drained at the end unless the controller is holding or already draining.
+## `damage_cause` ("" or CAUSE_CRITICAL) is recorded on the DAMAGE event.
 func apply_hits(ship_id: String, rigging: int, hull: int, crew: int, crew_cause: String,
-		phase: int, source_id: String = "") -> void:
+		phase: int, source_id: String = "", ctx: Dictionary = {}, damage_cause: String = "") -> void:
 	if not is_server:
 		push_error("DamageController: Cannot apply hits on client")
 		return
@@ -23,26 +30,73 @@ func apply_hits(ship_id: String, rigging: int, hull: int, crew: int, crew_cause:
 	if not ship:
 		push_error("[Server] Ship not found: %s" % ship_id)
 		return
+	if ship.is_destroyed():
+		return  # a wreck takes no damage
 	var struck_before := ship.is_struck()
 	# The DAMAGE line is the cause; guns dismounted, morale checks and a strike logged while the
 	# hits are applied are its consequences, so it goes in ahead of them.
 	var damage_index: int = game_state.turn_log.events.size()
 
-	var rigging_applied := _apply_rigging(ship, ship_id, rigging, phase, struck_before)
-	var hull_applied := _apply_hull(ship, ship_id, hull, phase, struck_before)
+	var rigging_applied := _apply_rigging(ship, ship_id, rigging, phase, struck_before, ctx)
+	var hull_applied := _apply_hull(ship, ship_id, hull, phase, struck_before, ctx)
 	var crew_rolls: Array = []
 	var marines_before := ship.marine_count
 	var crew_applied := _apply_crew(ship, ship_id, crew, crew_cause, phase, struck_before, crew_rolls)
 	var marines_lost := marines_before - ship.marine_count
 
-	game_state.turn_log.insert(damage_index, PhaseEvents.Type.DAMAGE, phase, ship_id, {
+	var data := {
 		"rigging": rigging_applied,
 		"hull": hull_applied,
 		"crew": crew_applied,
 		"sailors_lost": crew_applied - marines_lost,
 		"marines_lost": marines_lost,
 		"crew_rolls": crew_rolls,
+	}
+	if damage_cause != "":
+		data["cause"] = damage_cause
+	game_state.turn_log.insert(damage_index, PhaseEvents.Type.DAMAGE, phase, ship_id, data, source_id)
+	_drain_checks(phase)
+
+
+## Marks out `count` crew boxes directly, with no Crew Loss roll (critical-hit crew losses:
+## leadership casualties, mast falls on deck, men sent to the pumps). Takes marines first when
+## `marines_first`, else sailors from the lowest-numbered section; when one type runs out the
+## other is taken. Emptied sections note morale checks and a ship left with no crew strikes, as
+## for gunfire. Logged as DAMAGE with cause "critical". Returns the boxes marked out.
+func apply_crew_boxes(ship_id: String, count: int, marines_first: bool, phase: int,
+		source_id: String = "") -> int:
+	if not is_server:
+		push_error("DamageController: Cannot apply crew losses on client")
+		return 0
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if not ship:
+		push_error("[Server] Ship not found: %s" % ship_id)
+		return 0
+	if ship.is_destroyed():
+		return 0  # a wreck takes no damage
+	var struck_before := ship.is_struck()
+	var damage_index: int = game_state.turn_log.events.size()
+	var marines_before := ship.marine_count
+	var applied := 0
+	for i in range(count):
+		if ship.total_crew_boxes() == 0:
+			break
+		var emptied: int = game_state.ship_controller.remove_crew_box(ship_id, marines_first)
+		applied += 1
+		if emptied >= 0 and not struck_before:
+			_note_morale(ship_id, "crew_%d" % emptied, 1, phase)
+	if applied > 0 and ship.total_crew_boxes() == 0 and not struck_before:
+		strike(ship_id, "no crew", phase)
+	var marines_lost := marines_before - ship.marine_count
+	game_state.turn_log.insert(damage_index, PhaseEvents.Type.DAMAGE, phase, ship_id, {
+		"rigging": 0,
+		"hull": 0,
+		"crew": applied,
+		"sailors_lost": applied - marines_lost,
+		"marines_lost": marines_lost,
+		"cause": CAUSE_CRITICAL,
 	}, source_id)
+	return applied
 
 
 func strike(ship_id: String, reason: String, phase: int) -> void:
@@ -53,30 +107,67 @@ func strike(ship_id: String, reason: String, phase: int) -> void:
 	if not ship:
 		push_error("[Server] Ship not found: %s" % ship_id)
 		return
-	if ship.is_struck():
+	if ship.is_out_of_play():
 		return
 	game_state.ship_controller.set_status(ship_id, ShipState.Status.STRUCK)
 	game_state.turn_log.add(PhaseEvents.Type.STRIKE, phase, ship_id, {"reason": reason})
 	Trace.trace_log("Damage", "Ship %s strikes: %s" % [ship_id, reason])
 
 
+## Hull #12 explosion: the ship is destroyed and leaves play (spec Q2). Its fouling is cleared on
+## both ships (the partner is freed), a sail change in progress or ordered is dropped and its
+## pending morale checks are cleared. The wreck keeps its two hexes, which still block movement
+## and line of sight. A struck ship can still be destroyed. Logs DESTROYED.
+func destroy(ship_id: String, reason: String, phase: int) -> void:
+	if not is_server:
+		push_error("DamageController: Cannot destroy a ship on client")
+		return
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if not ship:
+		push_error("[Server] Ship not found: %s" % ship_id)
+		return
+	if ship.is_destroyed():
+		return
+	var sc: ShipStateController = game_state.ship_controller
+	sc.set_status(ship_id, ShipState.Status.DESTROYED)
+	var partner_id := ship.fouled_with
+	if partner_id != "":
+		sc.set_fouled_with(ship_id, "")
+		var partner: ShipState = game_state.get_ship(partner_id)
+		if partner != null and partner.fouled_with == ship_id:
+			sc.set_fouled_with(partner_id, "")
+	if not ship.sail_change.is_empty():
+		sc.set_sail_change(ship_id, {})
+	sc.set_plotted_sail_change(ship_id, "")
+	sc.clear_pending_morale_checks(ship_id)
+	game_state.turn_log.add(PhaseEvents.Type.DESTROYED, phase, ship_id, {"reason": reason}, partner_id)
+	Trace.trace_log("Damage", "Ship %s destroyed: %s" % [ship_id, reason])
+
+
 func _apply_rigging(ship: ShipState, ship_id: String, amount: int, phase: int,
-		struck_before: bool) -> int:
+		struck_before: bool, ctx: Dictionary) -> int:
 	var applied := 0
 	for section in range(ship.rigging_current_hp.size()):
+		var emptied := false
 		while applied < amount and ship.rigging_current_hp[section] > 0:
 			game_state.ship_controller.apply_rigging_damage(ship_id, section, 1)
 			applied += 1
+			emptied = ship.rigging_current_hp[section] == 0
+		if emptied and not struck_before:
+			_queue_check(ship_id, "rigging", section, ctx)
 	if applied > 0 and ship.is_dismasted():
 		game_state.ship_controller.set_sail_state(ship_id, "NS")
 		game_state.ship_controller.set_sail_change(ship_id, {})
+		var crits = game_state.get("critical_hit_controller")
+		if crits != null:
+			crits.clear_lines_jammed_on_dismasting(ship_id, phase)
 		if not struck_before:
 			_note_morale(ship_id, "dismasted", 1, phase)
 	return applied
 
 
 func _apply_hull(ship: ShipState, ship_id: String, amount: int, phase: int,
-		struck_before: bool) -> int:
+		struck_before: bool, ctx: Dictionary) -> int:
 	var applied := 0
 	for section in range(ship.hull_current_hp.size()):
 		var emptied := false
@@ -92,7 +183,9 @@ func _apply_hull(ship: ShipState, ship_id: String, amount: int, phase: int,
 			game_state.turn_log.add(PhaseEvents.Type.GUNS_DISMOUNTED, phase, ship_id, {"amount": guns})
 			if not struck_before:
 				_note_morale(ship_id, "hull_%d" % (section + 1), HULL_MORALE_CHECKS[section], phase)
+				_queue_check(ship_id, "hull", section, ctx)
 		elif not struck_before:
+			# No Hull Check for the last section: the ship strikes (spec Q5).
 			strike(ship_id, "hull destroyed", phase)
 	return applied
 
@@ -113,6 +206,22 @@ func _apply_crew(ship: ShipState, ship_id: String, amount: int, cause: String, p
 	if applied > 0 and ship.total_crew_boxes() == 0 and not struck_before:
 		strike(ship_id, "no crew", phase)
 	return applied
+
+
+func _queue_check(ship_id: String, table: String, section: int, ctx: Dictionary) -> void:
+	var crits = game_state.get("critical_hit_controller")
+	if crits == null:
+		return
+	if table == "rigging":
+		crits.queue_rigging_check(ship_id, ctx, section)
+	else:
+		crits.queue_hull_check(ship_id, ctx, section)
+
+
+func _drain_checks(phase: int) -> void:
+	var crits = game_state.get("critical_hit_controller")
+	if crits != null and not crits.is_holding():
+		crits.drain(phase)
 
 
 func _note_morale(ship_id: String, trigger: String, count: int, phase: int) -> void:

@@ -44,6 +44,8 @@ func get_movement_allowance(ship_id: String, facing: int = -1) -> int:
 		ship.movement_sail_state(),
 		rigging_quality
 	)
+	# Sheets cut / shrouds severed (rigging #7, #9): -1 MP in every direction and sail state.
+	ma = maxi(ma - ship.critical_mp_loss(current_turn()), 0)
 	# 5.G: blocked wind, after every other change to MA.
 	var ship_facing: int = ship.facing if facing < 0 else facing
 	ma = BlockedWind.apply(ma, BlockedWind.is_blocked(ship.hex_position, ship_facing, wind_dir,
@@ -51,6 +53,42 @@ func get_movement_allowance(ship_id: String, facing: int = -1) -> int:
 
 	Trace.trace_log("ShipState", "MA: %d | wind: %s | facing: %s | speed: %s | sail: %s" % [ma, wind_dir, wind_facing, wind_speed, ship.sail_state])
 	return ma
+
+## The g-t being played (0 when the game state has none, as in some test doubles).
+func current_turn() -> int:
+	var turn = game_state.get("current_turn") if game_state else null
+	return int(turn) if turn != null else 0
+
+## Acceleration and deceleration limits this g-t (5.E.4-6): {"accel", "decel"}.
+func get_speed_change_limits(ship_id: String) -> Dictionary:
+	var ship = game_state.get_ship(ship_id)
+	if not ship:
+		return {"accel": 0, "decel": 0}
+	return speed_change_limits(ship)
+
+## The Speed Change table value, then the 5.E.5 reductions (two rigging sections lost, towing,
+## WS 1: -1 each, never below 1), then Braces Cut (accel and decel at most 1, rigging #4), then
+## Sheets Cut (accel -1, may reach 0, 5.E.6; rigging #7, from the g-t after it was inflicted).
+func speed_change_limits(ship: ShipState) -> Dictionary:
+	var maneuverability: String = ship.ship.maneuverability.to_lower() if ship.ship else "b"
+	var accel: int = DataManager.get_speed_change("acceleration", maneuverability)
+	var decel: int = DataManager.get_speed_change("deceleration", maneuverability)
+	var reduction := 0
+	if ship.rigging_sections_lost() >= 2:
+		reduction += 1
+	if ship.towing:
+		reduction += 1
+	var wind_speed: int = game_state.environment.wind_speed if game_state.get("environment") else 2
+	if wind_speed == 1:
+		reduction += 1
+	if reduction > 0:
+		accel = maxi(accel - reduction, 1)
+	if ship.has_critical("braces_cut"):
+		accel = mini(accel, 1)
+		decel = mini(decel, 1)
+	if ship.sheets_cut_active(current_turn()):
+		accel = maxi(accel - 1, 0)
+	return {"accel": accel, "decel": decel}
 
 ## Movement and Positioning
 
@@ -281,16 +319,17 @@ func set_status(ship_id: String, status: ShipState.Status) -> bool:
 	ship_state_changed.emit(ship_id)
 	return true
 
-func add_guns_dismounted(ship_id: String, amount: int) -> bool:
-	"""SERVER ONLY: Add dismounted guns to both sides"""
+func add_guns_dismounted(ship_id: String, amount: int, side: int = -1) -> bool:
+	"""SERVER ONLY: Add dismounted guns to one side (PORT/STARBOARD), or both sides when side is -1"""
 	if not is_server:
 		push_error("ShipStateController: Cannot modify guns on client")
 		return false
 	var ship = _server_ship(ship_id)
 	if not ship:
 		return false
-	for side in [ShipState.PORT, ShipState.STARBOARD]:
-		ship.guns_dismounted[side] += amount
+	for s in [ShipState.PORT, ShipState.STARBOARD]:
+		if side == -1 or side == s:
+			ship.guns_dismounted[s] += amount
 	ship_state_changed.emit(ship_id)
 	return true
 
@@ -340,6 +379,162 @@ func set_unfoul_attempts(ship_id: String, attempts: int) -> bool:
 	ship.unfoul_attempts = attempts
 	ship_state_changed.emit(ship_id)
 	return true
+
+## Critical hits (7.D.11-12)
+
+## Adds a lasting critical effect and returns its seq, or -1 if refused.
+## effect needs "id" (ShipState.CRITICAL_EFFECT_IDS); "side", "turn" and
+## "expires_after_turn" are optional. seq and attempts are set here.
+func add_critical_effect(ship_id: String, effect: Dictionary) -> int:
+	if not is_server:
+		push_error("ShipStateController: Cannot add critical effect on client")
+		return -1
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return -1
+	var id := str(effect.get("id", ""))
+	if not ShipState.CRITICAL_EFFECT_IDS.has(id):
+		push_error("[Server] unknown critical effect '%s'" % id)
+		return -1
+	var seq: int = ship.critical_seq
+	ship.critical_effects.append({
+		"seq": seq,
+		"id": id,
+		"turn": int(effect.get("turn", game_state.current_turn)),
+		"side": int(effect.get("side", -1)),
+		"attempts": 0,
+		"expires_after_turn": int(effect.get("expires_after_turn", -1)),
+	})
+	ship.critical_seq = seq + 1
+	ship_state_changed.emit(ship_id)
+	return seq
+
+## Merges changes into the effect with this seq; "seq" and "id" cannot change.
+func update_critical_effect(ship_id: String, seq: int, changes: Dictionary) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot update critical effect on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	var index := _critical_index(ship, seq)
+	if index == -1:
+		return false
+	for key in changes:
+		if key != "seq" and key != "id":
+			ship.critical_effects[index][key] = changes[key]
+	ship_state_changed.emit(ship_id)
+	return true
+
+func remove_critical_effect(ship_id: String, seq: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot remove critical effect on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	var index := _critical_index(ship, seq)
+	if index == -1:
+		return false
+	ship.critical_effects.remove_at(index)
+	ship_state_changed.emit(ship_id)
+	return true
+
+func _critical_index(ship: ShipState, seq: int) -> int:
+	for i in range(ship.critical_effects.size()):
+		if int(ship.critical_effects[i].get("seq", -1)) == seq:
+			return i
+	push_error("[Server] %s has no critical effect with seq %d" % [ship.ship_id, seq])
+	return -1
+
+## Takes the next critical seq (shared with add_critical_effect), e.g. for a unique
+## morale trigger (9.B.1e). Returns -1 if refused.
+func next_critical_seq(ship_id: String) -> int:
+	if not is_server:
+		push_error("ShipStateController: Cannot take critical seq on client")
+		return -1
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return -1
+	var seq: int = ship.critical_seq
+	ship.critical_seq = seq + 1
+	ship_state_changed.emit(ship_id)
+	return seq
+
+## 6.F.4: the turn carried over to the first MP of the next g-t (-1 none, PORT, STARBOARD).
+func set_pending_turn(ship_id: String, direction: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify pending turn on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.pending_turn = direction
+	ship_state_changed.emit(ship_id)
+	return true
+
+## The direction of the last step the ship executed (-1 straight, PORT, STARBOARD; spec Q15).
+func set_last_step_direction(ship_id: String, direction: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify last step on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.last_step_direction = direction
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_rudder_destroyed(ship_id: String, destroyed: bool) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify rudder on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.rudder_destroyed = destroyed
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_wheel_shot_away(ship_id: String, shot_away: bool) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify wheel on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.wheel_shot_away = shot_away
+	ship_state_changed.emit(ship_id)
+	return true
+
+## Adds one fire (stored only until 8.E exists).
+func add_fire(ship_id: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify fires on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.fires += 1
+	ship_state_changed.emit(ship_id)
+	return true
+
+## Crosses out the current rigging section (the lowest-numbered one with boxes left;
+## rigging #2, #11, #12). Returns its index, or -1 if the ship is already dismasted.
+func cross_out_rigging_section(ship_id: String) -> int:
+	if not is_server:
+		push_error("ShipStateController: Cannot cross out rigging on client")
+		return -1
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return -1
+	for section in range(ship.rigging_current_hp.size()):
+		if ship.rigging_current_hp[section] > 0:
+			ship.rigging_current_hp[section] = 0
+			ship_state_changed.emit(ship_id)
+			Trace.trace_log("ShipState", "Ship %s rigging section %d crossed out" % [ship_id, section])
+			return section
+	return -1
 
 func _server_ship(ship_id: String) -> ShipState:
 	var ship = game_state.get_ship(ship_id)

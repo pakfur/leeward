@@ -18,6 +18,8 @@ var _crew_loss: Dictionary = {}
 var _drifting: Dictionary = {}
 var _unfouling: Dictionary = {}
 var _crew_quality: Dictionary = {}
+var _critical_hits: Dictionary = {}
+var _poor_maneuvering: Dictionary = {}
 
 func load_all(dir: String = "res://data/rules/") -> bool:
 	var gf = _load_json(dir + "gunnery_factor_table.json")
@@ -28,7 +30,10 @@ func load_all(dir: String = "res://data/rules/") -> bool:
 	var drifting = _load_json(dir + "drifting_table.json")
 	var unfouling = _load_json(dir + "unfouling_table.json")
 	var crew_quality = _load_json(dir + "crew_quality_table.json")
-	for table in [gf, bgn, results, mods, crew_loss, drifting, unfouling, crew_quality]:
+	var critical_hits = _load_json(dir + "critical_hits_table.json")
+	var poor_maneuvering = _load_json(dir + "poor_maneuvering_table.json")
+	for table in [gf, bgn, results, mods, crew_loss, drifting, unfouling, crew_quality,
+			critical_hits, poor_maneuvering]:
 		if table == null:
 			return false
 
@@ -39,6 +44,8 @@ func load_all(dir: String = "res://data/rules/") -> bool:
 	_drifting = drifting
 	_unfouling = unfouling
 	_crew_quality = crew_quality
+	_critical_hits = _whole_numbers_to_int(critical_hits)
+	_poor_maneuvering = _whole_numbers_to_int(poor_maneuvering)
 
 	_results.clear()
 	for row in results["rows"]:
@@ -146,6 +153,64 @@ func unfouling_success_max(attempt: int) -> int:
 func skill_modifier(crew_quality: String) -> int:
 	var entry = _lookup(_crew_quality, crew_quality, "crew quality")
 	return 0 if entry == null else int(entry["sk"])
+
+## Critical hits (Rigging p.112, Hull p.113). Each accessor returns a deep copy of
+## the chart row plus "crit" (its 2d6 row number), or {} for a roll off the chart.
+## check: the RC/HC column, d6 1-6. crit: the 2d6 "Crit" column, 2-12.
+func rigging_check(d6: int) -> Dictionary:
+	return _critical_check("rigging", d6)
+
+func rigging_crit(roll_2d6: int) -> Dictionary:
+	return _critical_row("rigging", roll_2d6)
+
+func hull_check(d6: int) -> Dictionary:
+	return _critical_check("hull", d6)
+
+func hull_crit(roll_2d6: int) -> Dictionary:
+	return _critical_row("hull", roll_2d6)
+
+## Poor Maneuvering (6.F.3): the highest d10 roll (0-9) that succeeds before DRMs.
+## -1 (with an error) for an unknown crew quality or maneuver type.
+func poor_maneuvering_number(crew_quality: String, maneuverability: String) -> int:
+	var row = _poor_maneuvering.get(crew_quality.to_upper())
+	var type := maneuverability.to_lower()
+	if crew_quality.to_upper() == "_DOC" or not row is Dictionary or not row.has(type):
+		push_error("CombatTables: unknown poor maneuvering crew quality/type '%s'/'%s'" % [
+			crew_quality, maneuverability])
+		return -1
+	return int(row[type])
+
+func _critical_check(table: String, d6: int) -> Dictionary:
+	var crit = _critical_hits[table]["check"].get(str(d6))
+	if crit == null:
+		push_error("CombatTables: %s critical check roll %d is off the chart" % [table, d6])
+		return {}
+	return _critical_row(table, int(crit))
+
+func _critical_row(table: String, roll_2d6: int) -> Dictionary:
+	var row = _critical_hits[table]["crit"].get(str(roll_2d6))
+	if row == null:
+		push_error("CombatTables: %s critical roll %d is off the chart" % [table, roll_2d6])
+		return {}
+	var copy: Dictionary = (row as Dictionary).duplicate(true)
+	copy["crit"] = roll_2d6
+	return copy
+
+## JSON numbers load as floats; chart rows hold only whole numbers.
+func _whole_numbers_to_int(value: Variant) -> Variant:
+	if value is Dictionary:
+		var out := {}
+		for key in value:
+			out[key] = _whole_numbers_to_int(value[key])
+		return out
+	if value is Array:
+		var items: Array = []
+		for item in value:
+			items.append(_whole_numbers_to_int(item))
+		return items
+	if value is float and is_equal_approx(value, roundf(value)):
+		return int(value)
+	return value
 
 func _lookup(table: Dictionary, key: String, what: String) -> Variant:
 	if not table.has(key):

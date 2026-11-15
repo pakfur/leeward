@@ -277,6 +277,88 @@ def check_small_tables(tables, r):
                     r.err(f"crew_quality_table.json.{k}", "must have sk, bcf_sailor, bcf_marine")
 
 
+CRIT_KEYS = [str(n) for n in range(2, 13)]
+CHECK_KEYS = [str(n) for n in range(1, 7)]
+CRIT_FLAGS = {"D", "diamond"}
+CRIT_IDS = {
+    "rigging": {
+        "mast_may_fall", "signal_halyards_cut", "braces_cut", "lines_jammed",
+        "broadside_obscured", "sheets_cut", "leadership_casualties", "shrouds_severed",
+        "yard_shot_away", "stays_cut", "mast_falls_on_deck",
+    },
+    "hull": {
+        "rudder", "wheel_shot_away", "crew_disorganized", "leadership_casualties",
+        "hull_structural_damage", "rigging_damage", "guns_dismounted", "minor_explosion",
+        "waterline_damage", "afire_major_explosion",
+    },
+}
+CQ_LETTERS = list("ABCDEFG")
+MANEUVER_TYPES = ["a", "b", "c", "d"]
+
+
+def check_critical_hits(t, r):
+    name = "critical_hits_table.json"
+    for table in ("rigging", "hull"):
+        p = f"{name}.{table}"
+        block = t.get(table)
+        if not isinstance(block, dict):
+            r.err(p, "missing")
+            continue
+        crit = block.get("crit")
+        if not isinstance(crit, dict) or sorted(crit, key=int) != CRIT_KEYS:
+            r.err(f"{p}.crit", "must have keys 2-12 (the 2d6 Crit column)")
+            crit = crit if isinstance(crit, dict) else {}
+        for key, row in crit.items():
+            rp = f"{p}.crit.{key}"
+            if not isinstance(row, dict):
+                r.err(rp, "must be an object")
+                continue
+            if row.get("id") not in CRIT_IDS[table]:
+                r.err(rp, f"unknown id {row.get('id')!r}")
+            flags = row.get("flags")
+            if not isinstance(flags, list) or not set(flags) <= CRIT_FLAGS:
+                r.err(rp, f"flags must be a list drawn from {sorted(CRIT_FLAGS)}")
+            for k, v in row.items():
+                if k.endswith("_by_class") and (not isinstance(v, dict) or sorted(v) != ["1", "2", "3", "4"]):
+                    r.err(f"{rp}.{k}", "must have class keys 1-4")
+        check = block.get("check")
+        if not isinstance(check, dict) or sorted(check, key=int) != CHECK_KEYS:
+            r.err(f"{p}.check", "must have keys 1-6 (the d6 RC/HC column)")
+            continue
+        prev = None
+        for key in CHECK_KEYS:
+            v = check[key]
+            if not isinstance(v, int) or str(v) not in crit:
+                r.err(f"{p}.check.{key}", f"{v!r} is not an existing crit row")
+            elif prev is not None and v < prev:
+                r.err(f"{p}.check.{key}", f"{v} < previous {prev} (column must not decrease)")
+            else:
+                prev = v
+
+
+def check_poor_maneuvering(t, r):
+    name = "poor_maneuvering_table.json"
+    letters = sorted(k for k in t if k != "_doc")
+    if letters != CQ_LETTERS:
+        r.err(name, "must have keys A-G")
+        return
+    for cq in CQ_LETTERS:
+        row = t[cq]
+        if not isinstance(row, dict) or sorted(row) != MANEUVER_TYPES:
+            r.err(f"{name}.{cq}", "must have maneuver types a-d")
+            return
+        vals = [row[m] for m in MANEUVER_TYPES]
+        if not all(isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 9 for v in vals):
+            r.err(f"{name}.{cq}", "entries must be ints 0-9 (d10 roll <= n)")
+            return
+        if vals != sorted(vals):
+            r.err(f"{name}.{cq}", "must not decrease from type A to D")
+    for m in MANEUVER_TYPES:
+        col = [t[cq][m] for cq in CQ_LETTERS]
+        if col != sorted(col, reverse=True):
+            r.err(f"{name} type {m}", "must not increase from CQ A to G")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     default_dir = Path(__file__).resolve().parents[4] / "data" / "rules"
@@ -289,6 +371,7 @@ def main():
         "gunfire_results_table.json", "gunfire_modifiers.json",
         "crew_loss_table.json", "drifting_table.json",
         "unfouling_table.json", "crew_quality_table.json",
+        "critical_hits_table.json", "poor_maneuvering_table.json",
     ]
     tables = {n: load(args.rules_dir, n, r) for n in names}
     checks = {
@@ -296,6 +379,8 @@ def main():
         "basic_gunfire_number_table.json": check_bgn,
         "gunfire_results_table.json": check_results,
         "gunfire_modifiers.json": check_modifiers,
+        "critical_hits_table.json": check_critical_hits,
+        "poor_maneuvering_table.json": check_poor_maneuvering,
     }
     for n, fn in checks.items():
         if tables[n] is not None:

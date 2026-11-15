@@ -43,6 +43,9 @@ var _fire_ready: Array[bool] = [false, false]
 var bear_off_prompt_player_ids: Array[int] = []
 ## This turn's answers: ship_id -> {choice, segment} (see MovementResolver.run).
 var _bear_off_decisions: Dictionary = {}
+## The resolver's RNG state when this g-t's movement resolution first ran: a re-run after a bear-off
+## answer starts from it, so the dice before the decision (poor maneuvering, tacking, contests) repeat.
+var _resolution_rng_state: int = 0
 ## Set when END_TURN finds a victory: {"winner", "reason", "points", "turn"}. {} while the game runs.
 var game_result: Dictionary = {}
 
@@ -181,6 +184,7 @@ func _enter_movement_resolution_phase() -> void:
 
 	_bear_off_decisions = {}
 	if game_state.movement_resolver and game_state.environment:
+		_resolution_rng_state = game_state.movement_resolver.rng.state
 		_run_movement_resolution(0)
 	else:
 		advance_phase()
@@ -191,6 +195,7 @@ func _enter_movement_resolution_phase() -> void:
 ## that segment; the view then calls on_playback_paused().
 func _run_movement_resolution(resume_impulse: int) -> void:
 	var all_ships = game_state.get_all_ships()
+	game_state.movement_resolver.rng.state = _resolution_rng_state
 	@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 	var log = game_state.movement_resolver.run(all_ships, game_state.environment, _bear_off_decisions,
 		_bear_off_prompt_ship_ids(all_ships))
@@ -375,6 +380,8 @@ func _enter_status_adjustment_phase() -> void:
 	Trace.trace_log("TurnPhase", "Phase: STATUS_ADJUSTMENT")
 	if game_state.fouling_controller:
 		game_state.fouling_controller.resolve_unfouling(current_phase)
+	if game_state.critical_hit_controller:
+		game_state.critical_hit_controller.resolve_fixes(current_phase)
 	if game_state.sail_controller:
 		game_state.sail_controller.advance_changes(current_phase)
 	# TODO: Resolve explosions, sinking, repairs, crew reorg, anchors

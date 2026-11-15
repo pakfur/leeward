@@ -85,6 +85,16 @@ func test_available_targets_empty_when_struck() -> void:
 	assert_eq(ctrl.available_targets("sail_ship"), [] as Array[String])
 
 
+func test_available_targets_empty_when_destroyed() -> void:
+	ship.status = ShipState.Status.DESTROYED
+	assert_eq(ctrl.available_targets("sail_ship"), [] as Array[String])
+
+
+func test_plot_when_destroyed_is_error() -> void:
+	ship.status = ShipState.Status.DESTROYED
+	assert_eq(ctrl.plot_sail_change(0, "sail_ship", "FS"), "Ship is destroyed")
+
+
 func test_available_targets_empty_when_dismasted() -> void:
 	ship.rigging_current_hp = [0, 0, 0, 0] as Array[int]
 	assert_eq(ctrl.available_targets("sail_ship"), [] as Array[String])
@@ -239,3 +249,68 @@ func test_struck_mid_change_cancels() -> void:
 	ctrl.advance_changes(TurnPhaseController.GamePhase.STATUS_ADJUSTMENT)
 	assert_eq(ship.sail_state, "MS")
 	assert_eq(ship.sail_change, {})
+
+
+func test_destroyed_mid_change_cancels() -> void:
+	ctrl.plot_sail_change(0, "sail_ship", "FS")
+	ctrl.begin_plotted_changes()
+	ship.status = ShipState.Status.DESTROYED
+	ctrl.advance_changes(TurnPhaseController.GamePhase.STATUS_ADJUSTMENT)
+	assert_eq(ship.sail_state, "MS")
+	assert_eq(ship.sail_change, {})
+	var events := GameState.turn_log.of_type(PhaseEvents.Type.SAIL_CHANGE)
+	assert_eq(events[events.size() - 1].data.get("cancelled"), "destroyed")
+
+
+# --- Lines Jammed (Rigging #5, 5.F.9c) ---
+
+func _jam_lines() -> void:
+	GameState.ship_controller.add_critical_effect("sail_ship", {"id": "lines_jammed"})
+
+
+func test_lines_jammed_refuses_plotting() -> void:
+	_jam_lines()
+	assert_eq(ctrl.available_targets("sail_ship"), [] as Array[String])
+	assert_eq(ctrl.plot_sail_change(0, "sail_ship", "FS"), "Lines jammed")
+	assert_eq(ship.plotted_actions.get("sail_change", ""), "")
+
+
+func test_lines_jammed_still_allows_clearing_the_plot() -> void:
+	_jam_lines()
+	assert_eq(ctrl.plot_sail_change(0, "sail_ship", ""), "")
+
+
+func test_lines_jammed_drops_a_plotted_order_at_begin() -> void:
+	ctrl.plot_sail_change(0, "sail_ship", "FS")
+	_jam_lines()
+	ctrl.begin_plotted_changes()
+	assert_eq(ship.sail_change, {})
+	var events := GameState.turn_log.of_type(PhaseEvents.Type.SAIL_CHANGE)
+	assert_eq(events.size(), 1)
+	assert_eq(events[0].data.get("cancelled"), "lines jammed")
+
+
+func test_cancel_change_logs_the_reason() -> void:
+	ctrl.plot_sail_change(0, "sail_ship", "PS")
+	ctrl.begin_plotted_changes()
+	assert_false(ship.sail_change.is_empty())
+	assert_true(ctrl.cancel_change("sail_ship", "lines jammed", TurnPhaseController.GamePhase.COMBAT_RESOLUTION))
+	assert_eq(ship.sail_change, {})
+	assert_eq(ship.sail_state, "MS")
+	var events := GameState.turn_log.of_type(PhaseEvents.Type.SAIL_CHANGE)
+	assert_eq(events[events.size() - 1].data, {"from": "MS", "to": "PS", "turns_left": 2,
+		"cancelled": "lines jammed"})
+	assert_eq(events[events.size() - 1].to_text({"sail_ship": "Vengeance"}),
+		"Vengeance: sail change to plain sail (PS) cancelled: the lines are jammed")
+	assert_false(ctrl.cancel_change("sail_ship", "lines jammed", TurnPhaseController.GamePhase.COMBAT_RESOLUTION),
+		"nothing left to cancel")
+
+
+func test_lines_jammed_cancels_in_advance_changes() -> void:
+	ctrl.plot_sail_change(0, "sail_ship", "FS")
+	ctrl.begin_plotted_changes()
+	_jam_lines()
+	ctrl.advance_changes(TurnPhaseController.GamePhase.STATUS_ADJUSTMENT)
+	assert_eq(ship.sail_state, "MS")
+	var events := GameState.turn_log.of_type(PhaseEvents.Type.SAIL_CHANGE)
+	assert_eq(events[events.size() - 1].data.get("cancelled"), "lines jammed")

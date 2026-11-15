@@ -1,6 +1,26 @@
 # Critical Hits, Rigging Checks and Hull Checks — Design
 
-**Status:** draft for review · **Date:** 2026-11-15 · **Closes:** `feature_diff.md` §1 item 1, §2.1 "Critical hits" row
+**Status:** approved, in implementation · **Date:** 2026-11-15 · **Closes:** `feature_diff.md` §1 item 1, §2.1 "Critical hits" row
+
+## 0. Decisions (binding; they override anything below that disagrees)
+
+From the answers in §6:
+
+- **Deferred (do not implement; tracked in `feature_diff.md` §2.2):**
+  - **Q6 Crew disorganized (hull #4):** apply only the box loss (1 sailor; none for class 4). No disorganized section, no reorganize countdown, no effect on sail changes or sections firing. Log the result as "crew disorganized (not yet simulated)". Revisit with crew tasks.
+  - **Q10 Minor explosion fire roll (hull #10):** apply 1H and −2 guns dismounted on the engaged broadside. Do not roll for fire. Log "fire roll not yet simulated". Revisit with crew tasks and fire (8.E).
+  - **Q16 Signal halyards cut (rigging #3):** apply only the 1R loss at MS or PS. No effect entry and no fix roll. Revisit with signalling.
+- **Q2 Explosion (hull #12):** if the 2d10 explosion roll says the ship explodes, the ship is **destroyed**. That is a new status `DESTROYED`, removed from play: it cannot move, fire, drift, change sail, unfoul or be targeted, and it counts as lost for victory. It stays on the map as an obstruction: its two hexes still block movement (collisions) and line of sight. The view swaps the ship model for a "wreck with debris" look; generate it procedurally, since no asset exists. Afire without an explosion: increment `fires` and log it (fire itself is not simulated).
+- **Q4:** [D] filters only the dismantling shot's own crit, not the RC/HC checks it causes.
+- **Q5:** no HC for losing hull section 4 (the ship strikes).
+- **Q7:** implement the 5.E.5 base reductions (two rigging sections lost, WS = 1, towing; floor 1) in `get_speed_change_limits`.
+- **Q8:** ignore the Braces Cut "changing sail state" exception.
+- **Q9:** bearing off with Rudder Destroyed is +3 (rudder) +1 (poor maneuvering) = **+4**.
+- **Q12:** for non-rake fire from outside the target's arcs, the engaged side is set by relative bearing, with a d6 on the centre line (1–3 port, 4–6 starboard).
+- **Q13:** "bow arc" for 7.E.6 means `rake == "bow"` only.
+- **Q14:** scenarios gain an optional integer `year`; the ≤1783 −1 DRM applies only when it is present and ≤ 1783.
+- **Q15:** Rudder Jammed's "last MP used" is the last step the ship executed this turn when the crit happens. If the ship did not move this turn, it is the last step of its previous move; with no step at all, treat it as straight.
+- **UI (§4, no answers given; the spec's recommendations apply):** one status-panel line per active effect; failed critical-hit rolls are shown in the log (every roll is traceable); the planning UI shows a poor-maneuvering chance beside turn steps, as it does the tacking chance; no map badges, except the wreck model for a destroyed ship.
 **Sources:** rule text `docs/rules/close_action.md` (7.C.11, 7.C.12b, 7.D.6–12, 7.E.5–6, 5.E.5–6, 5.F.9, 6.F, 8.D.5, 9.B.1e, glossary RC/HC); numbers only from the scans `docs/rules/images/rigging-critical-hits.jpg` (p.112), `hull-critical-hits.jpg` (p.113), `gunfire-results-chart.jpg` (CH# column, p.110), `boarding-combat-chart.jpg` (Unfouling, Poor Maneuvering, Tacking and Bearing Off DRMs, p.109). PDF p.25 confirms 7.D.11: "the second DR (± the target's \"CH mod\" value) is ≤ the critical hit number".
 
 ---
@@ -180,7 +200,7 @@ resolve_fixes(phase)                  # STATUS_ADJUSTMENT: 8.D.5 rolls, reorgani
 `resolve_fixes` dice order: ships by ship_id, effects by `seq`; each fixable effect rolls d10; success if `d10 + skill_modifier(cq) <= unfouling_success_max(attempts+1)`. Struck ships do not roll. Then `crew_disorganized.turns_left -= 1` (removed at 0); `sheets_cut` with `expires_after_turn <= current_turn` is removed (inflicted on turn T ⇒ affects T+1's movement, removed in T+1's STATUS_ADJUSTMENT).
 
 ### 3.3 Fire (8.E out of scope)
-Hull #10 (d10 ≥ 6 ± SK) and #12 increment `ShipState.fires`, log `FIRE_STARTED`, note the table MC. No spread, damage or firefighting. #12 explosion roll (2d10 + DRMs < class) is rolled and logged; on "explodes" the ship **strikes** with reason "exploded" (Open q. 2). Explosion DRM "each existing fire −2" reads `fires` before the increment.
+Hull #10 (d10 ≥ 6 ± SK) and #12 increment `ShipState.fires`, log `FIRE_STARTED`, note the table MC. No spread, damage or firefighting. #12 explosion roll (2d10 + DRMs < class) is rolled and logged on the CRITICAL_HIT event (`explosion: {roll, modifier, total, needed, explodes}`); on "explodes" the ship is **destroyed** (`DamageController.destroy`, status `DESTROYED`, `DESTROYED` event; §0 Q2 supersedes the earlier "strikes" plan). Explosion DRM "each existing fire −2" reads `fires` before the increment.
 
 ### 3.4 `PhaseEvents.Type` additions and log text
 
@@ -257,7 +277,7 @@ Box losses keep using `DAMAGE` (with `source_id` and a `cause: "critical"` field
 | 31 | Bearing off, RD | +3 +1 = +4 (Open q. 8) | Bearing Off chart |
 | 32 | Hull #4 on class 3, sections 1–4 manned | 1 sailor lost; section 4 disorganized; turns = 5 + SK (CQ B: 3) | hull #4 |
 | 33 | Hull #10, CQ B, d10 7 | 7 − 2 = 5 < 6 ⇒ no fire (if "± SK" adds SK mod; Open q. 9) | hull #10 |
-| 34 | Hull #12, CQ D, no fires, class 2, 2d10 = 1 | 1 < 2 ⇒ explodes ⇒ struck "exploded" | hull #12 |
+| 34 | Hull #12, CQ D, no fires, class 2, 2d10 = 1 | 1 < 2 ⇒ explodes ⇒ destroyed (§0 Q2) | hull #12 |
 | 35 | Crit MC twice in one turn | two MCs noted (unique triggers) | 9.B.1e |
 | 36 | Collision empties rigging section 1 | RC rolled in MOVEMENT_RESOLUTION | 7.D.7, 6.E.3 |
 
@@ -266,17 +286,16 @@ Box losses keep using `DAMAGE` (with `source_id` and a `cause: "critical"` field
 ## 6. Open questions
 
 1. ~~**7.D.11 OCR**~~ Settled: PDF p.25 reads "± the target's CH mod … ≤ the critical hit number"; the text is corrected in `close_action.md`.
-2. **Explosion (hull #12)** without 8.E: strike the ship ("exploded"), remove it from the map, or log only? No blast damage either way.
-3. Do **[D]** exemptions apply to RC/HC checks caused by a dismantling-shot hit (e.g. RC 1 "mast may fall")? Proposal: no — [D] filters only the shot's own crit.
-4. **Hull section 4** loss strikes the ship in Leeward. Roll its HC anyway (effects on a struck ship are mostly moot)? Proposal: skip.
-5. **Crew disorganized**: Leeward has no crew tasks. Proposal: the section cannot work sail and does not count for "sections firing" until reorganized. Count down 5 + SK mod g-ts automatically (no RO plot)?
-6. Implement the missing **5.E.5 base reductions** (two rigging sections lost, WS 1, towing) in the same helper now?
-7. **Braces Cut decel exception "by changing sail state"**: allow a larger decel on a turn when a sail change completes? Proposal: ignore (sail changes complete after movement).
-8. **Bearing off with Rudder Destroyed**: RD is also poor maneuvering — +3 and +1 (= +4), or +3 only?
-9. **Hull #10 "≥ 6 (± SK)"**: is SK added to the d10 (CQ A, −3, makes fire less likely) or to the 6? Proposal: d10 + SK mod ≥ 6.
-10. **Shrouds severed** needs a repair task (8.F), which does not exist: permanent until repairs ship, or auto-repair after 5 ± SK g-ts like reorganizing?
-11. **Engaged broadside** for non-rake fire from outside the target's arcs (beyond range 5): side by relative bearing, d6 on the centre line?
-12. **"Bow arc"** for 7.E.6: treat as `rake == "bow"` only, or any firer forward of the target's beam line?
-13. **Scenario year** DRM for #12 (≤ 1783 −1): scenarios have no year; add an optional `year` to scenario JSON?
-14. **Rudder Jammed "last MP used"**: the last plotted step at the time of the crit (current turn's movement) — confirm.
-15. Signal halyards cut has no effect until signalling exists — keep it as a fixable no-op effect?
+2. **Explosion (hull #12)** without 8.E: strike the ship ("exploded"), remove it from the map, or log only? No blast damage either way. Answer: Remove from play but keep the model visible on the map as an obstruction that can be hit, change the model to a "destroyed model with debris" and update the ship state.
+4. Do **[D]** exemptions apply to RC/HC checks caused by a dismantling-shot hit (e.g. RC 1 "mast may fall")? Proposal: no — [D] filters only the shot's own crit. Answer: approved the proposed answer that [D] only filters own crit.
+5. **Hull section 4** loss strikes the ship in Leeward. Roll its HC anyway (effects on a struck ship are mostly moot)? Proposal: skip. Answer: approved the proposed answer to skip.
+6. **Crew disorganized**: Leeward has no crew tasks. Proposal: the section cannot work sail and does not count for "sections firing" until reorganized. Count down 5 + SK mod g-ts automatically (no RO plot)? Answer: mark this as something to come back to when planning crew tasks feature is designed and implemented. Update the rules_diff.md to keep track of this.
+7. Implement the missing **5.E.5 base reductions** (two rigging sections lost, WS 1, towing) in the same helper now? Answer: Yes
+8. **Braces Cut decel exception "by changing sail state"**: allow a larger decel on a turn when a sail change completes? Proposal: ignore (sail changes complete after movement). Answer: approved your proposal to ignore.
+9. **Bearing off with Rudder Destroyed**: RD is also poor maneuvering — +3 and +1 (= +4), or +3 only? Answer: yes
+10. **Hull #10 "≥ 6 (± SK)"**: is SK added to the d10 (CQ A, −3, makes fire less likely) or to the 6? Proposal: d10 + SK mod ≥ 6. Answer: approved your proposal Answer: Same as #6. mark this as something to come back to when planning crew tasks feature is designed and implemented. Update the rules_diff.md to keep track of this.
+12. **Engaged broadside** for non-rake fire from outside the target's arcs (beyond range 5): side by relative bearing, d6 on the centre line? Answer: Yes
+13. **"Bow arc"** for 7.E.6: treat as `rake == "bow"` only, or any firer forward of the target's beam line? Answer: Yes, treat as `rake == "bow"`
+14. **Scenario year** DRM for #12 (≤ 1783 −1): scenarios have no year; add an optional `year` to scenario JSON? Answer: Yes
+15. **Rudder Jammed "last MP used"**: the last plotted step at the time of the crit (current turn's movement) — confirm. Answer: confirmed
+16. Signal halyards cut has no effect until signalling exists — keep it as a fixable no-op effect? Answer: mark this as something to revisit when signaling is implemented. Update the rules_diff.md

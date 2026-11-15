@@ -97,6 +97,32 @@ func test_hold_fire_text() -> void:
 	assert_eq(ev.to_text(NAMES), "Surprise holds fire.")
 
 
+func test_fire_started_text() -> void:
+	var ev := PhaseEvents.PhaseLog.new().add(PhaseEvents.Type.FIRE_STARTED, 4, "s1", {"fires": 1})
+	assert_eq(ev.to_text(NAMES), "Surprise is afire (not yet simulated)")
+
+
+func test_destroyed_text() -> void:
+	var log := PhaseEvents.PhaseLog.new()
+	var ev := log.add(PhaseEvents.Type.DESTROYED, 4, "s1", {"reason": "explosion"})
+	assert_eq(ev.to_text(NAMES), "Surprise explodes and is destroyed")
+	var freed := log.add(PhaseEvents.Type.DESTROYED, 4, "s1", {"reason": "explosion"}, "s2")
+	assert_eq(freed.to_text(NAMES), "Surprise explodes and is destroyed; Renard is no longer fouled with her")
+
+
+func test_hull_twelve_crit_text_gives_the_explosion_roll() -> void:
+	var log := PhaseEvents.PhaseLog.new()
+	var data := {"source": "gunfire", "table": "hull", "roll": 12, "result_id": "afire_major_explosion",
+		"side": 2, "sub_rolls": [], "guns": 2,
+		"explosion": {"roll": 1, "modifier": 0, "total": 1, "needed": 2, "explodes": true}}
+	var ev := log.add(PhaseEvents.Type.CRITICAL_HIT, 4, "s1", data, "s2")
+	assert_eq(ev.to_text(NAMES),
+		"Surprise: hull critical 12 — afire, major explosion −2 guns — she explodes (2d10 1 +0 = 1 < class 2) (both broadsides)")
+	data["explosion"] = {"roll": 9, "modifier": -2, "total": 7, "needed": 3, "explodes": false}
+	assert_eq(ev.to_text(NAMES),
+		"Surprise: hull critical 12 — afire, major explosion −2 guns — no explosion (2d10 9 -2 = 7, not below class 3) (both broadsides)")
+
+
 func test_to_text_tolerates_missing_data_for_every_type() -> void:
 	var log := PhaseEvents.PhaseLog.new()
 	for t in PhaseEvents.Type.values():

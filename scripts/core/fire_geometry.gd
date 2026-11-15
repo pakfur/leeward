@@ -96,6 +96,27 @@ func rake_type_ships(target_bow: Vector2i, target_facing: int, firer_hexes: Arra
 	return "stern" if keel.dot(firer_centre - target_centre) < 0.0 else "bow"
 
 
+## Which side of the target (bow `target_bow`, facing `target_facing`) the firer's centre lies on,
+## by relative bearing from the target's centre: ShipState.PORT, ShipState.STARBOARD, or -1 when
+## the firer's centre is on the target's centre line (dead ahead or astern).
+func relative_side(target_bow: Vector2i, target_facing: int, firer_hexes: Array[Vector2i]) -> int:
+	if firer_hexes.is_empty():
+		return -1
+	var target_stern := HexGrid.stern_of(target_bow, target_facing)
+	var target_centre := (_world_xz(target_bow) + _world_xz(target_stern)) / 2.0
+	var keel := _world_xz(target_bow) - _world_xz(target_stern)
+	var firer_centre := Vector2.ZERO
+	for h in firer_hexes:
+		firer_centre += _world_xz(h)
+	firer_centre /= float(firer_hexes.size())
+	var to_firer := firer_centre - target_centre
+	var cross := keel.x * to_firer.y - keel.y * to_firer.x
+	if absf(cross) <= 1e-4 * maxf(keel.length() * to_firer.length(), 1.0):
+		return -1
+	# Same convention as bearing_side: a positive cross product is clockwise (starboard).
+	return ShipState.STARBOARD if cross > 0.0 else ShipState.PORT
+
+
 func _outside_all_arcs(target_hexes: Array[Vector2i], target_facing: int,
 		firer_hexes: Array[Vector2i]) -> bool:
 	for battery in target_hexes:

@@ -168,6 +168,25 @@ func test_struck_ship_still_drifts() -> void:
 	assert_eq(s.hex_position, _downwind(Vector2i(5, 5)))
 
 
+func test_destroyed_ship_never_drifts() -> void:
+	var s := _make_ship("a", Vector2i(5, 5))
+	s.status = ShipState.Status.DESTROYED
+	resolver.resolve(PHASE)  # no die is rolled (after_each checks the queue is empty)
+	assert_eq(s.hex_position, Vector2i(5, 5))
+	assert_eq(_drift_events().size(), 0)
+
+
+func test_drift_blocked_by_wreck_rolls_no_fouling() -> void:
+	var drifter := _make_ship("a", Vector2i(5, 5))
+	var wreck := _make_ship("b", Vector2i(4, 5))
+	wreck.status = ShipState.Status.DESTROYED
+	_dice.queue([9])  # the drift roll only; a wreck never fouls, so no fouling d10
+	resolver.resolve(PHASE)
+	assert_eq(drifter.hex_position, Vector2i(5, 5), "the wreck blocks the drift")
+	assert_eq(drifter.fouled_with, "")
+	assert_false(_drift_events()[0].data.has("fouled"))
+
+
 # --- ordering and blocking ---------------------------------------------------
 
 func test_leeward_ship_resolved_first() -> void:
@@ -468,6 +487,14 @@ func test_struck_ship_cannot_plot() -> void:
 	a.status = ShipState.Status.STRUCK
 	var response := _start_plotting(a)
 	assert_eq((response as MovementTypes.PlottingErrorResponse).error_code, "SHIP_STRUCK")
+
+
+func test_destroyed_ship_cannot_plot() -> void:
+	var a := _make_ship("a", Vector2i(5, 5))
+	a.status = ShipState.Status.DESTROYED
+	var response := _start_plotting(a)
+	assert_eq((response as MovementTypes.PlottingErrorResponse).error_code, "SHIP_DESTROYED")
+	assert_true(StubAI.LOCKED_ERROR_CODES.has("SHIP_DESTROYED"))
 
 
 func test_dismasted_ship_cannot_plot() -> void:

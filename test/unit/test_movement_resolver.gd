@@ -789,6 +789,15 @@ func test_struck_ship_ignores_plotted_movement() -> void:
 	assert_false(state.moved_this_turn, "Struck ship did not move")
 
 
+func test_destroyed_ship_ignores_plotted_movement() -> void:
+	var state = _make_ship_state()
+	state.status = ShipState.Status.DESTROYED
+	_plot_straight(state, 3)
+	var ships: Array[ShipState] = [state]
+	var log = resolver.run(ships, env)
+	assert_eq(log.get_result("test_ship_1").final_hex, Vector2i(5, 5), "A wreck stays in place")
+
+
 # ===========================================================================
 # Bearing off
 # ===========================================================================
@@ -1637,6 +1646,32 @@ func test_struck_ship_both_hexes_block() -> void:
 	assert_eq(result.blocked_by, "struck", "The struck ship's stern hex is in the way")
 	assert_ne(result.final_hex, Vector2i(6, 5), "The mover does not enter the stern hex")
 	assert_eq(result.final_hex, Vector2i(5, 5), "It makes its first step only")
+
+
+func test_destroyed_ship_both_hexes_block_and_never_foul() -> void:
+	# A wreck lying E with bow (7, 5), stern (6, 5): the mover runs into its stern hex (spec Q2).
+	var wreck = _make_ship_state(Vector2i(7, 5), 0, 0, "C", "wreck")
+	wreck.status = ShipState.Status.DESTROYED
+	var mover = _make_ship_state(Vector2i(4, 5), 0, 2, "C", "mover")
+	_plot_straight(mover, 2)
+	var ships: Array[ShipState] = [wreck, mover]
+
+	var log = resolver.run(ships, env)
+	var result = log.get_result("mover")
+
+	assert_eq(result.blocked_by, "wreck", "The wreck's stern hex is in the way")
+	assert_eq(result.final_hex, Vector2i(5, 5), "It makes its first step only")
+	assert_eq(result.fouled_with, "", "A wreck never fouls")
+	assert_eq(log.get_result("wreck").final_hex, Vector2i(7, 5), "The wreck does not move")
+
+
+func test_roll_fouling_with_a_wreck_is_false() -> void:
+	var a = _make_ship_state(Vector2i(5, 5), 0, 0, "C", "a")
+	var wreck = _make_ship_state(Vector2i(8, 5), 0, 0, "C", "wreck")
+	a.sail_state = "PS"
+	wreck.status = ShipState.Status.DESTROYED
+	assert_false(resolver.roll_fouling(a, wreck))
+	assert_false(resolver.roll_fouling(wreck, a))
 
 
 func test_solo_ship_sails_ahead_and_turns_freely() -> void:

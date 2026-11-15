@@ -8,7 +8,11 @@ func before_all() -> void:
 	DataManager.load_ship_definitions()
 
 
+var _saved_turn := 0
+
+
 func before_each() -> void:
+	_saved_turn = GameState.current_turn
 	state = _make_state({})
 	GameState.ships.clear()
 	GameState.ships_by_player.clear()
@@ -16,6 +20,9 @@ func before_each() -> void:
 
 
 func after_each() -> void:
+	GameState.ship_controller.is_server = true
+	GameState.current_turn = _saved_turn
+	GameState.ship_history.erase("ss_ship")
 	GameState.ships.clear()
 	GameState.ships_by_player.clear()
 
@@ -139,6 +146,24 @@ func test_serialize_round_trip_keeps_new_fields() -> void:
 	assert_eq(restored.morale_triggers_used, ["hull_1"] as Array[String])
 	assert_eq(restored.unfoul_attempts, 3)
 	assert_eq(restored.crew_count.size(), 4)
+
+
+func test_serialize_round_trip_keeps_destroyed_status() -> void:
+	state.status = ShipState.Status.DESTROYED
+	var restored := ShipState.deserialize(state.serialize())
+	assert_eq(restored.status, ShipState.Status.DESTROYED)
+	assert_true(restored.is_destroyed())
+
+
+func test_out_of_play_covers_struck_and_destroyed() -> void:
+	assert_false(state.is_out_of_play())
+	state.status = ShipState.Status.STRUCK
+	assert_true(state.is_out_of_play())
+	assert_false(state.is_destroyed())
+	state.status = ShipState.Status.DESTROYED
+	assert_true(state.is_out_of_play())
+	assert_true(state.is_destroyed())
+	assert_false(state.is_struck(), "destroyed is its own status, not struck")
 
 
 func test_deserialize_old_snapshot_uses_defaults() -> void:
@@ -276,3 +301,190 @@ func test_add_ship_accepts_ship_on_free_hex() -> void:
 	var other := _make_state({"id": "ss_other", "position": {"q": 3, "r": 1}})
 	assert_true(GameState.add_ship(other))
 	assert_eq(GameState.ships.size(), 2)
+
+
+# --- critical hits: helpers ---
+
+func _effect(id: String, side: int = -1) -> Dictionary:
+	return {"seq": 0, "id": id, "turn": 1, "side": side, "attempts": 0, "expires_after_turn": -1}
+
+
+func test_new_ship_has_no_criticals() -> void:
+	assert_eq(state.critical_effects.size(), 0)
+	assert_eq(state.critical_seq, 0)
+	assert_false(state.rudder_destroyed)
+	assert_false(state.wheel_shot_away)
+	assert_eq(state.fires, 0)
+	assert_false(state.has_critical("braces_cut"))
+	assert_eq(state.critical_mp_loss(), 0)
+	assert_false(state.is_poor_maneuvering())
+	assert_eq(state.max_turns_per_gt(), ShipState.UNLIMITED_TURNS)
+
+
+func test_has_critical_and_count_by_side() -> void:
+	state.critical_effects = [
+		_effect("broadside_obscured", ShipState.PORT),
+		_effect("broadside_obscured", ShipState.PORT),
+		_effect("broadside_obscured", ShipState.STARBOARD),
+		_effect("braces_cut"),
+	] as Array[Dictionary]
+	assert_true(state.has_critical("braces_cut"))
+	assert_false(state.has_critical("lines_jammed"))
+	assert_eq(state.critical_count("broadside_obscured"), 3)
+	assert_eq(state.critical_count("broadside_obscured", ShipState.PORT), 2)
+	assert_eq(state.critical_count("broadside_obscured", ShipState.STARBOARD), 1)
+
+
+func test_obscured_penalty_is_minus_two_per_entry_on_that_side() -> void:
+	# 7.C.11: falling rigging / yard shot away, -2 per entry on the broadside.
+	state.critical_effects = [
+		_effect("broadside_obscured", ShipState.PORT),
+		_effect("broadside_obscured", ShipState.PORT),
+		_effect("broadside_obscured", ShipState.STARBOARD),
+	] as Array[Dictionary]
+	assert_eq(state.obscured_penalty(ShipState.PORT), -4)
+	assert_eq(state.obscured_penalty(ShipState.STARBOARD), -2)
+
+
+func test_critical_mp_loss_caps_sheets_cut_at_one() -> void:
+	# Rigging #7: only one sheets cut per ship per g-t; #9 shrouds stack.
+	state.critical_effects = [
+		_effect("sheets_cut"), _effect("sheets_cut"),
+		_effect("shrouds_severed"), _effect("shrouds_severed"),
+	] as Array[Dictionary]
+	assert_eq(state.critical_mp_loss(), 3)
+
+
+func test_poor_maneuvering_from_rudder_or_wheel() -> void:
+	# Hull #2 (rudder destroyed) and #3 (wheel shot away): one 60-degree turn per g-t.
+	state.rudder_destroyed = true
+	assert_true(state.is_poor_maneuvering())
+	assert_eq(state.max_turns_per_gt(), 1)
+	state.rudder_destroyed = false
+	state.wheel_shot_away = true
+	assert_true(state.is_poor_maneuvering())
+	assert_eq(state.max_turns_per_gt(), 1)
+
+
+func test_serialize_round_trip_keeps_critical_fields() -> void:
+	state.critical_effects = [_effect("rudder_jammed", ShipState.STARBOARD)] as Array[Dictionary]
+	state.critical_effects[0]["seq"] = 4
+	state.critical_effects[0]["attempts"] = 2
+	state.critical_seq = 5
+	state.rudder_destroyed = true
+	state.wheel_shot_away = true
+	state.fires = 2
+	var restored := ShipState.deserialize(state.serialize())
+	assert_eq(restored.critical_effects.size(), 1)
+	assert_eq(restored.critical_effects[0]["id"], "rudder_jammed")
+	assert_eq(restored.critical_effects[0]["side"], ShipState.STARBOARD)
+	assert_eq(restored.critical_effects[0]["seq"], 4)
+	assert_eq(restored.critical_effects[0]["attempts"], 2)
+	assert_eq(restored.critical_seq, 5)
+	assert_true(restored.rudder_destroyed)
+	assert_true(restored.wheel_shot_away)
+	assert_eq(restored.fires, 2)
+	restored.critical_effects[0]["attempts"] = 9
+	assert_eq(state.critical_effects[0]["attempts"], 2, "restored effects are copies")
+
+
+func test_deserialize_old_snapshot_has_no_criticals() -> void:
+	var data := state.serialize()
+	for key in ["critical_effects", "critical_seq", "rudder_destroyed", "wheel_shot_away", "fires"]:
+		data.erase(key)
+	var restored := ShipState.deserialize(data)
+	assert_eq(restored.critical_effects.size(), 0)
+	assert_eq(restored.critical_seq, 0)
+	assert_false(restored.rudder_destroyed)
+	assert_eq(restored.fires, 0)
+
+
+func test_snapshot_does_not_share_critical_effects() -> void:
+	GameState.ship_controller.add_critical_effect("ss_ship", {"id": "braces_cut"})
+	GameState.save_ship_snapshot("ss_ship", 1)
+	GameState.ship_controller.update_critical_effect("ss_ship", 0, {"attempts": 3})
+	GameState.ship_controller.add_critical_effect("ss_ship", {"id": "lines_jammed"})
+	var snap: ShipState = GameState.ship_history["ss_ship"][1]
+	assert_eq(snap.critical_effects.size(), 1)
+	assert_eq(snap.critical_effects[0]["attempts"], 0)
+
+
+# --- critical hits: controller mutators ---
+
+func test_add_critical_effect_fills_defaults_and_numbers_seq() -> void:
+	var c := GameState.ship_controller
+	GameState.current_turn = 3
+	assert_eq(c.add_critical_effect("ss_ship", {"id": "broadside_obscured", "side": ShipState.PORT}), 0)
+	assert_eq(c.add_critical_effect("ss_ship", {"id": "sheets_cut", "expires_after_turn": 4}), 1)
+	assert_eq(state.critical_seq, 2)
+	var first: Dictionary = state.critical_effects[0]
+	assert_eq(first, {"seq": 0, "id": "broadside_obscured", "turn": 3, "side": ShipState.PORT,
+			"attempts": 0, "expires_after_turn": -1})
+	assert_eq(state.critical_effects[1]["expires_after_turn"], 4)
+	assert_eq(state.critical_effects[1]["side"], -1)
+
+
+func test_add_critical_effect_rejects_unknown_id() -> void:
+	assert_eq(GameState.ship_controller.add_critical_effect("ss_ship", {"id": "made_up"}), -1)
+	assert_push_error("unknown critical effect")
+	assert_eq(state.critical_effects.size(), 0)
+	assert_eq(state.critical_seq, 0)
+
+
+func test_update_and_remove_critical_effect() -> void:
+	var c := GameState.ship_controller
+	c.add_critical_effect("ss_ship", {"id": "braces_cut"})
+	var seq := c.add_critical_effect("ss_ship", {"id": "lines_jammed"})
+	assert_true(c.update_critical_effect("ss_ship", seq, {"attempts": 1, "seq": 99, "id": "x"}))
+	assert_eq(state.critical_effects[1]["attempts"], 1)
+	assert_eq(state.critical_effects[1]["seq"], seq, "seq cannot be changed")
+	assert_eq(state.critical_effects[1]["id"], "lines_jammed", "id cannot be changed")
+	assert_true(c.remove_critical_effect("ss_ship", 0))
+	assert_eq(state.critical_effects.size(), 1)
+	assert_eq(state.critical_effects[0]["id"], "lines_jammed")
+	assert_false(c.remove_critical_effect("ss_ship", 0), "already removed")
+	assert_false(c.update_critical_effect("ss_ship", 42, {"attempts": 1}))
+	assert_push_error(2, "one error per missing seq")
+
+
+func test_steering_and_fire_mutators() -> void:
+	var c := GameState.ship_controller
+	assert_true(c.set_rudder_destroyed("ss_ship", true))
+	assert_true(state.rudder_destroyed)
+	assert_true(c.set_wheel_shot_away("ss_ship", true))
+	assert_true(state.wheel_shot_away)
+	assert_true(c.add_fire("ss_ship"))
+	assert_true(c.add_fire("ss_ship"))
+	assert_eq(state.fires, 2)
+
+
+func test_cross_out_rigging_section_takes_current_section() -> void:
+	# Current rigging section = lowest-numbered section with boxes left.
+	var c := GameState.ship_controller
+	state.rigging_current_hp = [0, 3, 2, 4] as Array[int]
+	assert_eq(c.cross_out_rigging_section("ss_ship"), 1)
+	assert_eq(state.rigging_current_hp, [0, 0, 2, 4] as Array[int])
+	state.rigging_current_hp = [0, 0, 0, 0] as Array[int]
+	assert_eq(c.cross_out_rigging_section("ss_ship"), -1, "dismasted: nothing to cross out")
+
+
+func test_critical_mutators_refused_on_client() -> void:
+	var c := GameState.ship_controller
+	c.add_critical_effect("ss_ship", {"id": "braces_cut"})
+	state.rigging_current_hp = [3, 3, 3, 3] as Array[int]
+	c.is_server = false
+	assert_eq(c.add_critical_effect("ss_ship", {"id": "lines_jammed"}), -1)
+	assert_false(c.update_critical_effect("ss_ship", 0, {"attempts": 2}))
+	assert_false(c.remove_critical_effect("ss_ship", 0))
+	assert_false(c.set_rudder_destroyed("ss_ship", true))
+	assert_false(c.set_wheel_shot_away("ss_ship", true))
+	assert_false(c.add_fire("ss_ship"))
+	assert_eq(c.cross_out_rigging_section("ss_ship"), -1)
+	c.is_server = true
+	assert_push_error(7, "seven client refusals")
+	assert_eq(state.critical_effects.size(), 1)
+	assert_eq(state.critical_effects[0]["attempts"], 0)
+	assert_false(state.rudder_destroyed)
+	assert_false(state.wheel_shot_away)
+	assert_eq(state.fires, 0)
+	assert_eq(state.rigging_current_hp, [3, 3, 3, 3] as Array[int])

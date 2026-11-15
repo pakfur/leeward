@@ -169,6 +169,17 @@ func test_struck_ship_does_not_roll() -> void:
 	assert_eq(ships[1].unfoul_attempts, 1)
 
 
+func test_destroyed_ship_does_not_roll() -> void:
+	var ships := _foul_pair()
+	ships[0].status = ShipState.Status.DESTROYED
+	_dice.queue([9])
+	controller.resolve_unfouling(PHASE)
+	var events := _events()
+	assert_eq(events.size(), 1)
+	assert_eq(events[0].ship_id, "b")
+	assert_eq(ships[0].unfoul_attempts, 0)
+
+
 func test_each_pair_resolved_once_in_ship_id_order() -> void:
 	var ships := _foul_pair()
 	var c := _make_ship("c", Vector2i(1, 1), "D", 0)

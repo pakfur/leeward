@@ -28,6 +28,8 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 	var target: ShipState = game_state.get_ship(order.target_id)
 	if firer == null or target == null:
 		return _refuse(p, "unknown ship")
+	if firer.is_destroyed() or target.is_destroyed():
+		return _refuse(p, "a destroyed ship cannot fire or be fired on")
 	if firer.is_struck() or target.is_struck():
 		return _refuse(p, "a struck ship cannot fire or be fired on")
 	if firer.player_id == target.player_id:
@@ -78,6 +80,8 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 	_add_modifier(p, "crew_quality", tables.crew_quality_modifier(firer.crew_quality))
 	_add_modifier(p, "sections_firing", tables.sections_firing_modifier(sections))
 	_add_modifier(p, "guns_dismounted", -int(firer.guns_dismounted[order.side]))
+	# 7.C.11: -2 per broadside obscured entry on this side (Rigging #6; #10 obscures both).
+	_add_modifier(p, "broadside_obscured", firer.obscured_penalty(order.side))
 	# 7.C.12g: when firing at two targets only the two-target modifier applies, full or half.
 	if order.battery != GunneryTypes.BATTERY_FULL and not two_targets:
 		_add_modifier(p, "half_broadside", tables.flat_modifier("half_broadside"))
@@ -114,7 +118,7 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 func eligible_shots(ship_id: String) -> Array[GunneryTypes.ShotPreview]:
 	var shots: Array[GunneryTypes.ShotPreview] = []
 	var firer: ShipState = game_state.get_ship(ship_id)
-	if firer == null or firer.is_struck():
+	if firer == null or firer.is_out_of_play():
 		return shots
 	for target in game_state.get_all_ships():
 		if target.ship_id == ship_id:

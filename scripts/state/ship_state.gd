@@ -4,11 +4,26 @@ extends Resource
 ## This class is serializable and can run on both server and client
 ## Immutable identity/definition data lives in the Ship reference
 
-enum Status { ACTIVE, STRUCK }
+## DESTROYED: blown up (hull critical #12). Out of play like a struck ship, and it also never
+## drifts, fouls or takes damage; its two hexes stay on the map as a wreck that blocks movement
+## and line of sight.
+enum Status { ACTIVE, STRUCK, DESTROYED }
 
 const PORT := 0
 const STARBOARD := 1
 const SAIL_ORDER: Array[String] = ["NS", "FS", "MS", "PS"]
+## max_turns_per_gt() when nothing limits turning
+const UNLIMITED_TURNS := -1
+## Lasting critical-hit effects kept in critical_effects (one-shot results leave no entry).
+## crew_disorganized is deferred (spec §0 Q6) and not listed.
+const CRITICAL_EFFECT_IDS: Array[String] = [
+	"signal_halyards_cut", "braces_cut", "lines_jammed", "broadside_obscured",
+	"sheets_cut", "shrouds_severed", "rudder_jammed",
+]
+## rudder_jam_direction() when the rudder is not jammed
+const RUDDER_NOT_JAMMED := -2
+## 7.C.11: gunfire modifier per obscured broadside entry (Rigging #6, #10)
+const OBSCURED_PENALTY := -2
 
 # Ship reference (immutable identity + type definition)
 var ship: Ship = null
@@ -63,6 +78,23 @@ var ship_type: String:
 @export var morale_triggers_used: Array[String] = []
 @export var unfoul_attempts: int = 0
 
+# Critical hits (7.D.11-12; mutated only through ShipStateController)
+## Each entry: {"seq": int, "id": String (CRITICAL_EFFECT_IDS), "turn": int,
+## "side": int (-1 none; broadside_obscured: PORT/STARBOARD; rudder_jammed: -1 straight,
+## 0 port, 1 starboard), "attempts": int (fix rolls so far),
+## "expires_after_turn": int (-1 = no expiry)}
+@export var critical_effects: Array[Dictionary] = []
+@export var critical_seq: int = 0  # next seq; also makes crit morale triggers unique
+@export var rudder_destroyed: bool = false  # log box, permanent (hull #2)
+@export var wheel_shot_away: bool = false  # log box, permanent (hull #3)
+@export var fires: int = 0  # stored only; fire (8.E) is not simulated
+## Steering (6.F.4, hull #2): a turn carried over to this g-t's first MP after a failed
+## Poor Maneuvering roll (-1 none, PORT, STARBOARD); it succeeds without a roll.
+@export var pending_turn: int = -1
+## The last step the ship executed (-1 straight or none, PORT, STARBOARD); kept across a g-t
+## in which it made no step. Rudder Jammed jams in this direction (spec Q15).
+@export var last_step_direction: int = -1
+
 # Plotted actions for this turn
 var plotted_actions: Dictionary = {
 	"movement": [],  # Array of movement commands
@@ -95,6 +127,14 @@ func get_ship_size() -> int:
 
 func is_struck() -> bool:
 	return status == Status.STRUCK
+
+func is_destroyed() -> bool:
+	return status == Status.DESTROYED
+
+## Struck or destroyed: cannot move, fire, change sail, unfoul, fix or check morale, and is not a
+## target. A struck ship still drifts; a destroyed one does not.
+func is_out_of_play() -> bool:
+	return status != Status.ACTIVE
 
 func is_dismasted() -> bool:
 	return rigging_level() == 0
@@ -137,6 +177,62 @@ func sections_able_to_fire() -> int:
 			able += 1
 	return able
 
+func has_critical(id: String) -> bool:
+	return critical_count(id) > 0
+
+## Entries with this id; side -1 counts every side.
+func critical_count(id: String, side: int = -1) -> int:
+	var count := 0
+	for effect in critical_effects:
+		if effect.get("id") == id and (side == -1 or int(effect.get("side", -1)) == side):
+			count += 1
+	return count
+
+## 7.C.11: -2 per broadside_obscured entry on that side (yard shot away adds one per side).
+func obscured_penalty(side: int) -> int:
+	return OBSCURED_PENALTY * critical_count("broadside_obscured", side)
+
+## Sheets cut (rigging #7) acts on the g-t after the one it was inflicted on (`turn` is the
+## current g-t; -1 counts every entry).
+func sheets_cut_active(turn: int = -1) -> bool:
+	for effect in critical_effects:
+		if effect.get("id") == "sheets_cut" and (turn < 0 or int(effect.get("turn", -1)) < turn):
+			return true
+	return false
+
+## MPs lost in every direction and sail state on g-t `turn`: sheets cut (at most one,
+## rigging #7, see sheets_cut_active) plus each shrouds severed (rigging #9).
+func critical_mp_loss(turn: int = -1) -> int:
+	return (1 if sheets_cut_active(turn) else 0) + critical_count("shrouds_severed")
+
+## Rigging sections with no boxes left (5.E.5, Tacking DRM).
+func rigging_sections_lost() -> int:
+	var lost := 0
+	var max_hp: Array = ship.rigging_hp if ship else []
+	for i in range(rigging_current_hp.size()):
+		var section_max: int = int(max_hp[i]) if i < max_hp.size() else 1
+		if section_max > 0 and rigging_current_hp[i] <= 0:
+			lost += 1
+	return lost
+
+## Rudder Jammed direction (hull #2): RUDDER_NOT_JAMMED when not jammed (or the rudder is
+## destroyed, which cancels it), else the entry's side: -1 straight (no turns), PORT or STARBOARD.
+func rudder_jam_direction() -> int:
+	if rudder_destroyed:
+		return RUDDER_NOT_JAMMED
+	for effect in critical_effects:
+		if effect.get("id") == "rudder_jammed":
+			return int(effect.get("side", -1))
+	return RUDDER_NOT_JAMMED
+
+## Rudder destroyed (hull #2) or wheel shot away (hull #3): Poor Maneuvering rule (6.F).
+func is_poor_maneuvering() -> bool:
+	return rudder_destroyed or wheel_shot_away
+
+## 60-degree turns allowed per g-t: 1 when poor maneuvering, else UNLIMITED_TURNS.
+func max_turns_per_gt() -> int:
+	return 1 if is_poor_maneuvering() else UNLIMITED_TURNS
+
 func serialize() -> Dictionary:
 	"""Serialize state for network transmission or save/load"""
 	var data = {
@@ -169,6 +265,13 @@ func serialize() -> Dictionary:
 		"pending_morale_checks": pending_morale_checks,
 		"morale_triggers_used": morale_triggers_used,
 		"unfoul_attempts": unfoul_attempts,
+		"critical_effects": critical_effects.duplicate(true),
+		"critical_seq": critical_seq,
+		"rudder_destroyed": rudder_destroyed,
+		"wheel_shot_away": wheel_shot_away,
+		"fires": fires,
+		"pending_turn": pending_turn,
+		"last_step_direction": last_step_direction,
 		"plotted_actions": plotted_actions
 	}
 	return data
@@ -232,6 +335,15 @@ static func deserialize(data: Dictionary) -> ShipState:
 	for trigger in data.get("morale_triggers_used", []):
 		state.morale_triggers_used.append(str(trigger))
 	state.unfoul_attempts = int(data.get("unfoul_attempts", 0))
+	state.critical_effects.clear()
+	for effect in data.get("critical_effects", []):
+		state.critical_effects.append(_critical_effect_from(effect))
+	state.critical_seq = int(data.get("critical_seq", 0))
+	state.rudder_destroyed = bool(data.get("rudder_destroyed", false))
+	state.wheel_shot_away = bool(data.get("wheel_shot_away", false))
+	state.fires = int(data.get("fires", 0))
+	state.pending_turn = int(data.get("pending_turn", -1))
+	state.last_step_direction = int(data.get("last_step_direction", -1))
 	
 	state.plotted_actions = data.get("plotted_actions", {
 		"movement": [],
@@ -243,6 +355,14 @@ static func deserialize(data: Dictionary) -> ShipState:
 	})
 
 	return state
+
+## Copy of a serialized effect with its numeric fields as ints (JSON round trips give floats).
+static func _critical_effect_from(effect: Dictionary) -> Dictionary:
+	var copy := effect.duplicate(true)
+	for key in ["seq", "turn", "side", "attempts", "expires_after_turn"]:
+		if copy.has(key):
+			copy[key] = int(copy[key])
+	return copy
 
 static func _int_array(values: Array) -> Array[int]:
 	var result: Array[int] = []

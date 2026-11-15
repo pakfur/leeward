@@ -384,6 +384,7 @@ enum ResolutionEventType {
 	OVERLAP,  # a swinging stern entered a hex another ship holds or enters (6.B.2); detail "overlaps <id>[, <id>]"
 	OVERLAP_ROLLBACK,  # the overlap was not cleared on the next segment: the turn is undone (6.B.4)
 	BEARING_OFF_DECLINED,  # the ship held its course and collides on purpose (6.D.3, 6.E.1)
+	POOR_MANEUVERING_ROLL,  # 6.F.3 d10 for a plotted turn; detail on failure: "one hex ahead", "carried over", "turn at MA 0"
 }
 
 ## Choices for a potential collision (6.D): bear off to port or starboard, or hold course and collide.
@@ -468,6 +469,8 @@ class ShipResolutionResult extends RefCounted:
 	var blocked_by: String = ""  ## the ship whose hex this one could not enter (bear-off or collision)
 	var rigging_damage: int = 0
 	var stopped_at_impulse: int = -1
+	## 6.F.4-5: the turn carried over to the next g-t's first MP (-1 none, PORT, STARBOARD).
+	var pending_turn: int = -1
 
 	func _init(p_ship_id: String = "") -> void:
 		ship_id = p_ship_id
@@ -495,6 +498,8 @@ class ShipResolutionResult extends RefCounted:
 			d["rigging_damage"] = rigging_damage
 		if stopped_at_impulse >= 0:
 			d["stopped_at_impulse"] = stopped_at_impulse
+		if pending_turn >= 0:
+			d["pending_turn"] = pending_turn
 		return d
 
 

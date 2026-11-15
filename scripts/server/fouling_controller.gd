@@ -15,7 +15,7 @@ func _init(p_game_state: Node) -> void:
 
 func resolve_unfouling(phase: int) -> void:
 	## Dice order: pairs are taken by their lower ship_id; within a pair the lower ship_id rolls
-	## first, and the second ship does not roll once the first succeeds. Struck ships never roll.
+	## first, and the second ship does not roll once the first succeeds. Struck and destroyed ships never roll.
 	if not is_server:
 		push_error("FoulingController: Cannot resolve unfouling on client")
 		return
@@ -37,7 +37,7 @@ func resolve_unfouling(phase: int) -> void:
 
 
 func _attempt(ship: ShipState, partner: ShipState, phase: int) -> bool:
-	if ship.is_struck():
+	if ship.is_out_of_play():
 		return false
 	var ship_id: String = ship.ship.ship_id
 	var attempts: int = ship.unfoul_attempts + 1

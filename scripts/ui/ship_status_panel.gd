@@ -20,7 +20,7 @@ const HUMAN_PLAYER_ID := 0
 
 var current_ship_state: ShipState = null
 var _extra_label: Label = null  # marines, guns dismounted, pending sail change
-var _badge_label: Label = null  # FOULED / STRUCK / DISMASTED
+var _badge_label: Label = null  # FOULED / STRUCK / DESTROYED / DISMASTED
 
 func _ready() -> void:
 	visible = false
@@ -87,6 +87,8 @@ static func speed_line(speed: int) -> String:
 static func movement_line(s: ShipState, allowance: int, partner_name: String = "", moved: int = -1) -> String:
 	if moved >= 0:
 		return "Moved %d %s this turn" % [moved, "hex" if moved == 1 else "hexes"]
+	if s.is_destroyed():
+		return "Cannot move (destroyed)"
 	if s.is_struck():
 		return "Cannot move (struck)"
 	if s.is_dismasted():
@@ -126,11 +128,43 @@ static func badges(s: ShipState) -> Array[String]:
 	var result: Array[String] = []
 	if s.fouled_with != "":
 		result.append("FOULED")
+	if s.is_destroyed():
+		result.append("DESTROYED")
 	if s.is_struck():
 		result.append("STRUCK")
 	if s.is_dismasted():
 		result.append("DISMASTED")
 	return result
+
+
+## One line per lasting critical-hit effect (7.D.11-12), in the order they happened, then the
+## permanent steering damage and fires.
+static func critical_lines(s: ShipState) -> Array[String]:
+	var lines: Array[String] = []
+	for effect in s.critical_effects:
+		var side := int(effect.get("side", -1))
+		match str(effect.get("id", "")):
+			"braces_cut":
+				lines.append("Braces cut: speed changes by 1 at most (fix roll in maintenance)")
+			"lines_jammed":
+				lines.append("Lines jammed: no sail changes (fix roll in maintenance)")
+			"broadside_obscured":
+				lines.append("%s broadside −2: obscured by fallen rigging (fix roll in maintenance)"
+					% ("Port" if side == ShipState.PORT else "Starboard"))
+			"sheets_cut":
+				lines.append("Sheets cut: −1 MP and −1 acceleration next turn")
+			"shrouds_severed":
+				lines.append("Shrouds severed: −1 MP")
+			"rudder_jammed":
+				var way := "straight" if side < 0 else ("to port" if side == ShipState.PORT else "to starboard")
+				lines.append("Rudder jammed %s (fix roll in maintenance)" % way)
+	if s.rudder_destroyed:
+		lines.append("Rudder destroyed: one turn per turn, poor maneuvering")
+	if s.wheel_shot_away:
+		lines.append("Wheel shot away: one turn per turn, poor maneuvering")
+	if s.fires > 0:
+		lines.append("Afire ×%d (fire is not yet simulated)" % s.fires)
+	return lines
 
 
 ## Damage and condition lines in display order: rigging, hull, crew, marines, [guns, only when
@@ -203,6 +237,7 @@ func _update_display() -> void:
 		var change := sail_change_line(s)
 		if change != "":
 			extra.append(change)
+		extra.append_array(critical_lines(s))
 		_extra_label.text = "\n".join(extra)
 
 	if _badge_label:

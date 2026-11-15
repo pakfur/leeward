@@ -28,7 +28,7 @@ func resolve_checks(phase: int) -> void:
 		if ship == null:
 			continue
 		var remaining: int = ship.pending_morale_checks
-		while remaining > 0 and not ship.is_struck():
+		while remaining > 0 and not ship.is_out_of_play():
 			remaining -= 1
 			_check(ship, phase)
 		game_state.ship_controller.clear_pending_morale_checks(ship_id)

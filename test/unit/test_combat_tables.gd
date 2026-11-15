@@ -149,3 +149,70 @@ func test_skill_modifier() -> void:
 	assert_eq(ct.skill_modifier("A"), -3)
 	assert_eq(ct.skill_modifier("D"), 0)
 	assert_eq(ct.skill_modifier("G"), 3)
+
+# --- Critical hits (Rigging p.112, Hull p.113) ---
+
+func test_rigging_check_maps_rc_to_crit_rows() -> void:
+	# RC 1-6 sit beside Crit 2-7 on the Rigging Critical Hits Table.
+	assert_eq(ct.rigging_check(1)["id"], "mast_may_fall")
+	assert_eq(ct.rigging_check(1)["crit"], 2)
+	assert_eq(ct.rigging_check(6)["id"], "sheets_cut")
+	assert_eq(ct.rigging_check(6)["crit"], 7)
+
+func test_rigging_crit_rows() -> void:
+	var mast := ct.rigging_crit(2)
+	assert_eq(mast["flags"], ["diamond", "D"])
+	assert_eq(mast["fall_at"], 8)
+	assert_eq(ct.rigging_crit(6)["rigging"], {"fs": 0, "ms": 1, "ps": 2}, "obscured: 1R MS, 2R PS")
+	assert_eq(ct.rigging_crit(6)["gunfire"], -2)
+	assert_eq(ct.rigging_crit(8)["marines_by_class"]["4"], 0, "class 4 loses no marine")
+	assert_eq(ct.rigging_crit(10)["id"], "yard_shot_away")
+	assert_eq(ct.rigging_crit(10)["rigging"], {"fs": 1, "ms": 2, "ps": 3})
+	assert_eq(ct.rigging_crit(10)["flags"], ["D"], "yard shot away is [D], not diamond")
+	assert_eq(ct.rigging_crit(12)["crew_by_class"], {"1": 3, "2": 3, "3": 2, "4": 1})
+
+func test_hull_check_maps_hc_to_crit_rows() -> void:
+	assert_eq(ct.hull_check(1)["id"], "leadership_casualties")
+	assert_eq(ct.hull_check(3)["id"], "rigging_damage")
+	assert_eq(ct.hull_check(4)["guns"], 1, "HC 4 and 5 are crit 8")
+	assert_eq(ct.hull_check(5)["crit"], 8)
+	assert_eq(ct.hull_check(6)["guns"], 2, "HC 6 is crit 9")
+
+func test_hull_crit_rows() -> void:
+	assert_eq(ct.hull_crit(2)["id"], "rudder")
+	assert_eq(ct.hull_crit(2)["destroyed_max"], 3, "d6 1-3 destroyed, 4-6 jammed")
+	assert_eq(ct.hull_crit(3)["flags"], [], "wheel shot away has no [D]")
+	assert_eq(ct.hull_crit(10)["fire_at"], 6)
+	assert_eq(ct.hull_crit(11)["pumps_by_class"], {"1": 4, "2": 3, "3": 2, "4": 1})
+	var major := ct.hull_crit(12)
+	assert_eq(major["guns_both"], 2)
+	assert_eq(major["explode_drm"]["A"], 3)
+	assert_eq(major["explode_drm"]["G"], -3)
+	assert_eq(major["explode_drm"]["per_fire"], -2)
+	assert_eq(major["explode_drm"]["year_le_1783"], -1)
+
+func test_crit_accessors_return_copies() -> void:
+	var row := ct.hull_crit(12)
+	row["explode_drm"]["A"] = 99
+	row["id"] = "changed"
+	assert_eq(ct.hull_crit(12)["explode_drm"]["A"], 3, "nested data is not shared")
+	assert_eq(ct.hull_crit(12)["id"], "afire_major_explosion")
+
+func test_crit_accessors_out_of_range_return_empty() -> void:
+	assert_eq(ct.rigging_crit(13), {})
+	assert_eq(ct.hull_check(0), {})
+	assert_push_error(2, "one error per off-chart roll")
+
+# --- Poor maneuvering (p.109) ---
+
+func test_poor_maneuvering_numbers() -> void:
+	assert_eq(ct.poor_maneuvering_number("A", "a"), 6)
+	assert_eq(ct.poor_maneuvering_number("A", "D"), 8)
+	assert_eq(ct.poor_maneuvering_number("C", "c"), 6)
+	assert_eq(ct.poor_maneuvering_number("E", "b"), 4, "6.F.3 example: type B, CQ E rolls <= 4")
+	assert_eq(ct.poor_maneuvering_number("E", "d"), 5)
+	assert_eq(ct.poor_maneuvering_number("G", "d"), 4)
+
+func test_poor_maneuvering_unknown_input() -> void:
+	assert_eq(ct.poor_maneuvering_number("H", "a"), -1)
+	assert_push_error("poor maneuvering")

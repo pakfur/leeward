@@ -125,6 +125,30 @@ func test_guns_dismounted_penalty() -> void:
 	assert_eq(_mod(calc.preview(_order()), "guns_dismounted"), -3)
 
 
+## 7.C.11: -2 per broadside obscured entry on the firing side (Rigging #6; #10 adds one per side).
+func test_broadside_obscured_on_firing_side() -> void:
+	GameState.ship_controller.add_critical_effect("firer", {"id": "broadside_obscured", "side": STARBOARD})
+	var p := calc.preview(_order())
+	assert_eq(_mod(p, "broadside_obscured"), -2)
+	assert_eq(p.mgn, 26)
+	assert_eq(_mod(calc.preview(_order(PORT)), "broadside_obscured"), 0, "the other side is clear")
+
+
+func test_broadside_obscured_entries_add_up() -> void:
+	GameState.ship_controller.add_critical_effect("firer", {"id": "broadside_obscured", "side": STARBOARD})
+	GameState.ship_controller.add_critical_effect("firer", {"id": "broadside_obscured", "side": STARBOARD})
+	assert_eq(_mod(calc.preview(_order()), "broadside_obscured"), -4)
+
+
+func test_broadside_obscured_previewed_orders_match_preview() -> void:
+	# The resolver rolls preview_orders(); the fire panel shows the same numbers.
+	GameState.ship_controller.add_critical_effect("firer", {"id": "broadside_obscured", "side": STARBOARD})
+	var previews := calc.preview_orders(_orders([_order()]))
+	assert_eq(_mod(previews[0], "broadside_obscured"), -2)
+	assert_eq(previews[0].mgn, calc.preview(_order()).mgn)
+	assert_eq(PhaseEvents.modifier_label("broadside_obscured"), "broadside obscured")
+
+
 func test_two_targets_modifier() -> void:
 	var p := calc.preview(_order(), true)
 	assert_eq(_mod(p, "two_targets"), -12)
@@ -163,9 +187,11 @@ func test_modifier_order() -> void:
 	firer.sail_state = "PS"
 	firer.crew_count = [0, 3, 3, 3] as Array[int]
 	firer.guns_dismounted[STARBOARD] = 1
+	GameState.ship_controller.add_critical_effect("firer", {"id": "broadside_obscured", "side": STARBOARD})
 	GameState.environment.wind_speed = 4
 	var p := calc.preview(_order(STARBOARD, "dismantling"), true)
-	assert_eq(_names(p), ["crew_quality", "sections_firing", "guns_dismounted", "initial_broadside",
+	assert_eq(_names(p), ["crew_quality", "sections_firing", "guns_dismounted", "broadside_obscured",
+		"initial_broadside",
 		"two_targets", "plain_sail", "dismantling_shot", "wind_speed_4"])
 
 
@@ -214,6 +240,19 @@ func test_struck_target_cannot_be_fired_on() -> void:
 func test_struck_firer_cannot_fire() -> void:
 	firer.status = ShipState.Status.STRUCK
 	assert_false(calc.preview(_order()).can_fire)
+
+
+func test_destroyed_target_cannot_be_fired_on() -> void:
+	target.status = ShipState.Status.DESTROYED
+	var p := calc.preview(_order())
+	assert_false(p.can_fire)
+	assert_string_contains(p.reason, "destroyed")
+
+
+func test_destroyed_firer_cannot_fire_and_has_no_eligible_shots() -> void:
+	firer.status = ShipState.Status.DESTROYED
+	assert_false(calc.preview(_order()).can_fire)
+	assert_eq(calc.eligible_shots(firer.ship_id).size(), 0)
 
 
 func test_same_player_cannot_fire() -> void:
@@ -410,6 +449,15 @@ func test_struck_ship_blocks_los_with_both_hexes() -> void:
 	assert_true(p.can_fire, p.reason)
 	assert_eq(p.batteries, 1)
 	assert_eq(_mod(p, "half_broadside"), -8)
+
+
+func test_destroyed_ship_blocks_los_with_both_hexes() -> void:
+	# As the struck hulk above: the wreck's stern (-1,2) blocks the bow battery (spec Q2).
+	target.hex_position = Vector2i(-2, 4)
+	var wreck := _make_ship("wreck", 1, Vector2i(0, 2), 0)
+	wreck.status = ShipState.Status.DESTROYED
+	assert_false(calc.preview(_battery("bow")).can_fire, "the wreck blocks the bow battery")
+	assert_true(calc.preview(_battery("stern")).can_fire)
 
 
 # --- battery fire orders (7.B.1, 7.C.12f/g) ---

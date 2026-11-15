@@ -37,6 +37,10 @@ class PlottingState extends RefCounted:
 	var speed_type: String = "F/F"
 	var sail_state: String = "MS"
 	var rigging_quality: int = 4
+	## MPs lost to critical hits (sheets cut, shrouds severed), off every table MA.
+	var mp_loss: int = 0
+	## Steps in the plot so far.
+	var steps_plotted: int = 0
 
 
 func calculate_valid_moves(
@@ -48,7 +52,7 @@ func calculate_valid_moves(
 	var ps = _build_plotting_state(ship_state, current_hex, current_facing, path_so_far)
 	var result = MovementTypes.ValidMovesResult.new()
 	result.remaining_ma = ps.remaining_ma
-	result.can_submit = true
+	result.can_submit = rudder_jam_error(ship_state, path_so_far) == ""
 	result.is_tacking_attempt = ps.is_tacking_attempt
 
 	if ps.luffing_ended or ps.ma_zero_turn_ended:
@@ -86,10 +90,26 @@ func validate_hex_selection(
 
 
 func validate_submission(
-	_ship_state: ShipState,
-	_path: Array[MovementTypes.PlotStep]
+	ship_state: ShipState,
+	path: Array[MovementTypes.PlotStep]
 ) -> MovementTypes.SubmissionValidationResult:
+	var jam_error := rudder_jam_error(ship_state, path)
+	if jam_error != "":
+		return MovementTypes.SubmissionValidationResult.failure("RUDDER_JAMMED", jam_error)
 	return MovementTypes.SubmissionValidationResult.success()
+
+
+## Rudder Jammed to port or starboard (hull #2): a ship that moves must turn at least once that
+## way this g-t; one that plots nothing (stops) need not. "" when the plot is acceptable.
+func rudder_jam_error(ship_state: ShipState, path: Array) -> String:
+	var jam: int = ship_state.rudder_jam_direction() if ship_state else ShipState.RUDDER_NOT_JAMMED
+	if jam < 0 or path.is_empty():
+		return ""
+	var wanted := MovementTypes.MoveType.PORT if jam == ShipState.PORT else MovementTypes.MoveType.STARBOARD
+	for step in path:
+		if step.move_type == wanted:
+			return ""
+	return "Rudder jammed: the ship must turn to %s at least once" % PhaseEvents.SIDE_NAMES[jam]
 
 
 ## Build a PlottingState snapshot by replaying the path so far.
@@ -109,9 +129,12 @@ func _build_plotting_state(
 	ps.speed_type = ship_state.ship.speed_type if ship_state.ship else "F/F"
 	ps.sail_state = ship_state.movement_sail_state()
 	ps.rigging_quality = game_state.ship_controller.get_rigging_quality(ship_state.ship_id)
+	ps.mp_loss = ship_state.critical_mp_loss(game_state.ship_controller.current_turn())
+	ps.steps_plotted = path_so_far.size()
 
-	var accel = DataManager.get_speed_change("acceleration", ps.maneuverability)
-	var decel = DataManager.get_speed_change("deceleration", ps.maneuverability)
+	var limits: Dictionary = game_state.ship_controller.speed_change_limits(ship_state)
+	var accel: int = limits.accel
+	var decel: int = limits.decel
 
 	# Replay path to compute state at current position
 	for step in path_so_far:
@@ -130,7 +153,7 @@ func _build_plotting_state(
 
 	# Calculate MA at current facing
 	var wind_facing = hex_grid.get_wind_facing(current_facing, ps.wind_direction)
-	ps.base_ma = _lookup_ma(ps.speed_type, ps.wind_speed, wind_facing, ps.sail_state, ps.rigging_quality)
+	ps.base_ma = _ship_ma(ps, wind_facing)
 	# 5.G: blocked wind at the plotted position, against the other ships where they are now.
 	ps.base_ma = BlockedWind.apply(ps.base_ma, BlockedWind.is_blocked(current_hex, current_facing,
 			ps.wind_direction, game_state.ships.values(), ship_state.ship_id))
@@ -155,7 +178,7 @@ func _build_plotting_state(
 		elif step.move_type == MovementTypes.MoveType.PORT or step.move_type == MovementTypes.MoveType.STARBOARD:
 			# Pivots cost 1 MA, unless it's a free pivot at MA=0
 			var pivot_wind_facing = hex_grid.get_wind_facing(replay_facing2, ps.wind_direction)
-			var pivot_base_ma = _lookup_ma(ps.speed_type, ps.wind_speed, pivot_wind_facing, ps.sail_state, ps.rigging_quality)
+			var pivot_base_ma = _ship_ma(ps, pivot_wind_facing)
 			if pivot_base_ma == 0 or (ps.max_ma - ma_spent) <= 0:
 				if not ps.free_pivot_used:
 					ps.free_pivot_used = true
@@ -170,7 +193,7 @@ func _build_plotting_state(
 	# A ship starting at MA=0 can only turn, and that turn needs a Tacking roll (5.D.1): the planning
 	# screen shows the chance. Ships may not turn in calm (5.D.1a).
 	var start_wf = hex_grid.get_wind_facing(ship_state.facing, ps.wind_direction)
-	var starts_at_ma_zero: bool = _lookup_ma(ps.speed_type, ps.wind_speed, start_wf, ps.sail_state, ps.rigging_quality) == 0
+	var starts_at_ma_zero: bool = _ship_ma(ps, start_wf) == 0
 	ps.is_tacking_attempt = starts_at_ma_zero and ps.wind_speed > 0
 
 	# A turn made at MA=0 is the ship's whole move for the g-t (5.D.3 example: "it cannot move any further").
@@ -194,8 +217,8 @@ func _calculate_real_valid_hexes(
 		var last_type = path_so_far.back().move_type
 		last_step_was_pivot = (last_type == MovementTypes.MoveType.PORT or last_type == MovementTypes.MoveType.STARBOARD)
 
-	# Forward move: always available if remaining_ma > 0
-	if ps.remaining_ma > 0:
+	# Forward move: available if remaining_ma > 0, except where a left-over turn must come first (6.F.4)
+	if ps.remaining_ma > 0 and not _pending_turn_first(ps, ship_state):
 		var forward_hex = hex_grid.get_neighbor(ps.current_hex.x, ps.current_hex.y, ps.current_facing)
 		var forward_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.FORWARD, ps.current_facing, 1, forward_hex)
 		result.forward.append(MovementTypes.ValidMove.new(forward_hex, MovementTypes.MoveType.FORWARD, forward_meta))
@@ -278,6 +301,8 @@ func _add_pivot_options(
 ) -> void:
 	var port_facing = (ps.current_facing + 5) % 6
 	var starboard_facing = (ps.current_facing + 1) % 6
+	allow_port = allow_port and _steering_allows(ps, ship_state, ShipState.PORT)
+	allow_starboard = allow_starboard and _steering_allows(ps, ship_state, ShipState.STARBOARD)
 	if allow_port and not _stern_in_bounds(ps.current_hex, port_facing):
 		allow_port = false
 	if allow_starboard and not _stern_in_bounds(ps.current_hex, starboard_facing):
@@ -302,6 +327,32 @@ func _add_pivot_options(
 
 		if starboard_wf == "L":
 			Trace.trace_log("MovementValidator", "Ship %s: starboard pivot into luffing (L) — will end movement" % ship_state.ship_id)
+
+
+## Steering damage (hull #2, #3; 6.F): one turn per g-t when poor maneuvering; Rudder Jammed
+## straight allows no turn, jammed to a side only turns that way; a left-over turn (6.F.4) must be
+## the first MP, in its direction.
+func _steering_allows(ps: PlottingState, ship_state: ShipState, side: int) -> bool:
+	var max_turns: int = ship_state.max_turns_per_gt()
+	if max_turns != ShipState.UNLIMITED_TURNS and ps.pivots_used >= max_turns:
+		return false
+	var jam: int = ship_state.rudder_jam_direction()
+	if jam != ShipState.RUDDER_NOT_JAMMED and jam != side:
+		return false
+	if _pending_turn_first(ps, ship_state) and ship_state.pending_turn != side:
+		return false
+	return true
+
+
+## True at the start of the plot of a ship with a turn left over from last g-t (6.F.4).
+func _pending_turn_first(ps: PlottingState, ship_state: ShipState) -> bool:
+	return ps.steps_plotted == 0 and ship_state.pending_turn >= 0
+
+
+## Table MA at a wind facing, less the MPs lost to critical hits.
+func _ship_ma(ps: PlottingState, wind_facing: String) -> int:
+	var ma := _lookup_ma(ps.speed_type, ps.wind_speed, wind_facing, ps.sail_state, ps.rigging_quality)
+	return maxi(ma - ps.mp_loss, 0)
 
 
 ## A turn pivots on the bow (5.C.2): it is offered only if the swung stern stays on the map.

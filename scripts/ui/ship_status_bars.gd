@@ -102,6 +102,16 @@ static func motion_text(speed: int, p_point_of_sail: String) -> String:
 	return "%d · %s" % [speed, p_point_of_sail] if p_point_of_sail != "" else str(speed)
 
 
+## The plate's last line, [label, text]: speed and point of sail, or the status of a ship that
+## is out of play ("Destroyed" / "Struck").
+static func last_line(state: ShipState, p_point_of_sail: String) -> Array[String]:
+	if state.is_destroyed():
+		return ["Status", "Destroyed"]
+	if state.is_struck():
+		return ["Status", "Struck"]
+	return ["Speed", motion_text(state.speed, p_point_of_sail)]
+
+
 func _draw() -> void:
 	if ship_state == null:
 		return
@@ -136,8 +146,9 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT, BAR_WIDTH * k, roundi(FONT_SIZE * k), TEXT_COLOR)
 	y += (FONT_SIZE + 2.0 + ROW_GAP) * k
 
-	_draw_label(font, "Speed", y + (FONT_SIZE - 1 - BAR_HEIGHT) * k)
-	draw_string(font, Vector2(bar_x, y + (FONT_SIZE - 1) * k), motion_text(s.speed, point_of_sail),
+	var last := last_line(s, point_of_sail)
+	_draw_label(font, last[0], y + (FONT_SIZE - 1 - BAR_HEIGHT) * k)
+	draw_string(font, Vector2(bar_x, y + (FONT_SIZE - 1) * k), last[1],
 		HORIZONTAL_ALIGNMENT_LEFT, BAR_WIDTH * k, roundi(FONT_SIZE * k), TEXT_COLOR)
 
 

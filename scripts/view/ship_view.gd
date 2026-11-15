@@ -27,6 +27,18 @@ var _owner_player_id: int = -1
 var _spec: ProceduralShipSpec = null  # placeholder model shape, from the ship's data
 var _rigging_level: int = 4  # last synced, so the pennant and flag sit on a standing mast
 
+## Wreck look for a destroyed ship (hull #12 explosion): charred, dismasted, settled low with a
+## heel, and a few pieces of floating debris in its hexes. Built once, never undone.
+const WRECK_CHAR_COLOR := Color(0.05, 0.045, 0.04)
+const WRECK_CHAR_AMOUNT := 0.85
+const WRECK_SINK := 0.12          # how far the hull settles (world units)
+const WRECK_HEEL_DEG := 14.0      # list to one side
+const WRECK_TRIM_DEG := 5.0       # bow down
+const WRECK_DEBRIS_COUNT := 7
+const WRECK_DEBRIS_COLOR := Color(0.13, 0.10, 0.07)
+var _wrecked := false
+var _wreck_debris: Node3D = null
+
 static func owner_color(player_id: int) -> Color:
 	"""Owner colour for a player id (matches the minimap ship icons)."""
 	return PLAYER_COLOR if player_id == HUMAN_PLAYER_ID else ENEMY_COLOR
@@ -63,6 +75,10 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 
 	# Update rotation
 	_update_rotation_from_state(ship_state)
+
+	if ship_state.is_destroyed():
+		_apply_wreck(ship_state)
+		return
 
 	# Masts still standing and sails set; the pennant flies from the highest mast left
 	if _spec:
@@ -151,6 +167,63 @@ func _update_struck_visual(struck: bool) -> void:
 		_struck_flag.queue_free()
 		_struck_flag = null
 
+func is_wrecked() -> bool:
+	return _wrecked
+
+func _apply_wreck(ship_state: ShipState) -> void:
+	"""Swap to the wreck look (once): masts down to the stumps, no sails, the hull charred, the
+	owner markers and struck flag removed, a few dark debris pieces on the water."""
+	if _wrecked or model_node == null:
+		return
+	_wrecked = true
+	if _spec:
+		_rigging_level = 0
+		ProceduralShipBuilder.apply_state(model_node, _spec, "NS", 0)
+	if _struck_flag:
+		model_node.remove_child(_struck_flag)
+		_struck_flag.queue_free()
+		_struck_flag = null
+	if _owner_pennant:
+		_owner_pennant.visible = false
+	if _owner_ring:
+		_owner_ring.visible = false
+	for child in model_node.get_children():
+		var mesh := child as MeshInstance3D
+		if mesh == null:
+			continue
+		var material := mesh.material_override as StandardMaterial3D
+		if material:
+			material.albedo_color = material.albedo_color.lerp(WRECK_CHAR_COLOR, WRECK_CHAR_AMOUNT)
+			material.emission_enabled = false
+	_build_debris(ship_state)
+
+func _build_debris(ship_state: ShipState) -> void:
+	"""A few flat planks on the water around the hull, inside its two hexes. Placement is seeded by
+	the ship id so the wreck looks the same every time it is rebuilt."""
+	_wreck_debris = Node3D.new()
+	_wreck_debris.name = "WreckDebris"
+	add_child(_wreck_debris)  # on the ship root: stays flat on the water, does not heel with the hull
+	_wreck_debris.rotation_degrees = Vector3(0, -ship_state.facing * 60.0 - 90.0, 0)
+	var material := StandardMaterial3D.new()
+	material.albedo_color = WRECK_DEBRIS_COLOR
+	material.roughness = 1.0
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(ship_state.ship_id)
+	var reach := (_spec.length * 0.5) if _spec else 0.8
+	var beam := _spec.beam if _spec else 0.34
+	for i in range(WRECK_DEBRIS_COUNT):
+		var plank := MeshInstance3D.new()
+		plank.name = "Debris_%d" % i
+		var box := BoxMesh.new()
+		box.size = Vector3(rng.randf_range(0.05, 0.1), 0.025, rng.randf_range(0.14, 0.32))
+		plank.mesh = box
+		plank.material_override = material
+		var side := -1.0 if i % 2 == 0 else 1.0
+		plank.position = Vector3(side * rng.randf_range(beam * 0.8, beam * 1.8), 0.03,
+				rng.randf_range(-reach, reach))
+		plank.rotation_degrees = Vector3(0, rng.randf_range(0.0, 180.0), rng.randf_range(-8.0, 8.0))
+		_wreck_debris.add_child(plank)
+
 func _update_position_from_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	"""Calculate and set position based on ship state"""
 	# The model is centred midway between its bow hex (hex_position) and its stern hex.
@@ -218,6 +291,8 @@ func _update_wave_position() -> void:
 
 	# Apply dampened wave height to ship position
 	position = base_position + wave_offset
+	if _wrecked and model_node:
+		model_node.position.y = -WRECK_SINK  # the hull settles; the debris stays on the surface
 
 	# Get wave normal for tilting the ship
 	var wave_normal = wave_calculator.get_wave_normal(base_position, current_time, 0.5)
@@ -230,5 +305,8 @@ func _update_wave_position() -> void:
 	# Get facing from current rotation (stored in model_node)
 	if model_node:
 		var facing_angle = model_node.rotation_degrees.y
+		if _wrecked:
+			tilt_forward += deg_to_rad(WRECK_TRIM_DEG)
+			tilt_side += deg_to_rad(WRECK_HEEL_DEG)
 		model_node.rotation = Vector3(tilt_forward, deg_to_rad(facing_angle), tilt_side)
 		_sync_ring_heading()  # follows the playback's turn tween too
