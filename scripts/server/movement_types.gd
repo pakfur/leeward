@@ -36,11 +36,12 @@ class MoveMetadata extends RefCounted:
 		}
 
 	static func from_dict(data: Dictionary) -> MoveMetadata:
+		var hex: Dictionary = data.get("resulting_hex", {})
 		return MoveMetadata.new(
 			data.get("move_type", ""),
 			data.get("resulting_facing", 0),
 			data.get("ma_cost", 1),
-			Vector2i(int(data.get("resulting_hex", {}).get("q", 0)), int(data.get("resulting_hex", {}).get("r", 0)))
+			Vector2i(int(hex.get("q", 0)), int(hex.get("r", 0)))
 		)
 
 
