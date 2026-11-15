@@ -944,9 +944,11 @@ func _collision_foulings(b_already_fouled_in_state: bool, b_already_fouled_this_
 		var test_rng = RandomNumberGenerator.new()
 		test_rng.seed = seed_val
 		var test_resolver = MovementResolver.new(GameState, test_rng)
-		test_resolver._apply_collision("ship_a", "ship_b", 0,
-			{"ship_a": state_a, "ship_b": state_b}, {"ship_a": result_a, "ship_b": result_b},
-			{"ship_a": state_a.hex_position, "ship_b": state_b.hex_position}, {})
+		var p := MovementResolver.ResolutionPass.new()
+		p.ship_map = {"ship_a": state_a, "ship_b": state_b}
+		p.results = {"ship_a": result_a, "ship_b": result_b}
+		p.current_hexes = {"ship_a": state_a.hex_position, "ship_b": state_b.hex_position}
+		test_resolver._apply_collision(p, "ship_a", "ship_b", 0)
 		if result_a.fouled_with != "":
 			count += 1
 			assert_eq(result_b.fouled_with, "ship_a", "a new fouling is mutual")
