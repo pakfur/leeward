@@ -173,11 +173,31 @@ func start_new_game(scenario_data: Dictionary) -> void:
 		environment.wind_speed
 	])
 
+	for message in placement_errors():
+		push_error(message)
+
 	game_started.emit(active_scenario)
 
 	# Start the game via phase controller
 	if phase_controller:
 		phase_controller.start_new_game()
+
+## Problems with where the ships stand: a hex (bow or stern) off the scenario's map, or two
+## footprints sharing a hex. One message each; empty when the placement is valid. Read-only.
+func placement_errors() -> Array[String]:
+	var errors: Array[String] = []
+	var all_ships := get_all_ships()
+	for s in all_ships:
+		for h in s.occupied_hexes():
+			if not Occupancy.in_bounds(h, active_scenario):
+				errors.append("GameState: ship '%s' occupies %s, outside map_bounds" % [s.ship_id, h])
+	for i in all_ships.size():
+		for j in range(i + 1, all_ships.size()):
+			var pair: Array[ShipState] = [all_ships[i], all_ships[j]]
+			if Occupancy.overlapping_ids(pair).size() > 0:
+				errors.append("GameState: ships '%s' and '%s' overlap" % [pair[0].ship_id, pair[1].ship_id])
+	return errors
+
 
 func _on_server_phase_changed(new_phase: int) -> void:
 	"""Handle phase change from server controller"""

@@ -111,7 +111,7 @@
 	  "ship_type": "frigate_32",
 	  "position": {
 		"q": 8,
-		"r": 1
+		"r": 3
 	  },
 	  "facing": 3,
 	  "speed": 0,
