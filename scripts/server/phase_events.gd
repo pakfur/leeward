@@ -10,6 +10,7 @@ enum Type {
 	FIRE, DAMAGE, GUNS_DISMOUNTED, MORALE_NOTED, MORALE_CHECK, STRIKE,
 	DRIFT, FOULED, UNFOUL, SAIL_CHANGE, VICTORY, HOLD_FIRE,
 	COLLISION, STOPPED_SHORT, IN_IRONS, WIND,
+	TURN_UNDONE,  # a plotted turn rolled back or lost to a stern contest; the ship sailed on ahead instead
 }
 
 const MODIFIER_LABELS := {
@@ -168,6 +169,8 @@ class PhaseEvent extends RefCounted:
 				return "%s collides with %s%s" % [who, other, " at " + at if at != "" else ""]
 			Type.STOPPED_SHORT:
 				return _stopped_short_text(who, other)
+			Type.TURN_UNDONE:
+				return _turn_cause_text("%s cannot make its plotted turn" % who, other)
 			Type.IN_IRONS:
 				if data.get("cause", "") == "tack":
 					return "%s misses stays and is in irons" % who
@@ -186,6 +189,8 @@ class PhaseEvent extends RefCounted:
 	func _stopped_short_text(who: String, other: String) -> String:
 		var text := "%s stops short of its plotted course" % who
 		match str(data.get("cause", "")):
+			"stern_contest", "stern_blocked", "overlap":
+				return _turn_cause_text(text, other)
 			"collision":
 				if target_id != "":
 					return "%s after colliding with %s" % [text, other]
@@ -195,11 +200,31 @@ class PhaseEvent extends RefCounted:
 					text += " — %s was in the way" % other
 		return text
 
+	## `text` followed by why a plotted turn was not made: a lost stern contest, a blocked stern or a
+	## rolled-back overlap (6.B, 6.C), naming the other ship when it is known.
+	func _turn_cause_text(text: String, other: String) -> String:
+		if target_id == "":
+			return text
+		match str(data.get("cause", "")):
+			"stern_contest":
+				text += " — it lost the contest with %s for the hex its stern was turning into" % other
+				if data.has("roll") and data.has("other_roll"):
+					text += " (rolled %d against %d)" % [int(data["roll"]), int(data["other_roll"])]
+			"stern_blocked":
+				text += " — its stern was blocked by %s" % other
+			"overlap":
+				text += " — its stern swung into %s and had to swing back" % other
+		return text
+
 	func _fire_text(who: String, other: String) -> String:
 		var side_idx := int(data.get("side", -1))
 		var side := ""
 		if side_idx >= 0 and side_idx < PhaseEvents.SIDE_NAMES.size():
 			side = " " + PhaseEvents.SIDE_NAMES[side_idx]
+		# A half broadside names its battery ("starboard bow battery"); a full broadside reads as before.
+		var battery := str(data.get("battery", GunneryTypes.BATTERY_FULL))
+		if battery == GunneryTypes.BATTERY_BOW or battery == GunneryTypes.BATTERY_STERN:
+			side += " %s battery" % battery
 		var setup := PackedStringArray()
 		if data.has("range"):
 			setup.append("range %s" % _val("range"))
@@ -281,6 +306,8 @@ class PhaseEvent extends RefCounted:
 		var from_hex := _hex_text("from")
 		var at := " at %s" % from_hex if from_hex != "" else ""
 		var dice := "rolled %s, needed %s" % [_roll_text(), _val("needed")]
+		if data.get("drifted", false) and data.has("partial"):
+			return _partial_drift_text(who, other)
 		if data.get("drifted", false):
 			var text := "%s drifts downwind" % who
 			if from_hex != "" and data.has("to"):
@@ -303,6 +330,19 @@ class PhaseEvent extends RefCounted:
 				return "%s would drift (%s) but is held back by %s, fouled alongside, and holds position%s" % [
 					who, dice, partner, at]
 		return "%s would drift (%s) but is blocked and holds position%s" % [who, dice, at]
+
+	## A partial drift (8.A.5): one end slips downwind and the ship swings round on the other.
+	func _partial_drift_text(who: String, other: String) -> String:
+		var names := ["E", "SE", "SW", "W", "NW", "NE"]
+		var facing := int(data.get("facing", -1))
+		var text := "%s drifts partly: its %s slips downwind" % [who, str(data["partial"])]
+		if facing >= 0 and facing < names.size():
+			text += " and it swings to face %s" % names[facing]
+		if target_id != "":
+			text += ", blocked by %s" % other
+		if data.get("fouled", false):
+			text += "; the two ships are fouled together"
+		return text + " (drift roll %s, needed %s)" % [_roll_text(), _val("needed")]
 
 	func _unfoul_text(who: String, other: String) -> String:
 		# Either ship's success frees the pair, so a failure never claims the pair stays fouled.

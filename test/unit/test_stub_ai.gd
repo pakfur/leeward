@@ -343,8 +343,9 @@ func test_ai_turns_back_toward_enemy_astern() -> void:
 
 
 func test_engaged_ship_with_no_better_option_does_not_move() -> void:
+	# Both ships face east, side by side: both of the AI's batteries bear at range 1.
 	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 2)
-	var enemy = _make_ship("p1", 0, HexGrid.DIRECTIONS[1], 3, 0)
+	var enemy = _make_ship("p1", 0, Vector2i(0, 1), 0, 0)
 	_add_ship(ai)
 	_add_ship(enemy)
 	stub_ai.plot_all_ai_ships()
@@ -498,3 +499,125 @@ func test_ai_with_no_movable_ships_does_not_error() -> void:
 		pc.on_combat_playback_completed()
 
 	assert_eq(pc.current_phase, TurnPhaseController.GamePhase.POST_COMBAT, "Phase advanced")
+
+
+# ===========================================================================
+# Turns pivot on the bow (5.C.2)
+# ===========================================================================
+
+func test_plot_step_stores_bow_hex() -> void:
+	env.wind_direction = 3
+	var ship = _make_ship("p1", 0, Vector2i(5, 5), 0, 3)
+	_add_ship(ship)
+	var controller: MovementPlottingController = GameState.movement_plotting_controller
+	var started = controller.handle_start_plotting(0, "p1", "req_start")
+	var target: Vector2i = started.valid_next_hexes.starboard.hex
+	assert_eq(target, Vector2i(5, 6), "Click target is the hex the bow will point at")
+
+	var response = controller.handle_select_hex(started.session_id, started.session_version, target, "req_turn")
+
+	assert_false(response is MovementTypes.PlottingErrorResponse)
+	var step: MovementTypes.PlotStep = response.plotted_path.back()
+	assert_eq(step.hex, Vector2i(5, 5), "The stored step is the unchanged bow hex")
+	assert_eq(step.facing, 1)
+
+
+# ===========================================================================
+# Two-hex footprints
+# ===========================================================================
+
+func test_ai_scores_broadside_against_two_hex_enemy() -> void:
+	# Enemy bow (5,0) facing 0, stern (4,0). The firer faces east with its keel on row 2.
+	var enemy = _make_ship("p1", 0, Vector2i(5, 0), 0, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(5, 2), 0, 0)
+	_add_ship(enemy)
+	_add_ship(ai)
+	var occupied := {}
+	var geometry: FireGeometry = GameState.fire_geometry
+
+	var both_bow := Vector2i(5, 2)
+	var one_bow := Vector2i(2, 2)
+	var both_hexes: Array[Vector2i] = [both_bow, HexGrid.stern_of(both_bow, 0)]
+	var one_hexes: Array[Vector2i] = [one_bow, HexGrid.stern_of(one_bow, 0)]
+	var count_both := 0
+	var count_one := 0
+	for h in both_hexes:
+		if geometry.battery_bears(h, 0, ShipState.PORT, enemy.occupied_hexes(), occupied):
+			count_both += 1
+	for h in one_hexes:
+		if geometry.battery_bears(h, 0, ShipState.PORT, enemy.occupied_hexes(), occupied):
+			count_one += 1
+	assert_eq(count_both, 2, "fixture: both batteries bear from the abeam position")
+	assert_eq(count_one, 1, "fixture: only one battery bears from the offset position")
+
+	var both_score := stub_ai._score_position(both_bow, 0, enemy, occupied)
+	var one_score := stub_ai._score_position(one_bow, 0, enemy, occupied)
+	assert_gt(one_score, 0, "a single bearing battery is still a firing position")
+	assert_gt(both_score, one_score, "two batteries bearing outscore one")
+
+
+func test_nearest_enemy_measures_footprint_to_footprint() -> void:
+	# AI bow (0,0) facing E, stern (-1,0). "b" has the nearer bow (3 hexes) but its closest hex is 3
+	# away; "a" points away (bow (-4,0) facing W, stern (-3,0)): bow 4 hexes off, closest hex 2.
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 2)
+	var a = _make_ship("a", 0, Vector2i(-4, 0), 3, 0)
+	var b = _make_ship("b", 0, Vector2i(3, 0), 3, 0)
+	_add_ship(ai)
+	_add_ship(b)
+	_add_ship(a)
+	assert_eq(stub_ai._nearest_enemy(ai), a)
+
+
+func test_unengaged_score_measures_bow_to_enemy_footprint() -> void:
+	# Firer bow (0,0) facing E toward an enemy bow (10,0) facing E, stern (9,0): out of firing range.
+	# The firer's bow is 9 hexes from the enemy's stern (10 from its bow); no misalignment.
+	var enemy = _make_ship("p1", 0, Vector2i(10, 0), 0, 0)
+	_add_ship(enemy)
+	assert_eq(stub_ai._score_position(Vector2i(0, 0), 0, enemy, {}), -18)
+	# Pointing away brings the firer's own stern a hex nearer, but the bow leads: no reward for it.
+	assert_eq(stub_ai._score_position(Vector2i(0, 0), 3, enemy, {}), -21)
+
+
+func test_ai_never_plots_stern_into_occupied_hex() -> void:
+	env.wind_direction = 3
+	# AI bow (5,5) facing east, stern (4,5); a friend lies alongside on row 6 (stern (4,6)).
+	# Turning to port (facing 5) would swing the stern onto (4,6). The enemy is far to the north-east.
+	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 0, 2)
+	var friend = _make_ship("ai2", 1, Vector2i(5, 6), 0, 0)
+	var enemy = _make_ship("p1", 0, Vector2i(14, -6), 3, 0)
+	_add_ship(ai)
+	_add_ship(friend)
+	_add_ship(enemy)
+	var blocked: Array[Vector2i] = friend.occupied_hexes()
+
+	stub_ai.plot_all_ai_ships()
+
+	var steps: Array = ai.plotted_actions.get("movement", [])
+	assert_gt(steps.size(), 0, "the AI still plots something")
+	for step in steps:
+		var bow := Vector2i(int(step["hex"]["q"]), int(step["hex"]["r"]))
+		var stern := HexGrid.stern_of(bow, int(step["facing"]))
+		assert_false(stern in blocked, "step %s facing %d swings the stern into the friend" % [bow, step["facing"]])
+
+
+func test_ai_prefers_full_broadside() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 0)
+	var s = _make_ship("s", 0, Vector2i(-1, 2), 0, 0)  # abeam: both starboard batteries bear
+	_add_ship(ai)
+	_add_ship(s)
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+	assert_eq(orders.size(), 1)
+	assert_eq(orders[0]["battery"], "full")
+
+
+func test_ai_falls_back_to_bearing_battery() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 0)
+	var s = _make_ship("s", 0, Vector2i(0, 3), 1, 0)  # bow (0,3) facing SE: only the bow battery bears
+	_add_ship(ai)
+	_add_ship(s)
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+	assert_eq(orders.size(), 1)
+	assert_eq(orders[0]["side"], ShipState.STARBOARD)
+	assert_eq(orders[0]["battery"], "bow")
+	var typed: Array[GunneryTypes.FireOrder] = [GunneryTypes.FireOrder.from_dict(orders[0])]
+	assert_eq(GameState.gunnery_calculator.validate_orders(1, typed), "")

@@ -61,14 +61,20 @@ func _make_ship(id: String, player: int, hex: Vector2i, facing: int) -> ShipStat
 	return state
 
 
-func _order(side: int = STARBOARD, ammo: String = "round", aim: String = "low") -> GunneryTypes.FireOrder:
+func _order(side: int = STARBOARD, ammo: String = "round", aim: String = "low",
+		battery: String = "full", target_id: String = "target") -> GunneryTypes.FireOrder:
 	var order := GunneryTypes.FireOrder.new()
 	order.ship_id = "firer"
 	order.side = side
-	order.target_id = "target"
+	order.target_id = target_id
 	order.ammo = ammo
 	order.aim = aim
+	order.battery = battery
 	return order
+
+
+func _battery(battery: String, side: int = STARBOARD, target_id: String = "target") -> GunneryTypes.FireOrder:
+	return _order(side, "round", "low", battery, target_id)
 
 
 func _mod(preview: GunneryTypes.ShotPreview, name: String) -> int:
@@ -218,11 +224,13 @@ func test_same_player_cannot_fire() -> void:
 # --- rake ---
 
 func test_stern_rake_at_close_range() -> void:
+	# Target bow (0,0) facing E, stern (-1,0). Firer bow (-2,0) directly astern, facing SE.
 	target.hex_position = Vector2i.ZERO
 	target.facing = 0
-	firer.hex_position = _n(3)
+	firer.hex_position = _steps(3, 2)
 	firer.facing = 1
-	var p := calc.preview(_order(PORT))
+	# Only the bow battery bears (the stern battery's port arc misses the target).
+	var p := calc.preview(_battery("bow", PORT))
 	assert_true(p.can_fire, p.reason)
 	assert_eq(p.rake, "stern")
 	assert_eq(_mod(p, "rake"), 4)
@@ -231,9 +239,10 @@ func test_stern_rake_at_close_range() -> void:
 func test_no_rake_at_range_six() -> void:
 	target.hex_position = Vector2i.ZERO
 	target.facing = 0
-	firer.hex_position = _steps(3, 6)
+	# Firer bow (-7,0): six hexes from the target's stern (-1,0).
+	firer.hex_position = _steps(3, 7)
 	firer.facing = 1
-	var p := calc.preview(_order(PORT))
+	var p := calc.preview(_battery("bow", PORT))
 	assert_true(p.can_fire, p.reason)
 	assert_eq(_mod(p, "rake"), 0)
 	assert_eq(p.rake, "")
@@ -263,19 +272,33 @@ func test_zero_gun_factors_cannot_fire() -> void:
 # --- eligible_shots / any_eligible_shot ---
 
 func test_eligible_shots_lists_starboard_target() -> void:
+	# Both batteries bear: the full broadside and each battery alone.
+	var shots := calc.eligible_shots("firer")
+	assert_eq(shots.size(), 3)
+	assert_eq(shots.map(func(s): return s.order.battery), ["full", "bow", "stern"])
+	for shot in shots:
+		assert_eq(shot.order.side, STARBOARD)
+		assert_eq(shot.order.target_id, "target")
+		assert_eq(shot.order.aim, "low")
+	assert_true(calc.any_eligible_shot())
+
+
+func test_eligible_shots_offer_the_bearing_battery_when_full_cannot_fire() -> void:
+	# Target bow (0,3) facing SE, stern (0,2): only the bow battery bears.
+	target.hex_position = Vector2i(0, 3)
+	target.facing = 1
 	var shots := calc.eligible_shots("firer")
 	assert_eq(shots.size(), 1)
-	assert_eq(shots[0].order.side, STARBOARD)
-	assert_eq(shots[0].order.target_id, "target")
-	assert_eq(shots[0].order.aim, "low")
-	assert_true(calc.any_eligible_shot())
+	assert_eq(shots[0].order.battery, "bow")
+	assert_eq(shots[0].batteries, 1)
 
 
 func test_eligible_shots_use_high_aim_at_long_range() -> void:
 	target.hex_position = _steps(1, 10)
 	var shots := calc.eligible_shots("firer")
-	assert_eq(shots.size(), 1)
-	assert_eq(shots[0].order.aim, "high")
+	assert_eq(shots.size(), 3)
+	for shot in shots:
+		assert_eq(shot.order.aim, "high")
 
 
 func test_no_eligible_shot_when_out_of_range() -> void:
@@ -317,3 +340,225 @@ func test_validate_bad_aim_and_ammo() -> void:
 	assert_ne(calc.validate_orders(0, orders), "")
 	orders = [_order(STARBOARD, "grape", "low")]
 	assert_ne(calc.validate_orders(0, orders), "")
+
+
+# --- two-hex geometry: batteries, LOS exclusions, half broadside ---
+
+func test_full_broadside_has_two_batteries() -> void:
+	var p := calc.preview(_order())
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.batteries, 2)
+	assert_eq(_mod(p, "half_broadside"), 0)
+
+
+func test_range_uses_closest_hexes() -> void:
+	# Target bow (-2,5) facing SE, stern (-2,4). Bow to bow is 5; firer stern to target stern is 4.
+	target.hex_position = Vector2i(-2, 5)
+	target.facing = 1
+	var p := calc.preview(_order())
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.range_hexes, 4)
+
+
+func test_target_own_stern_does_not_block() -> void:
+	# Target bow (0,3) facing SE, stern (0,2). The bow battery's LOS to the target's bow runs
+	# through the target's own stern hex.
+	target.hex_position = Vector2i(0, 3)
+	target.facing = 1
+	assert_eq(target.stern_hex(), Vector2i(0, 2))
+	var p := calc.preview(_battery("bow"))
+	assert_true(p.can_fire, p.reason)
+
+
+func test_firers_own_hex_does_not_block() -> void:
+	# Target abeam to starboard at range 4: both batteries trace all four LOS while the firer's
+	# own hexes are on the map.
+	target.hex_position = Vector2i(-2, 4)
+	var p := calc.preview(_order())
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.batteries, 2)
+
+
+func test_one_battery_bears_gives_half_broadside() -> void:
+	# Target bow (0,3) facing SE, stern (0,2): in the bow battery's arc, outside the stern battery's.
+	target.hex_position = Vector2i(0, 3)
+	target.facing = 1
+	var p := calc.preview(_battery("bow"))
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.batteries, 1)
+	assert_eq(_mod(p, "half_broadside"), -8)
+
+
+func test_half_broadside_at_two_targets_takes_only_two_target_modifier() -> void:
+	# 7.C.12g: a half broadside fired while firing at two targets takes -12, not -20.
+	target.hex_position = Vector2i(0, 3)
+	target.facing = 1
+	var p := calc.preview(_battery("bow"), true)
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.batteries, 1)
+	assert_eq(_mod(p, "half_broadside"), 0)
+	assert_eq(_mod(p, "two_targets"), -12)
+
+
+func test_struck_ship_blocks_los_with_both_hexes() -> void:
+	target.hex_position = Vector2i(-2, 4)
+	assert_eq(calc.preview(_order()).batteries, 2, "setup: full broadside without the hulk")
+	# A struck ship whose stern (-1,2) sits on the bow battery's LOS to the target's bow.
+	var hulk := _make_ship("hulk", 1, Vector2i(0, 2), 0)
+	hulk.status = ShipState.Status.STRUCK
+	assert_eq(hulk.stern_hex(), Vector2i(-1, 2))
+	assert_eq(calc.preview(_order()).reason, "only the stern battery bears: a full broadside needs both")
+	assert_false(calc.preview(_battery("bow")).can_fire, "the hulk blocks the bow battery")
+	var p := calc.preview(_battery("stern"))
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.batteries, 1)
+	assert_eq(_mod(p, "half_broadside"), -8)
+
+
+
+# --- battery fire orders (7.B.1, 7.C.12f/g) ---
+
+## Firer bow (0,0) facing E, stern (-1,0). X bow (0,3) facing SE (stern (0,2)) is covered only
+## by the starboard bow battery; Y bow (-4,3) facing SW (stern (-3,2)) only by the starboard stern
+## battery.
+func _place_split_targets() -> void:
+	target.hex_position = Vector2i(0, 3)
+	target.facing = 1
+	var y := _make_ship("y", 1, Vector2i(-4, 3), 2)
+	assert_eq(y.stern_hex(), Vector2i(-3, 2))
+
+
+func _orders(list: Array) -> Array[GunneryTypes.FireOrder]:
+	var typed: Array[GunneryTypes.FireOrder] = []
+	for o in list:
+		typed.append(o)
+	return typed
+
+
+func test_full_requires_both_batteries() -> void:
+	target.hex_position = Vector2i(0, 3)
+	target.facing = 1
+	var p := calc.preview(_battery("full"))
+	assert_false(p.can_fire)
+	assert_eq(p.reason, "only the bow battery bears: a full broadside needs both")
+	assert_false(calc.preview(_battery("stern")).can_fire, "the stern battery does not bear")
+	assert_true(calc.preview(_battery("bow")).can_fire)
+
+
+func test_bow_battery_alone_is_half_broadside() -> void:
+	# Abeam target: both batteries bear, but firing only the bow battery is a half broadside.
+	var full := calc.preview(_battery("full"))
+	var bow := calc.preview(_battery("bow"))
+	assert_true(bow.can_fire, bow.reason)
+	assert_eq(bow.batteries, 1)
+	assert_eq(_mod(bow, "half_broadside"), -8)
+	assert_eq(bow.tgf, full.tgf, "gun factors are the full side's")
+	assert_eq(bow.mgn, full.mgn - 8)
+	var stern := calc.preview(_battery("stern"))
+	assert_eq(_mod(stern, "half_broadside"), -8)
+
+
+func test_split_side_two_targets() -> void:
+	# Ruling (7.C.12g): with two targets only the two-target modifier applies, not the -8.
+	_place_split_targets()
+	var bow := _battery("bow", STARBOARD, "target")
+	var stern := _battery("stern", STARBOARD, "y")
+	assert_eq(calc.validate_orders(0, _orders([bow, stern])), "")
+	assert_eq(GunneryCalculator.target_count("firer", [bow, stern]), 2)
+	for order in [bow, stern]:
+		var p := calc.preview(order, true)
+		assert_true(p.can_fire, p.reason)
+		assert_eq(p.batteries, 1)
+		assert_eq(_mod(p, "two_targets"), -12)
+		assert_eq(_mod(p, "half_broadside"), 0)
+	# Fired alone (one target), the same battery shot takes the -8 instead.
+	assert_eq(_mod(calc.preview(bow), "half_broadside"), -8)
+
+
+func test_three_targets_refused() -> void:
+	_place_split_targets()
+	_make_ship("z", 1, Vector2i(0, -2), 0)
+	var orders := _orders([_battery("bow", STARBOARD, "target"), _battery("stern", STARBOARD, "y"),
+			_battery("full", PORT, "z")])
+	assert_eq(calc.validate_orders(0, orders), "more than two targets")
+
+
+func test_battery_used_twice_refused() -> void:
+	assert_eq(calc.validate_orders(0, _orders([_battery("full"), _battery("bow")])), "battery fired twice")
+	assert_eq(calc.validate_orders(0, _orders([_battery("stern"), _battery("stern")])), "battery fired twice")
+	assert_eq(calc.validate_orders(0, _orders([_battery("full"), _battery("full")])), "battery fired twice")
+
+
+func test_both_batteries_at_one_target_must_be_declared_full() -> void:
+	var reason := calc.validate_orders(0, _orders([_battery("bow"), _battery("stern")]))
+	assert_eq(reason, "ship firer fires both batteries of one side at target: declare a full broadside")
+
+
+func test_unknown_battery_refused() -> void:
+	var order := _battery("middle")
+	assert_eq(calc.preview(order).reason, "unknown battery 'middle'")
+	assert_eq(calc.validate_orders(0, _orders([order])), "unknown battery 'middle'")
+
+
+func test_target_count_counts_distinct_targets() -> void:
+	var port := _battery("full", PORT, "target")
+	var starboard := _battery("full", STARBOARD, "target")
+	assert_eq(GunneryCalculator.target_count("firer", [port, starboard]), 1)
+	assert_eq(GunneryCalculator.target_count("other", [port, starboard]), 0)
+
+
+func test_old_orders_default_full() -> void:
+	var order := GunneryTypes.FireOrder.from_dict({"ship_id": "firer", "side": 1, "target_id": "target"})
+	assert_eq(order.battery, "full")
+	var round_trip := GunneryTypes.FireOrder.from_dict(_battery("stern").to_dict())
+	assert_eq(round_trip.battery, "stern")
+
+
+# --- initial broadside once per side (7.C.10) ---
+
+func _ib(p: GunneryTypes.ShotPreview) -> int:
+	return _mod(p, "initial_broadside")
+
+
+func test_split_side_initial_broadside_goes_to_closer_shot() -> void:
+	# X (range 2) is only in the starboard bow arc; Y bow (-6,5) facing SW (range 4) only in the
+	# stern arc. The stern shot is listed first; the bonus still goes to the closer bow shot.
+	target.hex_position = Vector2i(0, 3)
+	target.facing = 1
+	_make_ship("y", 1, Vector2i(-6, 5), 2)
+	var stern := _battery("stern", STARBOARD, "y")
+	var bow := _battery("bow", STARBOARD, "target")
+	assert_eq(calc.validate_orders(0, _orders([stern, bow])), "")
+	var single_stern := calc.preview(stern, true)
+	assert_eq(single_stern.range_hexes, 4)
+	assert_eq(_ib(single_stern), DataManager.combat_tables.range_bonus("initial_broadside", 4),
+			"alone, the stern shot would earn its own bonus")
+	var previews := calc.preview_orders(_orders([stern, bow]))
+	assert_eq(previews[1].range_hexes, 2)
+	assert_eq(_ib(previews[1]), DataManager.combat_tables.range_bonus("initial_broadside", 2))
+	assert_true(previews[1].initial_broadside)
+	assert_eq(_ib(previews[0]), 0)
+	assert_false(previews[0].initial_broadside)
+	assert_eq(previews[0].mgn, single_stern.mgn - _ib(single_stern))
+
+
+func test_split_side_initial_broadside_tie_goes_to_bow() -> void:
+	# X and Y both at range 2: equal bonuses, so the bow battery keeps it.
+	_place_split_targets()
+	var previews := calc.preview_orders(_orders([_battery("stern", STARBOARD, "y"),
+			_battery("bow", STARBOARD, "target")]))
+	assert_eq(previews[0].range_hexes, previews[1].range_hexes)
+	assert_eq(_ib(previews[0]), 0, "stern battery")
+	assert_eq(_ib(previews[1]), DataManager.combat_tables.range_bonus("initial_broadside", 2), "bow battery")
+
+
+func test_each_side_keeps_its_own_initial_broadside() -> void:
+	# Port and starboard are separate broadsides: both first-fire shots keep the bonus.
+	_make_ship("z", 1, Vector2i(1, -2), 0)
+	var previews := calc.preview_orders(_orders([_battery("full", STARBOARD, "target"),
+			_battery("full", PORT, "z")]))
+	assert_true(previews[0].can_fire, previews[0].reason)
+	assert_true(previews[1].can_fire, previews[1].reason)
+	assert_true(previews[0].initial_broadside)
+	assert_true(previews[1].initial_broadside)
+	assert_eq(_mod(previews[0], "two_targets"), -12)

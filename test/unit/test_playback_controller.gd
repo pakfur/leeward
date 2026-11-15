@@ -317,7 +317,7 @@ func test_ship_view_position_updated_after_move() -> void:
 	pb.play(log)
 	await wait_for_signal(pb.playback_completed, 5.0)
 
-	var expected_pos = hex_grid.axial_to_world(6, 5)
+	var expected_pos = hex_grid.ship_center_world(Vector2i(6, 5), 0)
 	expected_pos.y = 0.0
 	assert_almost_eq(view.base_position.x, expected_pos.x, 0.1, "x position should match target")
 	assert_almost_eq(view.base_position.z, expected_pos.z, 0.1, "z position should match target")
@@ -379,6 +379,144 @@ func test_ship_view_facing_updated_after_turn() -> void:
 	var expected_angle = -1 * 60.0 - 90.0  # facing 1 -> -150 degrees
 	if view.model_node:
 		assert_almost_eq(view.model_node.rotation_degrees.y, expected_angle, 1.0, "facing should match target")
+
+
+func test_playback_turn_keeps_bow_hex() -> void:
+	var ship_state := _two_hex_state("pivoting_ship", Vector2i(5, 5), 0)
+	var view := ShipView.new()
+	add_child_autofree(view)
+	view.initialize(ship_state, hex_grid)
+	var pb = MovementResolutionPlaybackController.new(hex_grid, {"pivoting_ship": view}, 0)
+	add_child_autofree(pb)
+
+	var log = MovementTypes.ResolutionLog.new(1)
+	log.max_impulses = 1
+	var result = MovementTypes.ShipResolutionResult.new("pivoting_ship")
+	result.final_hex = Vector2i(5, 5)
+	result.final_facing = 1
+	# A turn: the bow stays in its hex and the stern swings round it.
+	var turn_ev = MovementTypes.ResolutionEvent.new("pivoting_ship", 0, MovementTypes.ResolutionEventType.MOVE)
+	turn_ev.from_hex = Vector2i(5, 5)
+	turn_ev.to_hex = Vector2i(5, 5)
+	turn_ev.from_facing = 0
+	turn_ev.facing = 1
+	result.events.append(turn_ev)
+	log.add_result(result)
+
+	pb.play(log)
+	await wait_for_signal(pb.playback_completed, 5.0)
+
+	var expected := hex_grid.ship_center_world(Vector2i(5, 5), 1)
+	assert_almost_eq(view.base_position.x, expected.x, 0.01, "centre between the same bow and the swung stern")
+	assert_almost_eq(view.base_position.z, expected.z, 0.01)
+	assert_almost_eq(view.model_node.rotation_degrees.y, -1 * 60.0 - 90.0, 1.0, "now facing SE")
+
+
+func _overlap_rollback_log(with_ahead_move: bool) -> MovementTypes.ResolutionLog:
+	# The resolver's record of a rolled-back turn: OVERLAP (the swing out) at the overlap segment,
+	# OVERLAP_ROLLBACK (the swing back) at the next one. With a deceleration step the ship moves
+	# ahead at the overlap segment instead.
+	var log = MovementTypes.ResolutionLog.new(1)
+	log.max_impulses = 2
+	var result = MovementTypes.ShipResolutionResult.new("swinging_ship")
+	var overlap = MovementTypes.ResolutionEvent.new("swinging_ship", 0, MovementTypes.ResolutionEventType.OVERLAP)
+	overlap.from_hex = Vector2i(5, 5)
+	overlap.to_hex = Vector2i(5, 5)
+	overlap.from_facing = 0
+	overlap.facing = 1
+	overlap.detail = "overlaps other"
+	if with_ahead_move:
+		var mv = MovementTypes.ResolutionEvent.new("swinging_ship", 0, MovementTypes.ResolutionEventType.MOVE)
+		mv.from_hex = Vector2i(5, 5)
+		mv.to_hex = Vector2i(6, 5)
+		mv.from_facing = 0
+		mv.facing = 0
+		result.events.append(mv)
+	result.events.append(overlap)
+	var rollback = MovementTypes.ResolutionEvent.new("swinging_ship", 1, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
+	rollback.from_hex = Vector2i(5, 5)
+	rollback.to_hex = Vector2i(5, 5)
+	rollback.from_facing = 1
+	rollback.facing = 0
+	rollback.success = false
+	rollback.detail = "already occupied"
+	result.events.append(rollback)
+	result.final_hex = Vector2i(6, 5) if with_ahead_move else Vector2i(5, 5)
+	result.final_facing = 0
+	log.add_result(result)
+	return log
+
+
+func test_rolled_back_turn_swings_out_and_back() -> void:
+	var pb = MovementResolutionPlaybackController.new(hex_grid, {}, 0)
+	add_child_autofree(pb)
+	var log := _overlap_rollback_log(false)
+	pb._log = log
+	var events: Array = log.get_result("swinging_ship").events
+	var out: Array = pb._posed_events([events[0]])
+	assert_eq(out.size(), 1, "The swing out is animated")
+	var back: Array = pb._posed_events([events[1]])
+	assert_eq(back.size(), 1, "The swing back is animated")
+
+
+func test_rolled_back_turn_with_ahead_move_animates_only_the_move() -> void:
+	var pb = MovementResolutionPlaybackController.new(hex_grid, {}, 0)
+	add_child_autofree(pb)
+	var log := _overlap_rollback_log(true)
+	pb._log = log
+	var events: Array = log.get_result("swinging_ship").events
+	var posed: Array = pb._posed_events([events[0], events[1]])
+	assert_eq(posed.size(), 1)
+	assert_eq(posed[0].event_type, MovementTypes.ResolutionEventType.MOVE)
+	assert_eq(pb._posed_events([events[2]]).size(), 0, "Nothing swung out, so nothing swings back")
+
+
+func test_pre_movement_events_are_not_played_again_on_impulse_0() -> void:
+	var skip := MovementTypes.ResolutionEvent.new("a", 0, MovementTypes.ResolutionEventType.SKIP_NO_PLOT)
+	var tack := MovementTypes.ResolutionEvent.new("b", 0, MovementTypes.ResolutionEventType.TACKING_ROLL)
+	var move := MovementTypes.ResolutionEvent.new("b", 0, MovementTypes.ResolutionEventType.MOVE)
+	var contest := MovementTypes.ResolutionEvent.new("c", 0, MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL)
+	var special: Array = MovementResolutionPlaybackController._special_events([skip, tack, move, contest], [skip, tack])
+	assert_eq(special, [contest])
+
+
+func test_playback_rolled_back_turn_ends_in_the_old_pose() -> void:
+	var ship_state := _two_hex_state("swinging_ship", Vector2i(5, 5), 0)
+	var view := ShipView.new()
+	add_child_autofree(view)
+	view.initialize(ship_state, hex_grid)
+	var pb = MovementResolutionPlaybackController.new(hex_grid, {"swinging_ship": view}, 0)
+	add_child_autofree(pb)
+
+	pb.play(_overlap_rollback_log(false))
+	await wait_for_signal(pb.playback_completed, 5.0)
+
+	var expected := hex_grid.ship_center_world(Vector2i(5, 5), 0)
+	assert_almost_eq(view.base_position.x, expected.x, 0.01, "back where it started")
+	assert_almost_eq(view.base_position.z, expected.z, 0.01)
+	assert_almost_eq(view.model_node.rotation_degrees.y, -90.0, 1.0, "facing E again")
+
+
+func _two_hex_state(ship_id: String, bow: Vector2i, facing: int) -> ShipState:
+	var ship_state = ShipState.new()
+	ship_state.ship = Ship.from_dict({
+		"ship_id": ship_id,
+		"player_id": 0,
+		"ship_name": ship_id,
+		"ship_type": "frigate_38",
+		"rating": 38,
+		"class": 3,
+		"rigging_hp": [5, 5, 6, 6],
+		"hull_hp": [5, 5, 5, 6],
+		"crew_count": [3, 3, 3],
+		"marine_count": 2,
+	})
+	ship_state.hex_position = bow
+	ship_state.facing = facing
+	ship_state.sail_state = "MS"
+	ship_state.rigging_current_hp = [5, 5, 6, 6] as Array[int]
+	ship_state.hull_current_hp = [5, 5, 5, 6] as Array[int]
+	return ship_state
 
 
 ## ============================================================================

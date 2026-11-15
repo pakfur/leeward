@@ -153,10 +153,12 @@ func test_shipped_scenarios_have_no_stacked_ships() -> void:
 	for file_name in scenarios:
 		var occupied := {}
 		for ship in scenarios[file_name]["ships"]:
-			var hex := Vector2i(int(ship["position"]["q"]), int(ship["position"]["r"]))
-			assert_false(occupied.has(hex), "%s: %s starts on %s, already taken by %s" % [
-				file_name, ship["id"], hex, occupied.get(hex, "")])
-			occupied[hex] = ship["id"]
+			# position is the bow; the stern is the neighbour against the facing
+			var bow := Vector2i(int(ship["position"]["q"]), int(ship["position"]["r"]))
+			for hex in [bow, HexGrid.stern_of(bow, int(ship.get("facing", 0)))]:
+				assert_false(occupied.has(hex), "%s: %s starts on %s, already taken by %s" % [
+					file_name, ship["id"], hex, occupied.get(hex, "")])
+				occupied[hex] = ship["id"]
 
 func test_shipped_scenarios_have_a_turn_limit() -> void:
 	var scenarios := _shipped_scenarios()
@@ -198,3 +200,56 @@ func test_unnamed_ships_get_numbered_fallback_names_per_side() -> void:
 	assert_eq(ships[2]["ship_name"], "38-gun Frigate 1", "numbered per side")
 	assert_eq(ships[3]["ship_name"], "Topaze", "a given name is kept")
 	assert_eq(ships[4]["ship_name"], "32-gun Frigate 1")
+
+
+# --- Placement validation ---
+
+func _start_with_ships(scenario: Dictionary) -> void:
+	GameState.clear_ships()
+	for ship_data in scenario["ships"]:
+		var ref := Ship.initialize_from_scenario(
+				ship_data, DataManager.get_ship_definition(ship_data["ship_type"]).to_dict())
+		var state := ShipState.new()
+		state.initialize_from_scenario(ship_data, ref)
+		GameState.add_ship(state)
+	GameState.start_new_game(scenario)
+
+func test_shipped_scenarios_have_valid_placement() -> void:
+	for scenario_name in ["test_basic", "test_fleet"]:
+		_start_with_ships(DataManager.load_scenario(scenario_name))
+		assert_gt(GameState.ships.size(), 1, "%s: ships were placed" % scenario_name)
+		assert_eq(GameState.placement_errors(), [] as Array[String], scenario_name)
+	GameState.clear_ships()
+
+func test_overlapping_placement_rejected() -> void:
+	# Both sterns are on (-1, 0)
+	var scenario := {
+		"name": "overlap", "wind_direction": 0, "wind_speed": 2, "sea_state": 1,
+		"ships": [
+			{"id": "a", "player_id": 0, "ship_type": "frigate_38", "ship_name": "A",
+				"position": {"q": 0, "r": 0}, "facing": 0, "sail_state": "MS"},
+			{"id": "b", "player_id": 1, "ship_type": "frigate_38", "ship_name": "B",
+				"position": {"q": -2, "r": 0}, "facing": 3, "sail_state": "MS"},
+		],
+	}
+	_start_with_ships(scenario)
+	# add_ship compares footprints, so the second ship is refused when it is placed
+	assert_push_error("ship 'b' starts on (-1, 0), already occupied by 'a'")
+	assert_false(GameState.ships.has("b"), "the overlapping ship is not placed")
+	assert_eq(GameState.placement_errors().size(), 0)
+	GameState.clear_ships()
+
+func test_stern_outside_map_bounds_reported() -> void:
+	# 10x10 map spans q,r -5..4; the bow is on the map, the stern at q=5 is not
+	var scenario := {
+		"name": "edge", "wind_direction": 0, "wind_speed": 2, "sea_state": 1,
+		"map_bounds": {"width": 10, "height": 10},
+		"ships": [
+			{"id": "a", "player_id": 0, "ship_type": "frigate_38", "ship_name": "A",
+				"position": {"q": 4, "r": 0}, "facing": 3, "sail_state": "MS"},
+		],
+	}
+	_start_with_ships(scenario)
+	assert_push_error("outside map_bounds")
+	assert_eq(GameState.placement_errors().size(), 1)
+	GameState.clear_ships()

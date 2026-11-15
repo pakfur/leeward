@@ -50,14 +50,23 @@ func test_instructions_singular_plural_and_done() -> void:
 func test_occupied_hexes_names_other_ships_only() -> void:
 	var me := _ship("me", "Mine", Vector2i(0, 0))
 	var foe := _ship("foe", "Foe", Vector2i(1, 0))
+	foe.facing = 3  # stern at (2,0), clear of my hex
 	var far := _ship("far", "Far", Vector2i(5, 5))
 	var offered := [Vector2i(1, 0), Vector2i(0, 1), Vector2i(0, 0)]
 	var result := PlanningText.occupied_hexes(offered, [me, foe, far], "me")
 	assert_eq(result, {Vector2i(1, 0): "Foe"})
 
 
+func test_occupied_hexes_include_a_ships_stern() -> void:
+	var me := _ship("me", "Mine", Vector2i(0, 0))
+	var foe := _ship("foe", "Foe", Vector2i(3, 0))  # facing E: stern at (2,0)
+	var result := PlanningText.occupied_hexes([Vector2i(1, 0), Vector2i(2, 0)], [me, foe], "me")
+	assert_eq(result, {Vector2i(2, 0): "Foe"})
+
+
 func test_collision_text() -> void:
 	assert_eq(PlanningText.collision_text("Foe"), "Collision risk: Foe is here")
+	assert_eq(PlanningText.swing_collision_text("Foe"), "Stern would swing into Foe")
 
 
 func test_name_and_type_reads_name_then_type() -> void:

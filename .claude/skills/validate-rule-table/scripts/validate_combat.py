@@ -237,7 +237,7 @@ def check_modifiers(t, r):
         arr = t.get(k)
         if not isinstance(arr, list) or len(arr) != 5 or not all(isinstance(v, int) for v in arr):
             r.err(f"{name}.{k}", "must be 5 ints (ranges 1-5)")
-    for k in ("two_targets", "plain_sail", "dismantling_shot", "anchored", "wind_speed_4"):
+    for k in ("two_targets", "half_broadside", "plain_sail", "dismantling_shot", "anchored", "wind_speed_4"):
         if not isinstance(t.get(k), int):
             r.err(f"{name}.{k}", "missing or not an int")
 

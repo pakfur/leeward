@@ -82,5 +82,38 @@ func test_ship_moved_to_origin_hex_is_positioned_there() -> void:
 	var view := _make_view(state)
 	state.hex_position = Vector2i(0, 0)
 	view.sync_to_state(state, hex_grid)
-	assert_almost_eq(view.position.x, 0.0, 0.5, "x at origin hex (allowing wave bob)")
-	assert_almost_eq(view.position.z, 0.0, 0.5, "z at origin hex (allowing wave bob)")
+	var expected := hex_grid.ship_center_world(Vector2i(0, 0), 0)
+	assert_almost_eq(view.position.x, expected.x, 0.5, "x by the origin bow hex (allowing wave bob)")
+	assert_almost_eq(view.position.z, expected.z, 0.5, "z by the origin bow hex (allowing wave bob)")
+
+
+func test_ship_view_sits_between_bow_and_stern() -> void:
+	for facing in range(6):
+		var state := _make_state("p", 0, Vector2i(2, 1))
+		state.facing = facing
+		var view := _make_view(state)
+		var expected := hex_grid.ship_center_world(Vector2i(2, 1), facing)
+		assert_almost_eq(view.base_position.x, expected.x, 0.001, "facing %d: x midway" % facing)
+		assert_almost_eq(view.base_position.z, expected.z, 0.001, "facing %d: z midway" % facing)
+		assert_almost_eq(view.position.x, expected.x, 0.5, "facing %d: shown midway (wave bob)" % facing)
+		assert_almost_eq(view.position.z, expected.z, 0.5, "facing %d: shown midway (wave bob)" % facing)
+
+
+func test_two_hex_ship_model_and_click_box_span_both_hexes() -> void:
+	var view := _make_view(_make_state("p", 0, Vector2i(2, 2)))
+	var hex_spacing := HexGrid.SQRT3  # bow centre to stern centre
+	var box := ((view.model_node.get_node("ClickBody") as StaticBody3D).get_child(0) as CollisionShape3D).shape as BoxShape3D
+	assert_gt(box.size.z, hex_spacing, "click box reaches into both hexes")
+	assert_lt(box.size.z, 2.0 * hex_spacing, "but not past the footprint")
+	var keel := (view.model_node.get_node("ClickBody") as Node3D).global_transform.basis.z.normalized()
+	assert_gt(absf(keel.x), 0.9, "an east-facing ship's box runs east-west, along the keel")
+
+
+func test_owner_ring_turns_with_the_ship() -> void:
+	var state := _make_state("p", 0, Vector2i(2, 2))
+	var view := _make_view(state)
+	state.facing = 2
+	view.sync_to_state(state, hex_grid)
+	var ring := view.get_node("OwnerRing") as MeshInstance3D
+	assert_almost_eq(ring.rotation_degrees.y, view.model_node.rotation_degrees.y, 0.01, "ring follows the keel")
+	assert_gt(ring.scale.z, ring.scale.x, "stretched along the keel")

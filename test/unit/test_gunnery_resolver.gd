@@ -4,6 +4,8 @@ extends GutTest
 const PORT := 0
 const STARBOARD := 1
 const PHASE := 4
+## B's bow when it faces SE: its stern (0,1) has A's bow (0,0) directly astern.
+const STERN_RAKE_B_HEX := Vector2i(0, 2)
 
 var resolver: GunneryResolver
 var a: ShipState
@@ -29,7 +31,9 @@ func after_each() -> void:
 	GameState.ships_by_player = {0: [], 1: []}
 
 
-func _setup_ships(b_facing: int = 3) -> void:
+## Default: B's bow (-1,1) facing W, stern (0,1), abeam of A (bow (0,0) facing E, stern (-1,0)),
+## so each ship's starboard broadside bears on the other with both batteries.
+func _setup_ships(b_facing: int = 3, b_hex: Vector2i = Vector2i(-1, 1)) -> void:
 	GameState.ships.clear()
 	GameState.ships_by_player = {0: [], 1: []}
 	var env := EnvironmentState.new()
@@ -38,7 +42,7 @@ func _setup_ships(b_facing: int = 3) -> void:
 	GameState.environment = env
 	GameState.turn_log = PhaseEvents.PhaseLog.new()
 	a = _make_ship("a_ship", 0, Vector2i.ZERO, 0)
-	b = _make_ship("b_ship", 1, HexGrid.DIRECTIONS[1], b_facing)
+	b = _make_ship("b_ship", 1, b_hex, b_facing)
 
 
 func _make_ship(id: String, player: int, hex: Vector2i, facing: int,
@@ -78,13 +82,14 @@ func _make_ship(id: String, player: int, hex: Vector2i, facing: int,
 
 
 func _order(ship_id: String, target_id: String, ammo: String = "round",
-		aim: String = "low") -> GunneryTypes.FireOrder:
+		aim: String = "low", battery: String = "full", side: int = STARBOARD) -> GunneryTypes.FireOrder:
 	var order := GunneryTypes.FireOrder.new()
 	order.ship_id = ship_id
-	order.side = STARBOARD
+	order.side = side
 	order.target_id = target_id
 	order.ammo = ammo
 	order.aim = aim
+	order.battery = battery
 	return order
 
 
@@ -142,6 +147,18 @@ func _d6_with_rigging_parity(mgn: int, columns: Array, parity: int) -> int:
 		if _table_amounts(mgn + d6, "low", columns)["r"] % 2 == parity:
 			return d6
 	return 0
+
+
+## A calculator that adds `bonus` to every firing shot's mgn.
+class BoostedCalculator extends GunneryCalculator:
+	var bonus := 0
+
+	func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
+			initial_broadside_allowed: bool = true) -> GunneryTypes.ShotPreview:
+		var p := super.preview(order, two_targets, initial_broadside_allowed)
+		if p.can_fire:
+			p.mgn += bonus
+		return p
 
 
 # --- tests ---
@@ -202,9 +219,9 @@ func test_dismantling_shot_ignores_hull() -> void:
 
 
 func test_stern_rake_doubles_crew() -> void:
-	_setup_ships(1)  # B faces SE, A sits directly astern of it
+	_setup_ships(1, STERN_RAKE_B_HEX)  # B faces SE, A's bow sits directly astern of B's stern
 	_sixes()
-	_fire([_order("a_ship", "b_ship")])
+	_fire([_order("a_ship", "b_ship", "round", "low", "bow")])  # only A's bow battery bears
 	var ev := _fire_event_for("a_ship")
 	assert_eq(ev.data["rake"], "stern")
 	var expected := _table_amounts(ev.data["fgn"], "low", ["fs", "ms"])
@@ -213,7 +230,7 @@ func test_stern_rake_doubles_crew() -> void:
 
 
 func test_bow_rake_does_not_double_crew() -> void:
-	_setup_ships(4)  # B faces NW, A is dead ahead of it
+	_setup_ships(4)  # B faces NW, A's stern is dead ahead of B's bow
 	_sixes()
 	_fire([_order("a_ship", "b_ship")])
 	var ev := _fire_event_for("a_ship")
@@ -232,11 +249,11 @@ func test_dismasted_target_takes_no_rigging() -> void:
 
 
 func test_raked_dismasted_target_notes_morale() -> void:
-	_setup_ships(1)
+	_setup_ships(1, STERN_RAKE_B_HEX)
 	b.rigging_current_hp = [0, 0, 0, 0] as Array[int]
 	b.sail_state = "NS"
 	_sixes()
-	_fire([_order("a_ship", "b_ship")])
+	_fire([_order("a_ship", "b_ship", "round", "low", "bow")])
 	var turn: int = GameState.phase_controller.current_turn
 	var trigger := "raked_dismasted_t%d" % turn
 	var noted := GameState.turn_log.events.filter(func(e):
@@ -286,13 +303,20 @@ func test_fgn_below_one_no_damage_but_broadside_spent() -> void:
 
 
 func test_fgn_above_52_uses_last_row() -> void:
-	_setup_ships(1)
-	# A real 74 (lg 17, cr 1) tops out at fgn 47 here, and bgn caps at 36 (fgn 52 with every
-	# bonus), so use a heavy broadside and a dismantling shot (+1) to reach fgn 53.
+	# B's bow (-1,3) facing SE, stern (-1,2): range 2, a stern rake on which both of A's starboard
+	# batteries bear. With a heavy broadside, crew A and a dismantling shot (+1) that is fgn 52
+	# (bgn 31 at range 2; the range-1 stern rake used before is now a half broadside, -8), so a
+	# test calculator adds 1 to the mgn to reach fgn 53.
+	_setup_ships(1, Vector2i(-1, 3))
 	a.ship.gun_factors = {"lg": 30, "mg": 0, "cr": 10}
 	a.crew_quality = "A"
+	var old_calculator = GameState.gunnery_calculator
+	var boosted := BoostedCalculator.new(GameState)
+	boosted.bonus = 1
+	GameState.gunnery_calculator = boosted
 	_sixes()
 	_fire([_order("a_ship", "b_ship", "dismantling")])
+	GameState.gunnery_calculator = old_calculator
 	var ev := _fire_event_for("a_ship")
 	assert_eq(ev.data["rake"], "stern")
 	assert_true(ev.data["fgn"] > 52, "fgn %d should exceed 52" % ev.data["fgn"])
@@ -326,3 +350,59 @@ func _seeded_rng(seed_value: int) -> RandomNumberGenerator:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	return rng
+
+
+# --- battery fire orders (7.B.1, 7.C.12f/g) ---
+
+func test_split_side_fires_each_battery_with_two_target_modifier() -> void:
+	# A's starboard bow battery covers only B (bow (0,3) facing SE); its stern battery only C.
+	_setup_ships(1, Vector2i(0, 3))
+	_make_ship("c_ship", 1, Vector2i(-4, 3), 2)
+	_sixes()
+	_fire([_order("a_ship", "c_ship", "round", "low", "stern"),
+			_order("a_ship", "b_ship", "round", "low", "bow")])
+	var events := _fire_events()
+	assert_eq(events.size(), 2)
+	assert_eq(events.map(func(e): return e.target_id), ["b_ship", "c_ship"])
+	assert_eq(events.map(func(e): return e.data["battery"]), ["bow", "stern"])
+	for e in events:
+		var names: Array = e.data["modifiers"].map(func(m): return m["name"])
+		assert_true(names.has("two_targets"), str(names))
+		assert_false(names.has("half_broadside"), "two targets: only the two-target modifier")
+	assert_true(a.initial_broadside_fired[STARBOARD])
+
+
+func test_both_batteries_at_one_target_are_one_target() -> void:
+	# The resolver does not count one target twice: each half broadside takes -8, no -12.
+	_sixes()
+	_fire([_order("a_ship", "b_ship", "round", "low", "stern"),
+			_order("a_ship", "b_ship", "round", "low", "bow")])
+	var events := _fire_events()
+	assert_eq(events.map(func(e): return e.data["battery"]), ["bow", "stern"], "bow before stern")
+	for e in events:
+		var names: Array = e.data["modifiers"].map(func(m): return m["name"])
+		assert_true(names.has("half_broadside"))
+		assert_false(names.has("two_targets"))
+
+
+func test_fire_event_records_full_battery() -> void:
+	_sixes()
+	_fire([_order("a_ship", "b_ship")])
+	assert_eq(_fire_event_for("a_ship").data["battery"], "full")
+
+
+func test_split_first_fire_earns_initial_broadside_once() -> void:
+	# B (range 2) only in A's starboard bow arc, C (range 4) only in its stern arc.
+	_setup_ships(1, Vector2i(0, 3))
+	_make_ship("c_ship", 1, Vector2i(-6, 5), 2)
+	_sixes()
+	_fire([_order("a_ship", "c_ship", "round", "low", "stern"),
+			_order("a_ship", "b_ship", "round", "low", "bow")])
+	var ib := {}
+	for e in _fire_events():
+		ib[e.target_id] = 0
+		for m in e.data["modifiers"]:
+			if m["name"] == "initial_broadside":
+				ib[e.target_id] = m["value"]
+	assert_eq(ib, {"b_ship": DataManager.combat_tables.range_bonus("initial_broadside", 2), "c_ship": 0})
+	assert_true(a.initial_broadside_fired[STARBOARD])

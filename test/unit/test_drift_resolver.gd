@@ -336,6 +336,68 @@ func test_fouled_pair_blocked_member_holds_both() -> void:
 	assert_string_contains(by_ship["a"].to_text({}), "held back by b")
 
 
+# --- two-hex footprints ------------------------------------------------------
+
+func test_drift_moves_bow_and_stern() -> void:
+	var s := _make_ship("a", Vector2i(5, 5))
+	var bow := s.hex_position
+	var stern := s.stern_hex()
+	_dice.queue([3])
+	resolver.resolve(PHASE)
+	assert_eq(s.hex_position, _downwind(bow))
+	assert_eq(s.stern_hex(), _downwind(stern))
+	assert_eq(_drift_events()[0].data["to"], {"q": 4, "r": 5}, "to is the new bow hex")
+
+
+func test_drift_blocked_by_ship_at_stern_target() -> void:
+	var drifter := _make_ship("a", Vector2i(5, 5))
+	drifter.facing = 0  # bow (5,5), stern (4,5): drifting along its own axis, the free bow cannot pivot
+	var blocker := _make_ship("b", Vector2i(3, 5))  # holds (3,5) and (3,4): the stern target, not the bow target
+	blocker.moved_this_turn = true
+	_dice.queue([9, 0])
+	resolver.resolve(PHASE)
+	assert_eq(drifter.hex_position, Vector2i(5, 5))
+	var ev: PhaseEvents.PhaseEvent = _drift_events()[0]
+	assert_eq(ev.data["blocked"], "ship")
+	assert_eq(ev.target_id, "b")
+
+
+func test_drift_blocked_when_stern_leaves_map() -> void:
+	GameState.active_scenario = {"map_bounds": {"width": 100, "height": 100}}
+	var s := _make_ship("a", Vector2i(-49, 0))
+	s.facing = 0  # stern to the west at (-50, 0); its downwind hex is off the map
+	_dice.queue([9])
+	resolver.resolve(PHASE)
+	assert_eq(s.hex_position, Vector2i(-49, 0))
+	assert_eq(_drift_events()[0].data["blocked"], "map edge")
+
+
+func test_fouled_pair_drifts_as_four_hexes() -> void:
+	var a := _make_ship("a", Vector2i(5, 5))
+	var b := _make_ship("b", Vector2i(4, 5))
+	_foul_together(a, b)
+	_dice.queue([3])
+	resolver.resolve(PHASE)
+	assert_eq(a.hex_position, Vector2i(4, 5), "partners' own hexes do not block each other")
+	assert_eq(b.hex_position, Vector2i(3, 5))
+	# Third ship on the far stern target of the pair: (3,4) is b's stern shifted downwind.
+	var c := _make_ship("c", Vector2i(3, 4))
+	c.moved_this_turn = true
+	a.hex_position = Vector2i(5, 5)
+	b.hex_position = Vector2i(4, 5)
+	GameState.turn_log = PhaseEvents.PhaseLog.new()
+	_dice.queue([9])
+	resolver.resolve(PHASE)
+	assert_eq(a.hex_position, Vector2i(5, 5))
+	assert_eq(b.hex_position, Vector2i(4, 5))
+	var by_ship := {}
+	for ev in _drift_events():
+		by_ship[ev.ship_id] = ev
+	assert_eq(by_ship["b"].data["blocked"], "ship")
+	assert_eq(by_ship["b"].target_id, "c")
+	assert_eq(by_ship["a"].data["blocked"], "partner")
+
+
 # --- plotting lock -----------------------------------------------------------
 
 func _start_plotting(state: ShipState) -> MovementTypes.PlottingResponse:
@@ -380,3 +442,88 @@ func test_stub_ai_skips_locked_ships_quietly() -> void:
 	assert_eq(fouled.plotted_actions.movement.size(), 0)
 	assert_eq(struck.plotted_actions.movement.size(), 0)
 	assert_eq(masts.plotted_actions.movement.size(), 0)
+
+
+# --- partial drift (8.A.5) ---------------------------------------------------
+# Wind from the east, so downwind is west (-1, 0). A ship facing 4 (NW) has its bow at (5,5) and
+# its stern at (5,6); stern and downwind are 120 degrees apart, so a free stern can pivot.
+
+func _partial_setup() -> Dictionary:
+	var drifter := _make_ship("a", Vector2i(5, 5))
+	drifter.facing = 4
+	# The blocker holds the bow's downwind hex (4,5) and (4,4), not the stern's (4,6).
+	var blocker := _make_ship("b", Vector2i(4, 5))
+	blocker.moved_this_turn = true
+	return {"drifter": drifter, "blocker": blocker}
+
+
+func test_partial_drift_stern_free() -> void:
+	var s := _partial_setup()
+	var drifter: ShipState = s["drifter"]
+	_dice.queue([9, 0])  # drift roll, then the fouling roll (a success would be 5 or less)
+	resolver.resolve(PHASE)
+	assert_eq(drifter.hex_position, Vector2i(5, 5), "bow hex unchanged")
+	assert_eq(drifter.stern_hex(), Vector2i(4, 6), "stern one hex downwind")
+	assert_eq(drifter.facing, 5, "facing changed by one step")
+	var ev: PhaseEvents.PhaseEvent = _drift_events()[0]
+	assert_true(ev.data["drifted"])
+	assert_eq(ev.data["partial"], "stern")
+	assert_eq(ev.data["facing"], 5)
+	assert_eq(ev.target_id, "b")
+	assert_true(ev.data.has("fouled"), "a fouling roll was made")
+	assert_eq(_dice.remaining(), 0, "drift roll and fouling roll both consumed")
+
+
+func test_partial_drift_bow_free() -> void:
+	var drifter := _make_ship("a", Vector2i(5, 5))  # facing 1: stern at (5,4)
+	var blocker := _make_ship("b", Vector2i(4, 4))
+	blocker.facing = 0  # holds (4,4), the stern's downwind hex, and (3,4)
+	blocker.moved_this_turn = true
+	_dice.queue([9, 9])
+	resolver.resolve(PHASE)
+	assert_eq(drifter.hex_position, Vector2i(4, 5), "bow one hex downwind")
+	assert_eq(drifter.stern_hex(), Vector2i(5, 4), "stern unchanged")
+	assert_eq(drifter.facing, 2)
+	var ev: PhaseEvents.PhaseEvent = _drift_events()[0]
+	assert_eq(ev.data["partial"], "bow")
+	assert_eq(ev.data["facing"], 2)
+
+
+func test_fouled_ship_never_partially_drifts() -> void:
+	var s := _partial_setup()
+	var drifter: ShipState = s["drifter"]
+	var blocker: ShipState = s["blocker"]
+	# Fouled with a third ship far away: it drifts as a group, which is blocked as a whole.
+	var third := _make_ship("c", Vector2i(10, 5))
+	drifter.fouled_with = "c"
+	third.fouled_with = "a"
+	_dice.queue([9])
+	resolver.resolve(PHASE)
+	assert_eq(drifter.hex_position, Vector2i(5, 5))
+	assert_eq(drifter.facing, 4, "facing unchanged")
+	assert_false(_drift_events()[0].data.has("partial"))
+	assert_false(_drift_events()[0].data["drifted"])
+
+
+func test_partial_drift_never_lies_on_hex_spine() -> void:
+	# Facing 1: bow (5,5), stern (5,4). A free stern would go to (4,4), two hexes from the bow.
+	var drifter := _make_ship("a", Vector2i(5, 5))
+	var blocker := _make_ship("b", Vector2i(4, 5))
+	blocker.facing = 0  # holds (4,5) and (3,5)
+	blocker.moved_this_turn = true
+	_dice.queue([9, 9])
+	resolver.resolve(PHASE)
+	assert_eq(drifter.hex_position, Vector2i(5, 5))
+	assert_eq(drifter.facing, 1)
+	var ev: PhaseEvents.PhaseEvent = _drift_events()[0]
+	assert_false(ev.data["drifted"])
+	assert_false(ev.data.has("partial"))
+
+
+func test_partial_drift_fouling_roll_can_foul() -> void:
+	var s := _partial_setup()
+	_dice.queue([9, 0])
+	# roll_fouling uses its own dice path; just require the outcome is recorded either way.
+	resolver.resolve(PHASE)
+	var ev: PhaseEvents.PhaseEvent = _drift_events()[0]
+	assert_eq(ev.data["fouled"], (s["drifter"] as ShipState).fouled_with == "b")

@@ -1,8 +1,8 @@
 {
-	"_doc": "Maneuver Type -> Wind Speed -> % chance to succeed",
+	"_doc": "TACKING (d10), Close Action 1997 combat chart (docs/combat_tables_1.jpeg). Maneuver type -> highest d10 roll (0-9) that succeeds at wind speed 1, 2, 3, 4: roll <= number succeeds, and a natural 0 always succeeds. DRMs (applied by MovementResolver): +/- SK mod, +2 per crew section not plotted to T (up to +6, errata 5.D.2a), +2 per rigging section lost, +1 in irons, +1 towing, +3 reversing tack, +3 rudder destroyed, -2 ship not at WF=L (errata 5.D.2b). No turning at wind speed 0 (5.D.1a).",
 
-	"a": [0.2, 0.4, 0.6, 0.5],
-	"b": [0.3, 0.5, 0.7, 0.6],
-	"c": [0.5, 0.7, 0.8, 0.7],
-	"d": [0.7, 0.8, 0.9, 0.8]
+	"a": [2, 4, 6, 5],
+	"b": [3, 5, 7, 6],
+	"c": [5, 7, 8, 7],
+	"d": [7, 8, 9, 8]
 }

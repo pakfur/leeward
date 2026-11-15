@@ -21,8 +21,12 @@ const MAP_EDGE_GAP_PX := 6.0
 ## The label keeps at least this far (screen px) from the ship's centre, so it never covers the
 ## ship model or its info button even when the camera is zoomed far out.
 const MIN_CLEARANCE_PX := 64.0
+## Label clearance from the bow centre, in screen hex widths: ahead (hover preview) just past the
+## hovered hex; astern (selected ship) past the far edge of the stern hex (1.5 hex widths out).
+const AHEAD_CLEARANCE_HEXES := 0.55
+const ASTERN_CLEARANCE_HEXES := 1.55
 
-## The info button keeps this share of the ship-to-astern-hex distance (and at least
+## The info button keeps this share of a hex-to-hex distance (and at least
 ## INFO_MIN_MARGIN_PX) clear of every hex centre; when it cannot, it is hidden.
 const INFO_MARGIN_FRACTION := 0.15
 const INFO_MIN_MARGIN_PX := 4.0
@@ -43,7 +47,7 @@ func setup(camera: Camera3D) -> void:
 	_info_btn.tooltip_text = "Ship status"
 	_info_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	_info_btn.focus_mode = Control.FOCUS_NONE
-	# Small enough to sit on the ship's own hex edge, astern, without reaching a hex centre.
+	# Small enough to sit on the stern hex's astern edge without reaching a hex centre.
 	_info_btn.add_theme_font_size_override("font_size", INFO_FONT_SIZE)
 	for state in ["normal", "hover", "pressed", "focus"]:
 		var box := StyleBoxFlat.new()
@@ -146,19 +150,20 @@ static func clearance_past(center_px: Vector2, rect: Rect2, gap: float) -> float
 	return far + gap
 
 
-## Where the info button goes, from the projected centres of the ship's hex (`centers[0]`) and its
-## six neighbours (`centers[1 + d]` for direction d): centred on the edge between the ship's hex
-## and the hex astern (opposite `facing`), at `button_size`. Returns an empty Rect2 (hide it) when
-## the button would come within the margin of any of the seven centres, so it can never take a
-## click meant for the ship's hex or a hex it can move to, at any heading, zoom or camera turn.
-## Pure; unit tested.
+## Where the info button goes, from the projected centres of the ship's bow hex (`centers[0]`), its
+## six neighbours (`centers[1 + d]` for direction d; the one astern, opposite `facing`, is the stern
+## hex) and the hex astern of the stern (`centers[7]`): centred on the edge between the stern hex
+## and the hex astern of it, clear of the two-hex footprint, at `button_size`. Returns an empty
+## Rect2 (hide it) when the button would come within the margin of any of the eight centres, so it
+## can never take a click meant for the ship or a hex it can move to, at any heading, zoom or camera
+## turn. Pure; unit tested.
 static func info_button_rect(centers: Array, facing: int, button_size: Vector2) -> Rect2:
-	if centers.size() < 7:
+	if centers.size() < 8:
 		return Rect2()
-	var ship: Vector2 = centers[0]
-	var astern: Vector2 = centers[1 + posmod(facing + 3, 6)]
-	var margin := maxf(INFO_MIN_MARGIN_PX, ship.distance_to(astern) * INFO_MARGIN_FRACTION)
-	var rect := Rect2(((ship + astern) * 0.5 - button_size * 0.5).round(), button_size)
+	var stern: Vector2 = centers[1 + posmod(facing + 3, 6)]
+	var beyond: Vector2 = centers[7]
+	var margin := maxf(INFO_MIN_MARGIN_PX, stern.distance_to(beyond) * INFO_MARGIN_FRACTION)
+	var rect := Rect2(((stern + beyond) * 0.5 - button_size * 0.5).round(), button_size)
 	var guard := rect.grow(margin)
 	for c in centers:
 		if guard.has_point(c):
@@ -183,10 +188,18 @@ func _update_label(model: ShipIndicatorModel, label: Label, side: float, min_cle
 	# One hex-width away from the centre along the heading, in screen space.
 	var along := model.center_anchor + model.direction_dir * side * 2.0 * model.center_anchor.distance_to(model.direction_anchor)
 	var along_px := _camera.unproject_position(along)
-	var clearance := maxf(maxf(center_px.distance_to(along_px) * 0.55, MIN_CLEARANCE_PX), min_clearance)
+	var clearance := label_clearance(center_px.distance_to(along_px), side, min_clearance)
 	label.position = keep_inside(label_position(center_px, along_px - center_px, clearance, label.size),
 		label.size, _map_rect(), MAP_EDGE_GAP_PX)
 	label.visible = true
+
+
+## How far (screen px) a label keeps from the bow centre: `hex_px` is one hex width on screen, `side`
+## as in _update_label (-1 astern: past the stern hex; +1 ahead), never under MIN_CLEARANCE_PX or
+## `min_clearance`. Pure; unit tested.
+static func label_clearance(hex_px: float, side: float, min_clearance: float) -> float:
+	var hexes := ASTERN_CLEARANCE_HEXES if side < 0.0 else AHEAD_CLEARANCE_HEXES
+	return maxf(maxf(hex_px * hexes, MIN_CLEARANCE_PX), min_clearance)
 
 
 func _map_rect() -> Rect2:
@@ -209,6 +222,7 @@ func _update_info_button() -> void:
 		return
 	var world: Array[Vector3] = [_sel_model.center_anchor]
 	world.append_array(_sel_model.neighbor_anchors)
+	world.append(_sel_model.beyond_stern_anchor)
 	var centers: Array = []
 	for p in world:
 		if _camera.is_position_behind(p):

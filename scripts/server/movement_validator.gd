@@ -25,6 +25,8 @@ class PlottingState extends RefCounted:
 	var last_pivot_direction: MovementTypes.MoveType = MovementTypes.MoveType.NONE
 	var free_pivot_used: bool = false
 	var luffing_ended: bool = false
+	## True after a turn plotted at MA=0 (tacking or turning out of irons, 5.D): the ship moves no further this g-t.
+	var ma_zero_turn_ended: bool = false
 	var is_tacking_attempt: bool = false
 	var current_facing: int = 0
 	var current_hex: Vector2i = Vector2i.ZERO
@@ -49,13 +51,10 @@ func calculate_valid_moves(
 	result.can_submit = true
 	result.is_tacking_attempt = ps.is_tacking_attempt
 
-	if ps.luffing_ended:
+	if ps.luffing_ended or ps.ma_zero_turn_ended:
 		return result
 
-	if _is_in_irons(ship_state, path_so_far):
-		Trace.trace_log("MovementValidator", "Ship %s in irons — no movement available" % ship_state.ship_id)
-		return result
-
+	# A ship in irons gets the ordinary MA=0 options: one plotted turn, resolved by a Tacking roll (5.D.6).
 	var valid_options = _calculate_real_valid_hexes(ps, ship_state, path_so_far)
 	result.valid_hexes = valid_options
 
@@ -128,9 +127,6 @@ func _build_plotting_state(
 			if wf_after == "L":
 				ps.luffing_ended = true
 
-			# Check for tacking: pivot to L then same direction again
-			if ps.pivots_used >= 2 and ps.luffing_ended:
-				ps.is_tacking_attempt = true
 
 	# Calculate MA at current facing
 	var wind_facing = hex_grid.get_wind_facing(current_facing, ps.wind_direction)
@@ -179,21 +175,20 @@ func _build_plotting_state(
 
 	ps.remaining_ma = max(0, ps.max_ma - ma_spent)
 
+	# A ship starting at MA=0 can only turn, and that turn needs a Tacking roll (5.D.1): the planning
+	# screen shows the chance. Ships may not turn in calm (5.D.1a).
+	var start_wf = hex_grid.get_wind_facing(ship_state.facing, ps.wind_direction)
+	var starts_at_ma_zero: bool = _lookup_ma(ps.speed_type, ps.wind_speed, start_wf, ps.sail_state, ps.rigging_quality) == 0
+	ps.is_tacking_attempt = starts_at_ma_zero and ps.wind_speed > 0
+
+	# A turn made at MA=0 is the ship's whole move for the g-t (5.D.3 example: "it cannot move any further").
+	if starts_at_ma_zero and not path_so_far.is_empty():
+		var first_type = path_so_far[0].move_type
+		if first_type == MovementTypes.MoveType.PORT or first_type == MovementTypes.MoveType.STARBOARD:
+			ps.ma_zero_turn_ended = true
+			ps.remaining_ma = 0
+
 	return ps
-
-
-func _is_in_irons(ship_state: ShipState, path_so_far: Array[MovementTypes.PlotStep]) -> bool:
-	"""Ship at wind_facing=L with speed 0 and no path yet = in irons."""
-	if not path_so_far.is_empty():
-		return false
-	if ship_state.speed != 0:
-		return false
-	var wind_dir = game_state.environment.wind_direction if game_state.environment else 0
-	var wf = hex_grid.get_wind_facing(ship_state.facing, wind_dir)
-	if wf == "L":
-		Trace.trace_log("MovementValidator", "Ship %s is in irons (facing L, speed 0)" % ship_state.ship_id)
-		return true
-	return false
 
 
 func _calculate_real_valid_hexes(
@@ -210,7 +205,7 @@ func _calculate_real_valid_hexes(
 	# Forward move: always available if remaining_ma > 0
 	if ps.remaining_ma > 0:
 		var forward_hex = hex_grid.get_neighbor(ps.current_hex.x, ps.current_hex.y, ps.current_facing)
-		var forward_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.FORWARD, ps.current_facing, 1)
+		var forward_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.FORWARD, ps.current_facing, 1, forward_hex)
 		result.forward.append(MovementTypes.ValidMove.new(forward_hex, MovementTypes.MoveType.FORWARD, forward_meta))
 
 	# Pivot rules
@@ -229,6 +224,10 @@ func _calculate_real_valid_hexes(
 
 	# Luffing ended movement
 	if ps.luffing_ended:
+		can_pivot = false
+
+	# No turning in calm (5.D.1a)
+	if ps.wind_speed <= 0:
 		can_pivot = false
 
 	# Min forward-hex requirement from turning table
@@ -285,27 +284,37 @@ func _add_pivot_options(
 	allow_port: bool,
 	allow_starboard: bool
 ) -> void:
+	var port_facing = (ps.current_facing + 5) % 6
+	var starboard_facing = (ps.current_facing + 1) % 6
+	if allow_port and not _stern_in_bounds(ps.current_hex, port_facing):
+		allow_port = false
+	if allow_starboard and not _stern_in_bounds(ps.current_hex, starboard_facing):
+		allow_starboard = false
+
 	if allow_port:
-		var port_facing = (ps.current_facing + 5) % 6
 		var port_hex = hex_grid.get_neighbor(ps.current_hex.x, ps.current_hex.y, port_facing)
 		var port_wf = hex_grid.get_wind_facing(port_facing, ps.wind_direction)
 
-		var port_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.PORT, port_facing, pivot_cost)
+		var port_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.PORT, port_facing, pivot_cost, ps.current_hex)
 		result.port = MovementTypes.ValidMove.new(port_hex, MovementTypes.MoveType.PORT, port_meta)
 
 		if port_wf == "L":
 			Trace.trace_log("MovementValidator", "Ship %s: port pivot into luffing (L) — will end movement" % ship_state.ship_id)
 
 	if allow_starboard:
-		var starboard_facing = (ps.current_facing + 1) % 6
 		var starboard_hex = hex_grid.get_neighbor(ps.current_hex.x, ps.current_hex.y, starboard_facing)
 		var starboard_wf = hex_grid.get_wind_facing(starboard_facing, ps.wind_direction)
 
-		var starboard_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.STARBOARD, starboard_facing, pivot_cost)
+		var starboard_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.STARBOARD, starboard_facing, pivot_cost, ps.current_hex)
 		result.starboard = MovementTypes.ValidMove.new(starboard_hex, MovementTypes.MoveType.STARBOARD, starboard_meta)
 
 		if starboard_wf == "L":
 			Trace.trace_log("MovementValidator", "Ship %s: starboard pivot into luffing (L) — will end movement" % ship_state.ship_id)
+
+
+## A turn pivots on the bow (5.C.2): it is offered only if the swung stern stays on the map.
+func _stern_in_bounds(bow: Vector2i, new_facing: int) -> bool:
+	return Occupancy.in_bounds(HexGrid.stern_of(bow, new_facing), game_state.active_scenario)
 
 
 func _get_min_forward_for_pivot(

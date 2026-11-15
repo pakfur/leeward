@@ -158,19 +158,21 @@ func handle_select_hex(session_id: String, expected_version: int, selected_hex: 
 
 	# Calculate new valid moves from the selected position
 	var move_type = validation.metadata.move_type if validation.metadata else MovementTypes.MoveType.NONE
+	# A turn pivots on the bow: the step stores the resulting bow hex, not the click target.
+	var resulting_hex: Vector2i = validation.metadata.resulting_hex if validation.metadata else selected_hex
 	var new_path = session.get_path_copy()
-	new_path.append(MovementTypes.PlotStep.new(selected_hex, validation.new_facing, move_type))
+	new_path.append(MovementTypes.PlotStep.new(resulting_hex, validation.new_facing, move_type))
 
 	var new_valid_moves = movement_validator.calculate_valid_moves(
 		ship_state,
-		selected_hex,
+		resulting_hex,
 		validation.new_facing,
 		new_path
 	)
 
 	# Apply the selection
 	session.select_hex(
-		selected_hex,
+		resulting_hex,
 		validation.new_facing,
 		new_valid_moves.valid_hexes,
 		new_valid_moves.can_submit,

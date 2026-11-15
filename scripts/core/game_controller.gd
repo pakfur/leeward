@@ -52,9 +52,10 @@ var selected_actions: Dictionary = {}  # ship_id -> {action_type -> bool}
 var movement_client: MovementPlottingClient = null
 var hex_overlay: Node3D = null  # HexOverlay instance
 var submitted_paths: Dictionary = {}  # ship_id -> Array[PlotStep]
-var _hover_candidates: Dictionary = {}  # Vector2i hex -> int resulting_facing (server-provided)
+var _hover_candidates: Dictionary = {}  # Vector2i click target -> MoveMetadata (resulting bow hex and facing, server-provided)
 var _last_hover_hex: Vector2i = Vector2i(-99, -99)  # avoids re-raycasting when the hovered hex is unchanged
-var _collision_names: Dictionary = {}  # offered hex -> name of the ship already in it
+var _collision_warnings: Dictionary = {}  # offered click target -> hover warning (it runs into another ship)
+var _collision_marks: Array[Vector2i] = []  # hexes drawn in the collision colour: risky click targets and swung-into hexes
 var _path_collision_text: String = ""  # warning when the plotted path enters another ship's hex
 var _ma_by_len: Dictionary = {}  # plotted path length -> server's remaining movement at that length
 var _allowance_notes: Dictionary = {}  # plotted path length -> allowance-change note for that step
@@ -435,20 +436,37 @@ func _unhandled_input(event: InputEvent) -> void:
 func _get_hex_from_screen_pos(screen_pos: Vector2) -> Vector2i:
 	if not camera or not hex_overlay or not hex_map:
 		return Vector2i(-99, -99)
+	var world_pos = _water_point_at(screen_pos)
+	if world_pos == null:
+		return Vector2i(-99, -99)
+	return hex_overlay.get_valid_hex_at_world_pos(world_pos, hex_map.get_hex_grid())
 
+## Where the camera ray through `screen_pos` meets the water plane (y = 0), or null.
+func _water_point_at(screen_pos: Vector2) -> Variant:
+	if not camera:
+		return null
 	var origin = camera.project_ray_origin(screen_pos)
 	var direction = camera.project_ray_normal(screen_pos)
-
-	# Intersect with Y=0 plane
 	if abs(direction.y) < 0.001:
-		return Vector2i(-99, -99)
-
+		return null
 	var t = -origin.y / direction.y
 	if t < 0:
-		return Vector2i(-99, -99)
+		return null
+	return origin + direction * t
 
-	var world_pos = origin + direction * t
-	return hex_overlay.get_valid_hex_at_world_pos(world_pos, hex_map.get_hex_grid())
+## The hex of water under `screen_pos`, or (-99, -99).
+func _water_hex_at(screen_pos: Vector2) -> Vector2i:
+	var world_pos = _water_point_at(screen_pos)
+	if world_pos == null or not hex_map:
+		return Vector2i(-99, -99)
+	return hex_map.get_hex_grid().world_to_axial(world_pos)
+
+## The ship lying on `hex` (its bow or its stern hex), or "" for open water. Pure: callers pass
+## GameState.get_all_ships().
+static func ship_at_hex(hex: Vector2i, ships: Array) -> String:
+	var typed: Array[ShipState] = []
+	typed.assign(ships)
+	return str(Occupancy.build(typed).get(hex, ""))
 
 func _update_plotting_hover(screen_pos: Vector2) -> void:
 	if not movement_client or not movement_client.is_plotting():
@@ -468,8 +486,9 @@ func _update_plotting_hover(screen_pos: Vector2) -> void:
 		_clear_hover()
 		return
 	var env = GameState.environment
+	var meta: MovementTypes.MoveMetadata = _hover_candidates[hex]
 	var model = ShipIndicatorModel.build_hover(
-		hex, _hover_candidates[hex], ship_state.speed,
+		meta.resulting_hex, meta.resulting_facing, ship_state.speed,
 		env.wind_direction, env.wind_speed, hex_map.get_hex_grid())
 	if ship_indicators:
 		ship_indicators.show_hover(model)
@@ -494,13 +513,14 @@ func _handle_ship_selection(screen_pos: Vector2) -> void:
 	var query = PhysicsRayQueryParameters3D.create(from, to)
 	var result = space_state.intersect_ray(query)
 
-	if result.is_empty():
-		_deselect_ship()
-		return
-
-	# Check if we hit a ship
-	var ship_view = _find_ship_view_from_collider(result.collider)
+	# The model's click box, else the ship lying on the clicked hex (bow or stern)
+	var ship_view: ShipView = null
+	if not result.is_empty():
+		ship_view = _find_ship_view_from_collider(result.collider)
 	if not ship_view:
+		ship_view = ship_views.get(ship_at_hex(_water_hex_at(screen_pos), GameState.get_all_ships()))
+	if not ship_view:
+		_deselect_ship()
 		return
 	var ship_state = GameState.get_ship(ship_view.state_id)
 	if not ship_state:
@@ -826,7 +846,7 @@ func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_va
 	var ship_state = GameState.get_ship(ship_id)
 	if hex_overlay and hex_map:
 		var hex_grid = hex_map.get_hex_grid()
-		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid, _collision_names.keys())
+		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid, _collision_marks)
 
 		# Show blocked directions as red overlays
 		if ship_state:
@@ -858,7 +878,7 @@ func _show_plot_step(plotted_path: Array, vnh: MovementTypes.ValidNextHexes, can
 	_update_collision_hexes(vnh, plotted_path)
 	if hex_overlay and hex_map:
 		var hex_grid = hex_map.get_hex_grid()
-		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid, _collision_names.keys())
+		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid, _collision_marks)
 		hex_overlay.show_plotted_path(plotted_path, hex_grid)
 
 		# Show blocked directions from current position
@@ -913,32 +933,86 @@ func _plotted_heading_code(plotted_path: Array) -> String:
 	return hex_map.get_hex_grid().get_wind_facing(plotted_path[-1].facing, GameState.environment.wind_direction)
 
 
-## Which offered hexes hold another ship, and whether the plotted path already enters one.
+## Which offered moves run into another ship (keyed by click target), and whether the plotted
+## path already enters one.
 func _update_collision_hexes(vnh: MovementTypes.ValidNextHexes, plotted_path: Array) -> void:
 	var active_id: String = movement_client.active_ship_id if movement_client else ""
 	var ships: Array = GameState.get_all_ships()
-	var offered: Array = []
-	if vnh:
-		for vm in vnh.get_all_valid_moves():
-			offered.append(vm.hex)
-	_collision_names = PlanningText.occupied_hexes(offered, ships, active_id)
+	var found := offered_collisions(vnh, ships, active_id)
+	_collision_warnings = found["warnings"]
+	_collision_marks = found["marks"]
 	_path_collision_text = ""
-	var path_hexes: Array = []
+	var ship_state: ShipState = GameState.get_ship(active_id)
+	if ship_state:
+		_path_collision_text = path_collision_text(plotted_path, ship_state.hex_position, ship_state.facing,
+			ships, active_id)
+
+## The one hex an offered move enters: an ahead move its new bow hex (the click target), a turn
+## the hex its stern swings into.
+static func move_entered_hex(vm: MovementTypes.ValidMove) -> Vector2i:
+	if vm.move == MovementTypes.MoveType.FORWARD:
+		return vm.hex
+	return HexGrid.stern_of(vm.metadata.resulting_hex, vm.metadata.resulting_facing)
+
+## Offered moves that enter a hex of another ship (bow or stern):
+## {"warnings": {click target: hover text}, "marks": Array[Vector2i]}. An ahead move enters its
+## click target ("Collision risk: X is here"; one mark). A turn enters the hex its stern swings
+## into ("Stern would swing into X"); both its click target and that hex are marked.
+static func offered_collisions(vnh: MovementTypes.ValidNextHexes, ships: Array, active_id: String) -> Dictionary:
+	var warnings := {}
+	var marks: Array[Vector2i] = []
+	if vnh != null:
+		var moves: Array = vnh.get_all_valid_moves()
+		var entered: Array = []
+		for vm in moves:
+			entered.append(move_entered_hex(vm))
+		var names := PlanningText.occupied_hexes(entered, ships, active_id)
+		for i in range(moves.size()):
+			if not names.has(entered[i]):
+				continue
+			var click: Vector2i = moves[i].hex
+			var swing: bool = entered[i] != click
+			warnings[click] = PlanningText.swing_collision_text(names[entered[i]]) if swing \
+				else PlanningText.collision_text(names[entered[i]])
+			for h in ([click, entered[i]] if swing else [click]):
+				if not marks.has(h):
+					marks.append(h)
+	return {"warnings": warnings, "marks": marks}
+
+## Warning for the plotted path: the first step that enters another ship's hex, worded as for the
+## offered moves ("" when the path is clear).
+static func path_collision_text(plotted_path: Array, start_bow: Vector2i, start_facing: int, ships: Array, active_id: String) -> String:
+	var entered := path_entered_hexes(plotted_path, start_bow, start_facing)
+	var names := PlanningText.occupied_hexes(entered, ships, active_id)
+	for i in range(entered.size()):
+		if names.has(entered[i]):
+			if entered[i] != plotted_path[i].hex:  # a turn: the stern swung into it
+				return PlanningText.swing_collision_text(names[entered[i]])
+			return PlanningText.collision_text(names[entered[i]])
+	return ""
+
+## The hex each plotted step enters, from the ship's bow and facing before the plot: an ahead
+## step its new bow hex, a turn (same bow hex, new facing) its swung stern hex.
+static func path_entered_hexes(plotted_path: Array, start_bow: Vector2i, start_facing: int) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var bow := start_bow
+	var facing := start_facing
 	for step in plotted_path:
-		path_hexes.append(step.hex)
-	var on_path := PlanningText.occupied_hexes(path_hexes, ships, active_id)
-	for hex in path_hexes:
-		if on_path.has(hex):
-			_path_collision_text = PlanningText.collision_text(on_path[hex])
-			break
+		if step.hex == bow and step.facing != facing:
+			result.append(HexGrid.stern_of(step.hex, step.facing))
+		else:
+			result.append(step.hex)
+		bow = step.hex
+		facing = step.facing
+	return result
 
 ## The plotting area's warning: the hovered hex's, otherwise the plotted path's ("" hides it).
 func _show_collision_warning(hover_hex: Vector2i) -> void:
 	if not current_planning_ui:
 		return
 	var text := _path_collision_text
-	if _collision_names.has(hover_hex):
-		text = PlanningText.collision_text(_collision_names[hover_hex])
+	if _collision_warnings.has(hover_hex):
+		text = _collision_warnings[hover_hex]
 	current_planning_ui.set_collision_warning(text)
 
 func _rebuild_hover_candidates(valid_hexes: MovementTypes.ValidNextHexes) -> void:
@@ -946,13 +1020,14 @@ func _rebuild_hover_candidates(valid_hexes: MovementTypes.ValidNextHexes) -> voi
 	if valid_hexes == null:
 		return
 	for vm in valid_hexes.get_all_valid_moves():
-		_hover_candidates[vm.hex] = vm.metadata.resulting_facing
+		_hover_candidates[vm.hex] = vm.metadata
 
 func _on_plotting_cancelled(ship_id: String) -> void:
 	if indicator_overlay:
 		indicator_overlay.set_info_enabled(true)
 	_hover_candidates.clear()
-	_collision_names.clear()
+	_collision_warnings.clear()
+	_collision_marks.clear()
 	_path_collision_text = ""
 	_clear_hover()
 	Trace.trace_log("GameController", "Plotting cancelled for ship %s" % ship_id)
@@ -966,7 +1041,8 @@ func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
 	if indicator_overlay:
 		indicator_overlay.set_info_enabled(true)
 	_hover_candidates.clear()
-	_collision_names.clear()
+	_collision_warnings.clear()
+	_collision_marks.clear()
 	_path_collision_text = ""
 	_clear_hover()
 	Trace.trace_log("GameController", "Movement submitted for ship %s: %d steps" % [ship_id, final_path.size()])
@@ -999,11 +1075,10 @@ func _update_tacking_display(is_tacking: bool) -> void:
 		current_planning_ui.update_tacking_state(false, 0.0)
 		return
 
-	var maneuverability = ship_state.ship.maneuverability.to_lower()
-	var wind_speed = GameState.environment.wind_speed if GameState.environment else 2
-	var probability = DataManager.get_tacking_percent(maneuverability, wind_speed)
-	Trace.trace_log("GameController", "Tacking attempt: %s, maneuverability=%s, wind_speed=%d, probability=%.0f%%" % [
-		ship_state.ship_id, maneuverability, wind_speed, probability * 100.0
+	# Read-only query: the Tacking chart with this ship's DRMs, as the resolver will roll it  SCV:ALLOW
+	var probability: float = GameState.movement_resolver.tacking_chance(ship_state)
+	Trace.trace_log("GameController", "Turn at MA=0: %s, success chance %.0f%%" % [
+		ship_state.ship_id, probability * 100.0
 	])
 	current_planning_ui.update_tacking_state(true, probability)
 
@@ -1214,17 +1289,47 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 		return
 	hex_overlay.clear_arcs()
 	var geometry: FireGeometry = GameState.fire_geometry
-	hex_overlay.show_arc(geometry.broadside_hexes(ship_state.hex_position, ship_state.facing,
-		ShipState.PORT, FireGeometry.MAX_RANGE), ShipState.PORT)
-	hex_overlay.show_arc(geometry.broadside_hexes(ship_state.hex_position, ship_state.facing,
-		ShipState.STARBOARD, FireGeometry.MAX_RANGE), ShipState.STARBOARD)
+	for side in [ShipState.PORT, ShipState.STARBOARD]:
+		# The chosen batteries' arc is highlighted (rim); the rest of the broadside's arc is faint.
+		var whole := broadside_arc(geometry, ship_state, side)
+		var batteries: Array[String] = fire_panel.get_batteries(ship_id, side)
+		if batteries.is_empty():
+			hex_overlay.show_arc(whole, side)
+			continue
+		var chosen := battery_arc(geometry, ship_state, side, batteries)
+		var rest: Array[Vector2i] = []
+		for h in whole:
+			if not chosen.has(h):
+				rest.append(h)
+		hex_overlay.show_arc(chosen, side)
+		hex_overlay.show_arc(rest, side, false)
 	var target_hexes: Array[Vector2i] = []
 	for target_id in fire_panel.get_target_ids(ship_id):
 		var target := GameState.get_ship(target_id)
 		if target:
-			target_hexes.append(target.hex_position)
+			target_hexes.append_array(target.occupied_hexes())  # outline both the bow and the stern hex
 	hex_overlay.show_target_highlights(target_hexes)
 	_frame_fire_view(ship_state, target_hexes)
+
+
+## Union of the bow and stern battery arcs on one side, without the ship's own hexes.
+static func broadside_arc(geometry: FireGeometry, ship_state: ShipState, side: int) -> Array[Vector2i]:
+	return battery_arc(geometry, ship_state, side,
+		[GunneryTypes.BATTERY_BOW, GunneryTypes.BATTERY_STERN] as Array[String])
+
+
+## The arc of the given batteries ("bow" fires from the bow hex, "stern" from the stern hex;
+## both = the full broadside) on one side, without the ship's own hexes.
+static func battery_arc(geometry: FireGeometry, ship_state: ShipState, side: int,
+		batteries: Array[String]) -> Array[Vector2i]:
+	var own := ship_state.occupied_hexes()
+	var result: Array[Vector2i] = []
+	for battery in batteries:
+		var battery_hex: Vector2i = own[0] if battery == GunneryTypes.BATTERY_BOW else own[1]
+		for h in geometry.broadside_hexes(battery_hex, ship_state.facing, side, FireGeometry.MAX_RANGE):
+			if not result.has(h) and not own.has(h):
+				result.append(h)
+	return result
 
 
 ## Pan (zooming out only if both cannot fit) so the firing ship and its chosen targets are on
@@ -1233,8 +1338,8 @@ func _frame_fire_view(ship_state: ShipState, target_hexes: Array[Vector2i]) -> v
 	if not camera or not camera.has_method("frame_points_if_needed") or not hex_map:
 		return
 	var grid: HexGrid = hex_map.get_hex_grid()
-	var points: Array[Vector3] = [grid.axial_to_world(ship_state.hex_position.x, ship_state.hex_position.y)]
-	for hex in target_hexes:
+	var points: Array[Vector3] = []
+	for hex in ship_state.occupied_hexes() + target_hexes:
 		points.append(grid.axial_to_world(hex.x, hex.y))
 	camera.frame_points_if_needed(points, _map_safe_rect())
 

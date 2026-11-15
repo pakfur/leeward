@@ -4,9 +4,9 @@ extends RefCounted
 ## Which broadsides can fire at which targets, and each shot's modified gunfire number.
 ## Never mutates state and never rolls dice.
 
-const MAX_RANGE := 15
-const MAX_DISMANTLING_RANGE := 7
-const HIGH_ONLY_RANGE := 10
+const MAX_RANGE := FireRules.MAX_RANGE
+const MAX_DISMANTLING_RANGE := FireRules.MAX_DISMANTLING_RANGE
+const HIGH_ONLY_RANGE := FireRules.HIGH_ONLY_RANGE
 const SIDES: Array[int] = [ShipState.PORT, ShipState.STARBOARD]
 const GUN_TYPES: Array[String] = ["lg", "mg", "cr"]
 
@@ -17,8 +17,14 @@ func _init(p_game_state: Node) -> void:
 	game_state = p_game_state
 
 
-## What `order` would do right now. `two_targets` is true when the same broadside is split.
-func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> GunneryTypes.ShotPreview:
+## What `order` would do right now. `two_targets` is true when the firing ship's orders this turn
+## name two different targets (7.C.12g: then every shot takes -12 and no half-broadside -8).
+## The battery decides which of the firer's hexes fire: "full" needs both to bear (7.B.1),
+## "bow"/"stern" is a half broadside (-8, 7.C.12f). Range, rake and gun factors stay the ship's.
+## `initial_broadside_allowed` false withholds the 7.C.10 bonus; preview_orders() uses it when a
+## split side's bonus goes to the other battery.
+func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
+		initial_broadside_allowed: bool = true) -> GunneryTypes.ShotPreview:
 	var p := GunneryTypes.ShotPreview.new()
 	p.order = order
 	var firer: ShipState = game_state.get_ship(order.ship_id)
@@ -31,20 +37,38 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> Gunner
 		return _refuse(p, "cannot fire on a ship of the same side")
 	if order.side != ShipState.PORT and order.side != ShipState.STARBOARD:
 		return _refuse(p, "invalid broadside")
+	if not GunneryTypes.BATTERIES.has(order.battery):
+		return _refuse(p, "unknown battery '%s'" % order.battery)
 
 	var geometry: FireGeometry = game_state.fire_geometry
 	var tables: CombatTables = DataManager.combat_tables
-	p.range_hexes = geometry.hex_grid.hex_distance(
-		firer.hex_position.x, firer.hex_position.y, target.hex_position.x, target.hex_position.y)
-	p.high_only = p.range_hexes >= HIGH_ONLY_RANGE
+	var firer_hexes := firer.occupied_hexes()
+	var battery_hexes := _battery_hexes(firer_hexes, order.battery)
+	var target_hexes := target.occupied_hexes()
+	p.range_hexes = geometry.range_between(firer_hexes, target_hexes)
+	p.high_only = FireRules.high_only(p.range_hexes)
 
-	if geometry.bearing_side(firer.hex_position, firer.facing, target.hex_position) != order.side:
+	var in_arc := false
+	for battery in battery_hexes:
+		for h in target_hexes:
+			if geometry.in_battery_arc(battery, firer.facing, order.side, h):
+				in_arc = true
+	if not in_arc:
 		return _refuse(p, "target is not in that broadside's arc")
-	var max_range := MAX_DISMANTLING_RANGE if order.ammo == GunneryTypes.AMMO_DISMANTLING else MAX_RANGE
+	var max_range := FireRules.max_range(order.ammo)
 	if p.range_hexes > max_range:
 		return _refuse(p, "target is out of range (%d hexes, maximum %d)" % [p.range_hexes, max_range])
-	if not geometry.has_line_of_sight(firer.hex_position, target.hex_position, _occupied_hexes()):
+	# 7.B.7: neither the firer's nor the target's own hexes block its lines of sight.
+	var occupied := _occupied_hexes([firer.ship_id, target.ship_id])
+	var bearing: Array[String] = []
+	for i in battery_hexes.size():
+		if geometry.battery_bears(battery_hexes[i], firer.facing, order.side, target_hexes, occupied):
+			bearing.append(_battery_name(order.battery, i))
+	if bearing.is_empty():
 		return _refuse(p, "no line of sight to target")
+	if bearing.size() < battery_hexes.size():
+		return _refuse(p, "only the %s battery bears: a full broadside needs both" % bearing[0])
+	p.batteries = bearing.size()
 	var sections := firer.sections_able_to_fire()
 	if sections == 0:
 		return _refuse(p, "no sailor sections able to fire")
@@ -62,11 +86,14 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> Gunner
 	_add_modifier(p, "crew_quality", tables.crew_quality_modifier(firer.crew_quality))
 	_add_modifier(p, "sections_firing", tables.sections_firing_modifier(sections))
 	_add_modifier(p, "guns_dismounted", -int(firer.guns_dismounted[order.side]))
-	if p.range_hexes <= 5:
-		p.rake = geometry.rake_type(target.hex_position, target.facing, firer.hex_position)
+	# 7.C.12g: when firing at two targets only the two-target modifier applies, full or half.
+	if order.battery != GunneryTypes.BATTERY_FULL and not two_targets:
+		_add_modifier(p, "half_broadside", tables.flat_modifier("half_broadside"))
+	if p.range_hexes <= FireGeometry.RAKE_RANGE:
+		p.rake = geometry.rake_type_ships(target.hex_position, target.facing, firer_hexes)
 		if p.rake != "":
 			_add_modifier(p, "rake", tables.range_bonus("rake", p.range_hexes))
-		if not firer.initial_broadside_fired[order.side]:
+		if initial_broadside_allowed and not firer.initial_broadside_fired[order.side]:
 			var bonus := tables.range_bonus("initial_broadside", p.range_hexes)
 			p.initial_broadside = bonus != 0
 			_add_modifier(p, "initial_broadside", bonus)
@@ -89,7 +116,9 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> Gunner
 	return p
 
 
-## One preview per (side, target) that can fire roundshot. Aim is "high" when only high fire is allowed.
+## One preview per (side, target, battery) that can fire roundshot, battery in BATTERIES order:
+## "full" when both batteries bear, and each battery that bears on its own. Previews assume one
+## target. Aim is "high" when only high fire is allowed.
 func eligible_shots(ship_id: String) -> Array[GunneryTypes.ShotPreview]:
 	var shots: Array[GunneryTypes.ShotPreview] = []
 	var firer: ShipState = game_state.get_ship(ship_id)
@@ -99,15 +128,49 @@ func eligible_shots(ship_id: String) -> Array[GunneryTypes.ShotPreview]:
 		if target.ship_id == ship_id:
 			continue
 		for side in SIDES:
-			var order := GunneryTypes.FireOrder.new()
-			order.ship_id = ship_id
-			order.side = side
-			order.target_id = target.ship_id
-			var probe := preview(order)
-			if probe.can_fire:
-				order.aim = GunneryTypes.AIM_HIGH if probe.high_only else GunneryTypes.AIM_LOW
-				shots.append(probe)
+			for battery in GunneryTypes.BATTERIES:
+				var order := GunneryTypes.FireOrder.new()
+				order.ship_id = ship_id
+				order.side = side
+				order.target_id = target.ship_id
+				order.battery = battery
+				var probe := preview(order)
+				if probe.can_fire:
+					order.aim = GunneryTypes.AIM_HIGH if probe.high_only else GunneryTypes.AIM_LOW
+					shots.append(probe)
 	return shots
+
+
+## Previews of a whole set of orders, as they will resolve, in `orders` order:
+## - two_targets per ship from target_count (7.C.12g);
+## - 7.C.10 "once for each broadside": when a side fires more than one battery shot that would
+##   earn the initial-broadside bonus, only the one with the larger bonus (closer range) keeps it,
+##   the bow battery on a tie; the others are re-previewed without it.
+## Single-order previews (preview()) cannot know the rest of the set; the resolver uses this.
+func preview_orders(orders: Array[GunneryTypes.FireOrder]) -> Array[GunneryTypes.ShotPreview]:
+	var previews: Array[GunneryTypes.ShotPreview] = []
+	var holder_by_side := {}   # "ship:side" -> index into previews
+	for i in orders.size():
+		var order := orders[i]
+		var p := preview(order, target_count(order.ship_id, orders) > 1)
+		previews.append(p)
+		if not (p.can_fire and p.initial_broadside):
+			continue
+		var key := "%s:%d" % [order.ship_id, order.side]
+		if not holder_by_side.has(key) or _ib_beats(p, previews[holder_by_side[key]]):
+			holder_by_side[key] = i
+	for i in orders.size():
+		var p := previews[i]
+		if not (p.can_fire and p.initial_broadside):
+			continue
+		if holder_by_side["%s:%d" % [p.order.ship_id, p.order.side]] != i:
+			previews[i] = preview(p.order, target_count(p.order.ship_id, orders) > 1, false)
+	return previews
+
+
+## Number of different targets the orders of `ship_id` name (FireRules.target_count).
+static func target_count(ship_id: String, orders: Array) -> int:
+	return FireRules.target_count(ship_id, orders)
 
 
 func any_eligible_shot() -> bool:
@@ -118,16 +181,19 @@ func any_eligible_shot() -> bool:
 
 
 ## "" when the orders are legal for `player_id`, otherwise a message naming the first problem.
+## Declaration rules (FireRules.declaration_error): each battery fires at most once ("battery fired
+## twice"), at most two targets per ship ("more than two targets", 7.A.4), and bow and stern of one
+## side may not name the same target (that is a full broadside and must be declared so). Then each
+## order must be able to fire, and range 10+ must aim high.
 func validate_orders(player_id: int, orders: Array[GunneryTypes.FireOrder]) -> String:
-	var seen: Dictionary = {}
 	for order in orders:
 		var firer: ShipState = game_state.get_ship(order.ship_id)
 		if firer == null or firer.player_id != player_id:
 			return "ship %s is not yours to command" % order.ship_id
-		var key := "%s:%d" % [order.ship_id, order.side]
-		if seen.has(key):
-			return "ship %s has two orders for one broadside" % order.ship_id
-		seen[key] = true
+	var declaration := FireRules.declaration_error(orders)
+	if declaration != "":
+		return declaration
+	for order in orders:
 		if order.aim != GunneryTypes.AIM_LOW and order.aim != GunneryTypes.AIM_HIGH:
 			return "unknown aim '%s'" % order.aim
 		if order.ammo != GunneryTypes.AMMO_ROUND and order.ammo != GunneryTypes.AMMO_DISMANTLING:
@@ -151,8 +217,39 @@ func _add_modifier(p: GunneryTypes.ShotPreview, modifier_name: String, value: in
 		p.modifiers.append({"name": modifier_name, "value": value})
 
 
-func _occupied_hexes() -> Dictionary:
-	var occupied: Dictionary = {}
-	for ship in game_state.get_all_ships():
-		occupied[ship.hex_position] = true
-	return occupied
+## Bow and stern hex of every ship (struck ones included), minus `exclude_ids`.
+func _occupied_hexes(exclude_ids: Array = []) -> Dictionary:
+	return Occupancy.build(game_state.get_all_ships(), exclude_ids)
+
+
+## The firer hexes a battery fires from: `ship_hexes` is [bow, stern].
+static func _battery_hexes(ship_hexes: Array[Vector2i], battery: String) -> Array[Vector2i]:
+	match battery:
+		GunneryTypes.BATTERY_BOW:
+			return [ship_hexes[0]]
+		GunneryTypes.BATTERY_STERN:
+			return [ship_hexes[1]]
+	return ship_hexes
+
+
+## The single battery behind index `i` of `_battery_hexes(..., battery)`.
+static func _battery_name(battery: String, i: int) -> String:
+	if battery == GunneryTypes.BATTERY_FULL:
+		return GunneryTypes.BATTERY_BOW if i == 0 else GunneryTypes.BATTERY_STERN
+	return battery
+
+
+## True when shot `a` has the better claim on its side's initial-broadside bonus than `b`.
+static func _ib_beats(a: GunneryTypes.ShotPreview, b: GunneryTypes.ShotPreview) -> bool:
+	var bonus_a := _modifier_value(a, "initial_broadside")
+	var bonus_b := _modifier_value(b, "initial_broadside")
+	if bonus_a != bonus_b:
+		return bonus_a > bonus_b
+	return GunneryTypes.BATTERIES.find(a.order.battery) < GunneryTypes.BATTERIES.find(b.order.battery)
+
+
+static func _modifier_value(p: GunneryTypes.ShotPreview, modifier_name: String) -> int:
+	for m in p.modifiers:
+		if m["name"] == modifier_name:
+			return int(m["value"])
+	return 0

@@ -14,6 +14,7 @@ class MockGameState extends Node:
 	var environment: EnvironmentState = null
 	var ship_controller: ShipStateController = null
 	var ships: Dictionary = {}
+	var active_scenario: Dictionary = {}
 	func _init() -> void:
 		environment = EnvironmentState.new()
 		ship_controller = ShipStateController.new(self)
@@ -74,10 +75,11 @@ func after_each() -> void:
 # Tacking attempt detection
 # ============================================================================
 
-func test_tacking_attempt_detected_on_pivot_through_luffing() -> void:
+func test_turning_into_the_wind_is_not_yet_a_tacking_roll() -> void:
 	# Wind from W (3). Ship facing NE (5) = broad reach (B).
 	# Pivot port 5→4 (NW) = C. Forward. Pivot port 4→3 (W) = L (luffing).
-	# After 2 pivots with luffing on 2nd: is_tacking_attempt should be true.
+	# Turning into WF=L just stops the ship (5.D.3); the Tacking roll comes next g-t, when the
+	# ship turns on from MA=0.
 	var ship = _make_ship("F/F", "d")
 	var ss = _make_ship_state(ship, 5, 4, "MS")
 
@@ -86,16 +88,16 @@ func test_tacking_attempt_detected_on_pivot_through_luffing() -> void:
 
 	# Step 1: pivot port, facing 5→4 = NW = C
 	var port_facing1 = (5 + 5) % 6  # = 4
-	var hex1 = hex_grid.get_neighbor(ss.hex_position.x, ss.hex_position.y, port_facing1)
+	var hex1 = ss.hex_position  # a turn pivots on the bow hex (5.C.2)
 	var wf_after_pivot1 = hex_grid.get_wind_facing(port_facing1, 3)
 	assert_eq(wf_after_pivot1, "C", "First pivot reaches close-hauled")
 
 	# Step 2: forward in facing 4
-	var hex2 = hex_grid.get_neighbor(hex1.x, hex1.y, port_facing1)
+	var hex2 = hex_grid.get_neighbor(hex1.x, hex1.y, port_facing1)  # forward in the new facing
 
 	# Step 3: pivot port, facing 4→3 = W = L (luffing)
 	var port_facing2 = (4 + 5) % 6  # = 3
-	var hex3 = hex_grid.get_neighbor(hex2.x, hex2.y, port_facing2)
+	var hex3 = hex2  # a turn pivots on the bow hex (5.C.2)
 
 	var wf_luffing = hex_grid.get_wind_facing(port_facing2, 3)
 	assert_eq(wf_luffing, "L", "Second pivot should reach luffing")
@@ -107,7 +109,14 @@ func test_tacking_attempt_detected_on_pivot_through_luffing() -> void:
 	]
 
 	var result = validator.calculate_valid_moves(ss, hex3, port_facing2, path)
-	assert_true(result.is_tacking_attempt, "Should detect tacking attempt after pivot through luffing")
+	assert_false(result.is_tacking_attempt, "No roll this g-t: the ship has MA and luffs to a stop")
+	assert_false(result.valid_hexes.has_any_moves(), "Movement ends at WF=L")
+
+	# Next g-t the ship starts at WF=L with MA=0: its turn is a tacking attempt
+	ss.facing = port_facing2
+	ss.hex_position = hex3
+	var next_turn = validator.calculate_valid_moves(ss, hex3, port_facing2, [])
+	assert_true(next_turn.is_tacking_attempt, "Turning on from WF=L rolls on the Tacking table")
 
 
 func test_no_tacking_before_luffing_pivot() -> void:
@@ -117,7 +126,7 @@ func test_no_tacking_before_luffing_pivot() -> void:
 
 	# Pivot port 5→4 (NW) = C — no luffing, only 1 pivot
 	var port_facing1 = (5 + 5) % 6  # = 4
-	var hex1 = hex_grid.get_neighbor(ss.hex_position.x, ss.hex_position.y, port_facing1)
+	var hex1 = ss.hex_position  # a turn pivots on the bow hex (5.C.2)
 
 	var path: Array[MovementTypes.PlotStep] = [
 		MovementTypes.PlotStep.new(hex1, port_facing1, MovementTypes.MoveType.PORT),
@@ -135,9 +144,9 @@ func test_no_tacking_with_two_pivots_no_luffing() -> void:
 	var ship = _make_ship("F/F", "d")
 	var ss = _make_ship_state(ship, 0, 4, "MS")
 
-	var hex1 = hex_grid.get_neighbor(ss.hex_position.x, ss.hex_position.y, 1)
+	var hex1 = ss.hex_position  # a turn pivots on the bow hex (5.C.2)
 	var hex2 = hex_grid.get_neighbor(hex1.x, hex1.y, 1)
-	var hex3 = hex_grid.get_neighbor(hex2.x, hex2.y, 2)
+	var hex3 = hex2
 
 	var path: Array[MovementTypes.PlotStep] = [
 		MovementTypes.PlotStep.new(hex1, 1, MovementTypes.MoveType.STARBOARD),
@@ -181,11 +190,11 @@ func test_session_recompute_clears_tacking_on_undo() -> void:
 	var hex1 = hex_grid.get_neighbor(5, 5, port_facing1)
 	session.select_hex(hex1, port_facing1, vnh, true, MovementTypes.MoveType.PORT)
 
-	var hex2 = hex_grid.get_neighbor(hex1.x, hex1.y, port_facing1)
+	var hex2 = hex_grid.get_neighbor(hex1.x, hex1.y, port_facing1)  # forward in the new facing
 	session.select_hex(hex2, port_facing1, vnh, true, MovementTypes.MoveType.FORWARD)
 
 	var port_facing2 = (4 + 5) % 6  # = 3
-	var hex3 = hex_grid.get_neighbor(hex2.x, hex2.y, port_facing2)
+	var hex3 = hex2  # a turn pivots on the bow hex (5.C.2)
 	session.select_hex(hex3, port_facing2, vnh, true, MovementTypes.MoveType.PORT)
 
 	# Manually set tacking (as controller would after validator)
@@ -228,14 +237,10 @@ func test_session_tracking_fields_after_undo() -> void:
 
 func test_tacking_probability_lookup() -> void:
 	# Verify DataManager returns expected tacking percentages
-	var prob_b_ws3 = DataManager.get_tacking_percent("b", 3)
-	assert_eq(prob_b_ws3, 0.7, "Maneuverability b, wind speed 3 should be 70%")
-
-	var prob_a_ws1 = DataManager.get_tacking_percent("a", 1)
-	assert_eq(prob_a_ws1, 0.2, "Maneuverability a, wind speed 1 should be 20%")
-
-	var prob_d_ws4 = DataManager.get_tacking_percent("d", 4)
-	assert_eq(prob_d_ws4, 0.8, "Maneuverability d, wind speed 4 should be 80%")
+	# Chart: roll <= number on a 0-9 d10, so <=7 is 80%
+	assert_almost_eq(DataManager.get_tacking_percent("b", 3), 0.8, 0.001, "b at WS 3: <=7 = 80%")
+	assert_almost_eq(DataManager.get_tacking_percent("a", 1), 0.3, 0.001, "a at WS 1: <=2 = 30%")
+	assert_almost_eq(DataManager.get_tacking_percent("d", 4), 0.9, 0.001, "d at WS 4: <=8 = 90%")
 
 
 func test_tacking_probability_wind_speed_zero() -> void:

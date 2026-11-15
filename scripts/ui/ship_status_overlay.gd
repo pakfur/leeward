@@ -16,9 +16,10 @@ const SIDE_ORDER: Array[int] = [Side.STERN, Side.BOW, Side.PORT, Side.STARBOARD]
 
 const HOVER_DELAY := 0.4
 const HEXES_LONG := 6.0
-## Clear water (world units, hex size 1) between the ship's centre and the near edge of the plate:
-## past the ship's own hex along the heading (edge at 0.87) and across it (corner at 1.0).
-const GAP_ALONG := 1.0
+## Clear water (world units, hex size 1) between the ship's centre (midway between its bow and
+## stern hexes) and the near edge of the plate: past the bow or stern hex along the heading (end
+## face at 1.73) and across the ship (hex corners at 1.0).
+const GAP_ALONG := 1.9
 const GAP_ACROSS := 1.1
 ## A ship counts as covered when its centre is within this distance of the plate.
 const SHIP_MARGIN := 0.7
@@ -263,13 +264,14 @@ func _hide(plate: Plate) -> void:
 
 
 func _place(plate: Plate, state: ShipState, other_plates: Array) -> void:
-	var here := _world_xz(state.hex_position)
-	var ahead := _hex_grid.get_neighbor(state.hex_position.x, state.hex_position.y, state.facing)
-	var heading := (_world_xz(ahead) - here).normalized()
+	var centre := _hex_grid.ship_center_world(state.hex_position, state.facing)
+	var here := Vector2(centre.x, centre.z)
+	var heading := (_world_xz(state.hex_position) - _world_xz(state.stern_hex())).normalized()
 	var others: Array = []
 	for other in GameState.get_all_ships():  # read-only  SCV:ALLOW
 		if other != state:
-			others.append(_world_xz(other.hex_position))
+			for h in other.occupied_hexes():  # bow and stern
+				others.append(_world_xz(h))
 	var size := plate_size()
 	var side := choose_side(here, heading, size, others, other_plates, _bounds)
 	plate.rect = plate_rect(here, heading, side, size)

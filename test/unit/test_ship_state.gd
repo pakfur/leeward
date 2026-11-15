@@ -258,7 +258,21 @@ func test_add_ship_rejects_ship_on_occupied_hex() -> void:
 	assert_eq(GameState.ships_by_player[1], ["ss_ship"], "not added to ships_by_player")
 
 
+func test_add_ship_rejects_stern_on_occupied_hex() -> void:
+	# ss_ship: bow (1,1) facing E, stern (0,1). A bow at (2,1) facing E puts its stern on (1,1).
+	var astern := _make_state({"id": "ss_other", "position": {"q": 2, "r": 1}})
+	assert_false(GameState.add_ship(astern), "a stern on another ship's bow is rejected")
+	assert_push_error("ship 'ss_other' starts on (1, 1), already occupied by 'ss_ship'")
+	# A bow at (0,2) facing SE puts its stern on ss_ship's stern (0,1).
+	var stern_on_stern := _make_state({"id": "ss_third", "position": {"q": 0, "r": 2}, "facing": 1})
+	assert_false(GameState.add_ship(stern_on_stern), "a stern on another ship's stern is rejected")
+	assert_push_error("ship 'ss_third' starts on (0, 1), already occupied by 'ss_ship'")
+	assert_eq(GameState.ships.size(), 1)
+	assert_eq(GameState.ships_by_player[1], ["ss_ship"])
+
+
 func test_add_ship_accepts_ship_on_free_hex() -> void:
-	var other := _make_state({"id": "ss_other", "position": {"q": 2, "r": 1}})
+	# Bow (3,1), stern (2,1): clear of ss_ship's bow (1,1) and stern (0,1).
+	var other := _make_state({"id": "ss_other", "position": {"q": 3, "r": 1}})
 	assert_true(GameState.add_ship(other))
 	assert_eq(GameState.ships.size(), 2)

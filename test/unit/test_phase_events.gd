@@ -71,6 +71,20 @@ func test_fire_to_text_negative_modifier_rake_and_dismantling() -> void:
 	assert_false(text.contains("BGN"), text)
 
 
+func test_fire_text_names_the_battery_of_a_half_broadside() -> void:
+	var data := _fire_data()
+	data["battery"] = "bow"
+	var text := PhaseEvents.PhaseLog.new().add(PhaseEvents.Type.FIRE, 4, "s1", data, "s2").to_text(NAMES)
+	assert_string_contains(text, "Surprise fires starboard bow battery at Renard, range 3")
+	data["battery"] = "stern"
+	data["side"] = 0
+	text = PhaseEvents.PhaseLog.new().add(PhaseEvents.Type.FIRE, 4, "s1", data, "s2").to_text(NAMES)
+	assert_string_contains(text, "Surprise fires port stern battery at Renard")
+	data["battery"] = "full"
+	text = PhaseEvents.PhaseLog.new().add(PhaseEvents.Type.FIRE, 4, "s1", data, "s2").to_text(NAMES)
+	assert_string_contains(text, "Surprise fires port at Renard", "a full broadside reads as before")
+
+
 func test_fire_without_modifiers_or_damage_says_no_damage() -> void:
 	var data := {"side": 0, "range": 9, "aim": "low", "ammo": "round", "bgn": 2,
 		"modifiers": [], "mgn": 2, "d6": 1, "fgn": 3, "rigging": 0, "hull": 0, "crew": 0, "rake": ""}
@@ -263,3 +277,19 @@ func test_failed_drift_roll_holds_position() -> void:
 	assert_string_contains(text, "roll 2")
 	assert_string_contains(text, "needed 5")
 	assert_false(text.contains("{"), "no raw dictionary in: %s" % text)
+
+
+func test_partial_drift_text_names_the_pivot() -> void:
+	var log := PhaseEvents.PhaseLog.new()
+	var text := log.add(PhaseEvents.Type.DRIFT, 5, "s1", {
+		"roll": 7, "needed": 5, "modifier": 0, "drifted": true, "partial": "stern", "facing": 5,
+		"from": {"q": 3, "r": -2}, "to": {"q": 3, "r": -2}, "fouled": true}, "s2").to_text(NAMES)
+	assert_eq(text, "Surprise drifts partly: its stern slips downwind and it swings to face NE, blocked by Renard; the two ships are fouled together (drift roll 7, needed 5)")
+
+
+func test_partial_drift_text_without_fouling() -> void:
+	var log := PhaseEvents.PhaseLog.new()
+	var text := log.add(PhaseEvents.Type.DRIFT, 5, "s1", {
+		"roll": 7, "needed": 5, "modifier": 0, "drifted": true, "partial": "bow", "facing": 2,
+		"from": {"q": 3, "r": -2}, "to": {"q": 2, "r": -2}, "fouled": false}, "s2").to_text(NAMES)
+	assert_eq(text, "Surprise drifts partly: its bow slips downwind and it swings to face SW, blocked by Renard (drift roll 7, needed 5)")

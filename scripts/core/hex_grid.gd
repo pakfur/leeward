@@ -54,6 +54,15 @@ func get_neighbor(q: int, r: int, direction: int) -> Vector2i:
 	var dir = DIRECTIONS[direction % 6]
 	return Vector2i(q + dir.x, r + dir.y)
 
+## Stern hex of a two-hex ship: the neighbor opposite its facing.
+static func stern_of(bow: Vector2i, facing: int) -> Vector2i:
+	return bow + DIRECTIONS[(facing + 3) % 6]
+
+## World position midway between a ship's bow and stern hex centres.
+func ship_center_world(bow: Vector2i, facing: int) -> Vector3:
+	var stern := stern_of(bow, facing)
+	return (axial_to_world(bow.x, bow.y) + axial_to_world(stern.x, stern.y)) / 2.0
+
 ## Calculate distance between two hexes (in hex units)
 func hex_distance(q1: int, r1: int, q2: int, r2: int) -> int:
 	var s1 = -q1 - r1

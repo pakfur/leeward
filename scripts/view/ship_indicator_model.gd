@@ -7,13 +7,14 @@ extends RefCounted
 ## No game-state access, no mutation. Renderers consume this DTO only.
 
 var windward_visible: bool = false
-var windward_anchor: Vector3 = Vector3.ZERO   # wind-facing hex-face midpoint (world)
+var windward_anchor: Vector3 = Vector3.ZERO   # where the wind meets the two-hex footprint, level with the ship centre (world)
 var windward_dir: Vector3 = Vector3.ZERO       # outward face normal (world, XZ unit)
 var direction_anchor: Vector3 = Vector3.ZERO   # bow hex-face midpoint (world)
 var direction_dir: Vector3 = Vector3.ZERO      # outward face normal (world, XZ unit)
-var center_anchor: Vector3 = Vector3.ZERO      # hex center (world) — for the info icon
+var center_anchor: Vector3 = Vector3.ZERO      # bow hex center (world) — for the info icon
 var label_anchor: Vector3 = Vector3.ZERO       # world point to project the label near
 var neighbor_anchors: Array[Vector3] = []      # the six neighbouring hex centres, by direction 0..5
+var beyond_stern_anchor: Vector3 = Vector3.ZERO  # centre of the hex astern of the stern hex — for the info icon
 var heading: int = 0                           # heading the indicators show (0=E .. 5=NE)
 var speed: int = 0
 var point_of_sail: String = ""
@@ -50,15 +51,22 @@ static func _build(hex_position: Vector2i, facing: int, ship_speed: int, wind_di
 	for d in range(6):
 		var n := hex_grid.get_neighbor(q, r, d)
 		m.neighbor_anchors.append(hex_grid.axial_to_world(n.x, n.y))
+	var beyond := HexGrid.stern_of(HexGrid.stern_of(hex_position, facing), facing)
+	m.beyond_stern_anchor = hex_grid.axial_to_world(beyond.x, beyond.y)
 
 	# Direction indicator anchored on the bow face (= facing / resulting_facing)
 	m.direction_anchor = hex_grid.axial_to_edge_world(q, r, facing)
 	m.direction_dir = (m.direction_anchor - center).normalized()
 
-	# Windward indicator anchored on the wind-facing face (= wind_direction); hidden when calm
+	# Windward indicator: from the ship centre (midway between bow and stern) out to the footprint's
+	# face in the wind direction. Abeam or on a quarter that face is half a hex out (an outer face of
+	# the bow or stern hex); dead ahead or astern it is the bow or stern hex's end face, a hex out.
+	# Hidden when calm.
 	m.windward_visible = wind_speed > 0  # windward_anchor/dir are computed regardless; consumers must gate on windward_visible.
-	m.windward_anchor = hex_grid.axial_to_edge_world(q, r, wind_direction)
-	m.windward_dir = (m.windward_anchor - center).normalized()
+	var face_offset := hex_grid.axial_to_edge_world(q, r, wind_direction) - center
+	var along_keel := wind_direction == facing or wind_direction == (facing + 3) % 6
+	m.windward_anchor = hex_grid.ship_center_world(hex_position, facing) + face_offset * (2.0 if along_keel else 1.0)
+	m.windward_dir = face_offset.normalized()
 
 	m.label_anchor = m.direction_anchor
 	m.speed = ship_speed

@@ -71,6 +71,19 @@ func test_collision_stop_short_and_fouling_are_logged_in_order() -> void:
 	])
 
 
+func test_collision_is_logged_at_the_hex_hit_even_a_stern() -> void:
+	# b's bow is at (3,0) facing E, its stern at (2,0): a, at (1,0) facing E, runs into the stern.
+	var log := _collision_log(false)
+	for ev in log.get_result("b").events:
+		ev.from_hex = Vector2i(3, 0)
+		ev.facing = 0
+	var ships: Array[ShipState] = [_ship("a", 3), _ship("b", 0)]
+	resolver.log_outcomes(log, ships, turn_log)
+	var collisions := turn_log.of_type(PhaseEvents.Type.COLLISION)
+	assert_eq(collisions.size(), 1)
+	assert_eq(collisions[0].to_text({"a": "Alpha", "b": "Bravo"}), "Alpha collides with Bravo at (2, 0)")
+
+
 func test_fouling_is_logged_once_per_pair() -> void:
 	var ships: Array[ShipState] = [_ship("b", 0), _ship("a", 3)]
 	resolver.log_outcomes(_collision_log(true), ships, turn_log)
@@ -200,9 +213,152 @@ func test_resolver_records_which_ship_was_in_the_way() -> void:
 	var still := ShipState.new()
 	still.ship = Ship.from_dict({"ship_id": "s", "ship_name": "Still", "maneuverability": "B"})
 	still.hex_position = Vector2i(1, 0)
+	still.facing = 1  # stern on (1, -1), clear of the mover's bow on (0, 0)
 	var env := EnvironmentState.new()
 	var ships: Array[ShipState] = [mover, still]
 	var log := MovementResolver.new(null, RandomNumberGenerator.new()).run(ships, env)
 	var r: MovementTypes.ShipResolutionResult = log.get_result("m")
 	assert_true(r.blocked_by == "s" or r.collided_with == "s", "the blocker is named")
 	assert_eq(r.blocked_by, "s")
+
+
+func test_turn_steps_count_as_executed_steps() -> void:
+	# A plot of turn + 2 forward that completes is not stopped short (5.E.2).
+	var log := MovementTypes.ResolutionLog.new(1)
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	_move(a, 0, Vector2i(0, 0), Vector2i(0, 0))  # the turn stays in its hex
+	_move(a, 1, Vector2i(0, 0), Vector2i(1, 0))
+	_move(a, 2, Vector2i(1, 0), Vector2i(2, 0))
+	log.add_result(a)
+	var ships: Array[ShipState] = [_ship("a", 3)]
+	resolver.log_outcomes(log, ships, turn_log)
+	assert_eq(turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT).size(), 0)
+
+
+func test_turn_only_plot_is_not_stopped_short() -> void:
+	var log := MovementTypes.ResolutionLog.new(1)
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	_move(a, 0, Vector2i(0, 0), Vector2i(0, 0))
+	log.add_result(a)
+	var ships: Array[ShipState] = [_ship("a", 1)]
+	resolver.log_outcomes(log, ships, turn_log)
+	assert_eq(turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT).size(), 0)
+
+
+func test_stopped_short_counts_executed_turns_and_moves() -> void:
+	var log := MovementTypes.ResolutionLog.new(1)
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	_move(a, 0, Vector2i(0, 0), Vector2i(0, 0))
+	_move(a, 1, Vector2i(0, 0), Vector2i(1, 0))
+	log.add_result(a)
+	var ships: Array[ShipState] = [_ship("a", 3)]
+	resolver.log_outcomes(log, ships, turn_log)
+	var stops := turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT)
+	assert_eq(stops.size(), 1)
+	assert_eq(stops[0].data["moved"], 2)
+	assert_eq(stops[0].data["planned"], 3)
+
+
+func test_stop_short_after_stern_blocked_names_the_blocking_ship() -> void:
+	var log := MovementTypes.ResolutionLog.new(1)
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	var blocked := MovementTypes.ResolutionEvent.new("a", 0, T.STERN_BLOCKED)
+	blocked.detail = "stern blocked by b"
+	a.events.append(blocked)
+	a.blocked_by = "b"
+	a.stopped_at_impulse = 0
+	log.add_result(a)
+	log.add_result(MovementTypes.ShipResolutionResult.new("b"))
+	var ships: Array[ShipState] = [_ship("a", 2), _ship("b", 0)]
+	resolver.log_outcomes(log, ships, turn_log)
+	var stops := turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT)
+	assert_eq(stops.size(), 1)
+	assert_eq(stops[0].data["cause"], "stern_blocked")
+	assert_eq(stops[0].target_id, "b")
+	assert_eq(stops[0].to_text({"a": "Alpha", "b": "Bravo"}),
+		"Alpha stops short of its plotted course — its stern was blocked by Bravo")
+
+
+func test_stop_cause_for_stern_blocked() -> void:
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	a.events.append(MovementTypes.ResolutionEvent.new("a", 0, T.STERN_BLOCKED))
+	a.blocked_by = "b"
+	assert_eq(MovementResolver.stop_cause(a), {"cause": "stern_blocked", "other": "b"})
+
+
+func test_stop_cause_for_lost_stern_contest() -> void:
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	var blocked := MovementTypes.ResolutionEvent.new("a", 0, T.STERN_BLOCKED)
+	blocked.detail = "lost stern contest to b"
+	a.events.append(blocked)
+	a.blocked_by = "b"
+	assert_eq(MovementResolver.stop_cause(a), {"cause": "stern_contest", "other": "b"})
+
+
+func test_lost_stern_contest_is_the_cause_even_if_rammed_later() -> void:
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	var blocked := MovementTypes.ResolutionEvent.new("a", 0, T.STERN_BLOCKED)
+	blocked.detail = "lost stern contest to b"
+	a.events.append(blocked)
+	a.blocked_by = "b"
+	a.collided_with = "c"  # c ran into the stopped ship afterwards
+	assert_eq(MovementResolver.stop_cause(a), {"cause": "stern_contest", "other": "b"})
+
+
+func test_stop_short_after_lost_stern_contest_names_the_winner() -> void:
+	var ev := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.STOPPED_SHORT, MOVE, "a", {"cause": "stern_contest"}, "b")
+	assert_eq(ev.to_text({"a": "Alpha", "b": "Bravo"}),
+		"Alpha stops short of its plotted course — it lost the contest with Bravo for the hex its stern was turning into")
+
+
+func test_stop_cause_for_overlap_rollback() -> void:
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	var rollback := MovementTypes.ResolutionEvent.new("a", 1, T.OVERLAP_ROLLBACK)
+	rollback.detail = "already occupied"
+	a.events.append(rollback)
+	a.blocked_by = "b"
+	assert_eq(MovementResolver.stop_cause(a), {"cause": "overlap", "other": "b"})
+
+
+func test_stop_short_after_overlap_rollback_names_the_other_ship() -> void:
+	var ev := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.STOPPED_SHORT, MOVE, "a", {"cause": "overlap"}, "b")
+	assert_eq(ev.to_text({"a": "Alpha", "b": "Bravo"}),
+		"Alpha stops short of its plotted course — its stern swung into Bravo and had to swing back")
+
+
+func test_rolled_back_turn_with_deceleration_steps_is_logged() -> void:
+	# The plot was 1 ahead then a turn; the turn was rolled back and the ship sailed 1 more ahead to
+	# meet its deceleration: as many steps as plotted, but not the plotted course.
+	var ship := _ship("a", 2)
+	var log := MovementTypes.ResolutionLog.new(1)
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	_move(a, 0, Vector2i(0, 0), Vector2i(1, 0))
+	_move(a, 1, Vector2i(1, 0), Vector2i(2, 0))
+	var overlap := MovementTypes.ResolutionEvent.new("a", 1, T.OVERLAP)
+	a.events.append(overlap)
+	var rollback := MovementTypes.ResolutionEvent.new("a", 2, T.OVERLAP_ROLLBACK)
+	rollback.detail = "already occupied"
+	a.events.append(rollback)
+	a.blocked_by = "b"
+	log.add_result(a)
+	var ships: Array[ShipState] = [ship]
+	resolver.log_outcomes(log, ships, turn_log)
+	assert_eq(turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT).size(), 0, "it did not stop short")
+	var undone := turn_log.of_type(PhaseEvents.Type.TURN_UNDONE)
+	assert_eq(undone.size(), 1)
+	if undone.size() == 1:
+		assert_eq(undone[0].to_text({"a": "Alpha", "b": "Bravo"}),
+			"Alpha cannot make its plotted turn — its stern swung into Bravo and had to swing back")
+
+
+func test_turn_lost_in_a_stern_contest_with_deceleration_steps_is_logged() -> void:
+	var ev := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.TURN_UNDONE, MOVE, "a", {"cause": "stern_contest"}, "b")
+	assert_eq(ev.to_text({"a": "Alpha", "b": "Bravo"}),
+		"Alpha cannot make its plotted turn — it lost the contest with Bravo for the hex its stern was turning into")
+
+
+func test_lost_stern_contest_text_shows_the_rolls() -> void:
+	var ev := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.STOPPED_SHORT, MOVE, "a",
+		{"cause": "stern_contest", "roll": 2, "other_roll": 4}, "b")
+	assert_eq(ev.to_text({"a": "Alpha", "b": "Bravo"}),
+		"Alpha stops short of its plotted course — it lost the contest with Bravo for the hex its stern was turning into (rolled 2 against 4)")
