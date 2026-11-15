@@ -154,14 +154,14 @@ func test_no_movement_plotted() -> void:
 # Single-ship: turning at MA=0 (tacking, irons) — Close Action 5.D
 # ===========================================================================
 
-## Plot a single turn from the ship's current hex, as the validator would at MA=0.
+## Plot a single turn from the ship's current hex, as the validator would at MA=0: the step keeps
+## the bow hex and carries the new facing (5.C.2). Returns the bow hex the ship ends on.
 func _plot_turn(state: ShipState, new_facing: int) -> Vector2i:
-	var hex_grid = HexGrid.new()
-	var turn_hex = hex_grid.get_neighbor(state.hex_position.x, state.hex_position.y, new_facing)
+	var bow: Vector2i = state.hex_position
 	GameState.ship_controller.set_plotted_movement(state.ship_id, [
-		{"hex": {"q": turn_hex.x, "r": turn_hex.y}, "facing": new_facing},
+		{"hex": {"q": bow.x, "r": bow.y}, "facing": new_facing},
 	])
-	return turn_hex
+	return bow
 
 
 ## A seed whose first d10 (randi_range(0, 9)) is not 0, so a natural-0 success cannot rescue a roll.
@@ -198,7 +198,8 @@ func test_tack_from_luffing_rolls_and_completes_turn() -> void:
 	assert_false(result.tacking_failed, "Low roll should pass")
 	assert_false(result.immobilized, "Successful tack should not immobilize")
 	assert_eq(result.final_facing, 1, "Ship completes the turn")
-	assert_eq(result.final_hex, turn_hex, "Ship completes the turn")
+	assert_eq(result.final_hex, turn_hex, "The turn pivots on the bow hex")
+	assert_eq(turn_hex, Vector2i(5, 5))
 
 
 func test_failed_tack_erases_the_turn() -> void:
@@ -226,16 +227,17 @@ func test_moving_ship_makes_no_tacking_roll() -> void:
 	var state = _make_ship_state(Vector2i(5, 5), 3, 3)
 	var hex_grid = HexGrid.new()
 	var ahead = hex_grid.get_neighbor(5, 5, 3)
-	var turned = hex_grid.get_neighbor(ahead.x, ahead.y, 4)
 	GameState.ship_controller.set_plotted_movement(state.ship_id, [
 		{"hex": {"q": ahead.x, "r": ahead.y}, "facing": 3},
-		{"hex": {"q": turned.x, "r": turned.y}, "facing": 4},
+		{"hex": {"q": ahead.x, "r": ahead.y}, "facing": 4},  # the turn pivots on the bow hex
 	])
 
 	var result = _run_one(state)
 
 	assert_false(_has_event(result, MovementTypes.ResolutionEventType.TACKING_ROLL),
 		"No tacking roll when the ship has movement allowance")
+	assert_eq(result.final_hex, ahead, "The turn keeps the bow hex")
+	assert_eq(result.final_facing, 4, "The turn is made")
 
 
 # ===========================================================================
@@ -262,7 +264,8 @@ func test_in_irons_plotted_turn_can_turn_out() -> void:
 	assert_true(_has_event(result, MovementTypes.ResolutionEventType.TACKING_ROLL), "Turning out of irons rolls")
 	assert_false(result.immobilized, "Ship is out of irons")
 	assert_eq(result.final_facing, 5, "Ship turns out of the wind")
-	assert_eq(result.final_hex, turn_hex)
+	assert_eq(result.final_hex, turn_hex, "The turn pivots on the bow hex")
+	assert_eq(turn_hex, Vector2i(5, 5))
 
 
 func test_not_in_irons_when_off_the_wind() -> void:
@@ -1417,6 +1420,29 @@ func test_cancelled_turn_keeps_its_old_stern_hex() -> void:
 	assert_eq(_events_of(log.get_result("ship_a"), MovementTypes.ResolutionEventType.STERN_BLOCKED).size(), 1)
 	assert_eq(log.get_result("ship_c").blocked_by, "ship_a", "A's kept stern is in C's way")
 	assert_eq(log.get_result("ship_c").final_hex, Vector2i(4, 6))
+
+func test_failed_ahead_move_keeps_its_old_stern_hex() -> void:
+	# A (bow (5,5), stern (4,5)) sails into stopped S and cannot bear off (pivot denied: speed 3,
+	# maneuverability A needs 2 hexes ahead first), so it collides and stays. B's bow enters A's old
+	# stern (4,5) in the same segment: A never vacated it, so B is blocked by A too.
+	var stopped_ship = _make_ship_state(Vector2i(6, 5), 1, 0, "C", "stopped")  # bow (6,5), stern (6,4)
+	var ship_a = _make_ship_state(Vector2i(5, 5), 0, 3, "A", "ship_a", 3, "A")
+	ship_a.plotted_actions.movement = [{"hex": {"q": 6, "r": 5}, "facing": 0}]
+	var ship_b = _make_ship_state(Vector2i(4, 6), 4, 1, "C", "ship_b")  # bow (4,6) heading NW, stern (4,7)
+	ship_b.plotted_actions.movement = [{"hex": {"q": 4, "r": 5}, "facing": 4}]
+	var ships: Array[ShipState] = [ship_b, ship_a, stopped_ship]  # B is listed first
+
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+
+	var rammed_stopped := false
+	for ev in _events_of(log.get_result("ship_a"), MovementTypes.ResolutionEventType.COLLISION):
+		rammed_stopped = rammed_stopped or ev.detail.begins_with("collided with stopped")
+	assert_true(rammed_stopped, "A's ahead move fails: it rams the stopped ship")
+	assert_eq(ship_a.hex_position, Vector2i(5, 5))
+	assert_eq(log.get_result("ship_b").blocked_by, "ship_a", "A's old stern is still A's")
+	assert_eq(ship_b.hex_position, Vector2i(4, 6), "B does not enter A's stern hex")
+	assert_eq(Occupancy.overlapping_ids(ships), [] as Array[String], "No two ships overlap")
 
 func test_struck_ship_both_hexes_block() -> void:
 	# A struck ship lying E with bow (7, 5), stern (6, 5): A sailing E runs into its stern hex.

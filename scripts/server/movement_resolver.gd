@@ -145,10 +145,16 @@ func _resolve_impulse(
 
 	# Hexes held during this segment: every hex of a ship that is not moving, and the bow hex of
 	# every moving ship (an ahead step turns it into the stern, a turn pivots on it). A moving ship's
-	# old stern hex is released as it moves.
+	# old stern hex is held too until its own step succeeds; a ship whose step fails keeps it.
 	var held: Dictionary = Occupancy.from_positions(current_hexes, current_facings, intended_moves.keys())
+	var start_bows: Dictionary = {}
+	var start_facings: Dictionary = {}
+	var old_stern_owner: Dictionary = {}  # old stern hex -> moving ship id
 	for sid in intended_moves:
 		held[current_hexes[sid]] = sid
+		start_bows[sid] = current_hexes[sid]
+		start_facings[sid] = current_facings[sid]
+		old_stern_owner[HexGrid.stern_of(current_hexes[sid], current_facings[sid])] = sid
 
 	# Group the entered hexes, bow-entries (ahead) and stern-entries (turns) apart.
 	var bow_targets: Dictionary = {}
@@ -163,45 +169,108 @@ func _resolve_impulse(
 			targets[entered] = []
 		targets[entered].append(sid)
 
-	# Stern-entries (6.B.4a/b outcome, no overlap allowance yet): a swinging stern may only enter a
-	# hex nobody holds or enters. A bow entering the same hex goes ahead as if the stern were not there.
+	# Resolve the groups (stern-entries first, then bow-entries), but a group entering a moving ship's
+	# old stern hex waits until that ship's own group is resolved: only then is it known whether the
+	# hex was vacated. In a cycle (each ship entering the next one's old stern) all vacate together.
+	var pending: Array = []
 	for entered in stern_targets:
-		for sid in stern_targets[entered]:
-			var blocker_id: String = _stern_blocker(sid, entered, held, bow_targets, stern_targets)
-			if blocker_id != "":
-				_cancel_turn(sid, blocker_id, impulse, results, current_hexes, current_facings, stopped)
-				held[HexGrid.stern_of(current_hexes[sid], current_facings[sid])] = sid  # it keeps its stern
-				continue
-			var prev_facing: int = current_facings[sid]
-			_apply_move(sid, intended_moves[sid].hex, intended_moves[sid].facing, impulse, results, current_hexes, current_facings)
-			_update_turn_tracking(sid, prev_facing, intended_moves[sid].facing, forward_since_turn, pivots_this_turn)
+		pending.append({"stern": true, "hex": entered, "ids": stern_targets[entered]})
+	for entered in bow_targets:
+		pending.append({"stern": false, "hex": entered, "ids": bow_targets[entered]})
+	var resolved: Dictionary = {}
+	while not pending.is_empty():
+		var pick: int = 0
+		for i in range(pending.size()):
+			var owner_id: String = old_stern_owner.get(pending[i].hex, "")
+			if owner_id == "" or resolved.has(owner_id) or owner_id in pending[i].ids:
+				pick = i
+				break
+		var group: Dictionary = pending[pick]
+		pending.remove_at(pick)
+		if group.stern:
+			_resolve_stern_entries(group.ids, group.hex, impulse, held, bow_targets, stern_targets, intended_moves,
+				results, current_hexes, current_facings, stopped, forward_since_turn, pivots_this_turn)
+		else:
+			_resolve_bow_entries(group.ids, group.hex, impulse, held, intended_moves, ship_map, results,
+				current_hexes, current_facings, stopped, environment, forward_since_turn, pivots_this_turn)
+		for sid in group.ids:
+			resolved[sid] = true
+			if current_hexes[sid] == start_bows[sid] and current_facings[sid] == start_facings[sid]:
+				held[HexGrid.stern_of(start_bows[sid], start_facings[sid])] = sid  # it keeps its stern
 
-	for target_hex in bow_targets:
-		var contesting_ids: Array = []
-		for sid in bow_targets[target_hex]:
-			if not stopped[sid]:  # a collision earlier in this segment already stopped it
-				contesting_ids.append(sid)
-		if contesting_ids.is_empty():
+
+## Stern-entries into `entered` (6.B.4a/b outcome, no overlap allowance yet): a swinging stern may
+## only enter a hex nobody holds or enters. A bow entering the same hex goes ahead as if the stern
+## were not there.
+func _resolve_stern_entries(
+	ids: Array,
+	entered: Vector2i,
+	impulse: int,
+	held: Dictionary,
+	bow_targets: Dictionary,
+	stern_targets: Dictionary,
+	intended_moves: Dictionary,
+	results: Dictionary,
+	current_hexes: Dictionary,
+	current_facings: Dictionary,
+	stopped: Dictionary,
+	forward_since_turn: Dictionary,
+	pivots_this_turn: Dictionary
+) -> void:
+	for sid in ids:
+		if stopped[sid]:  # a collision earlier in this segment already stopped it
 			continue
-
-		var occupant_id: String = _find_holder(target_hex, held, contesting_ids)
-		if occupant_id != "":
-			for sid in contesting_ids:
-				_resolve_collision_or_bearoff(
-					sid, occupant_id, impulse, ship_map, results, current_hexes, stopped, environment, forward_since_turn, pivots_this_turn
-				)
+		var blocker_id: String = _stern_blocker(sid, entered, held, bow_targets, stern_targets)
+		if blocker_id != "":
+			_cancel_turn(sid, blocker_id, impulse, results, current_hexes, current_facings, stopped)
 			continue
+		var prev_facing: int = current_facings[sid]
+		_apply_move(sid, intended_moves[sid].hex, intended_moves[sid].facing, impulse, results, current_hexes, current_facings)
+		_update_turn_tracking(sid, prev_facing, intended_moves[sid].facing, forward_since_turn, pivots_this_turn)
 
-		if contesting_ids.size() == 1:
-			var sid: String = contesting_ids[0]
-			var prev_facing: int = current_facings[sid]
-			_apply_move(sid, intended_moves[sid].hex, intended_moves[sid].facing, impulse, results, current_hexes, current_facings)
-			_update_turn_tracking(sid, prev_facing, intended_moves[sid].facing, forward_since_turn, pivots_this_turn)
-			continue
 
-		_resolve_contested_hex(
-			contesting_ids, target_hex, impulse, ship_map, results, current_hexes, current_facings, stopped, intended_moves, environment, forward_since_turn, pivots_this_turn
-		)
+## Bow-entries into `target_hex`: a hex held by another ship means bear off or collide (6.D, 6.E);
+## several bows entering together contest it (6.C.2-6.C.4).
+func _resolve_bow_entries(
+	ids: Array,
+	target_hex: Vector2i,
+	impulse: int,
+	held: Dictionary,
+	intended_moves: Dictionary,
+	ship_map: Dictionary,
+	results: Dictionary,
+	current_hexes: Dictionary,
+	current_facings: Dictionary,
+	stopped: Dictionary,
+	environment: EnvironmentState,
+	forward_since_turn: Dictionary,
+	pivots_this_turn: Dictionary
+) -> void:
+	var contesting_ids: Array = []
+	for sid in ids:
+		if not stopped[sid]:  # a collision earlier in this segment already stopped it
+			contesting_ids.append(sid)
+	if contesting_ids.is_empty():
+		return
+
+	var occupant_id: String = _find_holder(target_hex, held, contesting_ids)
+	if occupant_id != "":
+		for sid in contesting_ids:
+			_resolve_collision_or_bearoff(
+				sid, occupant_id, impulse, ship_map, results, current_hexes, stopped, environment, forward_since_turn, pivots_this_turn
+			)
+		return
+
+	if contesting_ids.size() == 1:
+		var sid: String = contesting_ids[0]
+		var prev_facing: int = current_facings[sid]
+		_apply_move(sid, intended_moves[sid].hex, intended_moves[sid].facing, impulse, results, current_hexes, current_facings)
+		_update_turn_tracking(sid, prev_facing, intended_moves[sid].facing, forward_since_turn, pivots_this_turn)
+		return
+
+	_resolve_contested_hex(
+		contesting_ids, target_hex, impulse, ship_map, results, current_hexes, current_facings, stopped, intended_moves, environment, forward_since_turn, pivots_this_turn
+	)
 
 
 ## The one hex a step enters: an ahead step (new hex) its new bow hex; a turn (same hex, new facing)
