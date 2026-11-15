@@ -79,10 +79,7 @@ func _play_all_impulses() -> void:
 
 		# Separate the events that pose a ship from special events for this impulse
 		var move_events: Array = _posed_events(impulse_events)
-		var special_events: Array = []
-		for ev in impulse_events:
-			if ev.event_type != MovementTypes.ResolutionEventType.MOVE:
-				special_events.append(ev)
+		var special_events: Array = _special_events(impulse_events, pre_events)
 
 		# Animate all moves for this impulse simultaneously
 		if not move_events.is_empty():
@@ -120,6 +117,17 @@ func _posed_events(impulse_events: Array) -> Array:
 					_swung_out.erase(ev.ship_id)
 					posed.append(ev)
 	return posed
+
+
+## The events of one impulse played as special events (contests, collisions, ...): everything but
+## the MOVEs, less those already played before the first impulse (`pre_events`), so a tacking roll or
+## a ship with no plot is not told (and paused for) twice.
+static func _special_events(impulse_events: Array, pre_events: Array) -> Array:
+	var special: Array = []
+	for ev in impulse_events:
+		if ev.event_type != MovementTypes.ResolutionEventType.MOVE and not pre_events.has(ev):
+			special.append(ev)
+	return special
 
 
 func _was_rolled_back(ship_id: String) -> bool:

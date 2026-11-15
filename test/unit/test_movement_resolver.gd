@@ -1902,6 +1902,12 @@ func test_stern_vs_stern_contest_no_collision() -> void:
 	if stop:
 		assert_eq(stop.data.get("cause", ""), "stern_contest")
 		assert_eq(stop.target_id, winner)
+		# The deciding rolls (adjusted for DRMs) go into the turn log.
+		var mine = _events_of(log.get_result(loser), MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL).back()
+		var theirs = _events_of(log.get_result(winner), MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL).back()
+		assert_eq(stop.data.get("roll", -1), int(mine.roll + mine.threshold))
+		assert_eq(stop.data.get("other_roll", -1), int(theirs.roll + theirs.threshold))
+		assert_lt(stop.data.get("roll", 0), stop.data.get("other_roll", 0))
 	_assert_no_overlap(ships)
 
 

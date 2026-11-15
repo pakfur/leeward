@@ -1346,8 +1346,9 @@ func _count_steps_executed(result: MovementTypes.ShipResolutionResult) -> int:
 
 
 ## Name what happened to each ship in the turn log, in ship order: a failed tack or a ship left in
-## irons, a collision (logged for the ship that ran into the other), movement cut short of the plot,
-## and fouling (once per pair). Reads each ship's plot, so call it before the plots are cleared.
+## irons, a collision (logged for the ship that ran into the other), movement cut short of the plot
+## (or a plotted turn undone while the ship sailed its full count of steps), and fouling (once per
+## pair). Reads each ship's plot, so call it before the plots are cleared.
 @warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], turn_log: PhaseEvents.PhaseLog) -> void:
 	var phase := TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
@@ -1367,18 +1368,46 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 				turn_log.add(PhaseEvents.Type.COLLISION, phase, sid, {"hex": {"q": at.x, "r": at.y}},
 					result.collided_with)
 		var planned: int = _get_plotted_steps(ship_state).size()
-		# TODO(6.B): a rollback whose deceleration steps bring the step count back to the plotted length
-		# logs no STOPPED_SHORT, although the course changed.
 		if not result.tacking_failed and planned > 0 and _count_steps_executed(result) < planned:
 			var data := {"moved": _count_steps_executed(result), "planned": planned}
 			var cause := stop_cause(result)
 			if not cause.is_empty():
 				data["cause"] = cause["cause"]
+			_add_contest_rolls(data, result, log.get_result(str(cause.get("other", ""))))
 			turn_log.add(PhaseEvents.Type.STOPPED_SHORT, phase, sid, data, str(cause.get("other", "")))
+		elif not result.tacking_failed and planned > 0:
+			# A rolled-back turn (or one lost in a stern contest) whose deceleration steps ahead bring the
+			# step count back to the plotted length: the ship did not stop short, but left its course.
+			var undone := stop_cause(result)
+			if undone.get("cause", "") in ["overlap", "stern_contest"]:
+				var data := {"cause": undone["cause"]}
+				_add_contest_rolls(data, result, log.get_result(str(undone.get("other", ""))))
+				turn_log.add(PhaseEvents.Type.TURN_UNDONE, phase, sid, data, str(undone.get("other", "")))
 		if result.fouled_with != "" and not fouled_logged.has(sid):
 			turn_log.add(PhaseEvents.Type.FOULED, phase, sid, {"cause": "collision"}, result.fouled_with)
 			fouled_logged[sid] = true
 			fouled_logged[result.fouled_with] = true
+
+
+## For a lost stern contest, the deciding (last) rolls of the loser and the winner, DRMs added, as
+## data "roll" and "other_roll".
+static func _add_contest_rolls(data: Dictionary, loser: MovementTypes.ShipResolutionResult,
+		winner: MovementTypes.ShipResolutionResult) -> void:
+	if data.get("cause", "") != "stern_contest" or winner == null:
+		return
+	var mine := _last_contest_roll(loser)
+	var theirs := _last_contest_roll(winner)
+	if mine and theirs:
+		data["roll"] = int(mine.roll + mine.threshold)
+		data["other_roll"] = int(theirs.roll + theirs.threshold)
+
+
+static func _last_contest_roll(result: MovementTypes.ShipResolutionResult) -> MovementTypes.ResolutionEvent:
+	var last: MovementTypes.ResolutionEvent = null
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL:
+			last = ev
+	return last
 
 
 ## Why a ship's movement ended before its plot did, from its resolution result alone:

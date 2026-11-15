@@ -324,3 +324,41 @@ func test_stop_short_after_overlap_rollback_names_the_other_ship() -> void:
 	var ev := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.STOPPED_SHORT, MOVE, "a", {"cause": "overlap"}, "b")
 	assert_eq(ev.to_text({"a": "Alpha", "b": "Bravo"}),
 		"Alpha stops short of its plotted course — its stern swung into Bravo and had to swing back")
+
+
+func test_rolled_back_turn_with_deceleration_steps_is_logged() -> void:
+	# The plot was 1 ahead then a turn; the turn was rolled back and the ship sailed 1 more ahead to
+	# meet its deceleration: as many steps as plotted, but not the plotted course.
+	var ship := _ship("a", 2)
+	var log := MovementTypes.ResolutionLog.new(1)
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	_move(a, 0, Vector2i(0, 0), Vector2i(1, 0))
+	_move(a, 1, Vector2i(1, 0), Vector2i(2, 0))
+	var overlap := MovementTypes.ResolutionEvent.new("a", 1, T.OVERLAP)
+	a.events.append(overlap)
+	var rollback := MovementTypes.ResolutionEvent.new("a", 2, T.OVERLAP_ROLLBACK)
+	rollback.detail = "already occupied"
+	a.events.append(rollback)
+	a.blocked_by = "b"
+	log.add_result(a)
+	var ships: Array[ShipState] = [ship]
+	resolver.log_outcomes(log, ships, turn_log)
+	assert_eq(turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT).size(), 0, "it did not stop short")
+	var undone := turn_log.of_type(PhaseEvents.Type.TURN_UNDONE)
+	assert_eq(undone.size(), 1)
+	if undone.size() == 1:
+		assert_eq(undone[0].to_text({"a": "Alpha", "b": "Bravo"}),
+			"Alpha cannot make its plotted turn — its stern swung into Bravo and had to swing back")
+
+
+func test_turn_lost_in_a_stern_contest_with_deceleration_steps_is_logged() -> void:
+	var ev := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.TURN_UNDONE, MOVE, "a", {"cause": "stern_contest"}, "b")
+	assert_eq(ev.to_text({"a": "Alpha", "b": "Bravo"}),
+		"Alpha cannot make its plotted turn — it lost the contest with Bravo for the hex its stern was turning into")
+
+
+func test_lost_stern_contest_text_shows_the_rolls() -> void:
+	var ev := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.STOPPED_SHORT, MOVE, "a",
+		{"cause": "stern_contest", "roll": 2, "other_roll": 4}, "b")
+	assert_eq(ev.to_text({"a": "Alpha", "b": "Bravo"}),
+		"Alpha stops short of its plotted course — it lost the contest with Bravo for the hex its stern was turning into (rolled 2 against 4)")

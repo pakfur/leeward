@@ -10,6 +10,7 @@ enum Type {
 	FIRE, DAMAGE, GUNS_DISMOUNTED, MORALE_NOTED, MORALE_CHECK, STRIKE,
 	DRIFT, FOULED, UNFOUL, SAIL_CHANGE, VICTORY, HOLD_FIRE,
 	COLLISION, STOPPED_SHORT, IN_IRONS, WIND,
+	TURN_UNDONE,  # a plotted turn rolled back or lost to a stern contest; the ship sailed on ahead instead
 }
 
 const MODIFIER_LABELS := {
@@ -168,6 +169,8 @@ class PhaseEvent extends RefCounted:
 				return "%s collides with %s%s" % [who, other, " at " + at if at != "" else ""]
 			Type.STOPPED_SHORT:
 				return _stopped_short_text(who, other)
+			Type.TURN_UNDONE:
+				return _turn_cause_text("%s cannot make its plotted turn" % who, other)
 			Type.IN_IRONS:
 				if data.get("cause", "") == "tack":
 					return "%s misses stays and is in irons" % who
@@ -186,6 +189,8 @@ class PhaseEvent extends RefCounted:
 	func _stopped_short_text(who: String, other: String) -> String:
 		var text := "%s stops short of its plotted course" % who
 		match str(data.get("cause", "")):
+			"stern_contest", "stern_blocked", "overlap":
+				return _turn_cause_text(text, other)
 			"collision":
 				if target_id != "":
 					return "%s after colliding with %s" % [text, other]
@@ -193,15 +198,22 @@ class PhaseEvent extends RefCounted:
 				text += " after bearing off"
 				if target_id != "":
 					text += " — %s was in the way" % other
+		return text
+
+	## `text` followed by why a plotted turn was not made: a lost stern contest, a blocked stern or a
+	## rolled-back overlap (6.B, 6.C), naming the other ship when it is known.
+	func _turn_cause_text(text: String, other: String) -> String:
+		if target_id == "":
+			return text
+		match str(data.get("cause", "")):
 			"stern_contest":
-				if target_id != "":
-					text += " — it lost the contest with %s for the hex its stern was turning into" % other
+				text += " — it lost the contest with %s for the hex its stern was turning into" % other
+				if data.has("roll") and data.has("other_roll"):
+					text += " (rolled %d against %d)" % [int(data["roll"]), int(data["other_roll"])]
 			"stern_blocked":
-				if target_id != "":
-					text += " — its stern was blocked by %s" % other
+				text += " — its stern was blocked by %s" % other
 			"overlap":
-				if target_id != "":
-					text += " — its stern swung into %s and had to swing back" % other
+				text += " — its stern swung into %s and had to swing back" % other
 		return text
 
 	func _fire_text(who: String, other: String) -> String:
