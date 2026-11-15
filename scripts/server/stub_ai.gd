@@ -17,7 +17,7 @@ const FIRING_POSITION_BASE := 1000
 ## A firing position loses this much per hex of range.
 const FIRING_RANGE_WEIGHT := 2
 ## Added to a firing position's score when its second battery bears too: worth more than one hex of
-## range, less than two (two batteries at range r beat one at r or r+1, lose to one at r-2).
+## range, less than two (two batteries at range r beat one at r or r-1, lose to one at r-2).
 const SECOND_BATTERY_BONUS := 3
 
 ## Plotting errors for ships that legitimately cannot move; the AI skips them without error.

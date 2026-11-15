@@ -21,8 +21,9 @@ func _init(p_game_state: Node) -> void:
 ## Dice order is part of the contract (tests script dice by position). Ships are processed
 ## leeward-most first (8.A.2: largest projection of the footprint's middle, between bow and stern,
 ## on the downwind world vector; ties by ship_id), each seeing the positions left by those before
-## it. Judging by the middle, a ship whose hex would drift into another's is always the later one. For each ship (or fouled pair, processed once at
-## its more leeward member):
+## it. Judging by the middle, a single ship whose hex would drift into another's is always the
+## later one. A fouled pair is processed once, at its more leeward member, so its other member may
+## come before a ship it would drift into. For each ship or fouled pair:
 ##   1. the drift d10
 ##   2. only if that drift is blocked by another ship that may foul it: the fouling d10
 ## At wind speed 0 nothing is rolled and nothing is logged.
@@ -123,8 +124,9 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 				blocked = "ship"
 				blocker = game_state.get_ship(block["blocker"])
 
-	# The fouled_with check is not redundant: a ship the partner drifted onto and fouled earlier
-	# this phase comes up later in a group of one, and a fouled ship never partially drifts (8.A.6).
+	# The fouled_with check is unreachable under the 8.A.2 order (a blocker is always resolved
+	# first); kept so a fouled ship never partially drifts (8.A.6), e.g. one whose partner id is
+	# dangling.
 	if drifts and blocked == "ship" and group.size() == 1 and group[0].fouled_with == "":
 		# Partial drift (8.A.5): only the bow or only the stern is blocked by a ship; the free end
 		# drifts and the ship pivots on the other, if that leaves a legal two-hex footprint.

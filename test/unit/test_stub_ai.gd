@@ -667,9 +667,9 @@ func test_ai_stern_guard_applies_to_an_ma_zero_turn() -> void:
 	var friend = _make_ship("ai2", 1, Vector2i(6, 4), 0, 0)  # holds (6,4) and (5,4)
 	_add_ship(friend)
 	stub_ai.plot_all_ai_ships()
-	for step in _plotted(ai):
-		assert_ne(step[1], 2, "the blocked port turn is not plotted")
-		assert_false(HexGrid.stern_of(step[0], step[1]) in friend.occupied_hexes())
+	assert_eq(_plotted(ai), [[Vector2i(5, 5), 4]], "the AI takes the starboard turn to NW instead")
+	assert_eq(HexGrid.stern_of(Vector2i(5, 5), 4), Vector2i(5, 6), "a stern hex clear of the friend")
+	assert_false(Vector2i(5, 6) in friend.occupied_hexes())
 
 
 func test_ai_prefers_full_broadside() -> void:

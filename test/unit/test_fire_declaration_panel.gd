@@ -520,7 +520,13 @@ func test_panel_rows_list_nearest_target_first() -> void:
 		if key != "" and not listed.has(key.get_slice("|", 0)):
 			listed.append(key.get_slice("|", 0))
 	var expected: Array = setup[1].duplicate()
-	expected.sort_custom(func(x, y): return ranges[x] < ranges[y] or (ranges[x] == ranges[y] and x < y))
+	var names := FirePanel.target_names(GameState.get_all_ships())
+	expected.sort_custom(func(x, y):
+		if ranges[x] != ranges[y]:
+			return ranges[x] < ranges[y]
+		if names[x] != names[y]:
+			return names[x] < names[y]
+		return x < y)
 	assert_eq(listed, expected)
 	assert_eq(keys.slice(0, 3), [FirePanel.row_key(listed[0], "full"), FirePanel.row_key(listed[0], "bow"),
 		FirePanel.row_key(listed[0], "stern")])
