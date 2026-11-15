@@ -319,17 +319,18 @@ static func no_shot_line(ship_name: String, reason: String) -> String:
 	return "%s%sno broadside bears: %s" % [ship_name, SEPARATOR, reason]
 
 
-## The nearest enemy afloat (ties by ship id), null when none. Hex distance on `grid`.
+## The nearest enemy afloat (ties by ship id), null when none. Distance on `grid` from the closest
+## hex of one footprint to the closest hex of the other.
 static func nearest_enemy(ship: ShipState, all_ships: Array, grid: HexGrid) -> ShipState:
 	var nearest: ShipState = null
 	var best := 1 << 30
 	if grid == null:
 		return null
+	var geometry := FireGeometry.new(grid)
 	for other: ShipState in all_ships:
 		if other.player_id == ship.player_id or other.is_struck():
 			continue
-		var d := grid.hex_distance(ship.hex_position.x, ship.hex_position.y,
-			other.hex_position.x, other.hex_position.y)
+		var d := geometry.range_between(ship.occupied_hexes(), other.occupied_hexes())
 		if d < best or (d == best and other.ship_id < nearest.ship_id):
 			best = d
 			nearest = other

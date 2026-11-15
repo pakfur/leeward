@@ -71,6 +71,20 @@ func test_fire_to_text_negative_modifier_rake_and_dismantling() -> void:
 	assert_false(text.contains("BGN"), text)
 
 
+func test_fire_text_names_the_battery_of_a_half_broadside() -> void:
+	var data := _fire_data()
+	data["battery"] = "bow"
+	var text := PhaseEvents.PhaseLog.new().add(PhaseEvents.Type.FIRE, 4, "s1", data, "s2").to_text(NAMES)
+	assert_string_contains(text, "Surprise fires starboard bow battery at Renard, range 3")
+	data["battery"] = "stern"
+	data["side"] = 0
+	text = PhaseEvents.PhaseLog.new().add(PhaseEvents.Type.FIRE, 4, "s1", data, "s2").to_text(NAMES)
+	assert_string_contains(text, "Surprise fires port stern battery at Renard")
+	data["battery"] = "full"
+	text = PhaseEvents.PhaseLog.new().add(PhaseEvents.Type.FIRE, 4, "s1", data, "s2").to_text(NAMES)
+	assert_string_contains(text, "Surprise fires port at Renard", "a full broadside reads as before")
+
+
 func test_fire_without_modifiers_or_damage_says_no_damage() -> void:
 	var data := {"side": 0, "range": 9, "aim": "low", "ammo": "round", "bgn": 2,
 		"modifiers": [], "mgn": 2, "d6": 1, "fgn": 3, "rigging": 0, "hull": 0, "crew": 0, "rake": ""}

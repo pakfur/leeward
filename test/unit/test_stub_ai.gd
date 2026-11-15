@@ -556,6 +556,28 @@ func test_ai_scores_broadside_against_two_hex_enemy() -> void:
 	assert_gt(both_score, one_score, "two batteries bearing outscore one")
 
 
+func test_nearest_enemy_measures_footprint_to_footprint() -> void:
+	# AI bow (0,0) facing E, stern (-1,0). "b" has the nearer bow (3 hexes) but its closest hex is 3
+	# away; "a" points away (bow (-4,0) facing W, stern (-3,0)): bow 4 hexes off, closest hex 2.
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 2)
+	var a = _make_ship("a", 0, Vector2i(-4, 0), 3, 0)
+	var b = _make_ship("b", 0, Vector2i(3, 0), 3, 0)
+	_add_ship(ai)
+	_add_ship(b)
+	_add_ship(a)
+	assert_eq(stub_ai._nearest_enemy(ai), a)
+
+
+func test_unengaged_score_measures_bow_to_enemy_footprint() -> void:
+	# Firer bow (0,0) facing E toward an enemy bow (10,0) facing E, stern (9,0): out of firing range.
+	# The firer's bow is 9 hexes from the enemy's stern (10 from its bow); no misalignment.
+	var enemy = _make_ship("p1", 0, Vector2i(10, 0), 0, 0)
+	_add_ship(enemy)
+	assert_eq(stub_ai._score_position(Vector2i(0, 0), 0, enemy, {}), -18)
+	# Pointing away brings the firer's own stern a hex nearer, but the bow leads: no reward for it.
+	assert_eq(stub_ai._score_position(Vector2i(0, 0), 3, enemy, {}), -21)
+
+
 func test_ai_never_plots_stern_into_occupied_hex() -> void:
 	env.wind_direction = 3
 	# AI bow (5,5) facing east, stern (4,5); a friend lies alongside on row 6 (stern (4,6)).

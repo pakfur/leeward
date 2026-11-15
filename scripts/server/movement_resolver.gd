@@ -25,6 +25,10 @@ var _pending_overlaps: Dictionary = {}
 ## They amend the loser's plot like a rollback; `events` (the rolls and STERN_BLOCKED) are put back into
 ## the final log, where the contest is no longer rolled.
 var _contest_amendments: Array = []
+## ship_id -> true for ships whose MA-0 turn (and its tacking roll, 5.D.1) an amended plot removed. The
+## tacking die is still drawn on segment 0, so the rolls after it are the ones of the first pass, and the
+## roll stays in the log.
+var _tacks_dropped: Dictionary = {}
 
 var rng: RandomNumberGenerator:
 	get:
@@ -53,7 +57,10 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 
 	# An overlap that is not cleared on the next segment amends the turning ship's plot (6.B.4: "change
 	# all ship logs to reflect the actual moves"), and the whole resolution is run again with the amended
-	# plots from the same dice. Every rollback removes a plotted turn, so this ends.
+	# plots, from the same RNG state. Every roll made before the rolled-back segment is made again with
+	# the same die; a tacking roll whose turn was amended away is still drawn in its place (see
+	# _tacks_dropped), so the dice after it stay where they were. Rolls from the rolled-back segment on
+	# may differ, since the ships stand elsewhere. Every rollback removes a plotted turn, so this ends.
 	var ship_map: Dictionary = {}
 	var plotted: Dictionary = {}
 	var pass_limit: int = 1
@@ -120,6 +127,11 @@ func _resolve_pass(
 	var pivots_this_turn: Dictionary = {}
 	_pending_overlaps = {}
 	_contest_amendments = []
+	_tacks_dropped = {}
+	for sid in amended:
+		if _find_tacking_impulse(ship_map[sid], plotted[sid]) == 0 \
+				and _find_tacking_impulse(ship_map[sid], amended[sid]) != 0:
+			_tacks_dropped[sid] = true
 
 	for ship_state in ships:
 		var result = MovementTypes.ShipResolutionResult.new(ship_state.ship_id)
@@ -135,7 +147,10 @@ func _resolve_pass(
 		var ship_steps: Array = amended.get(ship_state.ship_id, plotted[ship_state.ship_id])
 		if ship_steps.is_empty():
 			if _is_in_irons(ship_state, environment):
-				_remain_in_irons(ship_state, result)
+				if _tacks_dropped.has(ship_state.ship_id):
+					result.immobilized = true  # told after its tacking roll, on segment 0
+				else:
+					_remain_in_irons(ship_state, result, "in irons, no turn plotted")
 			elif not amended.has(ship_state.ship_id):  # a plot amended to nothing is told by its rollback
 				var ev = MovementTypes.ResolutionEvent.new(
 					ship_state.ship_id, 0, MovementTypes.ResolutionEventType.SKIP_NO_PLOT
@@ -193,6 +208,8 @@ func _resolve_impulse(
 
 	for ship_state in ships:
 		var sid = ship_state.ship_id
+		if impulse == 0 and _tacks_dropped.has(sid):
+			_redraw_dropped_tack(ship_state, environment, results[sid])
 		if stopped[sid]:
 			continue
 
@@ -232,14 +249,17 @@ func _resolve_impulse(
 	var held: Dictionary = Occupancy.from_positions(current_hexes, current_facings, intended_moves.keys())
 	var start_bows: Dictionary = {}
 	var start_facings: Dictionary = {}
-	var old_stern_owner: Dictionary = {}  # old stern hex -> moving ship id
-	var start_bow_owner: Dictionary = {}  # bow hex at the start of the segment -> moving ship id
+	# Hex -> ids of the moving ships whose bow (or old stern) it is at the start of the segment. Lists:
+	# during an overlap two sterns (or a stern and a bow) share a hex, and a group entering it waits for
+	# every one of them.
+	var old_stern_owner: Dictionary = {}
+	var start_bow_owner: Dictionary = {}
 	for sid in intended_moves:
 		held[current_hexes[sid]] = sid
-		start_bow_owner[current_hexes[sid]] = sid
 		start_bows[sid] = current_hexes[sid]
 		start_facings[sid] = current_facings[sid]
-		old_stern_owner[HexGrid.stern_of(current_hexes[sid], current_facings[sid])] = sid
+		_add_owner(start_bow_owner, current_hexes[sid], sid)
+		_add_owner(old_stern_owner, HexGrid.stern_of(current_hexes[sid], current_facings[sid]), sid)
 
 	# Group the entered hexes, bow-entries (ahead) and stern-entries (turns) apart.
 	var bow_targets: Dictionary = {}
@@ -259,7 +279,8 @@ func _resolve_impulse(
 	# movement is done before conflicts are checked (6.A.5): a ship in the way collides with the ship
 	# only after that ship's own step, so the result does not depend on ship order, and an old stern is
 	# known to be vacated or kept. In a cycle (head-on bows, or each ship entering the next one's old
-	# stern) no group is ready and the first pending one goes.
+	# stern) no group is ready and the group holding the lowest ship id goes, so the result does not
+	# depend on ship order either.
 	var pending: Array = []
 	for entered in stern_targets:
 		pending.append({"stern": true, "hex": entered, "ids": stern_targets[entered]})
@@ -267,11 +288,13 @@ func _resolve_impulse(
 		pending.append({"stern": false, "hex": entered, "ids": bow_targets[entered]})
 	var resolved: Dictionary = {}
 	while not pending.is_empty():
-		var pick: int = 0
+		var pick: int = -1
 		for i in range(pending.size()):
 			if _group_ready(pending[i], start_bow_owner, old_stern_owner, resolved):
 				pick = i
 				break
+		if pick < 0:
+			pick = _lowest_id_group(pending)
 		var group: Dictionary = pending[pick]
 		pending.remove_at(pick)
 		if group.stern:
@@ -286,12 +309,30 @@ func _resolve_impulse(
 				held[HexGrid.stern_of(start_bows[sid], start_facings[sid])] = sid  # it keeps its stern
 
 
+## Index of the pending group holding the lowest ship id (cycle tie-break).
+func _lowest_id_group(pending: Array) -> int:
+	var pick: int = 0
+	var lowest: String = ""
+	for i in range(pending.size()):
+		for sid in pending[i].ids:
+			if lowest == "" or String(sid) < lowest:
+				lowest = sid
+				pick = i
+	return pick
+
+
+func _add_owner(owners: Dictionary, hex: Vector2i, sid: String) -> void:
+	if not owners.has(hex):
+		owners[hex] = []
+	owners[hex].append(sid)
+
+
 ## True when no moving ship whose bow or old stern lies on the group's hex is still unresolved.
 func _group_ready(group: Dictionary, start_bow_owner: Dictionary, old_stern_owner: Dictionary, resolved: Dictionary) -> bool:
 	for owners in [start_bow_owner, old_stern_owner]:
-		var owner_id: String = owners.get(group.hex, "")
-		if owner_id != "" and not resolved.has(owner_id) and not owner_id in group.ids:
-			return false
+		for owner_id in owners.get(group.hex, []):
+			if not resolved.has(owner_id) and not owner_id in group.ids:
+				return false
 	return true
 
 
@@ -1043,7 +1084,7 @@ func _find_holder(target_hex: Vector2i, held: Dictionary, moving_ids: Array) -> 
 
 ## A ship in irons that plotted no turn stays in irons (5.D.7). Getting out takes a plotted turn,
 ## which is resolved by the Tacking roll with the in-irons DRM (5.D.6).
-func _remain_in_irons(ship_state: ShipState, result: MovementTypes.ShipResolutionResult) -> void:
+func _remain_in_irons(ship_state: ShipState, result: MovementTypes.ShipResolutionResult, detail: String) -> void:
 	result.immobilized = true
 	var imm_ev = MovementTypes.ResolutionEvent.new(
 		ship_state.ship_id, 0, MovementTypes.ResolutionEventType.IMMOBILIZED
@@ -1051,8 +1092,17 @@ func _remain_in_irons(ship_state: ShipState, result: MovementTypes.ShipResolutio
 	imm_ev.from_hex = ship_state.hex_position
 	imm_ev.to_hex = ship_state.hex_position
 	imm_ev.facing = ship_state.facing
-	imm_ev.detail = "in irons, no turn plotted"
+	imm_ev.detail = detail
 	result.events.append(imm_ev)
+
+
+## The tacking roll of a turn an amended plot removed (see _tacks_dropped): drawn again from the same
+## die, so it passes as it did in the pass that found the overlap, and logged. A ship in irons whose
+## turn was rolled back stays in irons.
+func _redraw_dropped_tack(ship_state: ShipState, environment: EnvironmentState, result: MovementTypes.ShipResolutionResult) -> void:
+	_roll_tacking(ship_state, environment, result, 0)
+	if _is_in_irons(ship_state, environment):
+		_remain_in_irons(ship_state, result, "in irons, turn rolled back")
 
 
 ## Tacking table (5.D.2): d10 (0-9) + DRMs <= the chart number succeeds; a natural 0 always succeeds.

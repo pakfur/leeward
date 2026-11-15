@@ -73,7 +73,11 @@ Each ship entry:
 - `crew_morale`: 1-6
 - `player_id`: integer (0 = player, 1+ = opponents/AI)
 - `id` must be unique across all ships in the scenario
-- `position` (q, r): axial hex coordinates — avoid overlapping positions
+- `position` (q, r): axial hex coordinates of the ship's **bow**. Every ship holds two hexes: the stern
+  is derived, the neighbour against the facing (`stern = bow + DIRECTIONS[(facing + 3) % 6]`, i.e.
+  `HexGrid.stern_of(bow, facing)`; facing 0/E puts the stern at q−1). No two footprints (bow or
+  stern) may share a hex — `GameState.add_ship` refuses an overlapping ship — and both hexes must lie
+  inside `map_bounds`
 - `sea_state`: 1-4
 - `region`: `oceanic`, `coastal`, `harbor`
 - `wind_speed_change`: `steady`, `gusting`, `dying`

@@ -241,15 +241,18 @@ func get_phase_name() -> String:
 
 func add_ship(ship_state: ShipState) -> bool:
 	## Add a ship to the state container. Used by both server (setup) and client (sync).  SCV:ALLOW
-	## A ship whose id is already present, or whose hex another ship already occupies, is
-	## rejected (push_error, returns false) and not added.
+	## A ship whose id is already present, or whose footprint (bow or stern hex) shares a hex with
+	## another ship's footprint, is rejected (push_error, returns false) and not added.
 	if ships.has(ship_state.ship_id):
 		push_error("GameState: duplicate ship id '%s' rejected" % ship_state.ship_id)
 		return false
-	for other: ShipState in ships.values():
-		if other.hex_position == ship_state.hex_position:
+	var others: Array[ShipState] = []
+	others.assign(ships.values())
+	var occupied := Occupancy.build(others)
+	for h in ship_state.occupied_hexes():
+		if occupied.has(h):
 			push_error("GameState: ship '%s' starts on %s, already occupied by '%s'; rejected" % [
-				ship_state.ship_id, ship_state.hex_position, other.ship_id])
+				ship_state.ship_id, h, occupied[h]])
 			return false
 	ships[ship_state.ship_id] = ship_state
 

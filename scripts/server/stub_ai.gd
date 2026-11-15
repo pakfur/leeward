@@ -241,15 +241,15 @@ func _strategy_engage(
 	return current_version
 
 
-## Nearest unstruck ship of another player; ties by ship_id. Null when there is none.
+## Nearest unstruck ship of another player, closest hex to closest hex (both footprints); ties by
+## ship_id. Null when there is none.
 func _nearest_enemy(ship_state: ShipState) -> ShipState:
 	var nearest: ShipState = null
 	var nearest_distance := 0
 	for other in game_state.get_all_ships():
 		if other.player_id == ship_state.player_id or other.is_struck():
 			continue
-		var distance := HexGrid.new().hex_distance(
-			ship_state.hex_position.x, ship_state.hex_position.y, other.hex_position.x, other.hex_position.y)
+		var distance: int = game_state.fire_geometry.range_between(ship_state.occupied_hexes(), other.occupied_hexes())
 		if nearest == null or distance < nearest_distance \
 				or (distance == nearest_distance and other.ship_id < nearest.ship_id):
 			nearest = other
@@ -268,8 +268,10 @@ func _stern_blocked(move: MovementTypes.ValidMove, current_hex: Vector2i, others
 ## Score the firer with its bow at `bow` pointing `facing`. `occupied` holds every other footprint
 ## except the enemy's. Engaged (a battery bears on the enemy footprint within range <= 5):
 ## 1000 - range, plus a bonus per extra battery bearing, always > 0. Otherwise
-## -(2 * distance + misalignment) from bow to enemy bow, where misalignment is the number of
-## 60 degree steps between the facing and the direction toward the enemy.
+## -(2 * distance + misalignment), where distance runs from the firer's bow to the closest hex of the
+## enemy footprint and misalignment is the number of 60 degree steps between the facing and the
+## direction from the bow toward the enemy's bow. The bow leads: counting the firer's stern too would
+## score a ship pointing away (stern one hex nearer) as high as one pointing at the enemy.
 func _score_position(bow: Vector2i, facing: int, enemy: ShipState, occupied: Dictionary) -> int:
 	var geometry: FireGeometry = game_state.fire_geometry
 	var firer_hexes: Array[Vector2i] = [bow, HexGrid.stern_of(bow, facing)]
@@ -286,7 +288,8 @@ func _score_position(bow: Vector2i, facing: int, enemy: ShipState, occupied: Dic
 		if batteries > 0:
 			return FIRING_POSITION_BASE - range_hexes + SECOND_BATTERY_BONUS * (batteries - 1)
 	var enemy_bow := enemy.hex_position
-	var distance := geometry.hex_grid.hex_distance(bow.x, bow.y, enemy_bow.x, enemy_bow.y)
+	var bow_hexes: Array[Vector2i] = [bow]
+	var distance := geometry.range_between(bow_hexes, enemy_hexes)
 	var misalignment := 0
 	if bow != enemy_bow:
 		var toward := geometry.hex_grid.get_facing_direction(bow.x, bow.y, enemy_bow.x, enemy_bow.y)

@@ -205,6 +205,18 @@ func test_ship_no_shot_reason_previews_against_the_nearest_enemy() -> void:
 	assert_eq(FirePanel.ship_no_shot_reason(own, [own, far, near], calc, grid), "out of range")
 
 
+func test_nearest_enemy_measures_footprint_to_footprint() -> void:
+	# Own bow (0,0) facing E, stern (-1,0). "b" has the nearer bow (3 hexes) but its closest hex is 3
+	# away; "a" points away (bow (-4,0) facing W, stern (-3,0)): bow 4 hexes off, closest hex 2.
+	var own := _state("o", "HMS Phoebe", 0, Vector2i(0, 0))
+	var a := _state("a", "Astern", 1, Vector2i(-4, 0))
+	a.facing = 3
+	var b := _state("b", "Ahead", 1, Vector2i(3, 0))
+	b.facing = 3
+	var grid := HexGrid.new(1.0)
+	assert_eq(FirePanel.nearest_enemy(own, [own, b, a], grid), a)
+
+
 func test_ship_no_shot_reason_for_struck_ships_and_no_enemy() -> void:
 	var own := _state("o", "HMS Phoebe", 0, Vector2i(0, 0))
 	var calc := FakeCalculator.new()
