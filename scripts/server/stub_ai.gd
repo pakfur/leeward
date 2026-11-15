@@ -13,8 +13,11 @@ extends RefCounted
 ## A broadside shot at or inside this range scores as a firing position.
 const FIRING_RANGE := 5
 const FIRING_POSITION_BASE := 1000
-## Added to a firing position's score for each battery beyond the first that bears.
-const SECOND_BATTERY_BONUS := 10
+## A firing position loses this much per hex of range.
+const FIRING_RANGE_WEIGHT := 2
+## Added to a firing position's score when its second battery bears too: worth more than one hex of
+## range, less than two (two batteries at range r beat one at r or r+1, lose to one at r-2).
+const SECOND_BATTERY_BONUS := 3
 ## Two-target modifier from the chart; a second broadside is held when it would not survive it.
 const TWO_TARGET_PENALTY := 12
 
@@ -267,7 +270,7 @@ func _stern_blocked(move: MovementTypes.ValidMove, current_hex: Vector2i, others
 
 ## Score the firer with its bow at `bow` pointing `facing`. `occupied` holds every other footprint
 ## except the enemy's. Engaged (a battery bears on the enemy footprint within range <= 5):
-## 1000 - range, plus a bonus per extra battery bearing, always > 0. Otherwise
+## 1000 - 2 * range, plus 3 when both batteries of a side bear, always > 0. Otherwise
 ## -(2 * distance + misalignment), where distance runs from the firer's bow to the closest hex of the
 ## enemy footprint and misalignment is the number of 60 degree steps between the facing and the
 ## direction from the bow toward the enemy's bow. The bow leads: counting the firer's stern too would
@@ -286,7 +289,8 @@ func _score_position(bow: Vector2i, facing: int, enemy: ShipState, occupied: Dic
 					bearing += 1
 			batteries = maxi(batteries, bearing)
 		if batteries > 0:
-			return FIRING_POSITION_BASE - range_hexes + SECOND_BATTERY_BONUS * (batteries - 1)
+			return FIRING_POSITION_BASE - FIRING_RANGE_WEIGHT * range_hexes \
+					+ SECOND_BATTERY_BONUS * (batteries - 1)
 	var enemy_bow := enemy.hex_position
 	var bow_hexes: Array[Vector2i] = [bow]
 	var distance := geometry.range_between(bow_hexes, enemy_hexes)

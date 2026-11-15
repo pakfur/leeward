@@ -556,6 +556,22 @@ func test_ai_scores_broadside_against_two_hex_enemy() -> void:
 	assert_gt(both_score, one_score, "two batteries bearing outscore one")
 
 
+func test_second_battery_does_not_outweigh_two_hexes_of_range() -> void:
+	# Enemy bow (5,0) facing E, stern (4,0); the firer faces E south of it, its port side bearing.
+	# Fixture positions (bow): two batteries at range 4 from (2,4); one battery at range 4 from
+	# (6,4), at 3 from (6,3), at 2 from (6,2).
+	var enemy = _make_ship("p1", 0, Vector2i(5, 0), 0, 0)
+	_add_ship(enemy)
+	var occupied := {}
+	var two_at_4 := stub_ai._score_position(Vector2i(2, 4), 0, enemy, occupied)
+	var one_at_4 := stub_ai._score_position(Vector2i(6, 4), 0, enemy, occupied)
+	var one_at_3 := stub_ai._score_position(Vector2i(6, 3), 0, enemy, occupied)
+	var one_at_2 := stub_ai._score_position(Vector2i(6, 2), 0, enemy, occupied)
+	assert_gt(two_at_4, one_at_4, "two batteries beat one at the same range")
+	assert_gt(two_at_4, one_at_3, "two batteries beat one a hex closer")
+	assert_gt(one_at_2, two_at_4, "one battery two hexes closer beats two batteries")
+
+
 func test_nearest_enemy_measures_footprint_to_footprint() -> void:
 	# AI bow (0,0) facing E, stern (-1,0). "b" has the nearer bow (3 hexes) but its closest hex is 3
 	# away; "a" points away (bow (-4,0) facing W, stern (-3,0)): bow 4 hexes off, closest hex 2.
@@ -598,6 +614,62 @@ func test_ai_never_plots_stern_into_occupied_hex() -> void:
 		var bow := Vector2i(int(step["hex"]["q"]), int(step["hex"]["r"]))
 		var stern := HexGrid.stern_of(bow, int(step["facing"]))
 		assert_false(stern in blocked, "step %s facing %d swings the stern into the friend" % [bow, step["facing"]])
+
+
+func _plotted(ship: ShipState) -> Array:
+	var out: Array = []
+	for step in ship.plotted_actions.get("movement", []):
+		out.append([Vector2i(int(step["hex"]["q"]), int(step["hex"]["r"])), int(step["facing"])])
+	return out
+
+
+func test_ai_stern_guard_applies_to_a_turn_later_in_the_plan() -> void:
+	env.wind_direction = 3
+	# AI bow (5,5) facing E at speed 2; the enemy lies to the east-south-east. Unhindered, the AI
+	# steps ahead to (6,5) and then turns to starboard there, swinging its stern onto (6,4).
+	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 0, 2)
+	var enemy = _make_ship("p1", 0, Vector2i(12, 2), 0, 0)
+	_add_ship(ai)
+	_add_ship(enemy)
+	stub_ai.plot_all_ai_ships()
+	var free_path := _plotted(ai)
+	assert_eq(free_path.slice(0, 2), [[Vector2i(6, 5), 0], [Vector2i(6, 5), 1]], "fixture: ahead, then turn")
+	assert_eq(HexGrid.stern_of(Vector2i(6, 5), 1), Vector2i(6, 4))
+
+	# A friend on (6,4) and (7,4): the second step's turn would put the stern into it.
+	GameState.movement_plotting_controller.sessions.clear()
+	GameState.movement_plotting_controller.ship_sessions.clear()
+	var friend = _make_ship("ai2", 1, Vector2i(6, 4), 3, 0)
+	_add_ship(friend)
+	stub_ai.plot_all_ai_ships()
+	var path := _plotted(ai)
+	assert_gt(path.size(), 0)
+	assert_eq(path[0], [Vector2i(6, 5), 0], "still steps ahead first")
+	for step in path:
+		var stern := HexGrid.stern_of(step[0], step[1])
+		assert_false(stern in friend.occupied_hexes(), "step %s swings the stern into the friend" % [step])
+
+
+func test_ai_stern_guard_applies_to_an_ma_zero_turn() -> void:
+	# In irons (facing W into a westerly): MA 0, the only move is a turn (5.D.1). The enemy lies to
+	# the south-west, so the AI wants the port turn to SW, which would swing the stern onto (6,4).
+	env.wind_direction = 3
+	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 3, 0)
+	var enemy = _make_ship("p1", 0, Vector2i(-3, 13), 0, 0)
+	_add_ship(ai)
+	_add_ship(enemy)
+	stub_ai.plot_all_ai_ships()
+	assert_eq(_plotted(ai), [[Vector2i(5, 5), 2]], "fixture: unhindered, the AI turns to port")
+	assert_eq(HexGrid.stern_of(Vector2i(5, 5), 2), Vector2i(6, 4))
+
+	GameState.movement_plotting_controller.sessions.clear()
+	GameState.movement_plotting_controller.ship_sessions.clear()
+	var friend = _make_ship("ai2", 1, Vector2i(6, 4), 0, 0)  # holds (6,4) and (5,4)
+	_add_ship(friend)
+	stub_ai.plot_all_ai_ships()
+	for step in _plotted(ai):
+		assert_ne(step[1], 2, "the blocked port turn is not plotted")
+		assert_false(HexGrid.stern_of(step[0], step[1]) in friend.occupied_hexes())
 
 
 func test_ai_prefers_full_broadside() -> void:
