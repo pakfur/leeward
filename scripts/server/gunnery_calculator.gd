@@ -48,12 +48,7 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 	p.range_hexes = geometry.range_between(firer_hexes, target_hexes)
 	p.high_only = FireRules.high_only(p.range_hexes)
 
-	var in_arc := false
-	for battery in battery_hexes:
-		for h in target_hexes:
-			if geometry.in_battery_arc(battery, firer.facing, order.side, h):
-				in_arc = true
-	if not in_arc:
+	if not _any_in_arc(geometry, battery_hexes, firer.facing, order.side, target_hexes):
 		return _refuse(p, "target is not in that broadside's arc")
 	var max_range := FireRules.max_range(order.ammo)
 	if p.range_hexes > max_range:
@@ -253,3 +248,13 @@ static func _modifier_value(p: GunneryTypes.ShotPreview, modifier_name: String) 
 		if m["name"] == modifier_name:
 			return int(m["value"])
 	return 0
+
+
+## Whether any of `target_hexes` lies in the `side` arc of any of `battery_hexes`.
+func _any_in_arc(geometry: FireGeometry, battery_hexes: Array[Vector2i], facing: int, side: int,
+		target_hexes: Array[Vector2i]) -> bool:
+	for battery in battery_hexes:
+		for h in target_hexes:
+			if geometry.in_battery_arc(battery, facing, side, h):
+				return true
+	return false
