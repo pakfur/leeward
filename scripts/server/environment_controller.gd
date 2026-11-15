@@ -24,16 +24,34 @@ func set_environment_property(property: String, value: Variant) -> bool:
 	environment_updated.emit()
 	return true
 
+## Weather phase (3.B). The change rolled last turn takes effect first (3.B.6), then this turn's
+## wind rolls are made against the wind now blowing and held as next turn's pending change, so
+## players see it coming.
 func tick_environment(env_state: EnvironmentState, _turn_number: int) -> void:
 	if not is_server:
+		push_error("EnvironmentController: Cannot tick environment on client")
 		return
 
 	var from_speed := env_state.wind_speed
 	var from_direction := env_state.wind_direction
-	_update_wind_speed(env_state)
-	_update_wind_direction(env_state)
+	if env_state.has_pending_wind_change():
+		if env_state.pending_wind_speed >= 0:
+			env_state.wind_speed = env_state.pending_wind_speed
+		if env_state.pending_wind_direction >= 0:
+			env_state.wind_direction = env_state.pending_wind_direction
+		env_state.pending_wind_speed = -1
+		env_state.pending_wind_direction = -1
+		_log_wind_change(env_state, from_speed, from_direction)
+
+	var next := env_state.duplicate() as EnvironmentState
+	_update_wind_speed(next)
+	_update_wind_direction(next)
+	if next.wind_speed != env_state.wind_speed:
+		env_state.pending_wind_speed = next.wind_speed
+	if next.wind_direction != env_state.wind_direction:
+		env_state.pending_wind_direction = next.wind_direction
 	_update_weather(env_state, game_state.rng)
-	_log_wind_change(env_state, from_speed, from_direction)
+	_log_wind_forecast(env_state)
 
 	environment_updated.emit()
 
@@ -102,6 +120,19 @@ func _log_wind_change(env_state: EnvironmentState, from_speed: int, from_directi
 		"from_direction": from_direction, "to_direction": env_state.wind_direction,
 		"from_speed": from_speed, "to_speed": env_state.wind_speed,
 		"speed_name": env_state.get_wind_speed_name(),
+	})
+
+## A WIND line marked "forecast" when this turn's rolls change the wind next turn (3.B.6).
+func _log_wind_forecast(env_state: EnvironmentState) -> void:
+	if not env_state.has_pending_wind_change() or game_state.get("turn_log") == null:
+		return
+	var to_speed: int = env_state.pending_wind_speed if env_state.pending_wind_speed >= 0 else env_state.wind_speed
+	var to_direction: int = env_state.pending_wind_direction if env_state.pending_wind_direction >= 0 \
+			else env_state.wind_direction
+	game_state.turn_log.add(PhaseEvents.Type.WIND, TurnPhaseController.GamePhase.ENVIRONMENT, "", {
+		"from_direction": env_state.wind_direction, "to_direction": to_direction,
+		"from_speed": env_state.wind_speed, "to_speed": to_speed,
+		"speed_name": EnvironmentState.wind_speed_name(to_speed), "forecast": true,
 	})
 
 func _update_weather(_env_state: EnvironmentState, _rng: RandomNumberGenerator) -> void:

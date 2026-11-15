@@ -59,3 +59,16 @@ offset_top = 10.0
 offset_right = 50.0
 offset_bottom = 50.0
 script = ExtResource("4_wind")
+
+[node name="WindLabel" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 54.0
+offset_top = 8.0
+offset_right = -46.0
+offset_bottom = 56.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_font_sizes/font_size = 12
+autowrap_mode = 3

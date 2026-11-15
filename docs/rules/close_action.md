@@ -1173,7 +1173,7 @@ c. Must take one or two MCs (each @ attached to the hull section means that one 
 
 **7.D.6 to <mark>7.D.12.</mark>**
 
-**7.D.11 Critical Hits.** In addition to damage taken according to the above rules, a ship may also suffer critical hits. If the gunnery DR is a 6, then roll another d6 immediately. If the second DR (= the <mark>target's</mark> "CH mod" value) is < the critical hit number on the FGN row, a critical hit occurs.
+**7.D.11 Critical Hits.** In addition to damage taken according to the above rules, a ship may also suffer critical hits. If the gunnery DR is a 6, then roll another d6 immediately. If the second DR (± the target's "CH mod" value) is ≤ the critical hit number on the FGN row, a critical hit occurs.
 
 a. If the second DR resulted in a critical hit, roll 2d6 and consult either the Hull or Rigging Critical Hits tables, depending on the firing ship's aim point.
 
@@ -1187,7 +1187,7 @@ b. All critical hits take effect immediately during the Combat Phase. Of course,
 
 **7.E.1 Introduction.** A rake is when the firing ship is able to fire more or less along the length of the target ship. This does much more damage than normal, because each can-nonball penetrates the ship at its weakest points and smashes its way down the length of the ship, hitting more men and guns than a shot into the side of the ship would.
 
-**7.E.2 Rake Definition.** A rake in CA occurs when the target ship is < 5 hexes from the firing ship and either of the following is true about the firing ship:
+**7.E.2 Rake Definition.** A rake in CA occurs when the target ship is ≤ 5 hexes from the firing ship and either of the following is true about the firing ship:
 
 a. It may fire at the target and is outside of all of the target's fire arcs.
 

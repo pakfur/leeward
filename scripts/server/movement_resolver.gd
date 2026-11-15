@@ -1025,9 +1025,13 @@ func _apply_collision(p: ResolutionPass, seg: Segment, ship_a_id: String, ship_b
 	var result_a: MovementTypes.ShipResolutionResult = p.results[ship_a_id]
 	var result_b: MovementTypes.ShipResolutionResult = p.results[ship_b_id]
 	var state_a: ShipState = p.ship_map[ship_a_id]
+	var state_b: ShipState = p.ship_map[ship_b_id]
 	var current_hexes: Dictionary = p.current_hexes
 
-	var rigging_loss: int = _collision_rigging_loss(state_a)
+	# 6.E.3: the ship that runs into the other (pointing at it) loses extra rigging; when the two
+	# run into one another, both roll.
+	var rigging_loss: int = _roll_collision_rigging_loss(state_a)
+	var rigging_loss_b: int = _roll_collision_rigging_loss(state_b) if _runs_into(p, seg, ship_b_id, ship_a_id) else 0
 
 	var col_ev_a = MovementTypes.ResolutionEvent.new(
 		ship_a_id, impulse, MovementTypes.ResolutionEventType.COLLISION
@@ -1045,11 +1049,14 @@ func _apply_collision(p: ResolutionPass, seg: Segment, ship_a_id: String, ship_b
 	col_ev_b.to_hex = current_hexes[ship_b_id]
 	col_ev_b.facing = result_b.final_facing
 	col_ev_b.detail = "hit by %s" % ship_a_id
+	if rigging_loss_b > 0:
+		col_ev_b.detail += ", rigging_loss=%d" % rigging_loss_b
 	result_b.events.append(col_ev_b)
 
 	result_a.collided_with = ship_b_id
 	result_b.collided_with = ship_a_id
 	result_a.rigging_damage = rigging_loss
+	result_b.rigging_damage += rigging_loss_b
 	result_a.stopped_at_impulse = impulse
 	result_b.stopped_at_impulse = impulse
 	p.stopped[ship_a_id] = true
@@ -1066,10 +1073,16 @@ func _apply_collision(p: ResolutionPass, seg: Segment, ship_a_id: String, ship_b
 		rig_ev.from_hex = current_hexes[ship_a_id]
 		rig_ev.detail = "rigging_loss=%d from sail_state=%s" % [rigging_loss, state_a.sail_state]
 		result_a.events.append(rig_ev)
+	if rigging_loss_b > 0:
+		var rig_ev_b = MovementTypes.ResolutionEvent.new(
+			ship_b_id, impulse, MovementTypes.ResolutionEventType.COLLISION_RIGGING_LOSS
+		)
+		rig_ev_b.from_hex = current_hexes[ship_b_id]
+		rig_ev_b.detail = "rigging_loss=%d from sail_state=%s" % [rigging_loss_b, state_b.sail_state]
+		result_b.events.append(rig_ev_b)
 
 	# Only a free, unfouled pair can foul (as in DriftResolver._try_foul): a ship already fouled
 	# with a third ship, before or earlier in this resolution, keeps its partner and no roll is made.
-	var state_b: ShipState = p.ship_map[ship_b_id]
 	var either_fouled: bool = state_a.fouled_with != "" or state_b.fouled_with != "" \
 			or result_a.fouled_with != "" or result_b.fouled_with != ""
 	var fouled: bool = not either_fouled and roll_fouling(state_a, state_b)
@@ -1092,12 +1105,36 @@ func _apply_collision(p: ResolutionPass, seg: Segment, ship_a_id: String, ship_b
 		result_b.events.append(foul_ev_b)
 
 
-func _collision_rigging_loss(ship_state: ShipState) -> int:
-	match ship_state.sail_state.to_upper():
-		"FS": return 2
-		"MS": return 4
-		"PS": return 6
+## Extra rigging lost in a collision (6.E.3, Collision Resolution chart): d6-1 at FS, d6+1 at MS,
+## 2d6 at PS, none under no sail. `d6_a` and `d6_b` are the dice; `d6_b` counts only at PS.
+static func collision_rigging_loss(sail_state: String, d6_a: int, d6_b: int) -> int:
+	match sail_state.to_upper():
+		"FS": return d6_a - 1
+		"MS": return d6_a + 1
+		"PS": return d6_a + d6_b
 	return 0
+
+
+## Rolls the collision rigging loss with the resolver's own RNG (only the dice the sail state needs).
+func _roll_collision_rigging_loss(ship_state: ShipState) -> int:
+	var sail: String = ship_state.sail_state.to_upper()
+	if not sail in ["FS", "MS", "PS"]:
+		return 0
+	var d6_a: int = rng.randi_range(1, 6)
+	var d6_b: int = rng.randi_range(1, 6) if sail == "PS" else 0
+	return collision_rigging_loss(sail, d6_a, d6_b)
+
+
+## True when `sid` was itself sailing ahead into `other_id` this segment: its unsettled step is a move
+## ahead whose new bow is one of the other ship's hexes (the two ships run into one another, 6.E.3).
+func _runs_into(p: ResolutionPass, seg: Segment, sid: String, other_id: String) -> bool:
+	if not seg.intended_moves.has(sid) or seg.resolved.has(sid) or p.stopped.get(sid, false):
+		return false
+	var move: Dictionary = seg.intended_moves[sid]
+	if int(move.facing) != p.current_facings[sid] or move.hex == p.current_hexes[sid]:
+		return false  # a turn swings the stern; it does not point the bow at anyone
+	var other_bow: Vector2i = p.current_hexes[other_id]
+	return move.hex == other_bow or move.hex == HexGrid.stern_of(other_bow, p.current_facings[other_id])
 
 
 ## Fouling roll after a collision or a blocked drift (Close Action 1997 Collision Resolution

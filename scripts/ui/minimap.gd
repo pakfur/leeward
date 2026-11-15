@@ -19,6 +19,7 @@ var map_world_size: Vector2 = Vector2(173.2, 150.0)  # Default world size
 @onready var viewport_overlay: Control = $ViewportOverlay
 @onready var north_indicator: Control = $NorthIndicator
 @onready var wind_indicator: Control = $WindIndicator
+@onready var wind_label: Label = $WindLabel
 
 # Viewport interaction
 var is_dragging: bool = false
@@ -339,6 +340,22 @@ func _center_camera_on_minimap_pos(minimap_pos: Vector2) -> void:
 func _on_phase_changed(_phase) -> void:
 	"""Handle phase changes (may need to refresh ships)"""
 	_refresh_ship_icons()
+	_update_wind_label()
+
+## Current wind, and the change rolled this turn that takes effect next turn (3.B.6). Read-only.
+func _update_wind_label() -> void:
+	var env: EnvironmentState = GameState.environment
+	if wind_label == null or env == null:
+		return
+	var text := "Wind from %s, %d (%s)" % [PhaseEvents.wind_direction_word(env.wind_direction),
+		env.wind_speed, env.get_wind_speed_name().to_lower()]
+	if env.has_pending_wind_change():
+		var to_dir: int = env.pending_wind_direction if env.pending_wind_direction >= 0 else env.wind_direction
+		var to_speed: int = env.pending_wind_speed if env.pending_wind_speed >= 0 else env.wind_speed
+		var change := PhaseEvents.wind_change_text(env.wind_direction, to_dir, env.wind_speed, to_speed,
+			EnvironmentState.wind_speed_name(to_speed))
+		text += "\nNext turn: " + change.trim_prefix("The wind ")
+	wind_label.text = text
 
 func _on_turn_changed(_turn) -> void:
 	"""Handle turn changes"""

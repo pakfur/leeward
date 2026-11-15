@@ -633,21 +633,66 @@ func test_collision_stops_both_ships() -> void:
 
 
 func test_collision_rigging_loss_by_sail_state() -> void:
-	var state_fs = _make_ship_state(Vector2i(5, 5), 0, 1, "C", "ship_fs")
-	state_fs.sail_state = "FS"
-	assert_eq(resolver._collision_rigging_loss(state_fs), 2, "Fighting sail = 2R")
+	# 6.E.3 / Collision Resolution chart: extra rigging lost is d6-1 at FS, d6+1 at MS, 2d6 at PS.
+	assert_eq(MovementResolver.collision_rigging_loss("FS", 1, 6), 0, "FS: d6-1, low end 0")
+	assert_eq(MovementResolver.collision_rigging_loss("FS", 6, 1), 5, "FS: d6-1, high end 5")
+	assert_eq(MovementResolver.collision_rigging_loss("MS", 1, 6), 2, "MS: d6+1, low end 2")
+	assert_eq(MovementResolver.collision_rigging_loss("ms", 6, 1), 7, "MS: d6+1, high end 7")
+	assert_eq(MovementResolver.collision_rigging_loss("PS", 1, 1), 2, "PS: 2d6, low end 2")
+	assert_eq(MovementResolver.collision_rigging_loss("PS", 6, 6), 12, "PS: 2d6, high end 12")
+	assert_eq(MovementResolver.collision_rigging_loss("PS", 3, 4), 7, "PS: both dice count")
+	assert_eq(MovementResolver.collision_rigging_loss("NS", 6, 6), 0, "No sail: no whiplash")
 
-	var state_ms = _make_ship_state(Vector2i(5, 5), 0, 1, "C", "ship_ms")
-	state_ms.sail_state = "MS"
-	assert_eq(resolver._collision_rigging_loss(state_ms), 4, "Maneuvering sail = 4R")
 
-	var state_ps = _make_ship_state(Vector2i(5, 5), 0, 1, "C", "ship_ps")
-	state_ps.sail_state = "PS"
-	assert_eq(resolver._collision_rigging_loss(state_ps), 6, "Plain sail = 6R")
+func _rigging_loss_events(result: MovementTypes.ShipResolutionResult) -> Array:
+	return _events_of(result, MovementTypes.ResolutionEventType.COLLISION_RIGGING_LOSS)
 
-	var state_ns = _make_ship_state(Vector2i(5, 5), 0, 1, "C", "ship_ns")
-	state_ns.sail_state = "NS"
-	assert_eq(resolver._collision_rigging_loss(state_ns), 0, "No sail = 0R")
+
+func test_ramming_a_stopped_ship_only_the_rammer_loses_rigging() -> void:
+	# 6.E.3: the ship that collides pointing at the other loses rigging; the ship it hits does not.
+	# A cannot bear off (speed 3, maneuverability A needs 2 hexes ahead first), so it collides.
+	var stopped_ship = _make_ship_state(Vector2i(6, 5), 1, 0, "C", "stopped")
+	stopped_ship.sail_state = "PS"
+	var ship_a = _make_ship_state(Vector2i(5, 5), 0, 3, "A", "ship_a", 3, "A")
+	ship_a.sail_state = "PS"
+	ship_a.plotted_actions.movement = [{"hex": {"q": 6, "r": 5}, "facing": 0}]
+	var ships: Array[ShipState] = [ship_a, stopped_ship]
+
+	for seed_value in [1, 2, 3, 4, 5]:
+		rng.seed = seed_value
+		var log = resolver.run(ships, env)
+		var result_a = log.get_result("ship_a")
+		var result_s = log.get_result("stopped")
+		assert_eq(result_a.collided_with, "stopped")
+		assert_between(result_a.rigging_damage, 2, 12, "PS: 2d6 rigging boxes")
+		assert_eq(_rigging_loss_events(result_a).size(), 1)
+		assert_eq(result_s.rigging_damage, 0, "The rammed ship loses no extra rigging")
+		assert_eq(_rigging_loss_events(result_s).size(), 0)
+
+
+func test_ships_running_into_each_other_both_lose_rigging() -> void:
+	# 6.E.3: "If the two ships run into one another, both ships must roll". Head-on: A (bow (5,5),
+	# heading E) and B (bow (6,5), heading W) each plot one hex ahead into the other's bow. Neither can
+	# bear off (speed 3, maneuverability A), so they collide.
+	var ship_a = _make_ship_state(Vector2i(5, 5), 0, 3, "A", "ship_a", 3, "A")
+	ship_a.sail_state = "PS"
+	ship_a.plotted_actions.movement = [{"hex": {"q": 6, "r": 5}, "facing": 0}]
+	var ship_b = _make_ship_state(Vector2i(6, 5), 3, 3, "A", "ship_b", 3, "A")
+	ship_b.sail_state = "MS"
+	ship_b.plotted_actions.movement = [{"hex": {"q": 5, "r": 5}, "facing": 3}]
+	var ships: Array[ShipState] = [ship_a, ship_b]
+
+	var log = resolver.run(ships, env)
+	var result_a = log.get_result("ship_a")
+	var result_b = log.get_result("ship_b")
+
+	assert_true(result_a.collided_with == "ship_b" and result_b.collided_with == "ship_a", "Head-on collision")
+	assert_eq(result_a.final_hex, Vector2i(5, 5))
+	assert_eq(result_b.final_hex, Vector2i(6, 5))
+	assert_between(result_a.rigging_damage, 2, 12, "A at PS: 2d6")
+	assert_between(result_b.rigging_damage, 2, 7, "B at MS: d6+1")
+	assert_eq(_rigging_loss_events(result_a).size(), 1)
+	assert_eq(_rigging_loss_events(result_b).size(), 1)
 
 
 func test_dismasted_ships_cannot_foul() -> void:

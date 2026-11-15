@@ -13,7 +13,7 @@ Leeward implements *Close Action: The Age of Fighting Sail, Vol. 1* (1997). Ever
 |---|---|---|
 | Chart and table scans (see **Chart map** below) | **Numbers** | Tables are images and are *not* transcribed in the text. Read the image (the Read tool shows images). **Where the text and a chart disagree, the chart wins** (e.g. two targets: text −10, chart −12; collision rigging loss: chart says "ramming ship only"). |
 | `docs/rules/close_action.md` | **Procedure and wording** of rules 1–14, examples, explanations, the glossary, and the scenario book | OCR of the scan. Diagrams are inline images: `docs/rules/images/diagram-NN-*.png` (1–26). |
-| `docs/CoA_-_Close_Action_the_Age_of_Fighting_Sail_vol_1_1997.pdf` | Settling doubtful OCR | Scan with no text layer. The `<!-- pdf p.N, Rules Book p.M -->` comment before the passage gives the page: `Read` with `pages: "N"`. |
+| `docs/CoA_-_Close_Action_the_Age_of_Fighting_Sail_vol_1_1997.pdf` | Settling doubtful OCR | Scan with no text layer. The `<!-- pdf p.N, Rules Book p.M -->` comment before the passage gives the page: `Read` with `pages: "N"`. If that fails for want of `pdftoppm`, render the page with macOS PDFKit: `swift .claude/skills/close-action-rules/scripts/render_pdf_page.swift <pdf> N <out>.png` (out in the scratchpad), then `Read` the PNG. |
 | `docs/rules/feature_diff.md` | **What Leeward deliberately or knowingly does differently**, and what is missing | Read the row for the rule before you call code "wrong". |
 | `data/rules/*.json` | What the code actually uses | Transcriptions of the charts. They have been wrong before (tacking and bearing off). If one disagrees with the scan, the scan wins; fix the JSON and run both validators (see CLAUDE.md). |
 

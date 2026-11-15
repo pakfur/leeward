@@ -57,6 +57,23 @@ const VICTORY_REASONS := {
 const ORDINALS := ["first", "second", "third", "fourth", "fifth"]
 
 
+## "The wind veers to west and freshens to 3 (fresh)", or "The wind holds steady". Directions number
+## clockwise (0 = E, 1 = SE ...), so clockwise is veering. Used by the log and the minimap forecast.
+static func wind_change_text(from_dir: int, to_dir: int, from_speed: int, to_speed: int, speed_name: String) -> String:
+	var parts := PackedStringArray()
+	if from_dir != to_dir:
+		var steps := (to_dir - from_dir + 6) % 6
+		var verb := "veers" if steps < 3 else ("backs" if steps > 3 else "shifts")
+		parts.append("%s to %s" % [verb, wind_direction_word(to_dir)])
+	if from_speed != to_speed:
+		var name_lower := speed_name.to_lower()
+		parts.append("%s to %d%s" % ["freshens" if to_speed > from_speed else "eases", to_speed,
+			" (%s)" % name_lower if name_lower != "" else ""])
+	if parts.is_empty():
+		return "The wind holds steady"
+	return "The wind " + " and ".join(parts)
+
+
 ## Wind directions by index, as EnvironmentState numbers them (0 = E, 1 = SE ... 5 = NE).
 const WIND_DIRECTION_WORDS := ["east", "south-east", "south-west", "west", "north-west", "north-east"]
 
@@ -379,25 +396,12 @@ class PhaseEvent extends RefCounted:
 
 	## "The wind veers to west", "The wind freshens to 3 (fresh)", or both in one line.
 	func _wind_text() -> String:
-		var parts := PackedStringArray()
-		if data.has("from_direction") and data.has("to_direction"):
-			var from_dir := int(data["from_direction"])
-			var to_dir := int(data["to_direction"])
-			if from_dir != to_dir:
-				# Directions number clockwise (0 = E, 1 = SE ...): clockwise is veering.
-				var steps := (to_dir - from_dir + 6) % 6
-				var verb := "veers" if steps < 3 else ("backs" if steps > 3 else "shifts")
-				parts.append("%s to %s" % [verb, PhaseEvents.wind_direction_word(to_dir)])
-		if data.has("from_speed") and data.has("to_speed"):
-			var from_speed := int(data["from_speed"])
-			var to_speed := int(data["to_speed"])
-			if from_speed != to_speed:
-				var speed_name := str(data.get("speed_name", "")).to_lower()
-				parts.append("%s to %d%s" % ["freshens" if to_speed > from_speed else "eases", to_speed,
-					" (%s)" % speed_name if speed_name != "" else ""])
-		if parts.is_empty():
-			return "The wind holds steady"
-		return "The wind " + " and ".join(parts)
+		var text := PhaseEvents.wind_change_text(int(data.get("from_direction", 0)),
+			int(data.get("to_direction", data.get("from_direction", 0))), int(data.get("from_speed", 0)),
+			int(data.get("to_speed", data.get("from_speed", 0))), str(data.get("speed_name", "")))
+		if data.get("forecast", false):
+			return "Next turn " + text.substr(0, 1).to_lower() + text.substr(1)
+		return text
 
 	func _victory_text() -> String:
 		var reason: String = PhaseEvents.VICTORY_REASONS.get(str(data.get("reason", "")), str(data.get("reason", "")))

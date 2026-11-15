@@ -12,6 +12,10 @@ extends Resource
 # The scenario's starting wind; high wind rolls step the wind back toward it
 @export var original_wind_direction: int = 0
 @export var original_wind_speed: int = 2
+# A change rolled this turn takes effect at the start of next turn's weather phase (3.B.6).
+# -1 = no change pending.
+@export var pending_wind_direction: int = -1
+@export var pending_wind_speed: int = -1
 
 # Sea State
 @export var sea_state: int = 1  # 0-3 (0=calm, 1=moderate, 2=rough, 3=storm)
@@ -23,6 +27,9 @@ extends Resource
 # Weather change patterns (optional, for more complex scenarios)
 @export var precipitation: String = "none"  # "none", "rain", "snow", "storm"
 
+func has_pending_wind_change() -> bool:
+	return pending_wind_direction >= 0 or pending_wind_speed >= 0
+
 func get_wind_direction_name() -> String:
 	"""Get human-readable wind direction"""
 	var directions = ["E", "SE", "SW", "W", "NW", "NE"]
@@ -30,8 +37,12 @@ func get_wind_direction_name() -> String:
 
 func get_wind_speed_name() -> String:
 	"""Get human-readable wind speed"""
-	var speeds = ["Calm", "Light", "Moderate", "Fresh", "Strong", "Gale"]
-	return speeds[wind_speed]
+	return wind_speed_name(wind_speed)
+
+const WIND_SPEED_NAMES := ["Calm", "Light", "Moderate", "Fresh", "Strong", "Gale"]
+
+static func wind_speed_name(speed: int) -> String:
+	return WIND_SPEED_NAMES[speed] if speed >= 0 and speed < WIND_SPEED_NAMES.size() else "?"
 
 func get_sea_state_name() -> String:
 	"""Get human-readable sea state"""
@@ -48,6 +59,8 @@ func serialize() -> Dictionary:
 		"region": region,
 		"original_wind_direction": original_wind_direction,
 		"original_wind_speed": original_wind_speed,
+		"pending_wind_direction": pending_wind_direction,
+		"pending_wind_speed": pending_wind_speed,
 		"sea_state": sea_state,
 		"visibility": visibility,
 		"time_of_day": time_of_day,
@@ -65,6 +78,8 @@ static func deserialize(data: Dictionary) -> EnvironmentState:
 	state.region = data.get("region", "oceanic")
 	state.original_wind_direction = data.get("original_wind_direction", state.wind_direction)
 	state.original_wind_speed = data.get("original_wind_speed", state.wind_speed)
+	state.pending_wind_direction = data.get("pending_wind_direction", -1)
+	state.pending_wind_speed = data.get("pending_wind_speed", -1)
 	state.sea_state = data.get("sea_state", 1)
 	state.visibility = data.get("visibility", "clear")
 	state.time_of_day = data.get("time_of_day", "day")

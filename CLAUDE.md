@@ -98,7 +98,7 @@ SETUP → ENVIRONMENT → PLANNING → MOVEMENT_RESOLUTION → COMBAT_RESOLUTION
 
 Managed by `TurnPhaseController`. All phases do real work except MESSAGE_DELIVERY (stub, auto-advances). The `GamePhase` enum is unchanged; combat's two steps are `TurnPhaseController.CombatStep` (`NONE`, `DECLARE`, `RESOLVE`).
 
-- **ENVIRONMENT**: `EnvironmentController.tick_environment` (wind/sea rolls via `Dice`).
+- **ENVIRONMENT**: `EnvironmentController.tick_environment` (wind/sea rolls via `Dice`). 3.B.6: it first applies the change rolled last turn (`EnvironmentState.pending_wind_speed` / `pending_wind_direction`, −1 = none), then rolls next turn's change and stores it as pending (WIND event with `forecast: true`; the minimap shows it).
 - **PLANNING**: AI ships plot (`StubAI.plot_all_ai_ships`); the player plots movement and optional sail-change orders; waits for `player_submit_plan(0)`.
 - **MOVEMENT_RESOLUTION**: `SailController.begin_plotted_changes()` starts plotted sail changes, then the movement resolver runs (sets `moved_this_turn`). Waits for the view to call `on_playback_completed()`, which applies results.
 - **COMBAT_RESOLUTION**: fire declaration is a step inside this phase (targets are chosen after movement). If `gunnery_calculator.any_eligible_shot()` is false the phase is skipped (`combat_step` stays `NONE`). Otherwise `DECLARE`: emits `fire_declaration_requested`, the AI submits via `StubAI.submit_fire_orders()`, the player via `player_submit_fire_orders(player_id, orders)` (returns "" or a rejection reason; orders are hidden until both are in). Then `RESOLVE`: `gunnery_resolver.resolve()` computes all shots against start-of-step state, applies damage, emits `combat_log_ready`; waits for the view to call `on_combat_playback_completed()`.
@@ -237,6 +237,7 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 - All keys are **strings** (including wind_speed and rigging_quality)
 - Wind-facing `"L"` (luffing/into wind) is a special case that always returns 0
 - Uses `assert()` for parameter validation — fails fast on bad input
+- **Blocked wind** (5.G) is applied on top of the table, never inside it: `BlockedWind` (`scripts/server/blocked_wind.gd`, pure statics) gives −1 MA (never to 0) when every hex directly to windward of the ship (two at WF=C/B, one at WF=R) is held by a ship at FS or above that is not dismasted. `ShipStateController.get_movement_allowance` uses the ships' positions; the movement validator uses the plotted position against the other ships' positions. `DataManager.get_movement_allowance` is the bare table.
 
 ### Legacy Code
 - `scripts/ui/planning_panel.gd` is legacy; `planning_phase_ui.gd` is the current version

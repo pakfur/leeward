@@ -71,7 +71,8 @@ func test_wind_speed_at_original_unchanged_on_16_plus() -> void:
 	assert_eq(env.wind_speed, 2)
 
 func test_tick_reverts_toward_scenario_wind() -> void:
-	# Through the real tick: the original comes from the scenario, not from state history
+	# Through the real tick: the original comes from the scenario, not from state history.
+	# 3.B.6: the change rolled on turn 4 takes effect on turn 5.
 	var env := EnvironmentState.new()
 	env.initialize_from_scenario({"wind_speed": 2, "wind_direction": 5, "region": "oceanic"})
 	env.wind_speed = 3
@@ -80,9 +81,39 @@ func test_tick_reverts_toward_scenario_wind() -> void:
 	GameState.environment_history = [] as Array[EnvironmentState]
 	_dice.queue([8, 8, 9, 9])
 	_ctrl.tick_environment(env, 4)
+	assert_eq(env.wind_speed, 3, "3.B.6: not yet")
+	assert_eq(env.pending_wind_speed, 2, "speed will step back toward the scenario's 2")
+	assert_eq(env.pending_wind_direction, 5, "direction will step back toward the scenario's 5")
+	_dice.queue([5, 5, 5, 5])  # turn 5 rolls: no further change
+	_ctrl.tick_environment(env, 5)
 	GameState.environment_history = saved_history
 	assert_eq(env.wind_speed, 2, "speed steps back toward the scenario's 2")
 	assert_eq(env.wind_direction, 5, "direction steps back toward the scenario's 5")
+	assert_false(env.has_pending_wind_change())
+
+
+func test_wind_change_takes_effect_next_turn() -> void:
+	# 3.B.6: "Any changes take effect at the start of the Weather Phase of the following g-t."
+	var env := _env(2, 2, "steady", "oceanic")
+	_dice.queue([0, 1, 7, 5, 5])  # speed +1, direction unchanged
+	_ctrl.tick_environment(env, 2)
+	assert_eq(env.wind_speed, 2, "Turn 2 still sails in the old wind")
+	assert_eq(env.pending_wind_speed, 3)
+	assert_eq(env.pending_wind_direction, -1, "No direction change pending")
+	_dice.queue([5, 5, 5, 5])
+	_ctrl.tick_environment(env, 3)
+	assert_eq(env.wind_speed, 3, "Turn 3 gets the change")
+	assert_false(env.has_pending_wind_change())
+
+
+func test_pending_wind_change_is_serialized() -> void:
+	var env := _env(2, 2, "steady", "oceanic")
+	env.pending_wind_speed = 3
+	env.pending_wind_direction = 1
+	var copy := EnvironmentState.deserialize(env.serialize())
+	assert_eq(copy.pending_wind_speed, 3)
+	assert_eq(copy.pending_wind_direction, 1)
+
 
 func test_coastal_direction_changes_on_2_or_3() -> void:
 	var env := _env(2, 0, "steady", "coastal")
@@ -158,19 +189,23 @@ func _tick_logged(env: EnvironmentState, rolls: Array) -> PhaseEvents.PhaseLog:
 	GameState.turn_log = saved_log
 	return turn_log
 
-func test_wind_shift_and_freshening_are_logged() -> void:
+func test_wind_shift_and_freshening_are_forecast_then_logged() -> void:
 	var env := _env(2, 2, "steady", "oceanic")
 	var turn_log := _tick_logged(env, [0, 1, 7, 0, 1, 7])  # speed +1, direction +1 (SW -> W)
 	var winds := turn_log.of_type(PhaseEvents.Type.WIND)
 	assert_eq(winds.size(), 1)
 	assert_eq(winds[0].phase, TurnPhaseController.GamePhase.ENVIRONMENT)
-	assert_eq(winds[0].to_text({}), "The wind veers to west and freshens to 3 (fresh)")
+	assert_eq(winds[0].to_text({}), "Next turn the wind veers to west and freshens to 3 (fresh)")
+	var next_log := _tick_logged(env, [5, 5, 5, 5])
+	var applied := next_log.of_type(PhaseEvents.Type.WIND)
+	assert_eq(applied.size(), 1, "The change itself, and no new forecast")
+	assert_eq(applied[0].to_text({}), "The wind veers to west and freshens to 3 (fresh)")
 
-func test_wind_backing_and_easing_are_logged() -> void:
+func test_wind_backing_and_easing_are_forecast() -> void:
 	var env := _env(2, 2, "steady", "oceanic")
 	var turn_log := _tick_logged(env, [0, 1, 2, 0, 1, 2])  # speed -1, direction -1 (SW -> SE)
 	assert_eq(turn_log.of_type(PhaseEvents.Type.WIND)[0].to_text({}),
-		"The wind backs to south-east and eases to 1 (light)")
+		"Next turn the wind backs to south-east and eases to 1 (light)")
 
 func test_steady_wind_logs_nothing() -> void:
 	var env := _env(2, 2, "steady", "oceanic")

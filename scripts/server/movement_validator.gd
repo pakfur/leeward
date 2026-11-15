@@ -131,6 +131,9 @@ func _build_plotting_state(
 	# Calculate MA at current facing
 	var wind_facing = hex_grid.get_wind_facing(current_facing, ps.wind_direction)
 	ps.base_ma = _lookup_ma(ps.speed_type, ps.wind_speed, wind_facing, ps.sail_state, ps.rigging_quality)
+	# 5.G: blocked wind at the plotted position, against the other ships where they are now.
+	ps.base_ma = BlockedWind.apply(ps.base_ma, BlockedWind.is_blocked(current_hex, current_facing,
+			ps.wind_direction, game_state.ships.values(), ship_state.ship_id))
 
 	# Speed range
 	ps.min_ma = max(ps.speed_last_turn - decel, 0)
@@ -146,20 +149,10 @@ func _build_plotting_state(
 	# Count MA spent so far
 	var ma_spent = 0
 	var replay_facing2 = ship_state.facing
-	var first_move = true
 	for step in path_so_far:
 		if step.move_type == MovementTypes.MoveType.FORWARD:
 			ma_spent += 1
-			first_move = false
 		elif step.move_type == MovementTypes.MoveType.PORT or step.move_type == MovementTypes.MoveType.STARBOARD:
-			# Check for fast-tack bonus: C→B on first move
-			if first_move:
-				var wf_before = hex_grid.get_wind_facing(replay_facing2, ps.wind_direction)
-				var wf_after = hex_grid.get_wind_facing(step.facing, ps.wind_direction)
-				if wf_before == "C" and wf_after == "B":
-					ps.max_ma += 1
-					Trace.trace_log("MovementValidator", "Fast-tack bonus: C→B first pivot, +1 MA for ship %s" % ship_state.ship_id)
-
 			# Pivots cost 1 MA, unless it's a free pivot at MA=0
 			var pivot_wind_facing = hex_grid.get_wind_facing(replay_facing2, ps.wind_direction)
 			var pivot_base_ma = _lookup_ma(ps.speed_type, ps.wind_speed, pivot_wind_facing, ps.sail_state, ps.rigging_quality)
@@ -170,7 +163,6 @@ func _build_plotting_state(
 					ma_spent += 1
 			else:
 				ma_spent += 1
-			first_move = false
 		replay_facing2 = step.facing
 
 	ps.remaining_ma = max(0, ps.max_ma - ma_spent)

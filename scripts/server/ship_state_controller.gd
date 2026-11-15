@@ -44,6 +44,10 @@ func get_movement_allowance(ship_id: String, facing: int = -1) -> int:
 		ship.movement_sail_state(),
 		rigging_quality
 	)
+	# 5.G: blocked wind, after every other change to MA.
+	var ship_facing: int = ship.facing if facing < 0 else facing
+	ma = BlockedWind.apply(ma, BlockedWind.is_blocked(ship.hex_position, ship_facing, wind_dir,
+			game_state.ships.values(), ship_id))
 
 	Trace.trace_log("ShipState", "MA: %d | wind: %s | facing: %s | speed: %s | sail: %s" % [ma, wind_dir, wind_facing, wind_speed, ship.sail_state])
 	return ma

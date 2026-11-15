@@ -484,3 +484,43 @@ func test_turn_refused_when_stern_off_map() -> void:
 	# Port turn to facing 5 would swing the stern to (3,5), off the map.
 	assert_null(valid.port, "Turn whose new stern is off the map is not offered")
 	assert_not_null(valid.starboard, "Turn whose stern stays on the map is offered (stern at (4,3))")
+
+
+# ============================================================================
+# 5.B.3: no MPs gained by turning into a faster WF
+# ============================================================================
+
+func test_first_turn_from_close_hauled_to_broad_reach_gains_no_ma() -> void:
+	# 5.B.3: "a ship never gains MPs during a Movement Phase by turning into a faster WF".
+	# Wind from W (3). Facing NW (4) is close-hauled; turning starboard to NE (5) is a broad reach.
+	var ship = _make_ship("F/F", "b")
+	var ss = _make_ship_state(ship, 4, 5, "MS")
+	var path: Array[MovementTypes.PlotStep] = [
+		MovementTypes.PlotStep.new(ss.hex_position, 5, MovementTypes.MoveType.STARBOARD)
+	]
+
+	var result = validator.calculate_valid_moves(ss, ss.hex_position, 5, path)
+
+	var base_b: int = DataManager.get_movement_allowance("F/F", 3, "B", "ms", 4)
+	var accel: int = DataManager.get_speed_change("acceleration", "b")
+	var expected: int = min(ss.speed + accel, base_b) - 1  # the turn costs 1, no bonus
+	assert_eq(result.remaining_ma, expected, "No fast-tack bonus for a C->B first turn")
+
+
+func test_blocked_wind_lowers_the_plotting_ma() -> void:
+	# 5.G.3: a ship whose wind is blocked has its MA reduced by 1. Wind from W; running E with a ship
+	# at FS in the hex directly to windward of the stern.
+	var ship = _make_ship("F/F", "b")
+	var ss = _make_ship_state(ship, 0, 6, "MS")  # bow (5,5), stern (4,5), running
+	var free = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, [])
+	var blocker = ShipState.new()
+	blocker.ship = Ship.from_dict({"ship_id": "blocker", "speed_type": "F/F", "maneuverability": "b"})
+	blocker.hex_position = Vector2i(3, 5)  # bow (3,5), stern (2,5)
+	blocker.facing = 0
+	blocker.sail_state = "FS"
+	for i in range(4):
+		blocker.rigging_current_hp[i] = 10
+	mock_gs.register_ship(blocker)
+	var blocked = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, [])
+	assert_gt(free.remaining_ma, 1, "Fixture: MA above 1 without the blocker")
+	assert_eq(blocked.remaining_ma, free.remaining_ma - 1, "Blocked wind costs 1 MA")
