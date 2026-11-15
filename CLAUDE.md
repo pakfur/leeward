@@ -8,6 +8,8 @@ For human-facing developer setup (prerequisites, Godot MCP bridge, contribution 
 
 Leeward is a Godot 4.6 naval sailing game (Age of Sail) using the Forward Plus renderer. It's a turn-based tactical game where players command ships on a hex grid, plotting movement and combat across a 10-phase turn cycle. Architecture is server-authoritative with a State-Controller-View pattern.
 
+**Rules authority:** the game implements *Close Action* (1997). The rules are `docs/rules/close_action.md` (OCR of `docs/CoA_-_Close_Action_the_Age_of_Fighting_Sail_vol_1_1997.pdf`, with the charts as images in `docs/rules/images/`). Where Leeward differs from them, deliberately or not yet implemented, is tracked in `docs/rules/feature_diff.md`, which must be updated whenever a game feature is added or changed. Invoke the `close-action-rules` skill before building, testing or fixing game logic.
+
 ## Tooling (MCP Servers)
 
 **Prefer the `godot-mcp` MCP server for Godot interactions whenever possible**, instead of ad-hoc shell commands. It is the most reliable way to drive the editor and a running game. Use it for:
@@ -110,7 +112,7 @@ The gunnery resolver, damage, drift, fouling, morale and sail controllers append
 
 When changing a phase method, invoke the `phase-implementer` skill (`.claude/skills/phase-implementer/`). It codifies the SCV pattern (server-authority guard, `game_state.dice`, automatic state-history snapshots, GUT test template).
 
-Other project skills: `scenario-creator` (create scenario JSONs), `gen-test` (scaffold GUT test files). The `scv-reviewer` agent (`.claude/agents/scv-reviewer.md`) audits State-Controller-View pattern adherence across the codebase.
+Other project skills: `close-action-rules` (where the authoritative rules and charts are, and keeping `docs/rules/feature_diff.md` current), `scenario-creator` (create scenario JSONs), `gen-test` (scaffold GUT test files). The `scv-reviewer` agent (`.claude/agents/scv-reviewer.md`) audits State-Controller-View pattern adherence across the codebase.
 
 ### Server Objects on GameState (created in `_initialize_server_controllers()`)
 
