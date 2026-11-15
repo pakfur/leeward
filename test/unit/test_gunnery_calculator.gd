@@ -512,3 +512,53 @@ func test_old_orders_default_full() -> void:
 	assert_eq(order.battery, "full")
 	var round_trip := GunneryTypes.FireOrder.from_dict(_battery("stern").to_dict())
 	assert_eq(round_trip.battery, "stern")
+
+
+# --- initial broadside once per side (7.C.10) ---
+
+func _ib(p: GunneryTypes.ShotPreview) -> int:
+	return _mod(p, "initial_broadside")
+
+
+func test_split_side_initial_broadside_goes_to_closer_shot() -> void:
+	# X (range 2) is only in the starboard bow arc; Y bow (-6,5) facing SW (range 4) only in the
+	# stern arc. The stern shot is listed first; the bonus still goes to the closer bow shot.
+	target.hex_position = Vector2i(0, 3)
+	target.facing = 1
+	_make_ship("y", 1, Vector2i(-6, 5), 2)
+	var stern := _battery("stern", STARBOARD, "y")
+	var bow := _battery("bow", STARBOARD, "target")
+	assert_eq(calc.validate_orders(0, _orders([stern, bow])), "")
+	var single_stern := calc.preview(stern, true)
+	assert_eq(single_stern.range_hexes, 4)
+	assert_eq(_ib(single_stern), DataManager.combat_tables.range_bonus("initial_broadside", 4),
+			"alone, the stern shot would earn its own bonus")
+	var previews := calc.preview_orders(_orders([stern, bow]))
+	assert_eq(previews[1].range_hexes, 2)
+	assert_eq(_ib(previews[1]), DataManager.combat_tables.range_bonus("initial_broadside", 2))
+	assert_true(previews[1].initial_broadside)
+	assert_eq(_ib(previews[0]), 0)
+	assert_false(previews[0].initial_broadside)
+	assert_eq(previews[0].mgn, single_stern.mgn - _ib(single_stern))
+
+
+func test_split_side_initial_broadside_tie_goes_to_bow() -> void:
+	# X and Y both at range 2: equal bonuses, so the bow battery keeps it.
+	_place_split_targets()
+	var previews := calc.preview_orders(_orders([_battery("stern", STARBOARD, "y"),
+			_battery("bow", STARBOARD, "target")]))
+	assert_eq(previews[0].range_hexes, previews[1].range_hexes)
+	assert_eq(_ib(previews[0]), 0, "stern battery")
+	assert_eq(_ib(previews[1]), DataManager.combat_tables.range_bonus("initial_broadside", 2), "bow battery")
+
+
+func test_each_side_keeps_its_own_initial_broadside() -> void:
+	# Port and starboard are separate broadsides: both first-fire shots keep the bonus.
+	_make_ship("z", 1, Vector2i(1, -2), 0)
+	var previews := calc.preview_orders(_orders([_battery("full", STARBOARD, "target"),
+			_battery("full", PORT, "z")]))
+	assert_true(previews[0].can_fire, previews[0].reason)
+	assert_true(previews[1].can_fire, previews[1].reason)
+	assert_true(previews[0].initial_broadside)
+	assert_true(previews[1].initial_broadside)
+	assert_eq(_mod(previews[0], "two_targets"), -12)

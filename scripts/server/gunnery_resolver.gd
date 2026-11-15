@@ -34,11 +34,11 @@ func resolve(orders: Array[GunneryTypes.FireOrder], phase: int) -> void:
 		return
 
 	# Step 1: capture every shot (and target condition) before any damage is applied.
-	# 7.C.12g: the two-target modifier applies when a ship's orders name two different targets.
+	# preview_orders applies the two-target modifier (7.C.12g) and gives a split side's
+	# initial-broadside bonus to one shot only (7.C.10).
 	var shots: Array[Dictionary] = []
-	for order in orders:
-		var two_targets := GunneryCalculator.target_count(order.ship_id, orders) > 1
-		var preview: GunneryTypes.ShotPreview = game_state.gunnery_calculator.preview(order, two_targets)
+	for preview: GunneryTypes.ShotPreview in game_state.gunnery_calculator.preview_orders(orders):
+		var order := preview.order
 		if not preview.can_fire:
 			continue
 		var target: ShipState = game_state.get_ship(order.target_id)

@@ -153,8 +153,9 @@ func _d6_with_rigging_parity(mgn: int, columns: Array, parity: int) -> int:
 class BoostedCalculator extends GunneryCalculator:
 	var bonus := 0
 
-	func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> GunneryTypes.ShotPreview:
-		var p := super.preview(order, two_targets)
+	func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
+			initial_broadside_allowed: bool = true) -> GunneryTypes.ShotPreview:
+		var p := super.preview(order, two_targets, initial_broadside_allowed)
 		if p.can_fire:
 			p.mgn += bonus
 		return p
@@ -388,3 +389,20 @@ func test_fire_event_records_full_battery() -> void:
 	_sixes()
 	_fire([_order("a_ship", "b_ship")])
 	assert_eq(_fire_event_for("a_ship").data["battery"], "full")
+
+
+func test_split_first_fire_earns_initial_broadside_once() -> void:
+	# B (range 2) only in A's starboard bow arc, C (range 4) only in its stern arc.
+	_setup_ships(1, Vector2i(0, 3))
+	_make_ship("c_ship", 1, Vector2i(-6, 5), 2)
+	_sixes()
+	_fire([_order("a_ship", "c_ship", "round", "low", "stern"),
+			_order("a_ship", "b_ship", "round", "low", "bow")])
+	var ib := {}
+	for e in _fire_events():
+		ib[e.target_id] = 0
+		for m in e.data["modifiers"]:
+			if m["name"] == "initial_broadside":
+				ib[e.target_id] = m["value"]
+	assert_eq(ib, {"b_ship": DataManager.combat_tables.range_bonus("initial_broadside", 2), "c_ship": 0})
+	assert_true(a.initial_broadside_fired[STARBOARD])

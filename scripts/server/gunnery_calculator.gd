@@ -21,7 +21,10 @@ func _init(p_game_state: Node) -> void:
 ## name two different targets (7.C.12g: then every shot takes -12 and no half-broadside -8).
 ## The battery decides which of the firer's hexes fire: "full" needs both to bear (7.B.1),
 ## "bow"/"stern" is a half broadside (-8, 7.C.12f). Range, rake and gun factors stay the ship's.
-func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> GunneryTypes.ShotPreview:
+## `initial_broadside_allowed` false withholds the 7.C.10 bonus; preview_orders() uses it when a
+## split side's bonus goes to the other battery.
+func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
+		initial_broadside_allowed: bool = true) -> GunneryTypes.ShotPreview:
 	var p := GunneryTypes.ShotPreview.new()
 	p.order = order
 	var firer: ShipState = game_state.get_ship(order.ship_id)
@@ -90,7 +93,7 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> Gunner
 		p.rake = geometry.rake_type_ships(target.hex_position, target.facing, firer_hexes)
 		if p.rake != "":
 			_add_modifier(p, "rake", tables.range_bonus("rake", p.range_hexes))
-		if not firer.initial_broadside_fired[order.side]:
+		if initial_broadside_allowed and not firer.initial_broadside_fired[order.side]:
 			var bonus := tables.range_bonus("initial_broadside", p.range_hexes)
 			p.initial_broadside = bonus != 0
 			_add_modifier(p, "initial_broadside", bonus)
@@ -136,6 +139,33 @@ func eligible_shots(ship_id: String) -> Array[GunneryTypes.ShotPreview]:
 					order.aim = GunneryTypes.AIM_HIGH if probe.high_only else GunneryTypes.AIM_LOW
 					shots.append(probe)
 	return shots
+
+
+## Previews of a whole set of orders, as they will resolve, in `orders` order:
+## - two_targets per ship from target_count (7.C.12g);
+## - 7.C.10 "once for each broadside": when a side fires more than one battery shot that would
+##   earn the initial-broadside bonus, only the one with the larger bonus (closer range) keeps it,
+##   the bow battery on a tie; the others are re-previewed without it.
+## Single-order previews (preview()) cannot know the rest of the set; the resolver uses this.
+func preview_orders(orders: Array[GunneryTypes.FireOrder]) -> Array[GunneryTypes.ShotPreview]:
+	var previews: Array[GunneryTypes.ShotPreview] = []
+	var holder_by_side := {}   # "ship:side" -> index into previews
+	for i in orders.size():
+		var order := orders[i]
+		var p := preview(order, target_count(order.ship_id, orders) > 1)
+		previews.append(p)
+		if not (p.can_fire and p.initial_broadside):
+			continue
+		var key := "%s:%d" % [order.ship_id, order.side]
+		if not holder_by_side.has(key) or _ib_beats(p, previews[holder_by_side[key]]):
+			holder_by_side[key] = i
+	for i in orders.size():
+		var p := previews[i]
+		if not (p.can_fire and p.initial_broadside):
+			continue
+		if holder_by_side["%s:%d" % [p.order.ship_id, p.order.side]] != i:
+			previews[i] = preview(p.order, target_count(p.order.ship_id, orders) > 1, false)
+	return previews
 
 
 ## Number of different targets the orders of `ship_id` name (7.A.4, 7.C.12g).
@@ -230,3 +260,19 @@ static func _battery_names(battery: String) -> Array[String]:
 	if battery == GunneryTypes.BATTERY_FULL:
 		return [GunneryTypes.BATTERY_BOW, GunneryTypes.BATTERY_STERN]
 	return [battery]
+
+
+## True when shot `a` has the better claim on its side's initial-broadside bonus than `b`.
+static func _ib_beats(a: GunneryTypes.ShotPreview, b: GunneryTypes.ShotPreview) -> bool:
+	var bonus_a := _modifier_value(a, "initial_broadside")
+	var bonus_b := _modifier_value(b, "initial_broadside")
+	if bonus_a != bonus_b:
+		return bonus_a > bonus_b
+	return GunneryTypes.BATTERIES.find(a.order.battery) < GunneryTypes.BATTERIES.find(b.order.battery)
+
+
+static func _modifier_value(p: GunneryTypes.ShotPreview, modifier_name: String) -> int:
+	for m in p.modifiers:
+		if m["name"] == modifier_name:
+			return int(m["value"])
+	return 0
