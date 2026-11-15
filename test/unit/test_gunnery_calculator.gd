@@ -370,13 +370,10 @@ func test_target_own_stern_does_not_block() -> void:
 	assert_true(p.can_fire, p.reason)
 
 
-func test_firers_own_hex_does_not_block() -> void:
-	# Target abeam to starboard at range 4: both batteries trace all four LOS while the firer's
-	# own hexes are on the map.
-	target.hex_position = Vector2i(-2, 4)
-	var p := calc.preview(_order())
-	assert_true(p.can_fire, p.reason)
-	assert_eq(p.batteries, 2)
+# No test that the firer's own hexes do not block its lines of sight (7.B.7): that cannot arise. A
+# battery fires only into the 60-120 degree wedge off its bow, and the firer's other hex lies dead
+# ahead or astern of it, so no line of sight from either battery ever passes through it. The
+# target's own hexes can block, and are excluded: test_target_own_stern_does_not_block.
 
 
 func test_one_battery_bears_gives_half_broadside() -> void:
@@ -413,7 +410,6 @@ func test_struck_ship_blocks_los_with_both_hexes() -> void:
 	assert_true(p.can_fire, p.reason)
 	assert_eq(p.batteries, 1)
 	assert_eq(_mod(p, "half_broadside"), -8)
-
 
 
 # --- battery fire orders (7.B.1, 7.C.12f/g) ---

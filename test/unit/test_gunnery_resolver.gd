@@ -149,18 +149,6 @@ func _d6_with_rigging_parity(mgn: int, columns: Array, parity: int) -> int:
 	return 0
 
 
-## A calculator that adds `bonus` to every firing shot's mgn.
-class BoostedCalculator extends GunneryCalculator:
-	var bonus := 0
-
-	func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
-			initial_broadside_allowed: bool = true) -> GunneryTypes.ShotPreview:
-		var p := super.preview(order, two_targets, initial_broadside_allowed)
-		if p.can_fire:
-			p.mgn += bonus
-		return p
-
-
 # --- tests ---
 
 func test_simultaneous_fire_uses_pre_fire_state() -> void:
@@ -303,22 +291,17 @@ func test_fgn_below_one_no_damage_but_broadside_spent() -> void:
 
 
 func test_fgn_above_52_uses_last_row() -> void:
-	# B's bow (-1,3) facing SE, stern (-1,2): range 2, a stern rake on which both of A's starboard
-	# batteries bear. With a heavy broadside, crew A and a dismantling shot (+1) that is fgn 52
-	# (bgn 31 at range 2; the range-1 stern rake used before is now a half broadside, -8), so a
-	# test calculator adds 1 to the mgn to reach fgn 53.
-	_setup_ships(1, Vector2i(-1, 3))
+	# B's bow (-1,2) facing SE, stern (-1,1): range 1, a stern rake on which both of A's starboard
+	# batteries bear. A heavy broadside, crew A and a dismantling shot give mgn 47; a six makes 53.
+	_setup_ships(1, Vector2i(-1, 2))
 	a.ship.gun_factors = {"lg": 30, "mg": 0, "cr": 10}
 	a.crew_quality = "A"
-	var old_calculator = GameState.gunnery_calculator
-	var boosted := BoostedCalculator.new(GameState)
-	boosted.bonus = 1
-	GameState.gunnery_calculator = boosted
 	_sixes()
 	_fire([_order("a_ship", "b_ship", "dismantling")])
-	GameState.gunnery_calculator = old_calculator
 	var ev := _fire_event_for("a_ship")
 	assert_eq(ev.data["rake"], "stern")
+	assert_eq(ev.data["battery"], "full")
+	assert_eq(ev.data["range"], 1)
 	assert_true(ev.data["fgn"] > 52, "fgn %d should exceed 52" % ev.data["fgn"])
 	var expected := _table_amounts(52, "low", ["fs", "ms"])
 	assert_eq(ev.data["hull"], 0)
@@ -372,17 +355,21 @@ func test_split_side_fires_each_battery_with_two_target_modifier() -> void:
 	assert_true(a.initial_broadside_fired[STARBOARD])
 
 
-func test_both_batteries_at_one_target_are_one_target() -> void:
-	# The resolver does not count one target twice: each half broadside takes -8, no -12.
+func test_both_sides_at_one_target_are_one_target() -> void:
+	# Port and starboard both naming B passes FireRules.declaration_error (bow and stern of one side at
+	# one target does not), but validate_orders refuses the set, since port cannot bear: no ship can lie
+	# in both broadside arcs of another. The resolver skips the port order. Pins target_count
+	# de-duplication: one target named twice is still one target, so no -12.
 	_sixes()
-	_fire([_order("a_ship", "b_ship", "round", "low", "stern"),
-			_order("a_ship", "b_ship", "round", "low", "bow")])
+	_fire([_order("a_ship", "b_ship", "round", "low", "full", PORT),
+			_order("a_ship", "b_ship", "round", "low", "full", STARBOARD)])
 	var events := _fire_events()
-	assert_eq(events.map(func(e): return e.data["battery"]), ["bow", "stern"], "bow before stern")
+	assert_eq(events.size(), 1, "Only the starboard broadside bears")
 	for e in events:
+		assert_eq(e.data["battery"], "full")
 		var names: Array = e.data["modifiers"].map(func(m): return m["name"])
-		assert_true(names.has("half_broadside"))
-		assert_false(names.has("two_targets"))
+		assert_false(names.has("two_targets"), "one target: no two-target modifier")
+		assert_false(names.has("half_broadside"))
 
 
 func test_fire_event_records_full_battery() -> void:

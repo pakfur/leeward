@@ -120,12 +120,16 @@ func _posed_events(impulse_events: Array) -> Array:
 
 
 ## The events of one impulse played as special events (contests, collisions, ...): everything but
-## the MOVEs, less those already played before the first impulse (`pre_events`), so a tacking roll or
-## a ship with no plot is not told (and paused for) twice.
+## the MOVEs and OVERLAPs, less those already played before the first impulse (`pre_events`), so a
+## tacking roll or a ship with no plot is not told (and paused for) twice. An OVERLAP is shown by the
+## swing animation when it is posed (see _posed_events) and needs no pause otherwise; the rollback that
+## may follow it is the special event.
 static func _special_events(impulse_events: Array, pre_events: Array) -> Array:
 	var special: Array = []
 	for ev in impulse_events:
-		if ev.event_type != MovementTypes.ResolutionEventType.MOVE and not pre_events.has(ev):
+		if ev.event_type in [MovementTypes.ResolutionEventType.MOVE, MovementTypes.ResolutionEventType.OVERLAP]:
+			continue
+		if not pre_events.has(ev):
 			special.append(ev)
 	return special
 
@@ -174,8 +178,9 @@ func _collect_pre_movement_events() -> Array:
 ## ============================================================================
 
 ## Each posed event is one tween per ship: an ahead step slides the ship one hex along its keel; a
-## turn (or an overlap swing out or back) keeps the bow hex and swings the stern round it. The ship view is placed by its centre,
-## midway between bow and stern (HexGrid.ship_center_world), so both are driven from the bow.
+## turn (or an overlap swing out or back) keeps the bow hex and swings the stern round it. The ship
+## view is placed by its centre, midway between bow and stern (HexGrid.ship_center_world), so both are
+## driven from the bow.
 func _animate_moves(move_events: Array) -> void:
 	if _aborted:
 		return

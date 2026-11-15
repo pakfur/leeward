@@ -144,3 +144,41 @@ func test_overlay_paints_the_swung_into_hex_but_does_not_offer_it() -> void:
 	assert_eq(collision_meshes, 2, "the risky click target and the swung-into hex")
 	var swung_world := grid.axial_to_world(swung.x, swung.y)
 	assert_eq(overlay.get_valid_hex_at_world_pos(swung_world, grid), Vector2i(-99, -99), "not clickable")
+
+
+# --- hover candidates and fire-target outlines ------------------------------------
+
+func test_hover_candidates_hold_the_move_metadata() -> void:
+	# A turn's click target is the neighbour the bow turns towards; the hover must show the ship on
+	# its resulting bow hex (unchanged by a turn) and facing, which only the metadata carries.
+	var gc: Node = GameControllerScript.new()
+	autofree(gc)
+	var vnh := _offer(Vector2i(0, 0), 0)
+	gc._rebuild_hover_candidates(vnh)
+	assert_eq(gc._hover_candidates.size(), 3)
+	var meta = gc._hover_candidates[vnh.starboard.hex]
+	assert_true(meta is MovementTypes.MoveMetadata)
+	assert_same(meta, vnh.starboard.metadata)
+	assert_eq(meta.resulting_hex, Vector2i(0, 0), "a turn keeps the bow hex")
+	assert_eq(meta.resulting_facing, 1)
+	assert_eq(gc._hover_candidates[vnh.forward[0].hex].resulting_hex, vnh.forward[0].hex)
+	gc._rebuild_hover_candidates(null)
+	assert_eq(gc._hover_candidates.size(), 0)
+
+
+func test_fire_target_outline_covers_bow_and_stern() -> void:
+	var old_ships: Dictionary = GameState.ships
+	GameState.ships = {}
+	GameState.ships["a"] = _ship("a", Vector2i(2, 2), 1)
+	var hexes := GameControllerScript.fire_target_hexes(["a", "missing"])
+	GameState.ships = old_ships
+	assert_eq(hexes, [Vector2i(2, 2), HexGrid.stern_of(Vector2i(2, 2), 1)] as Array[Vector2i])
+	var overlay: Node3D = preload("res://scripts/view/hex_overlay.gd").new()
+	add_child_autofree(overlay)
+	overlay.arc_grid = grid
+	overlay.show_target_highlights(hexes)
+	assert_eq(overlay.targets_node.get_child_count(), 2, "one ring on each of the target's hexes")
+	var ring_hexes: Array[Vector2i] = []
+	for ring in overlay.targets_node.get_children():
+		ring_hexes.append(grid.world_to_axial((ring as Node3D).position))
+	assert_eq(ring_hexes, hexes)

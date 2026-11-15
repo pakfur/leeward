@@ -13,26 +13,63 @@ var game_state: Node = null
 var hex_grid: HexGrid = null
 var _explicit_rng: RandomNumberGenerator = null
 
-# Per-segment overlap bookkeeping (6.B), reset for every resolution pass.
-var _seg_start_bows: Dictionary = {}  # ship_id -> bow hex at the start of the segment
-var _seg_start_facings: Dictionary = {}  # ship_id -> facing at the start of the segment
-var _swings: Dictionary = {}  # ship_id -> {hex, pre_bow, pre_facing, facing}: sterns swung this segment
-## ship_id -> {hex, other_id, other_ids, segment, pre_bow, pre_facing, facing, reason}: overlaps made on
-## `segment`, checked at the end of the next one.
-var _pending_overlaps: Dictionary = {}
-## Stern contests lost this pass whose loser must still move ahead to meet its deceleration minimum:
-## {ship_id, kind: "contest", segment, other_id, pre_bow, pre_facing, reason, events: {ship_id: [ev]}}.
-## They amend the loser's plot like a rollback; `events` (the rolls and STERN_BLOCKED) are put back into
-## the final log, where the contest is no longer rolled.
-var _contest_amendments: Array = []
-## ship_id -> true for ships whose MA-0 turn (and its tacking roll, 5.D.1) an amended plot removed. The
-## tacking die is still drawn on segment 0, so the rolls after it are the ones of the first pass, and the
-## roll stays in the log.
-var _tacks_dropped: Dictionary = {}
-## Stern contests rolled this pass: {segment, winner, rolls: {ship_id: [CONTESTED_HEX_ROLL events]}}.
-## A contest whose winner's turn is then rolled back no longer happens in the replay; its rolls are put
-## back into the final log (see run()).
-var _contests: Array = []
+
+## One resolution pass (see run()): every ship's steps, pose and progress, and the overlap bookkeeping
+## (6.B) carried from segment to segment. A new one for every pass.
+class ResolutionPass:
+	var ship_map: Dictionary = {}  # ship_id -> ShipState
+	var environment: EnvironmentState = null
+	var steps_by_ship: Dictionary = {}  # ship_id -> the steps resolved this pass (its plot, or the amended plot)
+	var results: Dictionary = {}  # ship_id -> MovementTypes.ShipResolutionResult
+	var current_hexes: Dictionary = {}  # ship_id -> bow hex
+	var current_facings: Dictionary = {}  # ship_id -> facing
+	var stopped: Dictionary = {}  # ship_id -> true once its movement has ended
+	var forward_since_turn: Dictionary = {}  # ship_id -> steps ahead since its last turn
+	var pivots_this_turn: Dictionary = {}  # ship_id -> turns made
+	## ship_id -> {hex, other_id, other_ids, segment, pre_bow, pre_facing, facing, reason}: overlaps made on
+	## `segment`, checked at the end of the next one.
+	var pending_overlaps: Dictionary = {}
+	## Stern contests lost this pass whose loser must still move ahead to meet its deceleration minimum:
+	## {ship_id, kind: "contest", segment, other_id, pre_bow, pre_facing, reason, events: {ship_id: [ev]}}.
+	## They amend the loser's plot like a rollback; `events` (the rolls and STERN_BLOCKED) are put back
+	## into the final log, where the contest is no longer rolled.
+	var contest_amendments: Array = []
+	## ship_id -> true for ships whose MA-0 turn (and its tacking roll, 5.D.1) an amended plot removed.
+	## The tacking die is still drawn on segment 0, so the rolls after it are the ones of the first pass,
+	## and the roll stays in the log.
+	var tacks_dropped: Dictionary = {}
+	## Stern contests rolled this pass: {segment, winner, rolls: {ship_id: [CONTESTED_HEX_ROLL events]}}.
+	## A contest whose winner's turn is then rolled back no longer happens in the replay; its rolls are
+	## put back into the final log (see run()).
+	var contests: Array = []
+	## Key (see _segment_hex_key) -> segment: cycles to break by holding the old stern their first group
+	## enters (input, from earlier passes).
+	var cycle_breaks: Dictionary = {}
+	## [{key, segment}] of the cycles that went wrong on a segment: the ship whose old stern the group let
+	## go first entered kept its pose, with that bow on its stern.
+	var failed_cycles: Array = []
+	## Key (see _segment_hex_key) -> {winner, rolls: {ship_id: [CONTESTED_HEX_ROLL events]}}: stern
+	## contests settled in an earlier pass whose loser's plot was amended (input). Replayed, such a
+	## contest keeps its result among the ships still in it (see _stern_contest).
+	var settled_contests: Dictionary = {}
+
+
+## One segment of a pass: the steps the ships make on it and the hexes held while they make them.
+class Segment:
+	var impulse: int = 0
+	var intended_moves: Dictionary = {}  # ship_id -> {hex, facing}: the step each moving ship makes
+	## Hexes held during the segment (see _resolve_impulse): hex -> ship_id.
+	var held: Dictionary = {}
+	var start_bows: Dictionary = {}  # ship_id -> bow hex at the start of the segment (every ship)
+	var start_facings: Dictionary = {}  # ship_id -> facing at the start of the segment
+	var swings: Dictionary = {}  # ship_id -> {hex, pre_bow, pre_facing, facing}: sterns swung this segment
+	var moves: Dictionary = {}  # ship_id -> the MOVE event of its step this segment, once made
+	## ship_id -> true for moving ships whose step is settled: their group has run, or a collision
+	## stopped them first. A group entering a moving ship's hex waits for that ship (see _group_ready).
+	var resolved: Dictionary = {}
+	## The groups let go first to break a cycle this segment: [{key, hex, owners}], `owners` the moving
+	## ships whose old stern `hex` is (the ships assumed to leave it).
+	var speculations: Array = []
 
 var rng: RandomNumberGenerator:
 	get:
@@ -63,39 +100,62 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 	# all ship logs to reflect the actual moves"), and the whole resolution is run again with the amended
 	# plots, from the same RNG state. Every roll made before the rolled-back segment is made again with
 	# the same die; a tacking roll whose turn was amended away is still drawn in its place (see
-	# _tacks_dropped), so the dice after it stay where they were. Rolls from the rolled-back segment on
-	# may differ, since the ships stand elsewhere. Every rollback removes a plotted turn, so this ends.
+	# ResolutionPass.tacks_dropped), so the dice after it stay where they were. Rolls from the
+	# rolled-back segment on may differ, since the ships stand elsewhere. Every rollback removes a
+	# plotted turn.
+	# A cycle of ships each sailing into the next one's old stern is resolved on the assumption that
+	# they all move; when one of them is stopped after all (and keeps its stern under the bow of the ship
+	# behind), the pass is run again with that cycle broken (see _hold_for_owner). A broken cycle is never
+	# let go first again, so it cannot fail twice; a rollback drops the breaks from its segment on (they
+	# are found again if still needed).
+	# Bound: at most N rollbacks (N = steps that can be resolved; every rollback removes a turn), and
+	# between two rollbacks at most N breaks (at most one group let go first per step), so
+	# (N + 1) * (N + 1) passes always suffice. In practice it takes a handful.
 	var ship_map: Dictionary = {}
 	var plotted: Dictionary = {}
-	var pass_limit: int = 1
+	var step_bound: int = 0
 	for ship_state in ships:
 		ship_map[ship_state.ship_id] = ship_state
 		plotted[ship_state.ship_id] = _get_plotted_steps(ship_state)
-		pass_limit += plotted[ship_state.ship_id].size()
+		# An amended plot is never longer than the plot or the deceleration minimum.
+		step_bound += maxi(plotted[ship_state.ship_id].size(), _deceleration_minimum(ship_state))
+	var pass_limit: int = (step_bound + 1) * (step_bound + 1)
 	var rng_start: int = rng.state
 	var amended: Dictionary = {}  # ship_id -> steps actually resolved
 	var rollbacks: Dictionary = {}  # ship_id -> the rollback or lost stern contest that amended its plot
-	var undone_contests: Array = []  # contests whose winner's turn was rolled back (see _contests)
+	var undone_contests: Array = []  # contests whose winner's turn was rolled back (ResolutionPass.contests)
+	var cycle_breaks: Dictionary = {}  # cycle key -> segment (ResolutionPass.cycle_breaks)
+	var settled_contests: Dictionary = {}  # ResolutionPass.settled_contests
 	var outcome: Dictionary = {}
 	# All overlaps that fail at the same segment end are rolled back together (they are simultaneous,
 	# 6.B.4); the pass then restarts.
 	for attempt in range(pass_limit):
 		rng.state = rng_start
-		outcome = _resolve_pass(ships, ship_map, plotted, amended, environment)
-		if outcome.rollbacks.is_empty():
+		outcome = _resolve_pass(ships, ship_map, plotted, amended, cycle_breaks, settled_contests, environment)
+		if outcome.rollbacks.is_empty() and outcome.failed_cycles.is_empty():
 			break
 		if attempt == pass_limit - 1:
 			push_error("MovementResolver: overlap rollbacks did not settle")
 			break
+		for cycle in outcome.failed_cycles:
+			cycle_breaks[cycle.key] = cycle.segment
+			Trace.trace_log("MovementResolver", "cycle broken", {"cycle": cycle.key})
 		for rb in outcome.rollbacks:
 			var sid: String = rb.ship_id
+			# An amended plot changes the steps from rb.segment on, so a cycle broken there or later may no
+			# longer need breaking: drop it; it is found again if it still goes wrong.
+			for key in cycle_breaks.keys():
+				if cycle_breaks[key] >= rb.segment:
+					cycle_breaks.erase(key)
 			amended[sid] = _amended_steps(ship_map[sid], amended.get(sid, plotted[sid]), rb)
 			rollbacks[sid] = rb
+			if rb.get("kind", "") == "contest":
+				settled_contests[_segment_hex_key(rb.segment, rb.hex)] = {"winner": rb.other_id, "rolls": rb.rolls}
 			for contest in outcome.contests:
 				if rb.get("kind", "") != "contest" and contest.winner == sid and contest.segment == rb.segment:
 					undone_contests.append(contest)
 			Trace.trace_log("MovementResolver", "plot amended", {"ship": sid, "segment": rb.segment,
-				"other": rb.other_id, "reason": rb.reason, "steps": amended[sid].size()})
+				"other": rb.get("overlapping", [rb.other_id]), "reason": rb.reason, "steps": amended[sid].size()})
 
 	var results: Dictionary = outcome.results
 	log.max_impulses = outcome.max_impulses
@@ -118,115 +178,110 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 	return log
 
 
-## One resolution of every ship's steps (`amended` overrides a ship's plot). Returns {"results",
-## "max_impulses", "rollbacks", "contests"}; when an overlap fails its check the pass stops there and
-## "rollbacks" lists the turns to undo; "contests" lists the stern contests rolled (see _contests).
+## One resolution of every ship's steps (`amended` overrides a ship's plot; `cycle_breaks` and
+## `settled_contests`, see ResolutionPass). Returns {"results", "max_impulses", "rollbacks", "contests",
+## "failed_cycles"}; when an overlap fails its check the pass stops there and "rollbacks" lists the
+## turns to undo; when a cycle went wrong it stops there and "failed_cycles" lists the cycles to break;
+## "contests" lists the stern contests rolled (see ResolutionPass.contests).
 func _resolve_pass(
 	ships: Array[ShipState],
 	ship_map: Dictionary,
 	plotted: Dictionary,
 	amended: Dictionary,
+	cycle_breaks: Dictionary,
+	settled_contests: Dictionary,
 	environment: EnvironmentState
 ) -> Dictionary:
-	var results: Dictionary = {}
-	var current_hexes: Dictionary = {}  # ship_id -> bow hex
-	var current_facings: Dictionary = {}  # ship_id -> facing
-	var stopped: Dictionary = {}
-	var steps_by_ship: Dictionary = {}
-	var forward_since_turn: Dictionary = {}
-	var pivots_this_turn: Dictionary = {}
-	_pending_overlaps = {}
-	_contest_amendments = []
-	_contests = []
-	_tacks_dropped = {}
+	var p := ResolutionPass.new()
+	p.ship_map = ship_map
+	p.environment = environment
+	p.cycle_breaks = cycle_breaks
+	p.settled_contests = settled_contests
 	for sid in amended:
 		if _find_tacking_impulse(ship_map[sid], plotted[sid]) == 0 \
 				and _find_tacking_impulse(ship_map[sid], amended[sid]) != 0:
-			_tacks_dropped[sid] = true
+			p.tacks_dropped[sid] = true
 
 	for ship_state in ships:
-		var result = MovementTypes.ShipResolutionResult.new(ship_state.ship_id)
+		var sid: String = ship_state.ship_id
+		var result = MovementTypes.ShipResolutionResult.new(sid)
 		result.final_hex = ship_state.hex_position
 		result.final_facing = ship_state.facing
-		results[ship_state.ship_id] = result
-		current_hexes[ship_state.ship_id] = ship_state.hex_position
-		current_facings[ship_state.ship_id] = ship_state.facing
-		stopped[ship_state.ship_id] = false
-		forward_since_turn[ship_state.ship_id] = 0
-		pivots_this_turn[ship_state.ship_id] = 0
+		p.results[sid] = result
+		p.current_hexes[sid] = ship_state.hex_position
+		p.current_facings[sid] = ship_state.facing
+		p.stopped[sid] = false
+		p.forward_since_turn[sid] = 0
+		p.pivots_this_turn[sid] = 0
 
-		var ship_steps: Array = amended.get(ship_state.ship_id, plotted[ship_state.ship_id])
+		var ship_steps: Array = amended.get(sid, plotted[sid])
 		if ship_steps.is_empty():
 			if _is_in_irons(ship_state, environment):
-				if _tacks_dropped.has(ship_state.ship_id):
+				if p.tacks_dropped.has(sid):
 					result.immobilized = true  # told after its tacking roll, on segment 0
 				else:
 					_remain_in_irons(ship_state, result, "in irons, no turn plotted")
-			elif not amended.has(ship_state.ship_id):  # a plot amended to nothing is told by its rollback
+			elif not amended.has(sid):  # a plot amended to nothing is told by its rollback
 				var ev = MovementTypes.ResolutionEvent.new(
-					ship_state.ship_id, 0, MovementTypes.ResolutionEventType.SKIP_NO_PLOT
+					sid, 0, MovementTypes.ResolutionEventType.SKIP_NO_PLOT
 				)
 				ev.from_hex = ship_state.hex_position
 				ev.to_hex = ship_state.hex_position
 				ev.facing = ship_state.facing
 				ev.detail = "no movement plotted"
 				result.events.append(ev)
-			stopped[ship_state.ship_id] = true
-		steps_by_ship[ship_state.ship_id] = ship_steps
+			p.stopped[sid] = true
+		p.steps_by_ship[sid] = ship_steps
 
 	var max_impulses: int = 0
-	for sid in steps_by_ship:
-		var count: int = steps_by_ship[sid].size()
+	for sid in p.steps_by_ship:
+		var count: int = p.steps_by_ship[sid].size()
 		if count > max_impulses:
 			max_impulses = count
 
 	# One segment past the last step: an overlap made on the last step is checked when nobody moves.
 	for impulse in range(max_impulses + 1):
-		_resolve_impulse(impulse, ships, ship_map, steps_by_ship, results, current_hexes, current_facings, stopped, environment, forward_since_turn, pivots_this_turn)
-		var failed: Array = _check_overlaps(impulse, current_hexes, current_facings)
+		var seg: Segment = _resolve_impulse(p, impulse, ships)
+		var failed: Array = _check_overlaps(p, impulse)
 		# An overlap failing here was made on the previous segment, so it goes first: its rollback may
-		# change whether this segment's contests happen at all.
+		# change whether this segment's contests happen at all. A cycle gone wrong comes next: breaking it
+		# changes this segment's steps, and so its contests.
+		if failed.is_empty() and not p.failed_cycles.is_empty():
+			return {"results": p.results, "max_impulses": max_impulses, "rollbacks": [], "contests": p.contests,
+				"failed_cycles": p.failed_cycles}
 		if failed.is_empty():
-			failed = _contest_amendments
+			failed = p.contest_amendments
 		if not failed.is_empty():
-			return {"results": results, "max_impulses": max_impulses, "rollbacks": failed, "contests": _contests}
-		_note_overlaps(impulse, results, current_hexes, current_facings)
+			return {"results": p.results, "max_impulses": max_impulses, "rollbacks": failed, "contests": p.contests,
+				"failed_cycles": []}
+		_note_overlaps(p, seg)
 
-	return {"results": results, "max_impulses": max_impulses, "rollbacks": [], "contests": _contests}
+	return {"results": p.results, "max_impulses": max_impulses, "rollbacks": [], "contests": p.contests,
+		"failed_cycles": []}
 
 
 ## ============================================================================
 ## Per-impulse resolution
 ## ============================================================================
 
-func _resolve_impulse(
-	impulse: int,
-	ships: Array[ShipState],
-	ship_map: Dictionary,
-	steps_by_ship: Dictionary,
-	results: Dictionary,
-	current_hexes: Dictionary,
-	current_facings: Dictionary,
-	stopped: Dictionary,
-	environment: EnvironmentState,
-	forward_since_turn: Dictionary,
-	pivots_this_turn: Dictionary
-) -> void:
-	var intended_moves: Dictionary = {}
-	_swings = {}
-	_seg_start_bows = current_hexes.duplicate()
-	_seg_start_facings = current_facings.duplicate()
+## Resolve one segment: every ship still moving makes its step. Returns the segment, for the overlap
+## bookkeeping at its end.
+func _resolve_impulse(p: ResolutionPass, impulse: int, ships: Array[ShipState]) -> Segment:
+	var seg := Segment.new()
+	seg.impulse = impulse
+	seg.start_bows = p.current_hexes.duplicate()
+	seg.start_facings = p.current_facings.duplicate()
 
 	for ship_state in ships:
 		var sid = ship_state.ship_id
-		if impulse == 0 and _tacks_dropped.has(sid):
-			_redraw_dropped_tack(ship_state, environment, results[sid])
-		if stopped[sid]:
+		if impulse == 0 and p.tacks_dropped.has(sid):
+			_redraw_dropped_tack(ship_state, p.environment, p.results[sid])
+		if p.stopped[sid]:
 			continue
 
-		var ship_steps: Array = steps_by_ship[sid]
+		var ship_steps: Array = p.steps_by_ship[sid]
 		if impulse >= ship_steps.size():
-			stopped[sid] = true
+			p.stopped[sid] = true
 			continue
 
 		var step: Dictionary = ship_steps[impulse]
@@ -238,47 +293,43 @@ func _resolve_impulse(
 
 		var tacking_impulse: int = _find_tacking_impulse(ship_state, ship_steps)
 		if tacking_impulse >= 0 and impulse == tacking_impulse:
-			var result: MovementTypes.ShipResolutionResult = results[sid]
-			var tack_success: bool = _roll_tacking(ship_state, environment, result, impulse)
+			var result: MovementTypes.ShipResolutionResult = p.results[sid]
+			var tack_success: bool = _roll_tacking(ship_state, p.environment, result, impulse)
 			if not tack_success:
 				# The plotted turn is erased (5.D.1): the ship keeps its hex and heading.
-				result.final_hex = current_hexes[sid]
+				result.final_hex = p.current_hexes[sid]
 				result.final_facing = ship_state.facing
 				result.immobilized = true
 				result.tacking_failed = true
-				stopped[sid] = true
+				p.stopped[sid] = true
 				continue
 
-		intended_moves[sid] = {"hex": step_hex, "facing": step_facing}
+		seg.intended_moves[sid] = {"hex": step_hex, "facing": step_facing}
 
-	if intended_moves.is_empty():
-		return
+	if seg.intended_moves.is_empty():
+		return seg
 
 	# Hexes held during this segment: every hex of a ship that is not moving, and the bow hex of
 	# every moving ship (an ahead step turns it into the stern, a turn pivots on it). A moving ship's
 	# old stern hex is held too until its own step succeeds; a ship whose step fails keeps it.
-	var held: Dictionary = Occupancy.from_positions(current_hexes, current_facings, intended_moves.keys())
-	var start_bows: Dictionary = {}
-	var start_facings: Dictionary = {}
+	seg.held = Occupancy.from_positions(p.current_hexes, p.current_facings, seg.intended_moves.keys())
 	# Hex -> ids of the moving ships whose bow (or old stern) it is at the start of the segment. Lists:
 	# during an overlap two sterns (or a stern and a bow) share a hex, and a group entering it waits for
 	# every one of them.
 	var old_stern_owner: Dictionary = {}
 	var start_bow_owner: Dictionary = {}
-	for sid in intended_moves:
-		held[current_hexes[sid]] = sid
-		start_bows[sid] = current_hexes[sid]
-		start_facings[sid] = current_facings[sid]
-		_add_owner(start_bow_owner, current_hexes[sid], sid)
-		_add_owner(old_stern_owner, HexGrid.stern_of(current_hexes[sid], current_facings[sid]), sid)
+	for sid in seg.intended_moves:
+		seg.held[p.current_hexes[sid]] = sid
+		_add_owner(start_bow_owner, p.current_hexes[sid], sid)
+		_add_owner(old_stern_owner, HexGrid.stern_of(p.current_hexes[sid], p.current_facings[sid]), sid)
 
 	# Group the entered hexes, bow-entries (ahead) and stern-entries (turns) apart.
 	var bow_targets: Dictionary = {}
 	var stern_targets: Dictionary = {}
-	for sid in intended_moves:
-		var move: Dictionary = intended_moves[sid]
-		var bow: Vector2i = current_hexes[sid]
-		var facing: int = current_facings[sid]
+	for sid in seg.intended_moves:
+		var move: Dictionary = seg.intended_moves[sid]
+		var bow: Vector2i = p.current_hexes[sid]
+		var facing: int = p.current_facings[sid]
 		var entered: Vector2i = _entered_hex(bow, facing, move.hex, move.facing)
 		var targets: Dictionary = stern_targets if _is_stern_entry(bow, facing, move.hex, move.facing) else bow_targets
 		if not targets.has(entered):
@@ -291,33 +342,99 @@ func _resolve_impulse(
 	# only after that ship's own step, so the result does not depend on ship order, and an old stern is
 	# known to be vacated or kept. In a cycle (head-on bows, or each ship entering the next one's old
 	# stern) no group is ready and the group holding the lowest ship id goes, so the result does not
-	# depend on ship order either.
+	# depend on ship order either. Letting it go assumes the ship whose old stern it enters leaves it;
+	# when that ship is stopped after all, the pass is replayed with the cycle broken (see run()).
 	var pending: Array = []
 	for entered in stern_targets:
 		pending.append({"stern": true, "hex": entered, "ids": stern_targets[entered]})
 	for entered in bow_targets:
 		pending.append({"stern": false, "hex": entered, "ids": bow_targets[entered]})
-	var resolved: Dictionary = {}
 	while not pending.is_empty():
 		var pick: int = -1
 		for i in range(pending.size()):
-			if _group_ready(pending[i], start_bow_owner, old_stern_owner, resolved):
+			if _group_ready(pending[i], start_bow_owner, old_stern_owner, seg.resolved):
 				pick = i
 				break
 		if pick < 0:
 			pick = _lowest_id_group(pending)
+			var key: String = _segment_hex_key(impulse, pending[pick].hex)
+			if p.cycle_breaks.has(key):
+				_hold_for_owner(seg, pending[pick].hex, old_stern_owner)
+			else:
+				seg.speculations.append({"key": key, "hex": pending[pick].hex,
+					"owners": old_stern_owner.get(pending[pick].hex, [])})
 		var group: Dictionary = pending[pick]
 		pending.remove_at(pick)
 		if group.stern:
-			_resolve_stern_entries(group.ids, group.hex, impulse, held, intended_moves, ship_map, steps_by_ship,
-				results, current_hexes, current_facings, stopped, forward_since_turn, pivots_this_turn)
+			_resolve_stern_entries(p, seg, group.ids, group.hex)
 		else:
-			_resolve_bow_entries(group.ids, group.hex, impulse, held, intended_moves, ship_map, results,
-				current_hexes, current_facings, stopped, environment, forward_since_turn, pivots_this_turn)
+			_resolve_bow_entries(p, seg, group.ids, group.hex)
 		for sid in group.ids:
-			resolved[sid] = true
-			if current_hexes[sid] == start_bows[sid] and current_facings[sid] == start_facings[sid]:
-				held[HexGrid.stern_of(start_bows[sid], start_facings[sid])] = sid  # it keeps its stern
+			_settle(p, seg, sid)
+	if not seg.speculations.is_empty():
+		p.failed_cycles = _failed_speculations(p, seg)
+	return seg
+
+
+## The ship's step this segment is settled: a ship that did not move keeps its old stern hex.
+func _settle(p: ResolutionPass, seg: Segment, sid: String) -> void:
+	seg.resolved[sid] = true
+	if _kept_pose(p, seg, sid):
+		seg.held[HexGrid.stern_of(seg.start_bows[sid], seg.start_facings[sid])] = sid  # it keeps its stern
+
+
+func _kept_pose(p: ResolutionPass, seg: Segment, sid: String) -> bool:
+	return p.current_hexes[sid] == seg.start_bows[sid] and p.current_facings[sid] == seg.start_facings[sid]
+
+
+## A broken cycle (see run()): the group entering `hex` goes first, but the moving ship whose old
+## stern it is no longer counts as leaving it, so the group meets that ship there.
+func _hold_for_owner(seg: Segment, hex: Vector2i, old_stern_owner: Dictionary) -> void:
+	var owners: Array = old_stern_owner.get(hex, []).duplicate()
+	if owners.is_empty() or seg.held.has(hex):
+		return
+	owners.sort()
+	seg.held[hex] = owners[0]
+
+
+## Old stern hex -> ship for every ship that kept its pose this segment with another ship's bow on its
+## old stern, sailed in by an ahead step. Only a cycle can do that (the group let go first assumes the
+## next ship leaves its stern, see _resolve_impulse).
+func _bows_in_kept_sterns(p: ResolutionPass, seg: Segment) -> Dictionary:
+	var found: Dictionary = {}
+	for sid in seg.intended_moves:
+		if not _kept_pose(p, seg, sid):
+			continue
+		var kept_stern: Vector2i = HexGrid.stern_of(seg.start_bows[sid], seg.start_facings[sid])
+		for other_id in seg.moves:
+			var ev: MovementTypes.ResolutionEvent = seg.moves[other_id]
+			if other_id != sid and ev.from_hex != ev.to_hex and p.current_hexes[other_id] == kept_stern:
+				found[kept_stern] = sid
+	return found
+
+
+## The cycles of this segment that went wrong ([{key, segment}], see ResolutionPass.failed_cycles): only
+## those whose assumed-to-leave ship kept its stern under the bow let in, so a cycle that worked in the
+## same segment is not broken in the replay. Ships further along a failed cycle meet the kept sterns in
+## the replay without their own cycle being broken. Should a bow sit on a kept stern with no speculation
+## to blame (not expected), every speculation of the segment is broken, so no overlap is ever kept.
+func _failed_speculations(p: ResolutionPass, seg: Segment) -> Array:
+	var intruded: Dictionary = _bows_in_kept_sterns(p, seg)
+	if intruded.is_empty():
+		return []
+	var failed: Array = []
+	for spec in seg.speculations:
+		if intruded.has(spec.hex) and intruded[spec.hex] in spec.owners:
+			failed.append({"key": spec.key, "segment": seg.impulse})
+	if failed.is_empty():
+		for spec in seg.speculations:
+			failed.append({"key": spec.key, "segment": seg.impulse})
+	return failed
+
+
+## Key of a hex on a segment, for ResolutionPass.cycle_breaks and .settled_contests.
+static func _segment_hex_key(impulse: int, hex: Vector2i) -> String:
+	return "%d:%d,%d" % [impulse, hex.x, hex.y]
 
 
 ## Index of the pending group holding the lowest ship id (cycle tie-break).
@@ -353,83 +470,52 @@ func _group_ready(group: Dictionary, start_bow_owner: Dictionary, old_stern_owne
 ## Two sterns entering together with no further MPs plotted contest the hex (6.C.1b, 6.C.5); if one of
 ## them has more MPs, both swing in and the 6.B overlap rules apply. A complete overlap (6.B.5) is
 ## contested too. A lost contest cancels the turn; it is never a collision.
-func _resolve_stern_entries(
-	ids: Array,
-	entered: Vector2i,
-	impulse: int,
-	held: Dictionary,
-	intended_moves: Dictionary,
-	ship_map: Dictionary,
-	steps_by_ship: Dictionary,
-	results: Dictionary,
-	current_hexes: Dictionary,
-	current_facings: Dictionary,
-	stopped: Dictionary,
-	forward_since_turn: Dictionary,
-	pivots_this_turn: Dictionary
-) -> void:
+func _resolve_stern_entries(p: ResolutionPass, seg: Segment, ids: Array, entered: Vector2i) -> void:
 	var active: Array = []
 	for sid in ids:
-		if not stopped[sid]:  # a collision earlier in this segment already stopped it
+		if not p.stopped[sid]:  # a collision earlier in this segment already stopped it
 			active.append(sid)
-	if active.size() > 1 and _all_on_last_step(active, impulse, steps_by_ship):
-		active = [_stern_contest(active, impulse, ship_map, results, current_hexes, current_facings, stopped)]
+	if active.size() > 1 and _all_on_last_step(active, seg.impulse, p.steps_by_ship):
+		active = [_stern_contest(p, active, seg.impulse, entered)]
 	for sid in active:
-		var partner: String = _complete_overlap_partner(sid, entered, held, intended_moves, stopped)
+		var partner: String = _complete_overlap_partner(p, seg, sid, entered)
 		if partner != "":
-			var winner: String = _stern_contest([sid, partner], impulse, ship_map, results, current_hexes,
-				current_facings, stopped)
+			var winner: String = _stern_contest(p, [sid, partner], seg.impulse, entered)
 			if winner != sid:
 				continue
-		var prev_facing: int = current_facings[sid]
-		_swings[sid] = {"hex": entered, "pre_bow": current_hexes[sid], "pre_facing": prev_facing,
-			"facing": intended_moves[sid].facing}
-		_apply_move(sid, intended_moves[sid].hex, intended_moves[sid].facing, impulse, results, current_hexes, current_facings)
-		_update_turn_tracking(sid, prev_facing, intended_moves[sid].facing, forward_since_turn, pivots_this_turn)
+		var move: Dictionary = seg.intended_moves[sid]
+		var prev_facing: int = p.current_facings[sid]
+		seg.swings[sid] = {"hex": entered, "pre_bow": p.current_hexes[sid], "pre_facing": prev_facing,
+			"facing": move.facing}
+		_apply_move(p, seg, sid, move.hex, move.facing)
+		_update_turn_tracking(p, sid, prev_facing, move.facing)
 
 
 ## Bow-entries into `target_hex`: a hex held by another ship means bear off or collide (6.D, 6.E);
 ## several bows entering together contest it (6.C.2-6.C.4).
-func _resolve_bow_entries(
-	ids: Array,
-	target_hex: Vector2i,
-	impulse: int,
-	held: Dictionary,
-	intended_moves: Dictionary,
-	ship_map: Dictionary,
-	results: Dictionary,
-	current_hexes: Dictionary,
-	current_facings: Dictionary,
-	stopped: Dictionary,
-	environment: EnvironmentState,
-	forward_since_turn: Dictionary,
-	pivots_this_turn: Dictionary
-) -> void:
+func _resolve_bow_entries(p: ResolutionPass, seg: Segment, ids: Array, target_hex: Vector2i) -> void:
 	var contesting_ids: Array = []
 	for sid in ids:
-		if not stopped[sid]:  # a collision earlier in this segment already stopped it
+		if not p.stopped[sid]:  # a collision earlier in this segment already stopped it
 			contesting_ids.append(sid)
 	if contesting_ids.is_empty():
 		return
 
-	var occupant_id: String = _find_holder(target_hex, held, contesting_ids)
+	var occupant_id: String = _find_holder(target_hex, seg.held, contesting_ids)
 	if occupant_id != "":
 		for sid in contesting_ids:
-			_resolve_collision_or_bearoff(
-				sid, occupant_id, impulse, ship_map, results, current_hexes, stopped, environment, forward_since_turn, pivots_this_turn
-			)
+			_resolve_collision_or_bearoff(p, seg, sid, occupant_id)
 		return
 
 	if contesting_ids.size() == 1:
 		var sid: String = contesting_ids[0]
-		var prev_facing: int = current_facings[sid]
-		_apply_move(sid, intended_moves[sid].hex, intended_moves[sid].facing, impulse, results, current_hexes, current_facings)
-		_update_turn_tracking(sid, prev_facing, intended_moves[sid].facing, forward_since_turn, pivots_this_turn)
+		var move: Dictionary = seg.intended_moves[sid]
+		var prev_facing: int = p.current_facings[sid]
+		_apply_move(p, seg, sid, move.hex, move.facing)
+		_update_turn_tracking(p, sid, prev_facing, move.facing)
 		return
 
-	_resolve_contested_hex(
-		contesting_ids, target_hex, impulse, ship_map, results, current_hexes, current_facings, stopped, intended_moves, environment, forward_since_turn, pivots_this_turn
-	)
+	_resolve_contested_hex(p, seg, contesting_ids, target_hex)
 
 
 ## The one hex a step enters: an ahead step (new hex) its new bow hex; a turn (same hex, new facing)
@@ -454,15 +540,15 @@ func _all_on_last_step(ids: Array, impulse: int, steps_by_ship: Dictionary) -> b
 
 ## The ship holding `entered` when it is swinging its own stern onto this ship's bow this segment, so
 ## that both turns together would overlap the two ships completely (6.B.5); else "".
-func _complete_overlap_partner(sid: String, entered: Vector2i, held: Dictionary, intended_moves: Dictionary, stopped: Dictionary) -> String:
-	var holder: String = held.get(entered, "")
-	if holder == "" or holder == sid or not intended_moves.has(holder) or stopped[holder]:
+func _complete_overlap_partner(p: ResolutionPass, seg: Segment, sid: String, entered: Vector2i) -> String:
+	var holder: String = seg.held.get(entered, "")
+	if holder == "" or holder == sid or not seg.intended_moves.has(holder) or p.stopped[holder]:
 		return ""
-	var bow: Vector2i = _seg_start_bows[holder]
-	var facing: int = _seg_start_facings[holder]
-	var move: Dictionary = intended_moves[holder]
+	var bow: Vector2i = seg.start_bows[holder]
+	var facing: int = seg.start_facings[holder]
+	var move: Dictionary = seg.intended_moves[holder]
 	if _is_stern_entry(bow, facing, move.hex, move.facing) \
-			and _entered_hex(bow, facing, move.hex, move.facing) == _seg_start_bows[sid]:
+			and _entered_hex(bow, facing, move.hex, move.facing) == seg.start_bows[sid]:
 		return holder
 	return ""
 
@@ -470,53 +556,52 @@ func _complete_overlap_partner(sid: String, entered: Vector2i, held: Dictionary,
 ## A contested hex between swinging sterns (6.B.4c, 6.B.5, 6.C.5): roll with the 6.C.2 DRMs (ids sorted,
 ## so the result does not depend on ship order). Every loser's turn is cancelled and its movement ends
 ## (STERN_BLOCKED "lost stern contest to <winner>"); one that must still move ahead to meet its
-## deceleration minimum is queued in `_contest_amendments` for a replay. Stub rule for 6.B.5 and
-## 6.C.3: the winner always chooses to turn itself. Returns the winner.
-func _stern_contest(
-	contest_ids: Array,
-	impulse: int,
-	ship_map: Dictionary,
-	results: Dictionary,
-	current_hexes: Dictionary,
-	current_facings: Dictionary,
-	stopped: Dictionary
-) -> String:
+## deceleration minimum is queued in `p.contest_amendments` for a replay. In that replay a contest
+## among the ships left (3+ sterns into `hex`) is not rolled again: it keeps its first winner and rolls.
+## Stub rule for 6.B.5 and 6.C.3: the winner always chooses to turn itself. Returns the winner.
+func _stern_contest(p: ResolutionPass, contest_ids: Array, impulse: int, hex: Vector2i) -> String:
 	var ids: Array = contest_ids.duplicate()
 	ids.sort()
 	var marks: Dictionary = {}
 	for sid in ids:
-		marks[sid] = (results[sid] as MovementTypes.ShipResolutionResult).events.size()
-	var winner: String = _roll_contest(ids, impulse, ship_map, results)
+		marks[sid] = (p.results[sid] as MovementTypes.ShipResolutionResult).events.size()
+	var settled: Dictionary = p.settled_contests.get(_segment_hex_key(impulse, hex), {})
+	var winner: String = ""
 	var rolls: Dictionary = {}
-	for sid in ids:
-		rolls[sid] = (results[sid] as MovementTypes.ShipResolutionResult).events.slice(marks[sid])
-	_contests.append({"segment": impulse, "winner": winner, "rolls": rolls})
+	if not settled.is_empty() and settled.winner in ids:
+		winner = settled.winner
+		for sid in ids:
+			var kept: Array = settled.rolls.get(sid, [])
+			(p.results[sid] as MovementTypes.ShipResolutionResult).events.append_array(kept)
+			rolls[sid] = kept
+	else:
+		winner = _roll_contest(p, ids, impulse)
+		for sid in ids:
+			rolls[sid] = (p.results[sid] as MovementTypes.ShipResolutionResult).events.slice(marks[sid])
+	p.contests.append({"segment": impulse, "winner": winner, "rolls": rolls})
 	var losers: Array = []
 	for sid in ids:
 		if sid == winner:
 			continue
-		var pre_bow: Vector2i = current_hexes[sid]
-		var pre_facing: int = current_facings[sid]
-		_cancel_turn(sid, winner, impulse, results, current_hexes, current_facings, stopped,
-			"lost stern contest to %s" % winner)
+		var pre_bow: Vector2i = p.current_hexes[sid]
+		var pre_facing: int = p.current_facings[sid]
+		_cancel_turn(p, sid, winner, impulse, "lost stern contest to %s" % winner)
 		losers.append({"ship_id": sid, "pre_bow": pre_bow, "pre_facing": pre_facing})
 	Trace.trace_log("MovementResolver", "stern contest", {"ships": ids, "winner": winner, "segment": impulse})
 	var events_kept := false  # the rolls go back into the final log once per contest
 	for loser in losers:
 		# The loser made a step on every segment before this one.
-		if _deceleration_minimum(ship_map[loser.ship_id]) <= impulse:
+		if _deceleration_minimum(p.ship_map[loser.ship_id], loser.pre_facing) <= impulse:
 			continue
 		var events: Dictionary = {}
 		if not events_kept:
 			for sid in ids:
-				events[sid] = (results[sid] as MovementTypes.ShipResolutionResult).events.slice(marks[sid])
+				events[sid] = (p.results[sid] as MovementTypes.ShipResolutionResult).events.slice(marks[sid])
 			events_kept = true
-		# TODO(6.C, 3+ sterns): a replay re-rolls the contest among the ships left, so a third ship's
-		# result may differ from the first roll.
-		_contest_amendments.append({
+		p.contest_amendments.append({
 			"ship_id": loser.ship_id, "kind": "contest", "segment": impulse, "other_id": winner,
 			"pre_bow": loser.pre_bow, "pre_facing": loser.pre_facing, "reason": "lost stern contest",
-			"events": events,
+			"events": events, "hex": hex, "rolls": rolls,
 		})
 	return winner
 
@@ -535,56 +620,57 @@ func _footprint(sid: String, bows: Dictionary, facings: Dictionary) -> Array[Vec
 ## occupied" (6.B.4a) when the other ship held the hex at the start of the segment, "sterns together"
 ## when its stern swung into the hex too (one of the two had further MPs, so it was no contest), else a
 ## bow sailed into it ("bow precedence", 6.B.4b).
-func _note_overlaps(impulse: int, results: Dictionary, current_hexes: Dictionary, current_facings: Dictionary) -> void:
-	for sid in _swings:
-		var swing: Dictionary = _swings[sid]
+func _note_overlaps(p: ResolutionPass, seg: Segment) -> void:
+	for sid in seg.swings:
+		var swing: Dictionary = seg.swings[sid]
 		var other_ids: Array = []
 		var occupied_before := false
 		var sterns_together := false
-		for other_id in current_hexes:
-			if other_id == sid or not swing.hex in _footprint(other_id, current_hexes, current_facings):
+		for other_id in p.current_hexes:
+			if other_id == sid or not swing.hex in _footprint(other_id, p.current_hexes, p.current_facings):
 				continue
 			other_ids.append(other_id)
-			occupied_before = occupied_before or swing.hex in _footprint(other_id, _seg_start_bows, _seg_start_facings)
-			sterns_together = sterns_together or (_swings.has(other_id) and _swings[other_id].hex == swing.hex)
-			var ev = MovementTypes.ResolutionEvent.new(sid, impulse, MovementTypes.ResolutionEventType.OVERLAP)
+			occupied_before = occupied_before or swing.hex in _footprint(other_id, seg.start_bows, seg.start_facings)
+			sterns_together = sterns_together or (seg.swings.has(other_id) and seg.swings[other_id].hex == swing.hex)
+			var ev = MovementTypes.ResolutionEvent.new(sid, seg.impulse, MovementTypes.ResolutionEventType.OVERLAP)
 			ev.from_hex = swing.pre_bow
 			ev.to_hex = swing.pre_bow
 			ev.from_facing = swing.pre_facing
 			ev.facing = swing.facing
 			ev.detail = "overlaps %s" % other_id
-			(results[sid] as MovementTypes.ShipResolutionResult).events.append(ev)
+			(p.results[sid] as MovementTypes.ShipResolutionResult).events.append(ev)
 		if other_ids.is_empty():
 			continue
-		_pending_overlaps[sid] = {
-			"hex": swing.hex, "other_id": other_ids[0], "other_ids": other_ids, "segment": impulse,
+		p.pending_overlaps[sid] = {
+			"hex": swing.hex, "other_id": other_ids[0], "other_ids": other_ids, "segment": seg.impulse,
 			"pre_bow": swing.pre_bow, "pre_facing": swing.pre_facing, "facing": swing.facing,
 			"reason": "already occupied" if occupied_before else ("sterns together" if sterns_together else "bow precedence"),
 		}
 
 
 ## End of a segment: overlaps made on the previous segment that are still there (the two ships still
-## share a hex, 6.B.4). Returns them as rollbacks ({ship_id} added to the pending record); the others
-## were cleared and are dropped.
-func _check_overlaps(impulse: int, current_hexes: Dictionary, current_facings: Dictionary) -> Array:
+## share a hex, 6.B.4). Returns them as rollbacks: the pending record with ship_id, other_id (the first
+## ship still overlapped) and overlapping (all of them) added; the others were cleared and are dropped.
+func _check_overlaps(p: ResolutionPass, impulse: int) -> Array:
 	var failed: Array = []
-	for sid in _pending_overlaps.keys():
-		var overlap: Dictionary = _pending_overlaps[sid]
+	for sid in p.pending_overlaps.keys():
+		var overlap: Dictionary = p.pending_overlaps[sid]
 		if overlap.segment != impulse - 1:
 			continue
-		_pending_overlaps.erase(sid)
-		var mine: Array[Vector2i] = _footprint(sid, current_hexes, current_facings)
-		# TODO(6.B, Task 11+): only the first ship still overlapped is named in the rollback.
+		p.pending_overlaps.erase(sid)
+		var mine: Array[Vector2i] = _footprint(sid, p.current_hexes, p.current_facings)
+		var overlapping: Array = []
 		for other_id in overlap.other_ids:
-			var still_overlapped := false
-			for h in _footprint(other_id, current_hexes, current_facings):
-				still_overlapped = still_overlapped or h in mine
-			if still_overlapped:
-				var rollback: Dictionary = overlap.duplicate()
-				rollback["ship_id"] = sid
-				rollback["other_id"] = other_id
-				failed.append(rollback)
-				break
+			for h in _footprint(other_id, p.current_hexes, p.current_facings):
+				if h in mine:
+					overlapping.append(other_id)
+					break
+		if not overlapping.is_empty():
+			var rollback: Dictionary = overlap.duplicate()
+			rollback["ship_id"] = sid
+			rollback["other_id"] = overlapping[0]
+			rollback["overlapping"] = overlapping  # every ship still overlapped
+			failed.append(rollback)
 	return failed
 
 
@@ -593,7 +679,7 @@ func _check_overlaps(impulse: int, current_hexes: Dictionary, current_facings: D
 ## like any other, so they may meet a ship and bear off or collide.
 func _amended_steps(ship_state: ShipState, steps: Array, rollback: Dictionary) -> Array:
 	var kept: Array = steps.slice(0, rollback.segment)
-	var minimum: int = _deceleration_minimum(ship_state)
+	var minimum: int = _deceleration_minimum(ship_state, rollback.pre_facing)
 	var bow: Vector2i = rollback.pre_bow
 	while kept.size() < minimum:
 		bow += HexGrid.DIRECTIONS[rollback.pre_facing]
@@ -601,17 +687,21 @@ func _amended_steps(ship_state: ShipState, steps: Array, rollback: Dictionary) -
 	return kept
 
 
-## The fewest MPs the ship may use this turn, as the plotting validator computes it: last turn's speed
-## less its deceleration, 0 when its movement allowance is 0.
-func _deceleration_minimum(ship_state: ShipState) -> int:
-	if game_state.ship_controller.get_movement_allowance(ship_state.ship_id) == 0:
+## The fewest MPs the ship may use this turn, as the plotting validator computes it at a point of the
+## plot where the ship heads `facing` (its start-of-turn facing when -1): last turn's speed less its
+## deceleration, 0 when its movement allowance at that facing is 0.
+func _deceleration_minimum(ship_state: ShipState, facing: int = -1) -> int:
+	if game_state.ship_controller.get_movement_allowance(ship_state.ship_id, facing) == 0:
 		return 0
 	var maneuverability: String = ship_state.ship.maneuverability if ship_state.ship else "b"
 	return maxi(ship_state.speed - DataManager.get_speed_change("deceleration", maneuverability), 0)
 
 
 ## True when the ship executed every step before `segment` in the final pass, so it stood in the
-## rollback's pre-turn pose at that segment.
+## rollback's pre-turn pose at that segment. A ship stopped on `segment` itself still reached it: the
+## rollback (or lost contest) is what took the turn out of its plot there, and whatever stopped it on
+## that segment (its amended step ahead failing, or a ship running into it) is told after, so the log
+## keeps the undone turn as the cause (see stop_cause).
 func _reached_segment(result: MovementTypes.ShipResolutionResult, segment: int) -> bool:
 	if result.stopped_at_impulse >= 0 and result.stopped_at_impulse < segment:
 		return false
@@ -630,7 +720,7 @@ func _record_rollback(result: MovementTypes.ShipResolutionResult, rollback: Dict
 	overlap.to_hex = rollback.pre_bow
 	overlap.from_facing = rollback.pre_facing
 	overlap.facing = rollback.facing
-	overlap.detail = "overlaps %s" % rollback.other_id
+	overlap.detail = "overlaps %s" % ", ".join(rollback.get("overlapping", [rollback.other_id]))
 	_insert_event(result, overlap)
 	var back = MovementTypes.ResolutionEvent.new(result.ship_id, rollback.segment + 1, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
 	back.from_hex = rollback.pre_bow
@@ -654,7 +744,8 @@ func _record_contest(results: Dictionary, contest: Dictionary, steps_resolved: i
 		if not _reached_segment(results[sid], contest.segment):
 			return
 	for sid in contest.events:
-		_insert_at_segment_start(results[sid], contest.segment, contest.events[sid])
+		if not _has_contest_roll(results[sid], contest.segment):  # a replayed contest logged them already
+			_insert_at_segment_start(results[sid], contest.segment, contest.events[sid])
 	var loser: MovementTypes.ShipResolutionResult = results[contest.ship_id]
 	if loser.blocked_by == "":
 		loser.blocked_by = contest.other_id
@@ -669,11 +760,17 @@ func _record_undone_contest(results: Dictionary, contest: Dictionary) -> void:
 	if not _reached_segment(results[contest.winner], contest.segment):
 		return
 	for sid in contest.rolls:
-		for ev in (results[sid] as MovementTypes.ShipResolutionResult).events:
-			if ev.event_type == MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL and ev.impulse == contest.segment:
-				return
+		if _has_contest_roll(results[sid], contest.segment):
+			return
 	for sid in contest.rolls:
 		_insert_at_segment_start(results[sid], contest.segment, contest.rolls[sid])
+
+
+func _has_contest_roll(result: MovementTypes.ShipResolutionResult, segment: int) -> bool:
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL and ev.impulse == segment:
+			return true
+	return false
 
 
 ## Insert `events` at the start of `segment` in the result, after any tacking roll of that segment.
@@ -698,75 +795,48 @@ func _insert_event(result: MovementTypes.ShipResolutionResult, ev: MovementTypes
 
 ## The turn is cancelled: the ship keeps its bow hex and facing and stops for the rest of the turn.
 ## No collision and no bearing off.
-func _cancel_turn(
-	sid: String,
-	blocker_id: String,
-	impulse: int,
-	results: Dictionary,
-	current_hexes: Dictionary,
-	current_facings: Dictionary,
-	stopped: Dictionary,
-	detail: String = ""
-) -> void:
-	var result: MovementTypes.ShipResolutionResult = results[sid]
+func _cancel_turn(p: ResolutionPass, sid: String, blocker_id: String, impulse: int, detail: String = "") -> void:
+	var result: MovementTypes.ShipResolutionResult = p.results[sid]
 	var ev = MovementTypes.ResolutionEvent.new(sid, impulse, MovementTypes.ResolutionEventType.STERN_BLOCKED)
-	ev.from_hex = current_hexes[sid]
-	ev.to_hex = current_hexes[sid]
-	ev.facing = current_facings[sid]
-	ev.from_facing = current_facings[sid]
+	ev.from_hex = p.current_hexes[sid]
+	ev.to_hex = p.current_hexes[sid]
+	ev.facing = p.current_facings[sid]
+	ev.from_facing = p.current_facings[sid]
 	ev.success = false
 	ev.detail = detail if detail != "" else "stern blocked by %s" % blocker_id
 	result.events.append(ev)
 	result.blocked_by = blocker_id
 	result.stopped_at_impulse = impulse
-	stopped[sid] = true
+	p.stopped[sid] = true
 
 
 ## ============================================================================
 ## Contested hex resolution
 ## ============================================================================
 
-func _resolve_contested_hex(
-	contesting_ids: Array,
-	target_hex: Vector2i,
-	impulse: int,
-	ship_map: Dictionary,
-	results: Dictionary,
-	current_hexes: Dictionary,
-	current_facings: Dictionary,
-	stopped: Dictionary,
-	intended_moves: Dictionary,
-	environment: EnvironmentState,
-	forward_since_turn: Dictionary,
-	pivots_this_turn: Dictionary
-) -> void:
-	var winner_id: String = _roll_contest(contesting_ids, impulse, ship_map, results)
+func _resolve_contested_hex(p: ResolutionPass, seg: Segment, contesting_ids: Array, target_hex: Vector2i) -> void:
+	var winner_id: String = _roll_contest(p, contesting_ids, seg.impulse)
 
-	var prev_facing: int = current_facings[winner_id]
-	_apply_move(winner_id, target_hex, intended_moves[winner_id].facing, impulse, results, current_hexes, current_facings)
-	_update_turn_tracking(winner_id, prev_facing, intended_moves[winner_id].facing, forward_since_turn, pivots_this_turn)
+	var prev_facing: int = p.current_facings[winner_id]
+	var facing: int = seg.intended_moves[winner_id].facing
+	_apply_move(p, seg, winner_id, target_hex, facing)
+	_update_turn_tracking(p, winner_id, prev_facing, facing)
 
 	for sid in contesting_ids:
 		if sid == winner_id:
 			continue
-		_resolve_collision_or_bearoff(
-			sid, winner_id, impulse, ship_map, results, current_hexes, stopped, environment, forward_since_turn, pivots_this_turn
-		)
+		_resolve_collision_or_bearoff(p, seg, sid, winner_id)
 
 
-func _roll_contest(
-	contesting_ids: Array,
-	impulse: int,
-	ship_map: Dictionary,
-	results: Dictionary
-) -> String:
+func _roll_contest(p: ResolutionPass, contesting_ids: Array, impulse: int) -> String:
+	var results: Dictionary = p.results
 	var remaining: Array = contesting_ids.duplicate()
 
 	while remaining.size() > 1:
 		var rolls: Dictionary = {}
 		for sid in remaining:
 			var base_roll: int = rng.randi_range(1, 6)
-			var drm: int = _calculate_contest_drm_relative(sid, remaining, ship_map)
+			var drm: int = _calculate_contest_drm_relative(sid, remaining, p.ship_map, p.steps_by_ship)
 			var adjusted: int = base_roll + drm
 			rolls[sid] = {"base": base_roll, "drm": drm, "adjusted": adjusted}
 
@@ -804,11 +874,15 @@ func _roll_contest(
 	return remaining[0]
 
 
-func _calculate_contest_drm_relative(sid: String, all_ids: Array, ship_map: Dictionary) -> int:
+## 6.C.2 DRMs of `sid` against the other ships in `all_ids`. MPs plotted are counted from
+## `steps_by_ship` (the steps a pass resolves: the plot as amended after a rollback, 6.B.4), else from
+## the ship's plot.
+func _calculate_contest_drm_relative(sid: String, all_ids: Array, ship_map: Dictionary,
+		steps_by_ship: Dictionary = {}) -> int:
 	var ship_state: ShipState = ship_map[sid]
 	var drm: int = 0
 
-	var my_steps: int = _get_plotted_steps(ship_state).size()
+	var my_steps: int = _mps_plotted(ship_state, steps_by_ship)
 	var my_class: int = ship_state.ship.ship_class if ship_state.ship else 3
 	var my_cq_idx: int = _crew_quality_index(ship_state.crew_quality)
 
@@ -818,7 +892,7 @@ func _calculate_contest_drm_relative(sid: String, all_ids: Array, ship_map: Dict
 		if other_id == sid:
 			continue
 		var other: ShipState = ship_map[other_id]
-		var other_steps: int = _get_plotted_steps(other).size()
+		var other_steps: int = _mps_plotted(other, steps_by_ship)
 		if other_steps >= my_steps:
 			has_more_mp = false
 		if other_steps <= my_steps:
@@ -857,24 +931,16 @@ func _crew_quality_index(quality: String) -> int:
 ## Bearing off & collision
 ## ============================================================================
 
-func _resolve_collision_or_bearoff(
-	loser_id: String,
-	blocker_id: String,
-	impulse: int,
-	ship_map: Dictionary,
-	results: Dictionary,
-	current_hexes: Dictionary,
-	stopped: Dictionary,
-	_environment: EnvironmentState,
-	forward_since_turn: Dictionary,
-	_pivots_this_turn: Dictionary
-) -> void:
-	var loser: ShipState = ship_map[loser_id]
-	var loser_result: MovementTypes.ShipResolutionResult = results[loser_id]
+func _resolve_collision_or_bearoff(p: ResolutionPass, seg: Segment, loser_id: String, blocker_id: String) -> void:
+	var impulse: int = seg.impulse
+	var loser: ShipState = p.ship_map[loser_id]
+	var loser_result: MovementTypes.ShipResolutionResult = p.results[loser_id]
+	var current_hexes: Dictionary = p.current_hexes
+	var forward_hexes: int = p.forward_since_turn.get(loser_id, 0)
 	var maneuverability: String = loser.ship.maneuverability if loser.ship else "b"
 	loser_result.blocked_by = blocker_id
 
-	if not _is_bearing_off_pivot_legal(loser, forward_since_turn.get(loser_id, 0)):
+	if not _is_bearing_off_pivot_legal(loser, forward_hexes):
 		var deny_ev = MovementTypes.ResolutionEvent.new(
 			loser_id, impulse, MovementTypes.ResolutionEventType.BEARING_OFF_PIVOT_DENIED
 		)
@@ -884,16 +950,16 @@ func _resolve_collision_or_bearoff(
 		deny_ev.success = false
 		var min_required: int = _get_min_forward_for_pivot(loser)
 		deny_ev.detail = "pivot not legal: forward_hexes=%d min_required=%d speed=%d maneuverability=%s" % [
-			forward_since_turn.get(loser_id, 0), min_required, loser.speed, maneuverability
+			forward_hexes, min_required, loser.speed, maneuverability
 		]
 		loser_result.events.append(deny_ev)
-		_apply_collision(loser_id, blocker_id, impulse, ship_map, results, current_hexes, stopped)
+		_apply_collision(p, seg, loser_id, blocker_id)
 		return
 
 	# Bearing Off table (6.D.2): d10 (0-9) + DRMs <= the chart number succeeds; NA never does.
 	var crew_quality: String = loser.crew_quality
 	var number: int = DataManager.get_bearing_off_number(crew_quality, maneuverability)
-	var drm: int = _bearing_off_drm(loser)
+	var drm: int = _bearing_off_drm(loser, p.steps_by_ship.get(loser_id, []).size())
 	var d10: int = rng.randi_range(0, 9)
 	var success: bool = number >= 0 and d10 + drm <= number
 	var roll_value: float = float(d10)
@@ -923,24 +989,18 @@ func _resolve_collision_or_bearoff(
 		loser_result.events.append(stop_ev)
 
 		loser_result.stopped_at_impulse = impulse
-		stopped[loser_id] = true
+		p.stopped[loser_id] = true
 		return
 
-	_apply_collision(loser_id, blocker_id, impulse, ship_map, results, current_hexes, stopped)
+	_apply_collision(p, seg, loser_id, blocker_id)
 
 
-func _update_turn_tracking(
-	sid: String,
-	prev_facing: int,
-	new_facing: int,
-	forward_since_turn: Dictionary,
-	pivots_this_turn: Dictionary
-) -> void:
+func _update_turn_tracking(p: ResolutionPass, sid: String, prev_facing: int, new_facing: int) -> void:
 	if prev_facing == new_facing:
-		forward_since_turn[sid] = forward_since_turn.get(sid, 0) + 1
+		p.forward_since_turn[sid] = p.forward_since_turn.get(sid, 0) + 1
 	else:
-		pivots_this_turn[sid] = pivots_this_turn.get(sid, 0) + 1
-		forward_since_turn[sid] = 0
+		p.pivots_this_turn[sid] = p.pivots_this_turn.get(sid, 0) + 1
+		p.forward_since_turn[sid] = 0
 
 
 func _is_bearing_off_pivot_legal(ship_state: ShipState, forward_hexes: int) -> bool:
@@ -960,18 +1020,12 @@ func _get_min_forward_for_pivot(ship_state: ShipState) -> int:
 	)
 
 
-func _apply_collision(
-	ship_a_id: String,
-	ship_b_id: String,
-	impulse: int,
-	ship_map: Dictionary,
-	results: Dictionary,
-	current_hexes: Dictionary,
-	stopped: Dictionary
-) -> void:
-	var result_a: MovementTypes.ShipResolutionResult = results[ship_a_id]
-	var result_b: MovementTypes.ShipResolutionResult = results[ship_b_id]
-	var state_a: ShipState = ship_map[ship_a_id]
+func _apply_collision(p: ResolutionPass, seg: Segment, ship_a_id: String, ship_b_id: String) -> void:
+	var impulse: int = seg.impulse
+	var result_a: MovementTypes.ShipResolutionResult = p.results[ship_a_id]
+	var result_b: MovementTypes.ShipResolutionResult = p.results[ship_b_id]
+	var state_a: ShipState = p.ship_map[ship_a_id]
+	var current_hexes: Dictionary = p.current_hexes
 
 	var rigging_loss: int = _collision_rigging_loss(state_a)
 
@@ -998,8 +1052,12 @@ func _apply_collision(
 	result_a.rigging_damage = rigging_loss
 	result_a.stopped_at_impulse = impulse
 	result_b.stopped_at_impulse = impulse
-	stopped[ship_a_id] = true
-	stopped[ship_b_id] = true
+	p.stopped[ship_a_id] = true
+	p.stopped[ship_b_id] = true
+	# A moving ship hit before its own group has run never makes its step: it keeps its old stern from
+	# now on, so no later group (not even one the cycle fallback lets go) enters that hex.
+	if seg.intended_moves.has(ship_b_id) and not seg.resolved.has(ship_b_id):
+		_settle(p, seg, ship_b_id)
 
 	if rigging_loss > 0:
 		var rig_ev = MovementTypes.ResolutionEvent.new(
@@ -1011,7 +1069,7 @@ func _apply_collision(
 
 	# Only a free, unfouled pair can foul (as in DriftResolver._try_foul): a ship already fouled
 	# with a third ship, before or earlier in this resolution, keeps its partner and no roll is made.
-	var state_b: ShipState = ship_map[ship_b_id]
+	var state_b: ShipState = p.ship_map[ship_b_id]
 	var either_fouled: bool = state_a.fouled_with != "" or state_b.fouled_with != "" \
 			or result_a.fouled_with != "" or result_b.fouled_with != ""
 	var fouled: bool = not either_fouled and roll_fouling(state_a, state_b)
@@ -1075,29 +1133,22 @@ func _is_dismasted(ship_state: ShipState) -> bool:
 ## Move application and occupancy helpers
 ## ============================================================================
 
-func _apply_move(
-	sid: String,
-	target_hex: Vector2i,
-	facing: int,
-	impulse: int,
-	results: Dictionary,
-	current_hexes: Dictionary,
-	current_facings: Dictionary
-) -> void:
-	var result: MovementTypes.ShipResolutionResult = results[sid]
+func _apply_move(p: ResolutionPass, seg: Segment, sid: String, target_hex: Vector2i, facing: int) -> void:
+	var result: MovementTypes.ShipResolutionResult = p.results[sid]
 
 	var ev = MovementTypes.ResolutionEvent.new(
-		sid, impulse, MovementTypes.ResolutionEventType.MOVE
+		sid, seg.impulse, MovementTypes.ResolutionEventType.MOVE
 	)
-	ev.from_hex = current_hexes[sid]
+	ev.from_hex = p.current_hexes[sid]
 	ev.to_hex = target_hex
 	ev.facing = facing
-	ev.from_facing = current_facings[sid]
+	ev.from_facing = p.current_facings[sid]
 	ev.success = true
 	result.events.append(ev)
+	seg.moves[sid] = ev
 
-	current_hexes[sid] = target_hex
-	current_facings[sid] = facing
+	p.current_hexes[sid] = target_hex
+	p.current_facings[sid] = facing
 	result.final_hex = target_hex
 	result.final_facing = facing
 
@@ -1129,7 +1180,7 @@ func _remain_in_irons(ship_state: ShipState, result: MovementTypes.ShipResolutio
 	result.events.append(imm_ev)
 
 
-## The tacking roll of a turn an amended plot removed (see _tacks_dropped): drawn again from the same
+## The tacking roll of a turn an amended plot removed (see ResolutionPass.tacks_dropped): drawn again from the same
 ## die, so it passes as it did in the pass that found the overlap, and logged. A ship in irons whose
 ## turn was rolled back stays in irons.
 func _redraw_dropped_tack(ship_state: ShipState, environment: EnvironmentState, result: MovementTypes.ShipResolutionResult) -> void:
@@ -1225,11 +1276,13 @@ func _calculate_tacking_drm(ship_state: ShipState) -> int:
 	return drm
 
 
-## Bearing Off DRMs (6.D.2): MPs plotted this g-t 4-6 = +1, 7+ = +2. Rudder damage and poor
-## maneuvering need critical hits, which do not exist yet.
-# TODO(6.B): reads the original plot size; after an overlap rollback it should count the amended plot.
-func _bearing_off_drm(ship_state: ShipState) -> int:
-	var mps: int = _get_plotted_steps(ship_state).size()
+## Bearing Off DRMs (6.D.2): MPs plotted this g-t 4-6 = +1, 7+ = +2. `mps` is the steps the pass
+## resolves (the plot as amended after a rollback, 6.B.4: "change all ship logs to reflect the actual
+## moves"); -1 counts the ship's plot. Rudder damage and poor maneuvering need critical hits, which do
+## not exist yet.
+func _bearing_off_drm(ship_state: ShipState, mps: int = -1) -> int:
+	if mps < 0:
+		mps = _get_plotted_steps(ship_state).size()
 	if mps >= 7:
 		return 2
 	if mps >= 4:
@@ -1251,6 +1304,13 @@ func _get_ship_wind_facing(ship_state: ShipState) -> String:
 	if game_state and game_state.environment:
 		wind_dir = game_state.environment.wind_direction
 	return hex_grid.get_wind_facing(ship_state.facing, wind_dir)
+
+
+## MPs plotted this g-t: the pass's steps for the ship when given, else its plot.
+func _mps_plotted(ship_state: ShipState, steps_by_ship: Dictionary) -> int:
+	if steps_by_ship.has(ship_state.ship_id):
+		return steps_by_ship[ship_state.ship_id].size()
+	return _get_plotted_steps(ship_state).size()
 
 
 func _get_plotted_steps(ship_state: ShipState) -> Array:

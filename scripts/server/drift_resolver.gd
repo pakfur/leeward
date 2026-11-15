@@ -19,9 +19,11 @@ func _init(p_game_state: Node) -> void:
 ## Resolve drift for `phase`.
 ##
 ## Dice order is part of the contract (tests script dice by position). Ships are processed
-## leeward-most first (largest projection on the downwind world vector, ties by ship_id), each
-## seeing the positions left by those before it. For each ship (or fouled pair, processed once at
-## its more leeward member):
+## leeward-most first (8.A.2: largest projection of the footprint's middle, between bow and stern,
+## on the downwind world vector; ties by ship_id), each seeing the positions left by those before
+## it. Judging by the middle, a single ship whose hex would drift into another's is always the
+## later one. A fouled pair is processed once, at its more leeward member, so its other member may
+## come before a ship it would drift into. For each ship or fouled pair:
 ##   1. the drift d10
 ##   2. only if that drift is blocked by another ship that may foul it: the fouling d10
 ## At wind speed 0 nothing is rolled and nothing is logged.
@@ -62,7 +64,7 @@ func resolve(phase: int) -> void:
 
 
 func _projection(ship: ShipState, downwind_vector: Vector3) -> float:
-	return _hex_grid.axial_to_world(ship.hex_position.x, ship.hex_position.y).dot(downwind_vector)
+	return _hex_grid.ship_center_world(ship.hex_position, ship.facing).dot(downwind_vector)
 
 
 func _is_eligible(group: Array[ShipState]) -> bool:
@@ -100,42 +102,39 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 	var blocker: ShipState = null
 	var partial := ""
 	var pivot := {}
+	var others := {}
 	if drifts:
 		## The whole footprint shifts one hex downwind. The group's own hexes never block.
 		var group_ids: Array = []
 		for ship in group:
 			group_ids.append(ship.ship.ship_id)
-		var others: Dictionary = Occupancy.build(game_state.get_all_ships(), group_ids)
+		others = Occupancy.build(game_state.get_all_ships(), group_ids)
 		for ship in group:
 			var sid: String = ship.ship.ship_id
-			var target: Vector2i = _hex_grid.get_neighbor(ship.hex_position.x, ship.hex_position.y, downwind_dir)
-			targets[sid] = target
-			for hex in ship.occupied_hexes():
-				var shifted: Vector2i = _hex_grid.get_neighbor(hex.x, hex.y, downwind_dir)
-				if not _in_bounds(shifted):
-					blocked = "map edge"
-					own_block[sid] = "map edge"
-					own_blocker.erase(sid)
-					break
-				if others.has(shifted) and own_block.get(sid, "") != "ship":
-					var occupant: ShipState = game_state.get_ship(others[shifted])
-					own_block[sid] = "ship"
-					own_blocker[sid] = occupant.ship.ship_id
-					if blocked != "map edge":
-						blocked = "ship"
-						if blocker == null:
-							blocker = occupant
+			targets[sid] = _hex_grid.get_neighbor(ship.hex_position.x, ship.hex_position.y, downwind_dir)
+			var block: Dictionary = _first_block(ship, downwind_dir, others)
+			if block.is_empty():
+				continue
+			own_block[sid] = block["blocked"]
+			if block["blocked"] == "map edge":
+				blocked = "map edge"
+				continue
+			own_blocker[sid] = block["blocker"]
+			if blocked == "":
+				blocked = "ship"
+				blocker = game_state.get_ship(block["blocker"])
 
+	# The fouled_with check is unreachable under the 8.A.2 order (a blocker is always resolved
+	# first); kept so a fouled ship never partially drifts (8.A.6), e.g. one whose partner id is
+	# dangling.
 	if drifts and blocked == "ship" and group.size() == 1 and group[0].fouled_with == "":
 		# Partial drift (8.A.5): only the bow or only the stern is blocked by a ship; the free end
 		# drifts and the ship pivots on the other, if that leaves a legal two-hex footprint.
 		var lone: ShipState = group[0]
-		var bow_to: Vector2i = _hex_grid.get_neighbor(lone.hex_position.x, lone.hex_position.y, downwind_dir)
 		var stern_from: Vector2i = lone.stern_hex()
 		var stern_to: Vector2i = _hex_grid.get_neighbor(stern_from.x, stern_from.y, downwind_dir)
-		var others_now: Dictionary = Occupancy.build(game_state.get_all_ships(), [lone.ship.ship_id])
-		var bow_blocked: bool = others_now.has(bow_to)
-		var stern_blocked: bool = others_now.has(stern_to)
+		var bow_blocked: bool = others.has(targets[lone.ship.ship_id])
+		var stern_blocked: bool = others.has(stern_to)
 		if bow_blocked != stern_blocked:
 			var free_end := "stern" if bow_blocked else "bow"
 			var result: Dictionary = _partial_drift(lone, free_end, downwind_dir)
@@ -194,6 +193,21 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 	if moved:
 		for ship in group:
 			game_state.ship_controller.set_ship_position(ship.ship.ship_id, targets[ship.ship.ship_id])
+
+
+## What first stops `ship`'s whole footprint shifting one hex downwind: {} when nothing does,
+## {"blocked": "map edge"} when a hex would leave the map (that outranks a ship), otherwise
+## {"blocked": "ship", "blocker": id} for the first of its hexes (bow, then stern) that would enter
+## a hex in `others` (hex -> ship id).
+func _first_block(ship: ShipState, downwind_dir: int, others: Dictionary) -> Dictionary:
+	var result := {}
+	for hex in ship.occupied_hexes():
+		var shifted: Vector2i = _hex_grid.get_neighbor(hex.x, hex.y, downwind_dir)
+		if not _in_bounds(shifted):
+			return {"blocked": "map edge"}
+		if result.is_empty() and others.has(shifted):
+			result = {"blocked": "ship", "blocker": others[shifted]}
+	return result
 
 
 ## The footprint after only one end of `ship` drifts one hex downwind: the free end ("bow" or

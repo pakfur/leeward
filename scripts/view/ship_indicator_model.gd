@@ -58,18 +58,24 @@ static func _build(hex_position: Vector2i, facing: int, ship_speed: int, wind_di
 	m.direction_anchor = hex_grid.axial_to_edge_world(q, r, facing)
 	m.direction_dir = (m.direction_anchor - center).normalized()
 
-	# Windward indicator: from the ship centre (midway between bow and stern) out to the footprint's
-	# face in the wind direction. Abeam or on a quarter that face is half a hex out (an outer face of
-	# the bow or stern hex); dead ahead or astern it is the bow or stern hex's end face, a hex out.
-	# Hidden when calm.
+	# Windward indicator: on the outer face, in the wind direction, of the windward end of the
+	# footprint: the bow hex when the wind is forward of the beam, the stern hex when it is abaft.
+	# The anchor therefore always sits on a face whose normal is windward_dir. Hidden when calm.
 	m.windward_visible = wind_speed > 0  # windward_anchor/dir are computed regardless; consumers must gate on windward_visible.
-	var face_offset := hex_grid.axial_to_edge_world(q, r, wind_direction) - center
-	var along_keel := wind_direction == facing or wind_direction == (facing + 3) % 6
-	m.windward_anchor = hex_grid.ship_center_world(hex_position, facing) + face_offset * (2.0 if along_keel else 1.0)
-	m.windward_dir = face_offset.normalized()
+	var windward_end: Vector2i = hex_position if _wind_forward_of_beam(facing, wind_direction) \
+		else HexGrid.stern_of(hex_position, facing)
+	m.windward_anchor = hex_grid.axial_to_edge_world(windward_end.x, windward_end.y, wind_direction)
+	m.windward_dir = (m.windward_anchor - hex_grid.axial_to_world(windward_end.x, windward_end.y)).normalized()
 
 	m.label_anchor = m.direction_anchor
 	m.speed = ship_speed
 	m.point_of_sail = point_of_sail_label(hex_grid.get_wind_facing(facing, wind_direction))
 	m.opacity = opacity_val
 	return m
+
+
+## Whether wind from `wind_direction` meets a ship facing `facing` forward of its beam: from dead
+## ahead or 60 degrees either side of the bow.
+static func _wind_forward_of_beam(facing: int, wind_direction: int) -> bool:
+	var off := posmod(wind_direction - facing, 6)
+	return off == 0 or off == 1 or off == 5

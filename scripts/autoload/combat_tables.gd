@@ -109,7 +109,7 @@ func range_bonus(kind: String, range_hexes: int) -> int:
 		return 0
 	return int(bonuses[range_hexes - 1])
 
-## name: "two_targets", "plain_sail", "dismantling_shot", "anchored", "wind_speed_4".
+## name: "two_targets", "half_broadside", "plain_sail", "dismantling_shot", "anchored", "wind_speed_4".
 func flat_modifier(name: String) -> int:
 	if name in ["crew_quality", "sections_firing", "rake", "initial_broadside", "_doc"]:
 		push_error("CombatTables: '%s' is not a flat modifier" % name)

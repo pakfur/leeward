@@ -6,6 +6,19 @@ var playback: MovementResolutionPlaybackController
 var hex_grid: HexGrid
 
 
+## Records every ship view's pose after each impulse's animation.
+class PoseSpy extends MovementResolutionPlaybackController:
+	var poses: Array = []  # [{ship_id: [base_position, model rotation y]}] per animated batch
+
+	func _animate_moves(move_events: Array) -> void:
+		await super(move_events)
+		var snap := {}
+		for sid in _ship_views:
+			var view: ShipView = _ship_views[sid]
+			snap[sid] = [view.base_position, view.model_node.rotation_degrees.y if view.model_node else 0.0]
+		poses.append(snap)
+
+
 func before_each() -> void:
 	hex_grid = HexGrid.new()
 	playback = MovementResolutionPlaybackController.new(hex_grid, {}, 0)
@@ -455,8 +468,12 @@ func test_rolled_back_turn_swings_out_and_back() -> void:
 	var events: Array = log.get_result("swinging_ship").events
 	var out: Array = pb._posed_events([events[0]])
 	assert_eq(out.size(), 1, "The swing out is animated")
+	if out.size() == 1:
+		assert_eq(out[0].event_type, MovementTypes.ResolutionEventType.OVERLAP)
 	var back: Array = pb._posed_events([events[1]])
 	assert_eq(back.size(), 1, "The swing back is animated")
+	if back.size() == 1:
+		assert_eq(back[0].event_type, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
 
 
 func test_rolled_back_turn_with_ahead_move_animates_only_the_move() -> void:
@@ -468,7 +485,7 @@ func test_rolled_back_turn_with_ahead_move_animates_only_the_move() -> void:
 	var posed: Array = pb._posed_events([events[0], events[1]])
 	assert_eq(posed.size(), 1)
 	assert_eq(posed[0].event_type, MovementTypes.ResolutionEventType.MOVE)
-	assert_eq(pb._posed_events([events[2]]).size(), 0, "Nothing swung out, so nothing swings back")
+	assert_eq(pb._posed_events([events[2]]), [], "Nothing swung out, so nothing swings back")
 
 
 func test_pre_movement_events_are_not_played_again_on_impulse_0() -> void:
@@ -485,16 +502,84 @@ func test_playback_rolled_back_turn_ends_in_the_old_pose() -> void:
 	var view := ShipView.new()
 	add_child_autofree(view)
 	view.initialize(ship_state, hex_grid)
-	var pb = MovementResolutionPlaybackController.new(hex_grid, {"swinging_ship": view}, 0)
+	var pb := PoseSpy.new(hex_grid, {"swinging_ship": view}, 0)
 	add_child_autofree(pb)
 
 	pb.play(_overlap_rollback_log(false))
 	await wait_for_signal(pb.playback_completed, 5.0)
 
+	assert_eq(pb.poses.size(), 2, "Two animated impulses: the swing out and the swing back")
+	if pb.poses.size() == 2:
+		var out: Array = pb.poses[0]["swinging_ship"]
+		var swung := hex_grid.ship_center_world(Vector2i(5, 5), 1)
+		assert_almost_eq(out[0].x, swung.x, 0.01, "after the OVERLAP impulse the stern is swung out")
+		assert_almost_eq(out[0].z, swung.z, 0.01)
+		assert_almost_eq(out[1], -1 * 60.0 - 90.0, 1.0, "facing SE while swung out")
 	var expected := hex_grid.ship_center_world(Vector2i(5, 5), 0)
 	assert_almost_eq(view.base_position.x, expected.x, 0.01, "back where it started")
 	assert_almost_eq(view.base_position.z, expected.z, 0.01)
 	assert_almost_eq(view.model_node.rotation_degrees.y, -90.0, 1.0, "facing E again")
+
+
+## The ship's centre for a bow world position and a model angle: half a hex astern of the bow.
+func _centre_for(bow: Vector3, angle: float) -> Vector3:
+	var rad := deg_to_rad(angle)
+	var half_length := hex_grid.hex_size * HexGrid.SQRT3 / 2.0
+	return Vector3(bow.x, 0.0, bow.z) + Vector3(sin(rad), 0.0, cos(rad)) * half_length
+
+
+func test_mid_swing_the_stern_orbits_a_fixed_bow() -> void:
+	var view := ShipView.new()
+	add_child_autofree(view)
+	view.initialize(_two_hex_state("turning", Vector2i(5, 5), 0), hex_grid)
+	var pb = MovementResolutionPlaybackController.new(hex_grid, {"turning": view}, 0)
+	add_child_autofree(pb)
+	var bow := hex_grid.axial_to_world(5, 5)
+	var from_angle := MovementResolutionPlaybackController._model_angle(0)
+	var to_angle := MovementResolutionPlaybackController._model_angle(1)
+	var half_length := hex_grid.hex_size * HexGrid.SQRT3 / 2.0
+
+	for t in [0.25, 0.5, 0.75]:
+		pb._pose_ship(t, view, bow, bow, from_angle, to_angle)
+		var angle := lerpf(from_angle, to_angle, t)
+		var expected := _centre_for(bow, angle)
+		assert_almost_eq(view.base_position.x, expected.x, 0.01, "t=%s: centre on the arc round the bow" % t)
+		assert_almost_eq(view.base_position.z, expected.z, 0.01)
+		var flat_bow := Vector3(bow.x, 0.0, bow.z)
+		assert_almost_eq(view.base_position.distance_to(flat_bow), half_length, 0.01, "t=%s: the bow stays put" % t)
+		assert_almost_eq(view.model_node.rotation_degrees.y, angle, 0.01)
+
+
+func test_ahead_step_slides_along_the_keel() -> void:
+	var view := ShipView.new()
+	add_child_autofree(view)
+	view.initialize(_two_hex_state("sailing", Vector2i(5, 5), 0), hex_grid)
+	var pb = MovementResolutionPlaybackController.new(hex_grid, {"sailing": view}, 0)
+	add_child_autofree(pb)
+	var from_bow := hex_grid.axial_to_world(5, 5)
+	var to_bow := hex_grid.axial_to_world(6, 5)
+	var angle := MovementResolutionPlaybackController._model_angle(0)
+
+	pb._pose_ship(0.5, view, from_bow, to_bow, angle, angle)
+
+	var expected := _centre_for(from_bow.lerp(to_bow, 0.5), angle)
+	assert_almost_eq(view.base_position.x, expected.x, 0.01, "halfway: the bow is midway between the hexes")
+	assert_almost_eq(view.base_position.z, expected.z, 0.01)
+	assert_almost_eq(view.model_node.rotation_degrees.y, angle, 0.01, "the heading does not change")
+	var start := _centre_for(from_bow, angle)
+	var finish := _centre_for(to_bow, angle)
+	assert_almost_eq(view.base_position.distance_to(start), view.base_position.distance_to(finish), 0.01,
+		"halfway along the keel")
+
+
+func test_overlap_events_add_no_pause() -> void:
+	# An OVERLAP is told by the swing animation (when posed) or not at all: it is never a special event,
+	# so it adds no unflagged pause to its impulse.
+	var overlap := MovementTypes.ResolutionEvent.new("a", 0, MovementTypes.ResolutionEventType.OVERLAP)
+	var rollback := MovementTypes.ResolutionEvent.new("b", 0, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
+	var move := MovementTypes.ResolutionEvent.new("c", 0, MovementTypes.ResolutionEventType.MOVE)
+	var special: Array = MovementResolutionPlaybackController._special_events([overlap, rollback, move], [])
+	assert_eq(special, [rollback], "Only the rollback is played as a special event")
 
 
 func _two_hex_state(ship_id: String, bow: Vector2i, facing: int) -> ShipState:

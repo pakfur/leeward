@@ -13,6 +13,7 @@ class MockGameState extends Node:
 	var environment: EnvironmentState = null
 	var ship_controller: ShipStateController = null
 	var ships: Dictionary = {}
+	# No map_bounds: every hex is in bounds (Occupancy.in_bounds), so the mock map is unbounded.
 	var active_scenario: Dictionary = {}
 	func _init() -> void:
 		environment = EnvironmentState.new()

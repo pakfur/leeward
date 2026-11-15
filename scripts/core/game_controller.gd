@@ -1259,8 +1259,14 @@ func _on_fire_pressed(orders: Array) -> void:
 		return
 	# Accepted: the declare step is over, so the panel must not stay interactive.
 	_close_fire_panel()
-	var lines: Array[String] = ["Your orders: %s." % FirePanelScript.fire_button_text(orders.size())]
+	var lines: Array[String] = [orders_summary_line(orders)]
 	_show_combat_panel(lines)
+
+
+## "Your orders: Fire 2 half broadsides." for the accepted order dictionaries (a split side is two
+## half broadsides, not two broadsides).
+static func orders_summary_line(orders: Array) -> String:
+	return "Your orders: %s." % FirePanelScript.fire_button_text_for(orders)
 
 
 ## Remove the fire panel (if any) and its arcs. Safe to call on any path out of the declare step.
@@ -1303,13 +1309,19 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 				rest.append(h)
 		hex_overlay.show_arc(chosen, side)
 		hex_overlay.show_arc(rest, side, false)
-	var target_hexes: Array[Vector2i] = []
-	for target_id in fire_panel.get_target_ids(ship_id):
-		var target := GameState.get_ship(target_id)
-		if target:
-			target_hexes.append_array(target.occupied_hexes())  # outline both the bow and the stern hex
+	var target_hexes := fire_target_hexes(fire_panel.get_target_ids(ship_id))
 	hex_overlay.show_target_highlights(target_hexes)
 	_frame_fire_view(ship_state, target_hexes)
+
+
+## The hexes to outline for the chosen fire targets: both the bow and the stern hex of each.
+static func fire_target_hexes(target_ids: Array) -> Array[Vector2i]:
+	var hexes: Array[Vector2i] = []
+	for target_id in target_ids:
+		var target := GameState.get_ship(target_id)
+		if target:
+			hexes.append_array(target.occupied_hexes())
+	return hexes
 
 
 ## Union of the bow and stern battery arcs on one side, without the ship's own hexes.

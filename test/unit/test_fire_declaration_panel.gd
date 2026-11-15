@@ -447,3 +447,87 @@ func test_panel_order_sets_pass_validate_orders() -> void:
 		assert_false(orders.is_empty(), "%s fires" % [clicks])
 		assert_eq(calc.validate_orders(0, orders), "", "validate_orders accepts %s" % [clicks])
 	GameState.ships.clear()
+
+
+# --- Row order, summary line and the instantiated panel -----------------------------------------
+
+func test_display_order_nearest_target_first() -> void:
+	var rows := FirePanel.display_order([
+		{"target_id": "far", "mgn": 20, "range": 6, "name": "A"},
+		{"target_id": "near_b", "mgn": 5, "range": 2, "name": "B"},
+		{"target_id": "near_a", "mgn": 9, "range": 2, "name": "A"},
+	])
+	assert_eq(rows.map(func(r): return r["target_id"]), ["near_a", "near_b", "far"])
+
+
+func test_battery_rows_within_a_target_go_full_bow_stern() -> void:
+	var options := FirePanel.battery_options([_shot(1, "t", "stern"), _shot(1, "t", "full"), _shot(1, "t", "bow")])
+	assert_eq(options, ["full", "bow", "stern"] as Array[String])
+
+
+func test_orders_summary_counts_a_split_side_as_half_broadsides() -> void:
+	const GameControllerScript = preload("res://scripts/core/game_controller.gd")
+	var split := [{"battery": "bow"}, {"battery": "stern"}]
+	assert_eq(GameControllerScript.orders_summary_line(split), "Your orders: Fire 2 half broadsides.")
+	assert_eq(GameControllerScript.orders_summary_line([{"battery": "full"}]), "Your orders: Fire 1 broadside.")
+	assert_eq(GameControllerScript.orders_summary_line([]), "Your orders: Hold all fire.")
+
+
+func _panel_with_two_targets() -> Array:
+	var ids := _double_covered_setup(GameState.gunnery_calculator)
+	assert_eq(ids.size(), 2, "fixture: two double-covered targets")
+	var panel: Control = load("res://scenes/ui/fire_declaration_panel.tscn").instantiate()
+	add_child_autofree(panel)
+	assert_eq(panel.setup(["firer"]), 1)
+	return [panel, ids]
+
+
+func _click(panel: Control, side: int, target_id: String, battery: String) -> void:
+	var row: Button = panel._ships["firer"]["widgets"][side]["targets"][FirePanel.row_key(target_id, battery)]
+	row.pressed.emit()
+
+
+func test_clicking_a_chosen_row_holds_that_battery() -> void:
+	var setup := _panel_with_two_targets()
+	var panel: Control = setup[0]
+	var ids: Array = setup[1]
+	_click(panel, ShipState.STARBOARD, ids[0], "bow")
+	_click(panel, ShipState.STARBOARD, ids[1], "stern")
+	assert_eq(panel.get_batteries("firer", ShipState.STARBOARD), ["bow", "stern"] as Array[String], "split side")
+	_click(panel, ShipState.STARBOARD, ids[0], "bow")  # the chosen bow row again
+	assert_eq(panel.get_batteries("firer", ShipState.STARBOARD), ["stern"] as Array[String], "the bow battery holds")
+	assert_eq(panel.get_target_ids("firer"), [ids[1]] as Array[String])
+	var bow_row: Button = panel._ships["firer"]["widgets"][ShipState.STARBOARD]["targets"][FirePanel.row_key(ids[0], "bow")]
+	assert_false(bow_row.button_pressed)
+	_click(panel, ShipState.STARBOARD, ids[1], "stern")
+	assert_eq(panel.get_batteries("firer", ShipState.STARBOARD), [] as Array[String], "the whole side holds")
+	var hold_row: Button = panel._ships["firer"]["widgets"][ShipState.STARBOARD]["targets"][""]
+	assert_true(hold_row.button_pressed)
+	assert_eq(panel.fire_button.text, "Hold all fire")
+	GameState.ships.clear()
+
+
+func test_panel_rows_list_nearest_target_first() -> void:
+	var setup := _panel_with_two_targets()
+	var panel: Control = setup[0]
+	var keys: Array = panel._ships["firer"]["widgets"][ShipState.STARBOARD]["targets"].keys()
+	var ranges := {}
+	for id in setup[1]:
+		ranges[id] = GameState.gunnery_calculator.preview(
+			FireRules.make_order("firer", ShipState.STARBOARD, id, "full", false, false, 0)).range_hexes
+	var listed: Array = []
+	for key in keys:
+		if key != "" and not listed.has(key.get_slice("|", 0)):
+			listed.append(key.get_slice("|", 0))
+	var expected: Array = setup[1].duplicate()
+	var names := FirePanel.target_names(GameState.get_all_ships())
+	expected.sort_custom(func(x, y):
+		if ranges[x] != ranges[y]:
+			return ranges[x] < ranges[y]
+		if names[x] != names[y]:
+			return names[x] < names[y]
+		return x < y)
+	assert_eq(listed, expected)
+	assert_eq(keys.slice(0, 3), [FirePanel.row_key(listed[0], "full"), FirePanel.row_key(listed[0], "bow"),
+		FirePanel.row_key(listed[0], "stern")])
+	GameState.ships.clear()
