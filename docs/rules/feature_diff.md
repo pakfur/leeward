@@ -28,10 +28,10 @@ These are the gaps and differences that most change how a game plays out, in rou
 | 6 | Fire, explosions and repairs are absent, so all damage is permanent. | 8.E, 8.F | Missing | Known |
 | 7 | Bearing off is cut down. The player has no choice, and the ship makes no turn when it succeeds (it just stops). **Odds fixed:** the roll now uses the printed d10 chart and its plotted-MP DRM. ✔ | 6.D.2–4 | Differs (odds fixed) | New |
 | 8 | Collision rigging loss is a fixed 2/4/6 boxes, taken by one ship only. The rules use d6−1, d6+1 or 2d6, and both ships roll when they run into each other. ✔ | 6.E.3 | Differs | New |
-| 9 | Speed is measured in hexes moved ahead, not in MPs (turns are not counted). This lowers the base for acceleration and deceleration. A "fast-tack" +1 MA bonus that is not in the rules has been added. ✔ | 5.E.2, 5.B.3 | Differs | New |
+| 9 | **Speed fixed (2-hex Phase 1).** Speed now counts executed steps, turns included, if the ship moved ahead at least once, else 0 (5.E.2). **Still different:** a "fast-tack" +1 MA bonus that is not in the rules has been added. ✔ | 5.E.2, 5.B.3 | Differs (speed fixed) | New |
 | 10 | Wind changes take effect in the same turn they are rolled, not the next, so players get no warning. ✔ | 3.B.6 | Differs | New |
 | 11 | **Fixed.** The contested-hex class bonus went the wrong way. Now it is +1 per class larger (lower class number). ✔ | 6.C.2c | Fixed | — |
-| 12 | There are no batteries. Each side fires as one whole broadside, so there is no bow/stern split, no half broadside (−8), and no per-battery arc or LOS. | 7.B.1–6, 7.C.12f | Differs | New |
+| 12 | **Mostly fixed (2-hex Phase 1).** Each side has a bow and a stern battery with its own arc and LOS (7.B.2–6); range is to the closest hex (7.C.4); the half broadside (−8) applies automatically when one battery bears, except when firing at two targets (7.C.12f–g). **Still missing:** explicit battery orders (7.B.1, Phase 3). | 7.B.1–6, 7.C.12f | Differs (batteries fixed) | New |
 
 ---
 
@@ -64,7 +64,7 @@ These are the gaps and differences that most change how a game plays out, in rou
 | Towing | 12.A | A `towing` field exists on the ship state, but no logic uses it. |
 | Signalling and its limits | 4.A.4, 11, 8.G.1e | The MESSAGE_DELIVERY phase is a stub. This mostly matters for multi-player games. |
 | Sail checks after a wind change | 2.B.1 | `# TODO` in the ENVIRONMENT phase. |
-| Friendly-ship blocking hexes for LOS (medium and long range) | 7.B.10–12 | Only the hex a ship occupies blocks LOS. Nothing discourages firing past friendly ships. |
+| Friendly-ship blocking hexes for LOS (medium and long range) | 7.B.10–12 | Only the hexes a ship occupies block LOS (both of its hexes now). Nothing discourages firing past friendly ships. |
 | Voluntarily reducing the MGN | 7.C.14 | |
 | Acceleration reductions (two rigging sections missing, WS=1, towing) | 5.E.5 | The acceleration value comes straight from the table. |
 | "A stopped ship whose first MP is a turn cannot move further" | 5.E.8 | |
@@ -72,7 +72,7 @@ These are the gaps and differences that most change how a game plays out, in rou
 | Exceptions to being in irons (WS just rose from 0, cut cable, anchored) | 3.D.4c, 5.D.4 | A ship at WF=L with speed 0 always counts as in irons. |
 | Reverse tack | 5.D.3 | |
 | Contested-hex winner may force the loser into the hex | 6.C.3 | The winner always enters. |
-| Overlapping ships and stern-vs-stern contests | 6.B, 6.C.5 | Not possible with 1-hex ships (see §4). |
+| Overlapping ships and stern-vs-stern contests | 6.B, 6.C.5 | Ships are 2-hex but never overlap yet; a turn whose stern would swing into a ship is cancelled (`STERN_BLOCKED`). Phase 2. |
 | Order of bear-off resolution and the once-per-turn limit | 6.D.3b–c, 6.D.5 | Hexes are resolved in dictionary order. |
 | Game ends by mutual agreement, or when one side has no ship that can move and fight | 2.A.1 | Leeward ends only when a side is all struck, or at `turn_limit`. A side that is dismasted but not struck keeps the game going. |
 | Struck ships count as CQ G | 9.C.4 | Only matters once firefighting and ungrappling exist. |
@@ -93,13 +93,13 @@ These are the gaps and differences that most change how a game plays out, in rou
 | **5.C.3–4** Turn spacing | Applies across turn boundaries, and the table is indexed by this turn's plotted speed. | Reset every turn, and indexed by last turn's speed. | A ship can turn at the end of one turn and again at the start of the next. | `movement_validator.gd:194-200, 313-327` |
 | **5.D.1–3** Tacking at MA 0 ✔ | Roll d10 on the Tacking table, with DRMs for SK, CSs not plotted to "T", rigging lost, in irons, towing, reversing tack, rudder, and not at WF=L (−2). A natural 0 always succeeds. If the roll fails, the turn is erased. | **Fixed:** the roll runs for any turn plotted at MA 0, uses the transcribed chart (`tacking_table.json`, which had stored every value 10% low) and applies the chart DRMs for SK, rigging, in irons, towing and not at WF=L. A natural 0 succeeds, the ship moves no further that g-t, and ships cannot turn in a calm (5.D.1a). The planning screen shows the same chance, modifiers included, whenever the ship starts at MA 0. **Still missing:** the CS-plotted DRM (no crew tasks, so every ship counts as fully plotted), reverse tack, and rudder damage. | Matches, apart from the missing DRMs. | `movement_resolver.gd` (`_roll_tacking`, `_calculate_tacking_drm`) |
 | **5.D.6** Turning out of irons ✔ | The player plots a turn and rolls with +1 DRM. On success the ship turns. | **Fixed:** the validator offers a ship in irons its two turns, and the plotted turn goes through the Tacking roll with the +1 in-irons DRM. A ship that plots no turn stays in irons. | Matches. | `movement_validator.gd`, `movement_resolver.gd` (`_remain_in_irons`) |
-| **5.E.2** Definition of speed ✔ | Total MPs used, turns included. | Hexes moved ahead only (`_count_hexes_moved`). | Next turn's acceleration and deceleration band sits lower after any turn. | `movement_resolver.gd:726` |
+| **5.E.2** Definition of speed ✔ | Total MPs used, turns included. | **Fixed (2-hex Phase 1):** executed steps, turns included, if the ship moved ahead at least once, else 0; `moved_this_turn` follows the same test. | Matches. | `movement_resolver.gd` (`_count_steps_executed`) |
 | **5.A.4 / 5.E** Deceleration minimum | The ship must use at least last speed − decel. | `validate_submission` is a stub that always succeeds. **?** Whether the plotting UI enforces `min_ma` was not traced. | Ships may be able to stop dead from high speed. | `movement_validator.gd:90-98, 140` |
 | **6.C.2c** Contested hex, class bonus ✔ | +1 per class *larger* (class 1 is the largest). | **Fixed:** +1 per class larger. | Matches. | `movement_resolver.gd` (`_calculate_contest_drm_relative`) |
 | **6.D** Bearing off ✔ | The player chooses whether to bear off. Roll d10 against the Bearing Off table, with +1/+2 DRMs for 4–6/7+ MPs plotted. On success the ship turns in an eligible direction and then meets its deceleration minimum. | **Odds fixed:** `bearing_off_table.json` now holds the printed chart (it was a home-made d6 formula), with NA meaning the ship cannot bear off, plus the plotted-MP DRM. **Still different:** the attempt is always made when eligible, and on success the ship just stops, with the same facing. | Ships never turn away, and a player can never choose to ram. | `movement_resolver.gd` (`_resolve_collision_or_bearoff`, `_bearing_off_drm`) |
 | **6.E.3** Collision rigging loss ✔ | d6−1 (FS), d6+1 (MS), 2d6 (PS), taken by the ship pointing at the other, or by both ships when they run into each other. | Fixed at 2, 4 or 6, applied to the moving ship only. | No variance, and head-on collisions are one-sided. | `movement_resolver.gd:478-483` |
 | **6.G.2** Failure to plot ✔ | The ship continues at last turn's speed. | The ship stays where it is (`SKIP_NO_PLOT`) and its speed becomes 0. | A ship whose player does not plot stops dead. Matters for the AI and for timeouts. | `movement_resolver.gd:55-67` |
-| **7.E.2** Rake geometry ✔ | Target within 5 hexes, with the firer outside **all** of the target's fire arcs, or directly ahead or astern. Broadside arcs cover 60°–120° off the bow, so the rake zone is the remaining 60° either side of the bow and stern line. Diagram 20's shaded bow-tie agrees. | Firer within **30°** of the target's bow or stern line, boundary excluded. | **Too narrow:** ships between 30° and 60° off the target's bow or stern get no rake. | `fire_geometry.gd` (`rake_type`) |
+| **7.E.2** Rake geometry ✔ | Target within 5 hexes, with the firer outside **all** of the target's fire arcs, or directly ahead or astern and adjacent. | **Fixed (2-hex Phase 1):** range to the closest hexes ≤ 5, firer outside all four of the target's battery arcs, or directly ahead of the bow / astern of the stern and adjacent. Stern vs bow rake by the target's beam line. | Matches. | `fire_geometry.gd` (`rake_type_ships`) |
 | **7.C.12g** Two targets | The rule text says −10. | −12. The chart wins (already decided). | Recorded only. | `gunfire_modifiers.json` |
 | **8.A.1 / 8.A.6** Who may drift ✔? | A stopped ship. A fouled pair that includes a ship that moved does not drift (example 2). | A ship drifts if it did not move, **or** collided, **or** is fouled. | Fouled ships drift in cases where the rules hold them. Depends on reading "stopped". | `drift_resolver.gd:68-72` |
 | **8.D.1** Unfouling DRMs ✔ | Chart: ≤2/≤3/≤4 by attempt. DRMs (all uses): ± SK, +1 if marines not available. Ungrappling-only DRMs don't apply to fouling. | Same thresholds, ± SK. "Marines not available" can't arise because marine tasks don't exist. | Matches. | `fouling_controller.gd` |
@@ -112,8 +112,7 @@ These are the gaps and differences that most change how a game plays out, in rou
 
 These are conscious design choices. They are listed because each one removes board-game outcomes.
 
-- **1-hex ships** (1.E.2). This removes overlap (6.B), stern-vs-stern contests (6.C.5), partial drift (8.A.5), per-battery LOS and partial targets (7.B.4–6), and the ship's own hex blocking LOS. Turns that the rules resolve as "no collision" become ordinary conflicts.
-- **One battery per broadside** (7.B.1). There is no bow/stern split and no half broadside.
+- **Ships are 2-hex (Phase 1 done).** Per-hex LOS and partial targets (7.B.4–6), range to the closest hex, rake per 7.E.2, the automatic half broadside, bow-pivot turning and speed counting turns (5.E.2) are implemented. **Still open (Phases 2–3):** overlap (6.B), stern-vs-stern contests (6.C.5), partial drift (8.A.5) and explicit battery orders (7.B.1; the half broadside is applied automatically, there is no choice of battery).
 - **A separate fire-declaration step after movement** (2.B.2, 7.A.2). Orders stay hidden until both sides have submitted. The outcome is the same as the board game's simultaneous fire.
 - **Two sides, one human against the stub AI.** The multi-player rules (signalling 11.B, limited information 14.C) have nothing to apply to.
 - **Struck ships cannot be targeted** (see the 9.C.3 row in §3).
@@ -137,6 +136,7 @@ Implemented with essentially the same outcome as the rules:
 - Drift odds, the downwind-first order, the blocked-drift foul roll, and fouled pairs drifting together (8.A.1–4, 8.A.6).
 - Unfouling chances that rise with each attempt, with the SK DRM (8.D.1–3).
 - Morale-check counts for lost sections, matching the ship log (9.B.1).
+- Two-hex footprint: bow-pivot turns, stern swing blocking, per-battery arcs and LOS, closest-hex range, rake (5.C.1–2, 5.E.2, 7.B.2–6, 7.C.4, 7.E.2).
 - Tacking roll and DRMs at MA 0, apart from the crew-section, reverse-tack and rudder DRMs (5.D.1–2, 5.D.6).
 - Morale: d10 ≥ MR passes, a failure lowers CQ one step, a failure at CQ G strikes, the dismasting and raked-while-dismasted triggers, striking when all hull or all crew boxes are gone (9.A–9.C).
 - Wind direction and speed rolls with the 16+ step back toward the starting wind, oceanic/coastal and steady/gusty frequencies, and direction rolls continuing at WS 0 (3.C, 3.D.1–2). The thresholds match the chart.
@@ -151,4 +151,4 @@ The combat chart (`docs/combat_tables_1.jpeg`), the ship log and Diagram 20 sett
 - **Collision Resolution:** fouling on d10 + DRMs ≥ 6, with MS +1, PS +2 and drifting −1, matches the code. Rigging loss of d6−1/d6+1/2d6 confirms the 6.E.3 difference (the code uses fixed 2/4/6).
 - **Unfouling, Drifting, Wind Speed Change and Wind Direction Change:** match their JSON files and the code.
 - **Morale-check counts:** match the ship log (9.B.1).
-- **Rake region:** confirmed too narrow (7.E.2).
+- **Rake region:** confirmed too narrow (7.E.2); fixed in 2-hex Phase 1.

@@ -117,7 +117,7 @@ Other project skills: `scenario-creator` (create scenario JSONs), `gen-test` (sc
 All except `dice` (takes the RNG) and `fire_geometry` (takes a `HexGrid`) take `game_state` in `_init` and reach collaborators through it. Names are exact. `stub_ai` predates the turn-loop work (it now also submits fire orders):
 
 - `dice` (`Dice`): the default source of randomness for game logic (see Dice below).
-- `fire_geometry` (`FireGeometry`, `scripts/core/`): pure geometry — `bearing_side` (which broadside covers a hex, or -1), `rake_type`, `has_line_of_sight`, `broadside_hexes`.
+- `fire_geometry` (`FireGeometry`, `scripts/core/`): pure geometry — `bearing_side` (which broadside covers a hex from a battery hex, or -1), `range_between` (closest hexes), `battery_bears`/`in_battery_arc` (per-battery arc and LOS), `rake_type_ships`, `has_line_of_sight`, `broadside_hexes` (per battery hex; callers draw bow ∪ stern).
 - `gunnery_calculator` (`GunneryCalculator`): pure queries, no dice, no mutation — `preview(order, two_targets)` gives a `ShotPreview` (modified gunfire number + modifier breakdown), `eligible_shots`, `any_eligible_shot`, `validate_orders`. Types in `gunnery_types.gd` (`FireOrder`, `ShotPreview`; aims `low`/`high`, ammo `round`/`dismantling`).
 - `gunnery_resolver` (`GunneryResolver`): rolls and applies a set of `FireOrder`s simultaneously, logging each shot.
 - `damage_controller` (`DamageController`): applies rigging/hull/crew boxes (lowest section first), dismounts guns on hull-section loss, notes morale checks, strikes ships.
@@ -194,12 +194,16 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 - **Direction numbering**: 0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE
 - **World/screen orientation**: world +X is east, −Z is north. `IsometricCamera` builds a right-handed basis (covered by `test_isometric_camera.gd`); `camera_rotation_y = 90` is north-up/east-right and only the player's camera controls change it. Selecting a ship never rotates or zooms the camera (`pan_to_if_needed` pans only when the ship is near the screen edge).
 - **Owner colours**: green = human player's ships, red = enemy (`ShipView.owner_color`, shared by the map ring/pennant and the minimap).
-- **All ships are 1-hex.** `ShipState.get_ship_size()` is deprecated and hardcoded to return 1; use `HexGrid.axial_to_world()` for positioning. The `size == 2` branches in `ShipView` are dead code kept for possible future revival. (`HexGrid.axial_to_edge_world()` is live — `ShipIndicatorModel` uses it to compute hex-face midpoints for the selection indicators.)
+- **All ships are 2-hex** (`ShipState.get_ship_size()` = 2). `ShipState.hex_position` is the **bow**; the stern is derived, never stored: `HexGrid.stern_of(bow, facing)` = neighbour in `(facing + 3) % 6`, or `ShipState.stern_hex()` / `occupied_hexes()` (`[bow, stern]`). A ship always sits on two hexes, never along a hex spine (5.A.2c). Position the model with `HexGrid.ship_center_world(bow, facing)`, not `axial_to_world()`. (`HexGrid.axial_to_edge_world()` is live — `ShipIndicatorModel` uses it to compute hex-face midpoints for the selection indicators.)
+- **Occupancy** (`scripts/server/occupancy.gd`, `Occupancy`): `build(ships, exclude_ids)` and `from_positions(bows, facings, exclude_ids)` map every occupied hex to a ship id; `overlapping_ids`; `in_bounds(hex, scenario)` (both hexes must be on the map). `GameState.placement_errors()` checks scenario placements. `GameController.ship_at_hex(hex, ships)` (static) picks a ship by either hex.
+- **Turns pivot on the bow**: the stern swings. A plot step's `hex` is the resulting bow (unchanged for a turn, new facing); `ValidMove.hex` is the click target (for a turn, the bow's neighbour in the new facing). A turn whose new stern is out of bounds is refused. In resolution each step enters one hex (ahead → new bow, turn → new stern); a turn into an occupied hex is `STERN_BLOCKED` (the turn is cancelled and the ship stops, no collision).
+- **Speed** counts executed steps, turns included, if the ship moved ahead at least once, else 0; `moved_this_turn` means moved ahead at least once (5.E.2).
 
 ### Sides, Arcs and Rake
 - Side indices: `ShipState.PORT = 0`, `ShipState.STARBOARD = 1`. Starboard is `facing + 1` / `facing + 2`; port is `facing − 1` / `facing − 2` (mod 6).
-- **Broadside arc**: the 60° wedge centred on the beam, out to range 15. `FireGeometry.bearing_side` is an angle test (60°–120° off the bow, with a 0.5° tolerance), which corresponds to the hex rows of directions `facing ± 1` and `facing ± 2`. Ahead/astern are blind; no chase guns.
-- **Rake**: target within 5 hexes and the firer strictly inside the target's bow or stern 60° wedge (within 30° of the line ahead/astern; the boundary does not count). Stern rake doubles crew hits.
+- **Batteries**: each side has two batteries, one at the bow hex and one at the stern hex. **Broadside arc** (per battery): the 60° wedge centred on the beam out to range 15. `FireGeometry.bearing_side` is an angle test (60°–120° off the bow, with a 0.5° tolerance), which corresponds to the hex rows of directions `facing ± 1` and `facing ± 2`. Ahead/astern are blind; no chase guns. A battery bears if at least one target hex is in its arc and every target hex in its arc has line of sight (target hexes outside the arc are ignored, 7.B.6); the ship's own hexes and the target's do not block. Range is measured to the closest hexes (7.C.4).
+- **Half broadside**: when only one battery bears, the shot takes `half_broadside` (−8) automatically, except when firing at two targets (the −12 two-target modifier is not stacked). Explicit battery orders (7.B.1) are not implemented.
+- **Rake** (`rake_type_ships`, 7.E.2): range (closest hexes) ≤ 5 and the firer is outside all four of the target's battery arcs, or directly ahead of its bow / astern of its stern and adjacent. Stern rake (firer aft of the target's beam line) doubles crew hits.
 - Fire orders: per broadside one target, aim `low`/`high`, ammo `round` (range 15) or `dismantling` (range 7). Ranges 10–15 are high only. Two targets (one per side) = −12 on each shot.
 
 ### Ship Status
@@ -231,7 +235,6 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 
 ### Legacy Code
 - `scripts/ui/planning_panel.gd` is legacy; `planning_phase_ui.gd` is the current version
-- The `size == 2` branch in `ShipView._update_position_from_state` is unused (all ships are 1-hex). Note: `HexGrid.axial_to_edge_world()` is now used by `ShipIndicatorModel` and is no longer dead (see Hex Grid note).
 
 ### SCV Audit
 Run the `scv-reviewer` agent as a **final step** before reporting any planned work as complete. Do not run it after each individual task or phase — only once at the very end, after all code changes are made and tests pass. Fix any violations it finds before finishing.
