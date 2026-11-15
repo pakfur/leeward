@@ -273,7 +273,7 @@ This also fixes the ±30° rake zone that `feature_diff.md` flags.
   - `test_playback_turn_keeps_bow_hex`: after a turn event, the view's final centre is `ship_center_world(bow, new_facing)`.
   - `test_arc_hexes_union_of_batteries`
 - [ ] **Step 2: Run `make test`.** Expected: FAIL.
-- [ ] **Step 3: Implement.** Use the existing `_create_2hex_model` as the starting point.
+- [ ] **Step 3: Implement.** The model already scales with `ProceduralShipSpec.for_ship(ship, get_ship_size())`; check the length and the click box for 2 hexes.
 - [ ] **Step 4: Run `make test`.** Expected: PASS.
 - [ ] **Step 5: Check in the running game.** Start `res://scenes/main_game.tscn` through the godot-mcp `run_project`. Click with window pixels (unproject × root scale, see CLAUDE.md) and check each of these:
   1. Clicking a stern hex selects the ship.

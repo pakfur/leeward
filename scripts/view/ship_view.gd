@@ -22,6 +22,8 @@ const OWNER_RING_RENDER_PRIORITY := 3
 var _owner_ring: MeshInstance3D = null   # coloured ring on the water around the ship
 var _owner_pennant: MeshInstance3D = null  # coloured pennant at the masthead (hidden when struck)
 var _owner_player_id: int = -1
+var _spec: ProceduralShipSpec = null  # placeholder model shape, from the ship's data
+var _rigging_level: int = 4  # last synced, so the pennant and flag sit on a standing mast
 
 static func owner_color(player_id: int) -> Color:
 	"""Owner colour for a player id (matches the minimap ship icons)."""
@@ -40,8 +42,8 @@ func initialize(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	state_id = ship_state.ship_id
 	hex_grid_ref = hex_grid
 
-	# Create ship model based on type
-	_create_ship_model(ship_state.get_ship_size())
+	# Placeholder model built from the ship's data (rating, class) and its footprint
+	_create_ship_model(ship_state)
 
 	# Sync to initial state
 	sync_to_state(ship_state, hex_grid)
@@ -57,6 +59,11 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	# Update rotation
 	_update_rotation_from_state(ship_state)
 
+	# Masts still standing and sails set; the pennant flies from the highest mast left
+	if _spec:
+		_rigging_level = ship_state.rigging_level()
+		ProceduralShipBuilder.apply_state(model_node, _spec, ship_state.sail_state, _rigging_level)
+
 	# Owner marker (ring + pennant) in the owner's colour
 	_update_owner_marker(ship_state.player_id)
 
@@ -64,6 +71,9 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	_update_struck_visual(ship_state.is_struck())
 	if _owner_pennant:
 		_owner_pennant.visible = not ship_state.is_struck()
+		_owner_pennant.position = _masthead_position(0.24)
+	if _struck_flag:
+		_struck_flag.position = _masthead_position(0.3) - Vector3(0, 0.1, 0)
 
 func _update_owner_marker(player_id: int) -> void:
 	"""Create (once) or recolour the owner ring and pennant for player_id."""
@@ -93,9 +103,9 @@ func _update_owner_marker(player_id: int) -> void:
 		_owner_pennant = MeshInstance3D.new()
 		_owner_pennant.name = "OwnerPennant"
 		var pennant := BoxMesh.new()
-		pennant.size = Vector3(0.03, 0.22, 0.45)
+		pennant.size = Vector3(0.02, 0.12, 0.3)
 		_owner_pennant.mesh = pennant
-		_owner_pennant.position = Vector3(0, 1.4, 0.24)  # masthead, streaming aft
+		_owner_pennant.position = _masthead_position(0.24)  # streaming aft
 		var pennant_material := StandardMaterial3D.new()
 		pennant_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		_owner_pennant.material_override = pennant_material
@@ -130,7 +140,7 @@ func _update_struck_visual(struck: bool) -> void:
 		flag_material.emission_enabled = true
 		flag_material.emission = Color(0.9, 0.9, 0.9)
 		_struck_flag.material_override = flag_material
-		_struck_flag.position = Vector3(0, 1.3, 0.3)
+		_struck_flag.position = _masthead_position(0.3) - Vector3(0, 0.1, 0)
 		model_node.add_child(_struck_flag)
 	else:
 		_struck_flag.queue_free()
@@ -138,9 +148,8 @@ func _update_struck_visual(struck: bool) -> void:
 
 func _update_position_from_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	"""Calculate and set position based on ship state"""
-	# Position based on ship size
-	# 1-hex ships (corvettes): centered in hex
-	# 2-hex ships: centered on edge between two hexes
+	# Position based on ship size: a 1-hex ship is centred in its hex; the 2-hex branch is
+	# unused until ships become 2-hex (docs/superpowers/plans/2026-11-14-two-hex-ships.md)
 	if ship_state.get_ship_size() == 1:
 		base_position = hex_grid.axial_to_world(ship_state.hex_position.x, ship_state.hex_position.y)
 	else:
@@ -159,17 +168,19 @@ func _update_rotation_from_state(ship_state: ShipState) -> void:
 	if model_node:
 		model_node.rotation_degrees = Vector3(0, angle_deg, 0)
 
-func _create_ship_model(ship_size: int) -> void:
-	"""Create ship model based on ship size"""
+func _create_ship_model(ship_state: ShipState) -> void:
+	"""Build the procedural placeholder model for this ship."""
 	model_node = Node3D.new()
 	add_child(model_node)
-
-	if ship_size == 1:
-		_create_1hex_model()
-	else:
-		_create_2hex_model()
-
+	_spec = ProceduralShipSpec.for_ship(ship_state.ship, ship_state.get_ship_size())
+	ProceduralShipBuilder.build(_spec, model_node)
 	_add_click_collision()
+
+func _masthead_position(aft: float) -> Vector3:
+	"""Just above the main masthead, `aft` behind the mast (model space)."""
+	if _spec == null:
+		return Vector3(0, 1.4, aft)
+	return Vector3(0, _spec.standing_masthead_y(_rigging_level) + 0.05, _spec.mast_z[_spec.main_mast()] + aft)
 
 func _add_click_collision() -> void:
 	"""Add a static body so the camera raycast in game_controller can pick this ship."""
@@ -177,98 +188,11 @@ func _add_click_collision() -> void:
 	body.name = "ClickBody"
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(1.2, 1.5, 1.8)
+	box.size = Vector3(1.2, _spec.masthead_y(), _spec.length + 0.5)
 	shape.shape = box
-	shape.position = Vector3(0, 0.4, 0)
+	shape.position = Vector3(0, _spec.masthead_y() / 2.0, 0)
 	body.add_child(shape)
 	add_child(body)
-
-func _create_1hex_model() -> void:
-	"""Create a small corvette-sized ship (1 hex, 1 mast)"""
-	# Hull - 2x thicker height (0.25 * 2 = 0.50), positioned so half is below waterline
-	var hull = MeshInstance3D.new()
-	var hull_mesh = BoxMesh.new()
-	hull_mesh.size = Vector3(0.5, 0.5, 1.3)
-	hull.mesh = hull_mesh
-
-	var hull_material = StandardMaterial3D.new()
-	hull_material.albedo_color = Color(0.4, 0.25, 0.1)  # Brown wood
-	hull.material_override = hull_material
-	hull.position = Vector3(0, 0.0, 0)  # Center at waterline
-	model_node.add_child(hull)
-
-	# Single mast - positioned on top of hull
-	var mast = MeshInstance3D.new()
-	var mast_mesh = CylinderMesh.new()
-	mast_mesh.height = 1.2
-	mast_mesh.top_radius = 0.04
-	mast_mesh.bottom_radius = 0.04
-	mast.mesh = mast_mesh
-
-	var mast_material = StandardMaterial3D.new()
-	mast_material.albedo_color = Color(0.6, 0.4, 0.2)
-	mast.material_override = mast_material
-	mast.position = Vector3(0, 0.90, 0)
-	model_node.add_child(mast)
-
-	# Bow indicator - positioned at deck level
-	var bow = MeshInstance3D.new()
-	var bow_mesh = CylinderMesh.new()
-	bow_mesh.height = 0.25
-	bow_mesh.top_radius = 0.0
-	bow_mesh.bottom_radius = 0.15
-	bow.mesh = bow_mesh
-
-	var bow_material = StandardMaterial3D.new()
-	bow_material.albedo_color = Color(0.8, 0.6, 0.2)
-	bow.material_override = bow_material
-	bow.position = Vector3(0, 0.35, -0.7)
-	bow.rotation_degrees = Vector3(-90, 0, 0)
-	model_node.add_child(bow)
-
-func _create_2hex_model() -> void:
-	"""Create a large ship (2 hexes, 3 masts)"""
-	# Hull - 2x thicker height (0.35 * 2 = .70), positioned so half is below waterline
-	var hull = MeshInstance3D.new()
-	var hull_mesh = BoxMesh.new()
-	hull_mesh.size = Vector3(0.6, .70, 2.6)
-	hull.mesh = hull_mesh
-
-	var hull_material = StandardMaterial3D.new()
-	hull_material.albedo_color = Color(0.4, 0.25, 0.1)  # Brown wood
-	hull.material_override = hull_material
-	hull.position = Vector3(0, 0.0, 0)  # Center at waterline
-	model_node.add_child(hull)
-
-	# Three masts - positioned on top of hull
-	for i in range(3):
-		var mast = MeshInstance3D.new()
-		var mast_mesh = CylinderMesh.new()
-		mast_mesh.height = 1.4
-		mast_mesh.top_radius = 0.05
-		mast_mesh.bottom_radius = 0.05
-		mast.mesh = mast_mesh
-
-		var mast_material = StandardMaterial3D.new()
-		mast_material.albedo_color = Color(0.6, 0.4, 0.2)
-		mast.material_override = mast_material
-		mast.position = Vector3(0, 1.2, -0.8 + i * 0.9)
-		model_node.add_child(mast)
-
-	# Bow indicator - positioned at deck level
-	var bow = MeshInstance3D.new()
-	var bow_mesh = CylinderMesh.new()
-	bow_mesh.height = 0.35
-	bow_mesh.top_radius = 0.0
-	bow_mesh.bottom_radius = 0.25
-	bow.mesh = bow_mesh
-
-	var bow_material = StandardMaterial3D.new()
-	bow_material.albedo_color = Color(0.8, 0.6, 0.2)  # Gold/brass
-	bow.material_override = bow_material
-	bow.position = Vector3(0, 0.50, -1.4)
-	bow.rotation_degrees = Vector3(-90, 0, 0)
-	model_node.add_child(bow)
 
 func _update_wave_position() -> void:
 	"""Update ship position and rotation based on wave motion (visual only)"""
