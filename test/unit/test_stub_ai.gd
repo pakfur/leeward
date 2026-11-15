@@ -693,3 +693,56 @@ func test_ai_falls_back_to_bearing_battery() -> void:
 	assert_eq(orders[0]["battery"], "bow")
 	var typed: Array[GunneryTypes.FireOrder] = [GunneryTypes.FireOrder.from_dict(orders[0])]
 	assert_eq(GameState.gunnery_calculator.validate_orders(1, typed), "")
+
+
+func _typed(orders: Array[Dictionary]) -> Array[GunneryTypes.FireOrder]:
+	var typed: Array[GunneryTypes.FireOrder] = []
+	for d in orders:
+		typed.append(GunneryTypes.FireOrder.from_dict(d))
+	return typed
+
+
+func _split_fixture() -> void:
+	# AI bow (0,0) facing E, stern (-1,0). "b" (bow (0,3) facing SE) lies only in the starboard bow
+	# battery's arc, "c" (bow (-4,3) facing SW) only in the starboard stern battery's.
+	_add_ship(_make_ship("ai1", 1, Vector2i(0, 0), 0, 0))
+	_add_ship(_make_ship("b", 0, Vector2i(0, 3), 1, 0))
+	_add_ship(_make_ship("c", 0, Vector2i(-4, 3), 2, 0))
+
+
+func test_ai_splits_a_side_between_two_targets() -> void:
+	_split_fixture()
+	var orders := stub_ai.choose_fire_orders()
+	assert_eq(orders.size(), 2, str(orders))
+	var by_battery := {}
+	for o in orders:
+		assert_eq(o["side"], ShipState.STARBOARD)
+		by_battery[o["battery"]] = o["target_id"]
+	assert_eq(by_battery, {"bow": "b", "stern": "c"})
+	var typed := _typed(orders)
+	assert_eq(GameState.gunnery_calculator.validate_orders(1, typed), "")
+	for p in GameState.gunnery_calculator.preview_orders(typed):
+		assert_gte(p.mgn, 1, "each split shot is worth firing under the two-target penalty")
+
+
+func test_ai_does_not_split_when_a_shot_would_be_wasted() -> void:
+	_split_fixture()
+	GameState.get_ship("ai1").ship.gun_factors = {"lg": 1, "mg": 0, "cr": 0}
+	var orders := stub_ai.choose_fire_orders()
+	assert_eq(orders.size(), 1, "a weak ship fires one battery rather than waste both: %s" % [orders])
+
+
+func test_ai_split_never_names_more_than_two_targets() -> void:
+	_split_fixture()
+	# "d" lies off the port beam, where both port batteries bear: a third target.
+	_add_ship(_make_ship("d", 0, Vector2i(1, -2), 0, 0))
+	var at_d := GameState.gunnery_calculator.eligible_shots("ai1").filter(
+		func(p): return p.order.target_id == "d" and p.order.side == ShipState.PORT)
+	assert_gt(at_d.size(), 0, "fixture: the port broadside bears on d")
+	var orders := stub_ai.choose_fire_orders()
+	var targets := {}
+	for o in orders:
+		targets[o["target_id"]] = true
+	assert_gt(orders.size(), 0)
+	assert_lte(targets.size(), 2, str(orders))
+	assert_eq(GameState.gunnery_calculator.validate_orders(1, _typed(orders)), "")

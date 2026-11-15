@@ -8,7 +8,8 @@ extends RefCounted
 ##   "forward" — move straight ahead, consuming all available MA
 ##   "hold"    — submit immediately with empty path
 ##
-## Fire: each ship fires each broadside at its best-odds target (see choose_fire_orders).
+## Fire: each ship fires each broadside at its best-odds target, splitting a side between two
+## targets when no full broadside bears (see choose_fire_orders).
 
 ## A broadside shot at or inside this range scores as a firing position.
 const FIRING_RANGE := 5
@@ -18,8 +19,6 @@ const FIRING_RANGE_WEIGHT := 2
 ## Added to a firing position's score when its second battery bears too: worth more than one hex of
 ## range, less than two (two batteries at range r beat one at r or r+1, lose to one at r-2).
 const SECOND_BATTERY_BONUS := 3
-## Two-target modifier from the chart; a second broadside is held when it would not survive it.
-const TWO_TARGET_PENALTY := 12
 
 ## Plotting errors for ships that legitimately cannot move; the AI skips them without error.
 const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_STRUCK", "SHIP_DISMASTED"]
@@ -57,38 +56,87 @@ func submit_fire_orders() -> void:
 		push_error("StubAI: fire orders rejected: %s" % reason)
 
 
-## FireOrder dictionaries for every AI ship. Per side: the highest-mgn full broadside (ties:
-## nearest, then target_id), or, when no full broadside bears, the best single battery; roundshot.
-## When the two sides pick different targets both fire only if each shot still has mgn >= 1 under
-## the two-target penalty; otherwise only the better one fires. At most two targets per ship.
+## FireOrder dictionaries for every AI ship; roundshot. Each side offers: hold; its best shot (the
+## highest-mgn full broadside, ties nearest then target_id, or when no full broadside bears the best
+## single battery); and, when no full broadside bears and its bow and stern batteries' best targets
+## differ, a split side (bow at one, stern at the other, 7.B.1). Of the combinations of the two
+## sides' offers that name at most two targets (7.A.4) and, when they name two, leave every shot
+## mgn >= 1 under the two-target penalty, the ship fires the one with the most shots, then the
+## highest total mgn (FireRules + preview_orders), then the nearest, then by target_id.
 func choose_fire_orders() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	var calculator: GunneryCalculator = game_state.gunnery_calculator
 	for ship_state in _get_ai_ships():
 		var shots := calculator.eligible_shots(ship_state.ship_id)
-		var best_per_side: Array[GunneryTypes.ShotPreview] = []
+		var offers: Array = []
 		for side in GunneryCalculator.SIDES:
-			var best: GunneryTypes.ShotPreview = null
-			for shot in shots:
-				if shot.order.side != side:
-					continue
-				# A full broadside before any half broadside (FireRules.battery_rank), then mgn.
-				if best == null or _preferred(shot, best):
-					best = shot
-			if best != null:
-				best_per_side.append(best)
-
-		var kept: Array[GunneryTypes.ShotPreview] = best_per_side
-		if best_per_side.size() == 2 and best_per_side[0].order.target_id != best_per_side[1].order.target_id:
-			var both_worthwhile := true
-			for shot in best_per_side:
-				if calculator.preview(shot.order, true).mgn < 1:
-					both_worthwhile = false
-			if not both_worthwhile:
-				kept = [best_per_side[1] if _shot_beats(best_per_side[1], best_per_side[0]) else best_per_side[0]]
-		for shot in kept:
-			result.append(shot.order.to_dict())
+			offers.append(_side_offers(shots, side))
+		var best: Dictionary = {}
+		for port_offer in offers[0]:
+			for starboard_offer in offers[1]:
+				var orders: Array[GunneryTypes.FireOrder] = []
+				orders.append_array(port_offer)
+				orders.append_array(starboard_offer)
+				var candidate := _evaluate_orders(calculator, orders)
+				if not candidate.is_empty() and (best.is_empty() or _candidate_beats(candidate, best)):
+					best = candidate
+		if not best.is_empty():
+			for order in best["orders"]:
+				result.append(order.to_dict())
 	return result
+
+
+## The order sets one side may fire: [] (hold), its best shot, and the split side when it has one.
+func _side_offers(shots: Array[GunneryTypes.ShotPreview], side: int) -> Array:
+	var offers: Array = [[] as Array[GunneryTypes.FireOrder]]
+	var best: GunneryTypes.ShotPreview = null
+	var best_by_battery := {}
+	for shot in shots:
+		if shot.order.side != side:
+			continue
+		# A full broadside before any half broadside (FireRules.battery_rank), then mgn.
+		if best == null or _preferred(shot, best):
+			best = shot
+		var battery := shot.order.battery
+		if not best_by_battery.has(battery) or _shot_beats(shot, best_by_battery[battery]):
+			best_by_battery[battery] = shot
+	if best == null:
+		return offers
+	offers.append([best.order] as Array[GunneryTypes.FireOrder])
+	if best.order.battery == GunneryTypes.BATTERY_FULL:
+		return offers
+	var bow: GunneryTypes.ShotPreview = best_by_battery.get(GunneryTypes.BATTERY_BOW)
+	var stern: GunneryTypes.ShotPreview = best_by_battery.get(GunneryTypes.BATTERY_STERN)
+	if bow != null and stern != null and bow.order.target_id != stern.order.target_id:
+		offers.append([bow.order, stern.order] as Array[GunneryTypes.FireOrder])
+	return offers
+
+
+## {orders, shots, mgn, range, targets} for a legal, worthwhile order set, else {}.
+func _evaluate_orders(calculator: GunneryCalculator, orders: Array[GunneryTypes.FireOrder]) -> Dictionary:
+	if orders.is_empty() or FireRules.declaration_error(orders) != "":
+		return {}
+	var two_targets := FireRules.target_count(orders[0].ship_id, orders) > 1
+	var total_mgn := 0
+	var nearest := FireRules.MAX_RANGE + 1
+	var targets: Array[String] = []
+	for p in calculator.preview_orders(orders):
+		if not p.can_fire or (two_targets and p.mgn < 1):
+			return {}
+		total_mgn += p.mgn
+		nearest = mini(nearest, p.range_hexes)
+		targets.append(p.order.target_id)
+	return {"orders": orders, "shots": orders.size(), "mgn": total_mgn, "range": nearest,
+		"targets": ",".join(targets)}
+
+
+func _candidate_beats(a: Dictionary, b: Dictionary) -> bool:
+	for key in ["shots", "mgn"]:
+		if a[key] != b[key]:
+			return a[key] > b[key]
+	if a["range"] != b["range"]:
+		return a["range"] < b["range"]
+	return a["targets"] < b["targets"]
 
 
 func _preferred(a: GunneryTypes.ShotPreview, b: GunneryTypes.ShotPreview) -> bool:
