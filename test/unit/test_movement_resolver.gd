@@ -1585,8 +1585,9 @@ func test_struck_ship_both_hexes_block() -> void:
 	assert_eq(result.final_hex, Vector2i(5, 5), "It makes its first step only")
 
 
-func test_moving_through_own_old_stern_is_free() -> void:
-	# A ship never conflicts with its own hexes: ahead and turn steps run free when alone.
+func test_solo_ship_sails_ahead_and_turns_freely() -> void:
+	# A ship never conflicts with its own hexes: alone, its ahead and turn steps all run. (No step can
+	# take a bow into the ship's own old stern: that would be sailing astern.)
 	var state = _make_ship_state(Vector2i(5, 5), 0, 3, "C", "solo")
 	GameState.ship_controller.set_plotted_movement("solo", [
 		{"hex": {"q": 6, "r": 5}, "facing": 0},
@@ -1968,14 +1969,17 @@ func test_stern_contest_loser_moves_ahead_for_its_deceleration_minimum() -> void
 
 
 func test_stern_contest_is_deterministic() -> void:
+	# The contest of test_stern_contest_loser_moves_ahead_for_its_deceleration_minimum, with W (crew A)
+	# fixed to beat L (crew G) by its DRM: the same result whatever the seed draws and whichever ship is
+	# listed first.
 	var first: Dictionary = {}
-	for attempt in range(2):
+	for attempt in range(4):
 		GameState.ships.clear()
 		rng.seed = 4242
 		resolver = MovementResolver.new(GameState, rng)
 		env.wind_direction = 2
-		var ship_l = _make_ship_state(Vector2i(2, 5), 0, 5, "A", "ship_l")
-		var ship_w = _make_ship_state(Vector2i(6, 3), 3, 3, "C", "ship_w")
+		var ship_l = _make_ship_state(Vector2i(2, 5), 0, 5, "A", "ship_l", 3, "G")
+		var ship_w = _make_ship_state(Vector2i(6, 3), 3, 3, "C", "ship_w", 3, "A")
 		GameState.ship_controller.set_plotted_movement("ship_l", [
 			{"hex": {"q": 3, "r": 5}, "facing": 0},
 			{"hex": {"q": 4, "r": 5}, "facing": 0},
@@ -1987,11 +1991,20 @@ func test_stern_contest_is_deterministic() -> void:
 			{"hex": {"q": 4, "r": 3}, "facing": 4},
 		])
 		var ships: Array[ShipState] = [ship_l, ship_w]
-		var out: Dictionary = resolver.run(ships, env).to_dict()
+		if attempt % 2 == 1:
+			ships.reverse()
+		var log = resolver.run(ships, env)
+		var out: Dictionary = {}
+		for sid in ["ship_l", "ship_w"]:
+			out[sid] = log.get_result(sid).to_dict()
+		resolver.apply_results(log, ships)
+		assert_eq(ship_w.facing, 4, "W wins the hex and turns")
+		assert_eq(ship_l.facing, 0, "L's turn is cancelled")
+		_assert_no_overlap(ships)
 		if attempt == 0:
 			first = out
 		else:
-			assert_eq(out, first, "Same seed, same stern contest")
+			assert_eq(out, first, "Same stern contest (attempt %d)" % attempt)
 
 
 func test_sterns_into_one_hex_with_further_mps_overlap_instead() -> void:
@@ -2122,7 +2135,14 @@ func test_complete_overlap_winner_without_further_mps_cannot_turn_either() -> vo
 	assert_eq(ship_a.facing, 3)
 	assert_eq(ship_b.facing, 0)
 	for s in [ship_a, ship_b]:
-		assert_false(_has_event(log.get_result(s.ship_id), MovementTypes.ResolutionEventType.COLLISION))
+		var result = log.get_result(s.ship_id)
+		assert_false(_has_event(result, MovementTypes.ResolutionEventType.COLLISION))
+		# The mechanism: the winner's turn is rolled back for the overlap it leaves, and in the replay the
+		# loser's turn (no longer contested) is rolled back for the same reason. Neither executes a step.
+		assert_eq(_events_of(result, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK).size(), 1,
+			"%s's turn is rolled back" % s.ship_id)
+		assert_eq(_events_of(result, MovementTypes.ResolutionEventType.MOVE).size(), 0,
+			"%s executes no step" % s.ship_id)
 	_assert_no_overlap(ships)
 
 
@@ -2160,11 +2180,15 @@ func test_contest_rolls_stay_in_the_log_when_the_winner_is_rolled_back() -> void
 	assert_eq(winners, 1, "One ship won the contest")
 
 
-## Cascade: X sails ahead into (6,5), the hex W's stern leaves as W turns into (5,5), X's bow hex
-## at the start (an overlap X clears by turning next segment). X's turn swings its stern onto stopped
-## V and is never cleared, so X is rolled back; X's stern then stays on (5,5), so W's overlap is not
-## cleared either and W is rolled back; W keeping (6,5) stops X's first step. X never reaches its
-## turn, so no rollback may be logged for it.
+## Chained rollbacks (6.B.4). X (bow (5,5) E) plots one ahead into (6,5), then a turn that swings its
+## stern onto stopped V's bow (5,6). W (bow (6,4) NW, stern (6,5)) plots a turn on segment 0 that swings
+## its stern into (5,5): X's bow hex at the start, and X's stern after its step ahead, so W overlaps X
+## until X's turn swings that stern away on segment 1.
+## Pass 1: X's overlap with V is never cleared, so X's turn is rolled back.
+## Pass 2: without that turn X's stern stays on (5,5), so W's overlap is not cleared either and W's turn
+## is rolled back.
+## Pass 3: W keeps its stern on (6,5), which stops X's first step. X never reaches its turn, so the
+## rollback found for it in pass 1 is stale and must not be logged.
 func _run_cascade(seed_value: int) -> Dictionary:
 	GameState.ships.clear()
 	env.wind_direction = 3
@@ -2289,3 +2313,135 @@ func test_collision_holds_the_old_stern_of_a_ship_whose_group_has_not_run() -> v
 
 	assert_eq(seg.held.get(Vector2i(6, 5), ""), "ship_b", "B's old stern is held by B")
 	assert_true(seg.resolved.has("ship_b"), "B's group no longer holds anyone up")
+
+
+# ===========================================================================
+# A turn cancelled after steps ahead
+# ===========================================================================
+
+func _assert_stopped_after_two_ahead(ship: ShipState, cause: String, other: String) -> void:
+	assert_eq(ship.speed, 2, "Speed is the steps executed")
+	assert_true(ship.moved_this_turn, "The ship moved ahead before its turn was cancelled")
+	assert_eq(ship.facing, 0, "The turn is cancelled")
+	var stop := _stopped_short_of(ship.ship_id)
+	assert_not_null(stop, "STOPPED_SHORT is logged")
+	if stop:
+		assert_eq(stop.data.get("moved", -1), 2)
+		assert_eq(stop.data.get("planned", -1), 3)
+		assert_eq(stop.data.get("cause", ""), cause)
+		assert_eq(stop.target_id, other)
+
+
+func test_turn_rolled_back_after_steps_ahead_stops_short() -> void:
+	# Two ahead, then a turn whose stern swings onto a stopped ship and is never cleared (6.B.4a). Speed 3,
+	# maneuverability C (deceleration 3) may stop, so the plot is amended to the two steps ahead.
+	env.wind_direction = 3
+	var ship = _make_ship_state(Vector2i(2, 5), 0, 3, "C", "ship_d")  # bow (2,5), stern (1,5)
+	var blocker = _make_ship_state(Vector2i(4, 4), 0, 0, "C", "blocker")  # bow (4,4), stern (3,4)
+	GameState.ship_controller.set_plotted_movement("ship_d", [
+		{"hex": {"q": 3, "r": 5}, "facing": 0},
+		{"hex": {"q": 4, "r": 5}, "facing": 0},
+		{"hex": {"q": 4, "r": 5}, "facing": 1},
+	])
+	var ships: Array[ShipState] = [ship, blocker]
+
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+
+	assert_eq(ship.hex_position, Vector2i(4, 5))
+	assert_eq(_events_of(log.get_result("ship_d"), MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK).size(), 1)
+	_assert_stopped_after_two_ahead(ship, "overlap", "blocker")
+	_assert_no_overlap(ships)
+
+
+func test_stern_contest_lost_after_steps_ahead_stops_short() -> void:
+	# L (crew G) and W (crew A, always wins) sail 2 ahead and swing their sterns into (4, 4) with no further
+	# MPs (6.C.5). L (speed 3, maneuverability C) may stop, so its turn is just cancelled.
+	env.wind_direction = 2
+	var ship_l = _make_ship_state(Vector2i(2, 5), 0, 3, "C", "ship_l", 3, "G")
+	var ship_w = _make_ship_state(Vector2i(6, 3), 3, 3, "C", "ship_w", 3, "A")
+	GameState.ship_controller.set_plotted_movement("ship_l", [
+		{"hex": {"q": 3, "r": 5}, "facing": 0},
+		{"hex": {"q": 4, "r": 5}, "facing": 0},
+		{"hex": {"q": 4, "r": 5}, "facing": 1},
+	])
+	GameState.ship_controller.set_plotted_movement("ship_w", [
+		{"hex": {"q": 5, "r": 3}, "facing": 3},
+		{"hex": {"q": 4, "r": 3}, "facing": 3},
+		{"hex": {"q": 4, "r": 3}, "facing": 4},
+	])
+	var ships: Array[ShipState] = [ship_l, ship_w]
+
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+
+	assert_eq(ship_l.hex_position, Vector2i(4, 5))
+	assert_eq(ship_w.facing, 4, "W wins and turns")
+	_assert_stopped_after_two_ahead(ship_l, "stern_contest", "ship_w")
+	_assert_no_overlap(ships)
+
+
+func test_uncleared_sterns_together_overlap_rolls_both_back() -> void:
+	# A and B swing their sterns into (4, 5) on segment 0. A has a step ahead to follow, so it is no
+	# contest (6.C.1b) but a 6.B overlap; A's step ahead runs into stopped S, so neither stern leaves
+	# (4, 5) on segment 1. Both overlaps fail together and both turns are rolled back (6.B.4).
+	env.wind_direction = 3
+	var ship_a = _make_ship_state(Vector2i(5, 5), 1, 2, "C", "ship_a")  # bow (5,5), stern (5,4)
+	var ship_b = _make_ship_state(Vector2i(3, 6), 1, 2, "C", "ship_b")  # bow (3,6), stern (3,5)
+	var ship_s = _make_ship_state(Vector2i(6, 5), 1, 0, "C", "ship_s")  # bow (6,5), stern (6,4)
+	GameState.ship_controller.set_plotted_movement("ship_a", [
+		{"hex": {"q": 5, "r": 5}, "facing": 0},
+		{"hex": {"q": 6, "r": 5}, "facing": 0},
+	])
+	GameState.ship_controller.set_plotted_movement("ship_b", [{"hex": {"q": 3, "r": 6}, "facing": 2}])
+	var ships: Array[ShipState] = [ship_a, ship_b, ship_s]
+
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+
+	assert_eq(ship_a.facing, 1, "A's turn is rolled back")
+	assert_eq(ship_b.facing, 1, "B's turn is rolled back")
+	for sid in ["ship_a", "ship_b"]:
+		var result = log.get_result(sid)
+		var rollbacks = _events_of(result, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
+		assert_eq(rollbacks.size(), 1, "%s: one rollback" % sid)
+		if rollbacks.size() == 1:
+			assert_eq(rollbacks[0].detail, "sterns together")
+		assert_false(_has_event(result, MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL), "%s: no contest" % sid)
+		assert_eq(_events_of(result, MovementTypes.ResolutionEventType.MOVE).size(), 0)
+	assert_eq(log.get_result("ship_a").blocked_by, "ship_b")
+	assert_eq(log.get_result("ship_b").blocked_by, "ship_a")
+	_assert_no_overlap(ships)
+
+
+func test_overlap_kept_because_the_other_ship_stopped_rolls_back() -> void:
+	# A turns S on its last MP: its stern swings into (5, 4), B's bow hex at the start ("already
+	# occupied"), as B sails ahead and leaves its stern there. B would clear the overlap with its second
+	# step, but it runs into stopped S and stays, so the overlap is still there after segment 1 and A's
+	# turn is rolled back. B, replayed, still sails one ahead and is stopped by S.
+	env.wind_direction = 3
+	var ship_a = _make_ship_state(Vector2i(5, 5), 0, 2, "C", "ship_a")  # bow (5,5), stern (4,5)
+	var ship_b = _make_ship_state(Vector2i(5, 4), 0, 2, "C", "ship_b")  # bow (5,4), stern (4,4)
+	var ship_s = _make_ship_state(Vector2i(7, 4), 1, 0, "C", "ship_s")  # bow (7,4), stern (7,3)
+	assert_eq(HexGrid.stern_of(Vector2i(5, 5), 1), Vector2i(5, 4))
+	GameState.ship_controller.set_plotted_movement("ship_a", [{"hex": {"q": 5, "r": 5}, "facing": 1}])
+	_plot_straight(ship_b, 2)
+	var ships: Array[ShipState] = [ship_a, ship_b, ship_s]
+
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+	var result_a = log.get_result("ship_a")
+	var result_b = log.get_result("ship_b")
+
+	assert_eq(ship_a.facing, 0, "A's turn is rolled back")
+	var rollbacks = _events_of(result_a, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
+	assert_eq(rollbacks.size(), 1)
+	if rollbacks.size() == 1:
+		assert_eq(rollbacks[0].detail, "already occupied")
+		assert_eq(rollbacks[0].impulse, 1)
+	assert_eq(result_a.blocked_by, "ship_b")
+	assert_eq(ship_b.hex_position, Vector2i(6, 4), "B made its first step only")
+	assert_eq(result_b.blocked_by, "ship_s")
+	assert_true(_has_event(result_b, MovementTypes.ResolutionEventType.BEARING_OFF_ROLL)
+		or _has_event(result_b, MovementTypes.ResolutionEventType.BEARING_OFF_PIVOT_DENIED), "B meets S")
+	_assert_no_overlap(ships)
