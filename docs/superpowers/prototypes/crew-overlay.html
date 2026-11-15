@@ -1,0 +1,991 @@
+<title>Leeward Crew Overlay</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Source+Sans+3:wght@400;600;700&family=Barlow+Condensed:wght@600;700&display=swap">
+<style>
+/* Layout: game screen — planning panel left, sea map right; the crew overlay covers the map with
+   a deck column (stacked cutaway + tactical inset), the enlarged deck, and the crew tray. */
+:root {
+  color-scheme: dark;
+  --ink: #0e151d;
+  --panel: #1a232e;
+  --panel-2: #222d3a;
+  --line: #354252;
+  --fg: #e6ebf1;
+  --muted: #98a5b4;
+  --sea: #2a5680;
+  --sea-line: #3b6b96;
+  --deck: #c8a26a;
+  --deck-dark: #7d5d33;
+  --plank: #b38c55;
+  --card: #eadfc4;
+  --card-edge: #8d7b57;
+  --card-ink: #2a2116;
+  --sailor: #2f6a8e;
+  --marine: #a3322a;
+  --fire: #e8692a;
+  --warn: #e3b344;
+  --ok: #62b47d;
+  --bad: #e0574d;
+  --accent: #79b7dc;
+  --font-display: "IM Fell English SC", "Iowan Old Style", Georgia, serif;
+  --font-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --font-counter: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+}
+html, body { height: 100%; }
+body {
+  background: var(--ink); color: var(--fg); font-family: var(--font-body); font-size: 14px;
+  padding-left: max(0px, env(safe-area-inset-left, 0px)); padding-right: max(0px, env(safe-area-inset-right, 0px));
+}
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app { display: grid; grid-template-columns: 300px 1fr; height: 100%; min-height: 560px; }
+
+/* ---------- planning panel (mock of the game's left panel) ---------- */
+.planning { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 14px; padding: 16px; overflow-y: auto; }
+.planning h1 { font-family: var(--font-display); font-weight: 400; font-size: 24px; margin: 0; letter-spacing: .02em; }
+.shipcard { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 12px; display: grid; gap: 4px; }
+.shipcard .name { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+.shipcard .name i { width: 12px; height: 12px; background: var(--ok); display: inline-block; border-radius: 2px; }
+.shipcard .row { color: var(--muted); font-variant-numeric: tabular-nums; }
+.status { display: grid; gap: 8px; margin-top: 6px; }
+.sbar { display: grid; gap: 4px; }
+.sbar .h { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--muted); }
+.sbar .h b { color: var(--fg); font-weight: 600; letter-spacing: .02em; }
+.sbar .h span { font-variant-numeric: tabular-nums; }
+.secs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.sec { display: flex; gap: 2px; padding: 2px; border-radius: 3px; }
+.sec.gone { box-shadow: inset 0 0 0 1px var(--bad); }
+.seg { flex: 1; height: 11px; border-radius: 1.5px; background: var(--seg); }
+.seg.lost { background: transparent; box-shadow: inset 0 0 0 1px #4a5868; }
+.sbar.hull { --seg: var(--deck); }
+.sbar.rig { --seg: #e4dbc4; }
+.crewline { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; display: grid; gap: 6px; }
+.crewline .lbl { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.crewline .sum { display: flex; flex-wrap: wrap; gap: 4px; }
+.gunsro { display: grid; gap: 3px; }
+.gunsro .big { font-family: var(--font-counter); font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gunsro .big.bad { color: #ff9b93; }
+.gunsro .det { color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+.chip { font-family: var(--font-counter); font-weight: 600; font-size: 13px; background: var(--ink); border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; }
+.chip.fire { border-color: var(--fire); color: #ffb48c; }
+.chip.warn { border-color: var(--bad); color: #ff9b93; }
+.rosterpanel { display: grid; gap: 8px; }
+.rosterpanel .lbl { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.btn { background: #2b3a4b; border: 1px solid #4a5d72; border-radius: 4px; padding: 8px 12px; text-align: center; }
+.btn:hover { background: #33465b; }
+.btn.primary { background: #2f5f80; border-color: #4f86ad; font-weight: 600; }
+.btn.primary:hover { background: #376f95; }
+.proto { border: 1px dashed #4a5d72; border-radius: 6px; padding: 12px; display: grid; gap: 10px; }
+.proto h2 { margin: 0; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--warn); }
+.proto p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.ctl { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ctl select { background: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; }
+.ctl input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
+.stepper { display: flex; align-items: center; gap: 6px; }
+.stepper button { width: 24px; height: 24px; border-radius: 4px; border: 1px solid var(--line); background: var(--ink); line-height: 1; }
+.endbar { margin-top: auto; display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; color: var(--muted); font-size: 13px; text-align: center; }
+
+/* ---------- sea map ---------- */
+.stage { position: relative; overflow: hidden; background: var(--sea); }
+#sea { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* Turn indicator: top centre of the game area, over the map and the overlay; same face and size as the ship name. */
+.turntop { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 20; pointer-events: none;
+  font-family: var(--font-display); font-size: 26px; line-height: 1; color: var(--fg); white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+/* End Planning: top right of the game area, so it sits beside Done when the overlay is open and stays when it is closed. */
+.endplan { position: absolute; top: 12px; right: max(16px, env(safe-area-inset-right, 0px)); z-index: 20; }
+.endplan:disabled { opacity: .55; cursor: default; }
+.ov-head { padding-right: 190px !important; }
+.openhint { position: absolute; left: 16px; bottom: 16px; background: rgba(14,21,29,.85); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; color: var(--muted); }
+
+/* ---------- overlay ---------- */
+.overlay { position: absolute; inset: 0; background: rgba(10,15,21,.97); display: grid; grid-template-rows: auto 1fr; }
+.ov-head { display: flex; align-items: center; gap: 16px; padding: 12px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.ov-head .title { font-family: var(--font-display); font-size: 26px; line-height: 1; }
+.ov-head .sub { color: var(--muted); }
+.ov-head .spacer { flex: 1; }
+.tabs { display: flex; gap: 4px; background: var(--ink); border: 1px solid var(--line); border-radius: 5px; padding: 3px; }
+.tabs button { background: none; border: 0; padding: 5px 10px; border-radius: 3px; color: var(--muted); }
+.tabs button[aria-pressed=true] { background: #2b3a4b; color: var(--fg); }
+.ov-body { display: grid; grid-template-columns: auto minmax(260px, 1fr); grid-template-rows: minmax(0, 1fr); min-height: 0; }
+/* Side column: deck list on the left, tactical picture right-justified and level with the top. */
+.ov-body .stack { display: grid; grid-template-columns: minmax(200px, 300px) minmax(200px, 1fr); grid-auto-rows: min-content; column-gap: 18px; row-gap: 10px; align-content: start; }
+.stack .tactcol { grid-column: 2; grid-row: 1 / span 3; justify-self: end; width: min(300px, 100%); }
+.stack > .hint, .stack > .lbl, .stack > .otherdecks { grid-column: 1; }
+.deckview { grid-column: 1; grid-row: 1; min-height: 0; overflow: hidden; }
+#bigdeck { flex: 1; min-height: 0; display: flex; justify-content: flex-start; }
+.ov-body .deckview { overflow: hidden; }
+.deckwrap.portrait { aspect-ratio: 504 / 1000; max-width: none; }  /* width and height set by sizeBigDeck() */
+.stack { grid-column: 2; grid-row: 1; border-left: 1px solid var(--line); padding: 14px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 0; }
+.stack .lbl, .ovfoot .lbl { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.stack .otherdecks { grid-template-columns: minmax(0, 300px); }
+.stack .hint { color: var(--muted); font-size: 13px; max-width: 300px; }
+.dmgbox { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; }
+.dmgbox summary { cursor: pointer; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg); font-weight: 700; list-style-position: inside; }
+.dmgbox[open] summary { margin-bottom: 8px; }
+.dmgbox .damage { gap: 6px; }
+.ovfoot { grid-column: 1 / -1; grid-row: 2; border-top: 1px solid var(--line); display: grid; grid-template-columns: 300px; justify-content: end; gap: 18px; padding: 10px 18px 12px; }
+.dmgcol, .tactcol { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.ovfoot .damage { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 18px; }
+
+/* deck column: stacked cutaway */
+.decks { border-right: 1px solid var(--line); padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.decks .lbl, .tray .lbl { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.deckthumb { position: relative; display: grid; gap: 4px; background: none; border: 1px solid var(--line); border-radius: 6px; padding: 6px; text-align: left; }
+.deckthumb[aria-current=true] { border-color: var(--accent); background: #16212c; }
+.deckthumb.dragover { border-color: var(--warn); }
+.deckthumb svg { width: 100%; height: auto; display: block; }
+.deckthumb .nm { font-size: 12.5px; font-weight: 600; display: flex; justify-content: space-between; gap: 6px; }
+.badges { display: flex; gap: 3px; }
+.badge { font-family: var(--font-counter); font-size: 12px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; background: #2b3a4b; color: var(--fg); }
+.badge.fire { background: var(--fire); color: #1b0d05; }
+.badge { white-space: nowrap; }
+.smalldeck .badges { flex-wrap: wrap; justify-content: flex-end; }
+.badge.alert { background: var(--bad); color: #fff; }
+.inset { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.decks .lbl, .tray .lbl { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.inset canvas { display: block; width: 100%; height: auto; }
+.inset .cap { font-size: 11.5px; color: var(--muted); padding: 5px 7px; border-top: 1px solid var(--line); }
+
+/* deck view */
+.deckview { display: flex; flex-direction: column; min-width: 0; padding: 14px 18px; gap: 10px; overflow: auto; }
+.deckview h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 22px; }
+.deckview .hint { color: var(--muted); font-size: 13px; }
+.deckwrap { position: relative; width: 100%; aspect-ratio: 1000 / 360; max-width: 100%; container-type: inline-size; }
+.otherdecks { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.smalldeck { border: 1px solid var(--line); border-radius: 6px; padding: 8px; display: grid; gap: 6px; background: #121b25; cursor: pointer; }
+.smalldeck:hover, .smalldeck:focus-visible { border-color: var(--accent); }
+.smalldeck.current { border: 2px solid var(--accent); background: #16273a; box-shadow: 0 0 0 3px rgba(121,183,220,.18); }
+.smalldeck.current .nm small { color: var(--accent); }
+.smalldeck .nm { font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.smalldeck .nm small { color: var(--muted); font-weight: 400; }
+.deckwrap.small .station { padding: 2px 4px; border-width: 1.5px; border-radius: 5px; gap: 2px; }
+.deckwrap.small .station .sl { font-size: 10px; }
+.deckwrap.small .station .sl small, .deckwrap.small .station .note, .deckwrap.small .station .why, .deckwrap.small .station select { display: none; }
+.mini[data-sec] { cursor: grab; touch-action: none; user-select: none; }
+.mini { font-family: var(--font-counter); font-weight: 700; font-size: 11px; background: var(--card); color: var(--card-ink); border: 1px solid var(--card-edge); border-radius: 3px; padding: 0 3px; line-height: 15px; }
+.mini.marine { box-shadow: inset 0 3px 0 var(--marine); }
+.mini.sailor { box-shadow: inset 0 3px 0 var(--sailor); }
+.decklbl { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.decklbl .badges { margin-left: auto; }
+.deckwrap svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.station { position: absolute; border: 2px dashed rgba(42,33,22,.55); border-radius: 8px; background: rgba(246,236,214,.28);
+  display: flex; flex-direction: column; gap: 4px; padding: 4px 6px; transition: background .12s, border-color .12s; }
+.station .sl { font-family: var(--font-counter); font-weight: 700; font-size: clamp(11px, 1.45cqw, 14px); color: var(--card-ink); text-transform: uppercase; letter-spacing: .04em; display: flex; justify-content: space-between; gap: 6px; }
+.station .sl small { font-weight: 600; opacity: .75; }
+.station .slots { display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; flex: 1; }
+.station.valid { border-color: var(--ok); background: rgba(98,180,125,.32); }
+.station.invalid { border-color: var(--bad); background: rgba(224,87,77,.18); }
+.station.disabled { opacity: .55; background: rgba(60,60,60,.25); }
+.station .why { font-size: 11.5px; color: #3a2a17; font-weight: 600; line-height: 1.2; }
+.station.over { box-shadow: 0 0 0 3px var(--warn) inset; }
+.station.firest { border-color: var(--fire); border-style: solid; background: rgba(232,105,42,.28); }
+.station.firest.unfought { border-color: var(--bad); background: rgba(224,87,77,.32); }
+.station.firest.valid { border-color: var(--ok); background: rgba(98,180,125,.32); }
+.station .note { font-size: 11.5px; color: #3a2a17; line-height: 1.2; }
+.station select { font-size: 12px; background: var(--card); color: var(--card-ink); border: 1px solid var(--card-edge); border-radius: 3px; padding: 0 2px; }
+.marker { position: absolute; transform: translate(-50%, -50%); font-family: var(--font-counter); font-weight: 700; font-size: 12px; color: #fff;
+  background: var(--bad); border: 2px solid #fff3; border-radius: 4px; padding: 1px 5px; white-space: nowrap; pointer-events: auto; }
+.marker.info { background: #6b4a2a; }
+
+/* counters (cardboard tokens) */
+.counter { --cs: 56px; width: var(--cs); height: var(--cs); flex: none; border-radius: 5px; background: var(--card); border: 1px solid var(--card-edge);
+  box-shadow: 0 2px 0 var(--card-edge), 0 3px 6px rgba(0,0,0,.45); color: var(--card-ink); position: relative; display: grid;
+  grid-template-rows: calc(var(--cs) * .2) 1fr auto; overflow: hidden; touch-action: none; user-select: none; cursor: grab; }
+.counter .band { background: var(--sailor); }
+.counter.marine .band { background: var(--marine); }
+.counter .id { font-family: var(--font-counter); font-weight: 700; font-size: calc(var(--cs) * .38); line-height: 1; text-align: center; padding-top: calc(var(--cs) * .05); }
+.deckwrap .counter { --cs: clamp(34px, 5.4cqw, 58px); }
+.counter .pips { display: flex; justify-content: center; gap: 2px; padding-bottom: 4px; }
+.counter .pips i { width: 6px; height: 6px; border: 1px solid var(--card-ink); background: var(--card-ink); display: block; }
+.counter .pips i.gone { background: transparent; }
+.counter .prog { position: absolute; right: 2px; bottom: calc(var(--cs) * .2); font-family: var(--font-counter); font-size: 10px; font-weight: 700; background: var(--card-ink); color: var(--card); border-radius: 2px; padding: 0 2px; }
+.counter .auto { position: absolute; left: 2px; top: calc(var(--cs) * .21); font-family: var(--font-counter); font-size: 10px; font-weight: 700; color: var(--fire); }
+.counter.selected { outline: 3px solid var(--accent); outline-offset: 2px; }
+.counter.ghost { position: fixed; z-index: 50; pointer-events: none; transform: translate(-50%, -50%) rotate(-4deg) scale(1.08); cursor: grabbing; }
+.counter.lifted { opacity: .35; }
+.counter.small { --cs: 44px; }
+
+/* crew tray */
+.tray { border-left: 1px solid var(--line); padding: 14px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+.roster { display: grid; gap: 6px; }
+.rrow { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+.rrow .task { font-weight: 600; }
+.rrow .det { color: var(--muted); font-size: 12.5px; }
+.tprog { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+.tprog .tl { font-family: var(--font-counter); font-weight: 700; font-size: 13px; color: var(--warn); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbar { display: flex; gap: 2px; flex: 1; max-width: 110px; }
+.tbar i { flex: 1; height: 6px; border-radius: 1px; background: #3a4757; }
+.tbar i.done { background: var(--ok); }
+.tbar i.now { background: var(--warn); }
+.rrow button.loc { background: none; border: 0; padding: 0; color: var(--accent); font-size: 12.5px; text-align: left; }
+.fires { display: grid; gap: 6px; }
+.fire { border: 1px solid var(--fire); border-radius: 6px; padding: 8px; display: grid; grid-template-columns: 1fr 56px; gap: 8px; align-items: center; background: rgba(232,105,42,.08); }
+.fire.unfought { border-color: var(--bad); background: rgba(224,87,77,.14); }
+.fire .ft { font-weight: 700; color: #ffb48c; }
+.fire.unfought .ft { color: #ff9b93; }
+.fire .fd { font-size: 12.5px; color: var(--muted); }
+.fire .slot { width: 56px; height: 56px; border: 2px dashed var(--fire); border-radius: 6px; display: grid; place-items: center; font-family: var(--font-counter); font-size: 12px; color: var(--fire); text-align: center; }
+.fire .slot.valid { border-color: var(--ok); background: rgba(98,180,125,.2); }
+.fire .slot.over { box-shadow: 0 0 0 3px var(--warn) inset; }
+.fire .slot .counter { width: 52px; height: 52px; }
+.readout { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px; display: grid; gap: 6px; }
+.readout .big { font-family: var(--font-counter); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.readout .big.bad { color: #ff9b93; }
+.readout .det { color: var(--muted); font-size: 12.5px; }
+.damage { display: grid; gap: 4px; }
+.damage div { display: flex; gap: 8px; align-items: baseline; font-size: 13px; }
+.damage div::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--bad); flex: none; transform: translateY(-1px); }
+.damage div.info::before { background: #a07a4c; }
+
+/* message bar */
+.msg { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 40; max-width: min(640px, calc(100% - 32px));
+  background: #26313f; border: 1px solid var(--line); border-left: 4px solid var(--warn); border-radius: 6px; padding: 10px 14px; display: flex; gap: 12px; align-items: center; box-shadow: 0 6px 24px rgba(0,0,0,.5); }
+.msg.bad { border-left-color: var(--bad); }
+.msg .acts { display: flex; gap: 6px; flex: none; }
+.msg .acts button { padding: 5px 10px; font-size: 13px; }
+
+/* context menu */
+.menu { position: fixed; z-index: 60; background: #1f2935; border: 1px solid #4a5d72; border-radius: 6px; padding: 4px; min-width: 240px; box-shadow: 0 8px 28px rgba(0,0,0,.55); display: grid; }
+.menu .mh { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 6px 8px 4px; }
+.menu button { background: none; border: 0; text-align: left; padding: 6px 8px; border-radius: 4px; display: grid; gap: 1px; }
+.menu button:hover:not(:disabled), .menu button:focus-visible { background: #2b3a4b; }
+.menu button:disabled { opacity: .5; cursor: default; }
+.menu button small { color: var(--muted); font-size: 11.5px; }
+.menu button.cur { color: var(--accent); }
+
+@media (max-width: 1100px) { .ovfoot { grid-template-columns: minmax(0,1fr) 230px; } }
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto minmax(620px, 1fr); height: auto; }
+  .planning { border-right: 0; border-bottom: 1px solid var(--line); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .ov-body { grid-template-columns: 1fr; grid-template-rows: auto; overflow-y: auto; }
+  .deckview, .stack, .ovfoot { grid-column: 1; grid-row: auto; }
+  #bigdeck { height: 560px; flex: none; }
+  .stack { border-left: 0; border-top: 1px solid var(--line); }
+  .ov-body .stack { grid-template-columns: minmax(0, 1fr); }
+  .stack .tactcol { grid-column: 1; grid-row: auto; justify-self: stretch; width: auto; }
+  .ovfoot { grid-template-columns: 1fr; }
+  .tray { border-left: 0; border-top: 1px solid var(--line); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <aside class="planning" aria-label="Planning panel">
+    <h1>Planning Phase</h1>
+    <div class="shipcard">
+      <div class="name"><i></i><span id="pc-name">HMS Lively</span></div>
+      <div class="row" id="pc-type">38-gun frigate · crew quality D</div>
+      <div class="status" id="pc-status" aria-label="Hull and rigging"></div>
+      <div class="crewline">
+        <div class="lbl">Guns</div>
+        <div class="gunsro" id="guns-readout"></div>
+        <button class="btn primary" id="open-btn" type="button">Crew &amp; damage <span style="opacity:.7">(C)</span></button>
+      </div>
+    </div>
+
+    <details class="dmgbox" id="dmg-box" open>
+      <summary id="dmg-sum">Damage (0)</summary>
+      <div class="damage" id="damage"></div>
+    </details>
+
+    <section class="rosterpanel" id="roster-panel" aria-label="Crew sections">
+      <div class="lbl">Crew sections · drag onto the deck</div>
+      <div class="roster" id="roster"></div>
+    </section>
+
+    <section class="proto" aria-label="Prototype controls">
+      <h2>Prototype controls</h2>
+      <p>These stand in for game state, so you can see how the overlay reacts. They are not part of the design.</p>
+      <label class="ctl" for="ctl-ship">Ship <select id="ctl-ship"><option value="frigate">38-gun frigate</option><option value="sol74">74-gun ship of the line</option></select></label>
+      <label class="ctl" for="ctl-sail">Sail carried <select id="ctl-sail"><option>FS</option><option>MS</option><option>PS</option></select></label>
+      <label class="ctl" for="ctl-tack">Turn at MA 0 plotted (tacking) <input type="checkbox" id="ctl-tack"></label>
+      <label class="ctl" for="ctl-shrouds">Shrouds severed <input type="checkbox" id="ctl-shrouds"></label>
+      <label class="ctl" for="ctl-wheel">Wheel shot away <input type="checkbox" id="ctl-wheel"></label>
+      <label class="ctl" for="ctl-obsc">Starboard broadside obscured <input type="checkbox" id="ctl-obsc"></label>
+      <div class="ctl"><span>Fires burning</span><span class="stepper"><button type="button" id="fire-minus" aria-label="One fire fewer">−</button><span id="fire-n">1</span><button type="button" id="fire-plus" aria-label="One more fire">+</button></span></div>
+      <label class="ctl" for="ctl-s2">S2 wiped out by gunfire <input type="checkbox" id="ctl-s2"></label>
+      <button class="btn" type="button" id="next-turn">End turn (advance tasks)</button>
+    </section>
+
+  </aside>
+
+  <main class="stage" id="stage">
+    <div class="turntop" id="turn-lbl" aria-live="polite">Turn 7</div>
+    <button class="btn endplan" type="button" id="end-plan" disabled title="Submits this turn's orders once every ship has them (placeholder in the prototype)">End Planning (0/1)</button>
+    <canvas id="sea" aria-label="Sea map"></canvas>
+    <div class="openhint">Press <b>C</b> or “Crew &amp; damage” to open the crew overlay.</div>
+
+    <section class="overlay" id="overlay" aria-label="Crew and damage overlay">
+      <header class="ov-head">
+        <div>
+          <div class="title" id="ov-title">HMS Lively</div>
+          <div class="sub" id="ov-sub">38-gun frigate · Turn 7 · crew quality D</div>
+        </div>
+        <div class="spacer"></div>
+        <div class="tabs" role="group" aria-label="Assign by">
+          <button type="button" aria-pressed="true" disabled title="Only mode in this prototype">Crew</button>
+        </div>
+        <button class="btn" type="button" id="reset-btn" title="Put every section back to its default task">Reset to defaults</button>
+        <button class="btn primary" type="button" id="close-btn">Done <span style="opacity:.7">(Esc)</span></button>
+      </header>
+      <div class="ov-body">
+        <section class="deckview" aria-live="polite">
+          <div class="decklbl">
+            <h2 id="deck-name">Upper deck</h2>
+            <span class="hint">bow up</span>
+          </div>
+          <div id="bigdeck"></div>
+        </section>
+        <aside class="stack" aria-label="Tactical picture and other decks">
+          <div class="tactcol">
+            <div class="lbl">Tactical picture</div>
+            <div class="inset">
+              <canvas id="inset" width="340" height="150" aria-label="Tactical inset"></canvas>
+              <div class="cap" id="inset-cap">Topaze 4 hexes off the starboard bow · wind SW 2</div>
+            </div>
+          </div>
+          <div class="hint">Drag a counter to a station, click a counter then a station, or right-click a counter. These decks accept drops too.</div>
+          <div class="lbl">Decks · top to bottom · click to show large</div>
+          <div class="otherdecks" id="otherdecks"></div>
+        </aside>
+
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------------- data ----------------
+  const SECTIONS_FIRING = { 4: 0, 3: -3, 2: -6, 1: -9, 0: null };
+  const SHIPS = {
+    frigate: {
+      name: "HMS Lively", type: "38-gun frigate", crewQuality: "D", sk: 0,
+      crew: { S1: 3, S2: 3, S3: 3, S4: 3, M: 2 },
+      hull: { max: [5, 5, 5, 6], cur: [4, 5, 5, 6] }, rig: { max: [5, 5, 6, 6], cur: [2, 5, 6, 6] },
+      decks: [
+        { id: "upper", name: "Upper deck", note: "Quarterdeck, waist and forecastle", guns: 4, carronades: true },
+        { id: "gun", name: "Gun deck", note: "19 eighteen-pounders a side", guns: 19 },
+        { id: "orlop", name: "Orlop", note: "Below the waterline", guns: 0 },
+      ],
+      gunDecks: ["gun"],
+    },
+    sol74: {
+      name: "HMS Superb", type: "74-gun ship of the line", crewQuality: "C", sk: -1,
+      crew: { S1: 6, S2: 6, S3: 6, S4: 6, M: 5 },
+      hull: { max: [8, 8, 9, 9], cur: [6, 8, 9, 9] }, rig: { max: [7, 7, 7, 7], cur: [3, 7, 7, 7] },
+      decks: [
+        { id: "upper", name: "Upper deck", note: "Quarterdeck, waist and forecastle", guns: 6, carronades: true },
+        { id: "gun_up", name: "Upper gun deck", note: "14 eighteen-pounders a side", guns: 14 },
+        { id: "gun_low", name: "Lower gun deck", note: "14 thirty-two-pounders a side", guns: 14 },
+        { id: "orlop", name: "Orlop", note: "Below the waterline", guns: 0 },
+      ],
+      gunDecks: ["gun_up", "gun_low"],
+    },
+  };
+  // Repair turns, 8.F: RR 6 ± SK, RH 10 ± SK, RS 5 ± SK. Sail change MS→FS 1 CS 1 g-t; FS→MS 1 CS 2; MS→PS 2 CS 2.
+  const STATIONS = {
+    guns:        { label: "Serve the guns", code: "", decks: "gunDecks", rect: [190, 118, 620, 124], cap: 4, accepts: "sailor", isDefault: true,
+                   note: "Both broadsides. Unassigned sailors work the guns (4.B.4)." },
+    marine_fire: { label: "Marine fire", code: "", decks: ["upper"], rect: [78, 70, 170, 96], cap: 1, accepts: "marine", isDefault: true,
+                   note: "Muskets at the quarterdeck rail." },
+    braces:      { label: "Braces (tacking)", code: "T", decks: ["upper"], rect: [448, 64, 150, 98], cap: 3, accepts: "any" },
+    boarders:    { label: "Boarders", code: "FB", decks: ["upper"], rect: [272, 64, 168, 98], cap: 5, accepts: "any" },
+    rr:          { label: "Rigging repair", code: "RR", decks: ["upper"], rect: [420, 196, 160, 96], cap: 1, accepts: "any" },
+    rs:          { label: "Shroud repair", code: "RS", decks: ["upper"], rect: [272, 196, 140, 96], cap: 1, accepts: "any" },
+    sails:       { label: "Sails aloft", code: "", decks: ["upper"], rect: [606, 92, 210, 176], cap: 2, accepts: "any" },
+    rh:          { label: "Hull repair", code: "RH", decks: ["orlop"], rect: [330, 118, 300, 124], cap: 1, accepts: "any" },
+  };
+  const SAIL_CHANGES = {
+    FS: [{ to: "MS", cs: 1, turns: 2 }, { to: "Furl", cs: 1, turns: 1 }],
+    MS: [{ to: "FS", cs: 1, turns: 1 }, { to: "PS", cs: 2, turns: 2 }],
+    PS: [{ to: "MS", cs: 2, turns: 2 }],
+  };
+
+  // ---------------- state ----------------
+  const S = {
+    open: true, shipKey: "frigate", deck: "upper", turn: 7,
+    sail: "FS", tacking: false, shroudsSevered: false, wheel: false, obscured: false, s2Gone: false,
+    riggingDamaged: true, hullDamaged: true,
+    fires: [{ id: 1, started: 6 }],
+    assign: {},     // section -> station id or "ff:<fireId>"
+    progress: {},   // section -> { task, done }
+    auto: {},       // section -> true when the server filled it in
+    sailTarget: "MS",
+    selected: null,
+    pending: null,  // { sec, target } awaiting progress-loss confirmation
+  };
+  const ship = () => SHIPS[S.shipKey];
+  const sections = () => Object.keys(ship().crew).filter(id => !(id === "S2" && S.s2Gone));
+  const isMarine = id => id === "M";
+  const sectionNum = id => isMarine(id) ? 99 : Number(id.slice(1));
+
+  function defaults() {
+    S.assign = {}; S.progress = {}; S.auto = {};
+    for (const id of sections()) S.assign[id] = isMarine(id) ? "marine_fire" : "guns";
+    S.assign.S3 = "rr"; S.progress.S3 = { task: "rr", done: 2 };
+    autoFire();
+  }
+  // A fire nobody fights gets the lowest free sailor section, marked "auto" (8.E.2 must be fought).
+  function autoFire() {
+    for (const f of S.fires) {
+      const key = "ff:" + f.id;
+      if (Object.values(S.assign).includes(key)) continue;
+      const free = sections().filter(id => !isMarine(id) && S.assign[id] === "guns").sort((a, b) => sectionNum(a) - sectionNum(b))[0];
+      if (free) { S.assign[free] = key; S.auto[free] = true; }
+    }
+  }
+
+  // ---------------- station rules ----------------
+  function stationVisible(st) {
+    if (st === "braces") return S.tacking;
+    if (st === "rr") return S.riggingDamaged;
+    if (st === "rs") return S.shroudsSevered;
+    if (st === "rh") return S.hullDamaged;
+    return true;
+  }
+  function stationDisabledReason(st) {
+    if (st === "rr" && !(S.sail === "FS")) return "Rigging can be repaired only at fighting sail, furled or dismasted (8.F.3a). You carry " + S.sail + ".";
+    if (st === "sails" && S.sail === "PS" && false) return "";
+    return "";
+  }
+  function stationDecks(st) {
+    const d = STATIONS[st].decks;
+    return d === "gunDecks" ? ship().gunDecks : d;
+  }
+  function occupants(target) { return sections().filter(id => S.assign[id] === target); }
+  function capacity(target) {
+    if (target.startsWith("ff:")) return 1;
+    if (target === "sails") { const ch = currentSailChange(); return ch ? ch.cs : 2; }
+    return STATIONS[target].cap;
+  }
+  function currentSailChange() { return (SAIL_CHANGES[S.sail] || []).find(c => c.to === S.sailTarget) || (SAIL_CHANGES[S.sail] || [])[0]; }
+  function taskName(target) {
+    if (!target) return "Unassigned";
+    if (target.startsWith("ff:")) return "Fighting fire " + target.slice(3);
+    if (target === "sails") { const ch = currentSailChange(); return ch ? "Sail change to " + ch.to : "Sails"; }
+    return STATIONS[target].label;
+  }
+  function taskTurns(target) {
+    const sk = ship().sk;
+    if (target === "rr") return 6 + sk;
+    if (target === "rh") return 10 + sk;
+    if (target === "rs") return 5 + sk;
+    if (target === "sails") { const ch = currentSailChange(); return ch ? ch.turns : 1; }
+    return 0;
+  }
+  // Why `sec` cannot go to `target`, or "" when it can.
+  function refusal(sec, target) {
+    if (target.startsWith("ff:")) {
+      const occ = occupants(target).filter(x => x !== sec);
+      return occ.length ? "Fire " + target.slice(3) + " already has " + occ[0] + " fighting it. One section per fire (8.E.2)." : "";
+    }
+    const st = STATIONS[target];
+    if (!stationVisible(target)) return st.label + " is not available now.";
+    const why = stationDisabledReason(target); if (why) return why;
+    if (st.accepts === "sailor" && isMarine(sec)) return "Only sailor sections serve the guns. Marines fire muskets instead.";
+    if (st.accepts === "marine" && !isMarine(sec)) return "Only the marine section gives marine fire.";
+    const occ = occupants(target).filter(x => x !== sec);
+    if (occ.length >= capacity(target)) return st.label + " is full (" + capacity(target) + " section" + (capacity(target) > 1 ? "s" : "") + ").";
+    if (target === "boarders" && !isMarine(sec)) {
+      // Sections busy fighting a fire (mandatory, 8.E.2) are skipped; open question for the spec.
+      const lower = sections().filter(id => !isMarine(id) && sectionNum(id) < sectionNum(sec) && S.assign[id] !== "boarders" && !(S.assign[id] || "").startsWith("ff:"));
+      if (lower.length) return "Boarders come from the lowest-numbered sailor sections first: send " + lower[0] + " before " + sec + " (4.B.1).";
+    }
+    return "";
+  }
+  function assign(sec, target, confirmed) {
+    if (S.assign[sec] === target) return;
+    const why = refusal(sec, target);
+    if (why) { S.selected = null; render(); message(why, "bad"); return; }
+    const prog = S.progress[sec];
+    if (prog && prog.done > 0 && prog.task !== target && !confirmed) {
+      S.pending = { sec, target };
+      render();
+      message(sec + " has " + prog.done + " of " + taskTurns(prog.task) + " turns on " + taskName(prog.task).toLowerCase() + ". Moving it loses them (4.A.3).", "warn",
+        [{ label: "Move anyway", primary: true, fn: () => { const p = S.pending; S.pending = null; assign(p.sec, p.target, true); } },
+         { label: "Keep it there", fn: () => { S.pending = null; clearMessage(); } }]);
+      return;
+    }
+    if (prog && prog.task !== target) delete S.progress[sec];
+    // An unfought fire left behind is filled again before submit (shown as "auto").
+    S.assign[sec] = target; delete S.auto[sec];
+    if (taskTurns(target) && !S.progress[sec]) S.progress[sec] = { task: target, done: 0 };
+    S.selected = null;
+    clearMessage();
+    render();
+  }
+
+  // ---------------- message bar ----------------
+  let msgEl = null;
+  function message(text, kind, actions) {
+    clearMessage();
+    msgEl = document.createElement("div");
+    msgEl.className = "msg" + (kind === "bad" ? " bad" : "");
+    msgEl.setAttribute("role", "status");
+    const t = document.createElement("div"); t.textContent = text; msgEl.appendChild(t);
+    const acts = document.createElement("div"); acts.className = "acts";
+    for (const a of (actions || [{ label: "OK", fn: clearMessage }])) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "btn" + (a.primary ? " primary" : ""); b.textContent = a.label; b.onclick = a.fn; acts.appendChild(b);
+    }
+    msgEl.appendChild(acts);
+    document.getElementById("stage").appendChild(msgEl);
+    if (!actions) setTimeout(() => { if (msgEl && msgEl.firstChild === t) clearMessage(); }, 4200);
+  }
+  function clearMessage() { if (msgEl) msgEl.remove(); msgEl = null; }
+
+  // ---------------- drawing: decks ----------------
+  const NS = "http://www.w3.org/2000/svg";
+  const HULL = "M70 58 L690 50 Q900 66 968 180 Q900 294 690 310 L70 302 Q46 180 70 58 Z";
+  function el(name, attrs, parent) { const e = document.createElementNS(NS, name); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+  // Portrait (bow up) drawings rotate the landscape geometry 90° and widen the beam by PK so stations stay usable:
+  // landscape (x, y) -> portrait (y * PK, 1000 - x) in a PW x 1000 view box.
+  const PK = 1.4, PW = 360 * PK;
+  function deckSvg(deck, thumb, portrait) {
+    const svg = el("svg", { viewBox: portrait ? "0 0 " + PW + " 1000" : "0 0 1000 360", "aria-hidden": "true" });
+    const host = portrait ? el("g", { transform: "translate(0,1000) rotate(-90) scale(1," + PK + ")" }, svg) : svg;
+    const cs = getComputedStyle(document.documentElement);
+    const c = n => cs.getPropertyValue(n).trim();
+    const defs = el("defs", {}, svg);
+    const clipId = "hull-" + deck.id + (thumb ? "-t" : "") + (portrait ? "-p" : "");
+    const cp = el("clipPath", { id: clipId }, defs); el("path", { d: HULL }, cp);
+    el("path", { d: HULL, fill: deck.id === "orlop" ? "#8f6f43" : c("--deck"), stroke: c("--deck-dark"), "stroke-width": 6 }, host);
+    const g = el("g", { "clip-path": "url(#" + clipId + ")" }, host);
+    for (let y = 64; y < 300; y += 16) el("line", { x1: 40, y1: y, x2: 980, y2: y, stroke: c("--plank"), "stroke-width": 1.5, opacity: .7 }, g);
+    for (let x = 120; x < 960; x += 130) for (let y = 64, k = 0; y < 300; y += 16, k++) el("line", { x1: x + (k % 2) * 60, y1: y, x2: x + (k % 2) * 60, y2: y + 16, stroke: c("--plank"), "stroke-width": 1.2, opacity: .55 }, g);
+    if (thumb && deck.id !== "upper") return svg;
+
+    const guns = deck.guns || 0;
+    if (guns) {
+      const x0 = deck.id === "upper" ? 120 : 130, x1 = deck.id === "upper" ? 250 : 830;
+      const n = deck.id === "upper" ? guns : guns;
+      for (let i = 0; i < n; i++) {
+        const x = deck.id === "upper" ? (i < n / 2 ? 110 + i * 46 : 620 + (i - n / 2) * 60) : x0 + (x1 - x0) * (i / Math.max(1, n - 1));
+        for (const side of [0, 1]) {
+          const y = side ? 288 : 72, dir = side ? 1 : -1;
+          el("rect", { x: x - 7, y: y - (side ? 16 : 0), width: 14, height: 16, rx: 2, fill: "#6b4a2a" }, g);
+          el("rect", { x: x - 3, y: side ? y : y - 14, width: 6, height: 14, fill: "#2b2b2b" }, g);
+          void dir;
+        }
+      }
+    }
+    if (deck.id === "upper") {
+      for (const mx of [215, 470, 735]) { el("circle", { cx: mx, cy: 180, r: 15, fill: "#5a3d1f", stroke: "#2e1f10", "stroke-width": 3 }, g); }
+      // wheel
+      el("circle", { cx: 262, cy: 180, r: 17, fill: "none", stroke: "#4a3018", "stroke-width": 4 }, g);
+      for (let a = 0; a < 8; a++) { const r = a * Math.PI / 4; el("line", { x1: 262, y1: 180, x2: 262 + Math.cos(r) * 22, y2: 180 + Math.sin(r) * 22, stroke: "#4a3018", "stroke-width": 3 }, g); }
+      el("rect", { x: 520, y: 166, width: 70, height: 28, fill: "#7a5a32", stroke: "#4a3018", "stroke-width": 2 }, g);
+      el("rect", { x: 330, y: 166, width: 60, height: 28, fill: "#7a5a32", stroke: "#4a3018", "stroke-width": 2 }, g);
+    }
+    if (ship().gunDecks.includes(deck.id)) {
+      el("circle", { cx: 470, cy: 180, r: 26, fill: "#6b4a2a", stroke: "#3a2814", "stroke-width": 3 }, g);
+      el("rect", { x: 560, y: 166, width: 70, height: 28, fill: "#7a5a32", stroke: "#4a3018", "stroke-width": 2 }, g);
+    }
+    if (deck.id === "orlop") {
+      el("path", { d: "M110 92 L690 86 Q860 100 912 180 Q860 260 690 274 L110 268 Q92 180 110 92 Z", fill: "none", stroke: "#3a2814", "stroke-width": 3, "stroke-dasharray": "10 8" }, g);
+      el("rect", { x: 140, y: 140, width: 120, height: 80, fill: "#5a3d1f", stroke: "#2e1f10", "stroke-width": 2 }, g);
+      el("rect", { x: 700, y: 140, width: 120, height: 80, fill: "#5a3d1f", stroke: "#2e1f10", "stroke-width": 2 }, g);
+      el("circle", { cx: 470, cy: 180, r: 10, fill: "#2e1f10" }, g);
+    }
+    // rudder at the stern
+    if (deck.id === "upper" || deck.id === "orlop") el("rect", { x: 34, y: 168, width: 22, height: 24, rx: 3, fill: "#4a3018" }, host);
+    return svg;
+  }
+
+  function counterEl(sec, opts = {}) {
+    const d = document.createElement("div");
+    d.className = "counter" + (isMarine(sec) ? " marine" : "") + (opts.small ? " small" : "") + (S.selected === sec ? " selected" : "");
+    d.dataset.sec = sec; d.tabIndex = 0; d.setAttribute("role", "button");
+    const max = ship().crew[sec];
+    d.setAttribute("aria-label", sec + ", " + taskName(S.assign[sec]) + ". Press Enter to pick up, or the context menu key for tasks.");
+    d.innerHTML = '<div class="band"></div><div class="id">' + sec + '</div><div class="pips">' + Array.from({ length: Math.min(max, 6) }, () => "<i></i>").join("") + "</div>";
+    const pr = S.progress[sec];
+    if (pr && taskTurns(pr.task) > 1) { const p = document.createElement("span"); p.className = "prog"; p.textContent = "T" + Math.min(pr.done + 1, taskTurns(pr.task)) + "/" + taskTurns(pr.task); p.title = "Turn " + Math.min(pr.done + 1, taskTurns(pr.task)) + " of " + taskTurns(pr.task); d.appendChild(p); }
+    if (S.auto[sec]) { const a = document.createElement("span"); a.className = "auto"; a.textContent = "AUTO"; a.title = "Filled in automatically: every fire must be fought"; d.appendChild(a); }
+    return d;
+  }
+
+  // Status window: one bar per section, one segment per box; lost boxes empty (lowest section loses first).
+  function renderStatus(sh) {
+    const box = document.getElementById("pc-status"); box.innerHTML = "";
+    const level = sh.rig.cur.filter(n => n > 0).length;
+    const maxSail = level === 4 ? "plain sail" : level === 3 ? "manoeuvring sail" : level > 0 ? "fighting sail" : "dismasted";
+    for (const [cls, name, d, extra] of [["hull", "Hull", sh.hull, ""], ["rig", "Rigging", sh.rig, " · carries up to " + maxSail]]) {
+      const left = d.cur.reduce((a, b) => a + b, 0), all = d.max.reduce((a, b) => a + b, 0);
+      const bar = document.createElement("div"); bar.className = "sbar " + cls;
+      bar.innerHTML = '<div class="h"><b>' + name + '</b><span>' + left + "/" + all + extra + "</span></div>";
+      const secs = document.createElement("div"); secs.className = "secs";
+      d.max.forEach((mx, i) => {
+        const sec = document.createElement("div"); sec.className = "sec" + (d.cur[i] === 0 ? " gone" : "");
+        sec.title = name + " section " + (i + 1) + ": " + d.cur[i] + " of " + mx + " boxes";
+        for (let k = 0; k < mx; k++) { const seg = document.createElement("i"); seg.className = "seg" + (k < d.cur[i] ? "" : " lost"); sec.appendChild(seg); }
+        secs.appendChild(sec);
+      });
+      bar.appendChild(secs); box.appendChild(bar);
+    }
+  }
+
+  function deckBadges(d) {
+    const sh = ship();
+    const here = Object.keys(STATIONS).filter(st => stationVisible(st) && stationDecks(st).includes(d.id));
+    const n = sections().filter(s => here.includes(S.assign[s]) && !STATIONS[S.assign[s]].isDefault).length;
+    const badges = document.createElement("span"); badges.className = "badges";
+    if (n) badges.innerHTML += '<span class="badge" title="Sections on tasks on this deck">' + n + " on tasks</span>";
+    if (d.id === "upper" && S.fires.length) badges.innerHTML += '<span class="badge fire" title="Fires aboard">' + S.fires.length + " fire" + (S.fires.length > 1 ? "s" : "") + "</span>";
+    if (d.id === "upper" && (S.wheel || S.shroudsSevered)) badges.innerHTML += '<span class="badge alert" title="Damage on this deck">damage</span>';
+    if (d.id === "orlop" && S.hullDamaged) badges.innerHTML += '<span class="badge alert" title="Hull damage to repair">hull</span>';
+    if (S.obscured && sh.gunDecks[0] === d.id) badges.innerHTML += '<span class="badge alert" title="Obscured broadside">−2 stbd</span>';
+    return badges;
+  }
+
+  function buildDeck(deck, small, portrait) {
+    const sh = ship();
+    const wrap = document.createElement("div"); wrap.className = "deckwrap" + (small ? " small" : "") + (portrait ? " portrait" : "");
+    wrap.appendChild(deckSvg(deck, false, portrait));
+    const pct = (v, total) => (v / total * 100) + "%";
+    // Place a landscape rect [x, y, w, h] (1000 x 360 units) on this deck, rotated when portrait.
+    const place = (elm, x, y, w, h) => {
+      if (!portrait) Object.assign(elm.style, { left: pct(x, 1000), top: pct(y, 360), width: pct(w, 1000), height: pct(h, 360) });
+      else Object.assign(elm.style, { left: pct(y * PK, PW), top: pct(1000 - x - w, 1000), width: pct(h * PK, PW), height: pct(w, 1000) });
+    };
+    for (const [id, st] of Object.entries(STATIONS)) {
+      if (!stationDecks(id).includes(deck.id) || !stationVisible(id)) continue;
+      const box = document.createElement("div"); box.className = "station"; box.dataset.target = id;
+      const [x, y, w, h] = st.rect;
+      place(box, x, y, w, h);
+      const why = stationDisabledReason(id);
+      if (why) box.classList.add("disabled");
+      const cap = capacity(id), occ = occupants(id), turns = taskTurns(id);
+      const sl = document.createElement("div"); sl.className = "sl";
+      sl.innerHTML = "<span>" + st.label + (st.code ? " · " + st.code : "") + "</span><small>" + occ.length + "/" + cap + (turns ? " · " + turns + " turns" : "") + "</small>";
+      box.appendChild(sl);
+      if (id === "sails" && !small) {
+        const opts = SAIL_CHANGES[S.sail] || [];
+        const sel = document.createElement("select"); sel.id = "sail-target"; sel.setAttribute("aria-label", "Sail change target");
+        for (const o of opts) { const op = document.createElement("option"); op.value = o.to; op.textContent = S.sail + " → " + o.to + " (" + o.cs + " CS, " + o.turns + " turn" + (o.turns > 1 ? "s" : "") + ")"; if (o.to === S.sailTarget) op.selected = true; sel.appendChild(op); }
+        sel.onchange = () => { S.sailTarget = sel.value; for (const s of occupants("sails").slice(capacity("sails"))) S.assign[s] = isMarine(s) ? "marine_fire" : "guns"; render(); };
+        box.appendChild(sel);
+      }
+      const slots = document.createElement("div"); slots.className = "slots";
+      for (const s of occ) {
+        if (small) { const m = document.createElement("span"); m.className = "mini " + (isMarine(s) ? "marine" : "sailor"); m.textContent = s; slots.appendChild(m); }
+        else slots.appendChild(counterEl(s));
+      }
+      box.appendChild(slots);
+      if (why) { const n = document.createElement("div"); n.className = "why"; n.textContent = why; box.appendChild(n); }
+      else if (id === "rh") { const n = document.createElement("div"); n.className = "note"; n.textContent = "Cancelled if the ship moves more than 4 MPs (8.F.3b)."; box.appendChild(n); }
+      else if (id === "guns") { const n = document.createElement("div"); n.className = "note"; n.textContent = st.note; box.appendChild(n); }
+      wrap.appendChild(box);
+    }
+    // Fire parties: one station per fire (FF1, FF2 …) under Marine fire on the quarterdeck. Fires have no
+    // location in the rules (8.E); the place is a convention. Two fires sit side by side; more wrap to two rows
+    // and show compact chips.
+    if (deck.id === "upper" && S.fires.length) {
+      const zx = 78, zy = 192, zw = 170, zh = 106, n = S.fires.length, gap = 6;
+      const cols = Math.min(n, 2), rows = Math.ceil(n / cols);
+      const w = (zw - gap * (cols - 1)) / cols, h = (zh - gap * (rows - 1)) / rows, compact = small || n > 2;
+      S.fires.forEach((f, i) => {
+        const key = "ff:" + f.id, occ = occupants(key), burnt = S.turn - f.started + 1;
+        const box = document.createElement("div"); box.className = "station firest" + (occ.length ? "" : " unfought"); box.dataset.target = key;
+        const col = i % cols, row = Math.floor(i / cols);
+        place(box, zx + col * (w + gap), zy + row * (h + gap), w, h);
+        const sl = document.createElement("div"); sl.className = "sl";
+        sl.innerHTML = "<span>Fire " + (i + 1) + " · FF" + (i + 1) + "</span>" + (n < 3 ? "<small>" + burnt + " turn" + (burnt > 1 ? "s" : "") + "</small>" : "");
+        box.appendChild(sl);
+        const slots = document.createElement("div"); slots.className = "slots";
+        for (const s of occ) {
+          if (compact) { const m = document.createElement("span"); m.className = "mini " + (isMarine(s) ? "marine" : "sailor"); m.textContent = s; m.dataset.sec = s; slots.appendChild(m); }
+          else slots.appendChild(counterEl(s));
+        }
+        box.appendChild(slots);
+        if (!occ.length && !compact) { const nt = document.createElement("div"); nt.className = "why"; nt.textContent = "Unfought: morale check each turn"; box.appendChild(nt); }
+        wrap.appendChild(box);
+      });
+    }
+    if (!small) {
+      const mk = (x, y, text, cls) => { const m = document.createElement("div"); m.className = "marker" + (cls ? " " + cls : "");
+        if (portrait) { m.style.left = pct(y * PK, PW); m.style.top = pct(1000 - x, 1000); } else { m.style.left = pct(x, 1000); m.style.top = pct(y, 360); }
+        m.textContent = text; wrap.appendChild(m); };
+      if (deck.id === "upper" && S.wheel) mk(262, 148, "Wheel shot away");
+      if (deck.id === "upper" && S.shroudsSevered) mk(470, 40, "Shrouds severed");
+      if (S.obscured && sh.gunDecks.includes(deck.id)) mk(500, 300, "Stbd broadside −2 (obscured)");
+      if (deck.id === "upper" && S.riggingDamaged) mk(870, 180, "Rigging section 1: " + sh.rig.cur[0] + "/" + sh.rig.max[0], "info");
+      if (deck.id === "orlop" && S.hullDamaged) mk(200, 180, "Hull section 1: " + sh.hull.cur[0] + "/" + sh.hull.max[0], "info");
+    }
+    return wrap;
+  }
+
+  // ---------------- render ----------------
+  function render() {
+    const sh = ship();
+    if (!sh.decks.find(d => d.id === S.deck)) S.deck = "upper";
+    const deck = sh.decks.find(d => d.id === S.deck);
+    document.getElementById("overlay").hidden = !S.open;
+    // The roster sits under the ship card while the overlay is open; the chip summary replaces it when closed.
+    document.getElementById("roster-panel").hidden = !S.open;
+    document.getElementById("open-btn").hidden = S.open;
+    document.getElementById("ov-title").textContent = sh.name;
+    document.getElementById("ov-sub").textContent = sh.type + " · crew quality " + sh.crewQuality + " · carrying " + S.sail;
+    document.getElementById("pc-name").textContent = sh.name;
+    document.getElementById("pc-type").textContent = sh.type + " · crew quality " + sh.crewQuality;
+    document.getElementById("turn-lbl").textContent = "Turn " + S.turn;
+    renderStatus(sh);
+
+    // stacked cutaway: the selected deck large, every other deck small below it (all accept drops)
+    document.getElementById("deck-name").textContent = deck.name;
+    const big = document.getElementById("bigdeck"); big.innerHTML = "";
+    big.appendChild(buildDeck(deck, false, true));
+    const others = document.getElementById("otherdecks"); others.innerHTML = "";
+    // Stack order: Upper deck, Orlop, then the gun deck(s) top to bottom; the enlarged deck drops out.
+    const stackOrder = [...sh.decks.filter(d => d.id === "upper"), ...sh.decks.filter(d => d.id === "orlop"), ...sh.decks.filter(d => sh.gunDecks.includes(d.id))];
+    // Fixed list: every deck keeps its place; the one shown large is highlighted, not removed.
+    for (const d of stackOrder) {
+      const card = document.createElement("div"); card.className = "smalldeck"; card.tabIndex = 0; card.dataset.deck = d.id;
+      card.setAttribute("role", "button"); card.setAttribute("aria-label", "Enlarge " + d.name);
+      if (d.id === S.deck) { card.classList.add("current"); card.setAttribute("aria-current", "true"); }
+      const nm = document.createElement("div"); nm.className = "nm";
+      nm.innerHTML = "<span>" + d.name + " <small>· " + (d.id === S.deck ? "shown large" : d.note) + "</small></span>";
+      nm.appendChild(deckBadges(d)); card.appendChild(nm);
+      card.appendChild(buildDeck(d, true));
+      card.addEventListener("click", ev => { if (ev.target.closest("[data-target]") && S.selected) return; S.deck = d.id; render(); });
+      card.addEventListener("keydown", ev => { if (ev.key === "Enter" && ev.target === card) { S.deck = d.id; render(); } });
+      others.appendChild(card);
+    }
+
+    // roster
+    const roster = document.getElementById("roster"); roster.innerHTML = "";
+    for (const id of Object.keys(sh.crew)) {
+      const row = document.createElement("div"); row.className = "rrow";
+      if (id === "S2" && S.s2Gone) {
+        row.innerHTML = '<div style="width:44px;height:44px;border:1px dashed var(--line);border-radius:5px"></div><div><div class="task">S2 lost</div><div class="det">Section wiped out; its task was abandoned (4.B.3).</div></div>';
+        roster.appendChild(row); continue;
+      }
+      row.appendChild(counterEl(id, { small: true }));
+      const info = document.createElement("div");
+      const t = S.assign[id];
+      const pr = S.progress[id];
+      const where = t && !t.startsWith("ff:") ? stationDecks(t)[0] : null;
+      const deckName = where ? sh.decks.find(d => d.id === where)?.name : "Fires";
+      info.innerHTML = '<div class="task">' + taskName(t) + "</div>" +
+        '<div class="det">' + (isMarine(id) ? "Marines" : "Sailors") + " · " + sh.crew[id] + " boxes</div>";
+      // Completion indicator for multi-turn tasks: the turn being worked now ("Turn 3 of 6") and a segment per turn.
+      if (pr && taskTurns(pr.task) > 1) {
+        const total = taskTurns(pr.task), now = Math.min(pr.done + 1, total);
+        const prog = document.createElement("div"); prog.className = "tprog";
+        prog.innerHTML = '<span class="tl">Turn ' + now + " of " + total + "</span>" +
+          '<span class="tbar" aria-hidden="true">' + Array.from({ length: total }, (_, k) => '<i class="' + (k < pr.done ? "done" : k === pr.done ? "now" : "") + '"></i>').join("") + "</span>";
+        info.appendChild(prog);
+      } else if (t && t.startsWith("ff:")) {
+        const f = S.fires.find(x => "ff:" + x.id === t);
+        if (f) { const prog = document.createElement("div"); prog.className = "tprog"; prog.innerHTML = '<span class="tl">Turn ' + (S.turn - f.started + 1) + " · until it is out</span>"; info.appendChild(prog); }
+      }
+      if (where && where !== S.deck) { const b = document.createElement("button"); b.type = "button"; b.className = "loc"; b.textContent = "Show on " + deckName; b.onclick = () => { S.deck = where; render(); }; info.appendChild(b); }
+      row.appendChild(info);
+      roster.appendChild(row);
+    }
+
+    // guns readout
+    const gunCrew = sections().filter(id => !isMarine(id) && S.assign[id] === "guns").length;
+    const mod = SECTIONS_FIRING[gunCrew];
+    const gr = document.getElementById("guns-readout");
+    gr.innerHTML = '<div class="big' + (mod === null || mod <= -6 ? " bad" : "") + '">' + (mod === null ? "Guns silent" : (gunCrew + " of 4 sections · " + (mod === 0 ? "±0" : mod))) + "</div>" +
+      '<div class="det">' + (mod === null ? "No sailor section is left at the guns: neither broadside can fire." : "Gunfire modifier for sections firing, on both broadsides.") + "</div>" +
+      '<div class="det">Marines: ' + (S.assign.M === "marine_fire" ? "muskets at the rail" : taskName(S.assign.M).toLowerCase()) + ".</div>";
+
+    // damage list
+    const dmg = document.getElementById("damage"); dmg.innerHTML = "";
+    const add = (t, cls) => { const d = document.createElement("div"); if (cls) d.className = cls; d.textContent = t; dmg.appendChild(d); };
+    for (const [i, f] of S.fires.entries()) { const t = S.turn - f.started + 1; add("Fire " + (i + 1) + ": burning " + t + " turn" + (t > 1 ? "s" : "") + " · 1 hull and 1 rigging a turn · " + (occupants("ff:" + f.id).length ? "fought by " + occupants("ff:" + f.id)[0] : "unfought: morale check each turn")); }
+    if (S.wheel) add("Wheel shot away: one turn per turn, poor maneuvering");
+    if (S.shroudsSevered) add("Shrouds severed: −1 MP until repaired (RS)");
+    if (S.obscured) add("Starboard broadside −2: obscured by fallen rigging");
+    if (S.riggingDamaged) add("Rigging boxes lost: repairable (RR)", "info");
+    if (S.hullDamaged) add("Hull boxes lost: repairable (RH)", "info");
+    document.getElementById("dmg-sum").textContent = "Damage (" + dmg.children.length + ")";
+
+    drawInset();
+    sizeBigDeck();
+  }
+
+  // The bow-up deck fills the height left between the header and the bottom strip; its width follows.
+  function sizeBigDeck() {
+    const host = document.getElementById("bigdeck"), wrap = host.querySelector(".deckwrap.portrait");
+    if (!wrap || !S.open) return;
+    host.style.width = ""; wrap.style.width = "0px"; wrap.style.height = "0px";
+    const h = Math.max(320, host.clientHeight), w = Math.round(h * PW / 1000);
+    wrap.style.height = h + "px"; wrap.style.width = w + "px"; host.style.width = w + "px";
+  }
+
+  // ---------------- interaction: drag, click-to-place, context menu ----------------
+  let drag = null, overDeckTimer = null;
+  function targetAt(x, y) {
+    const e = document.elementFromPoint(x, y); if (!e) return null;
+    const st = e.closest("[data-target]"); if (st) return { kind: "station", el: st, target: st.dataset.target };
+    const dk = e.closest("[data-deck]"); if (dk) return { kind: "deck", el: dk, deck: dk.dataset.deck };
+    return null;
+  }
+  function markTargets(sec) {
+    document.querySelectorAll("[data-target]").forEach(e => {
+      const t = e.dataset.target; e.classList.remove("valid", "invalid");
+      if (!sec || S.assign[sec] === t) return;
+      e.classList.add(refusal(sec, t) ? "invalid" : "valid");
+    });
+  }
+  document.addEventListener("pointerdown", ev => {
+    const c = ev.target.closest(".counter, .mini[data-sec]"); if (!c || ev.button !== 0 || c.classList.contains("ghost")) return;
+    drag = { sec: c.dataset.sec, x: ev.clientX, y: ev.clientY, moved: false, src: c, ghost: null, over: null };
+    c.setPointerCapture?.(ev.pointerId);
+  });
+  document.addEventListener("pointermove", ev => {
+    if (!drag) return;
+    if (!drag.moved && Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < 5) return;
+    if (!drag.moved) {
+      drag.moved = true; S.selected = null;
+      drag.ghost = counterEl(drag.sec); drag.ghost.classList.add("ghost"); document.body.appendChild(drag.ghost);
+      drag.src.classList.add("lifted"); markTargets(drag.sec);
+    }
+    drag.ghost.style.left = ev.clientX + "px"; drag.ghost.style.top = ev.clientY + "px";
+    const t = targetAt(ev.clientX, ev.clientY);
+    if (drag.over && (!t || t.el !== drag.over)) { drag.over.classList.remove("over", "dragover"); drag.over = null; clearTimeout(overDeckTimer); }
+    if (t && t.el !== drag.over) {
+      drag.over = t.el;
+      if (t.kind === "station") t.el.classList.add("over");
+      else { t.el.classList.add("dragover"); const deckId = t.deck; overDeckTimer = setTimeout(() => { if (drag && S.deck !== deckId) { S.deck = deckId; const sec = drag.sec; render(); markTargets(sec); document.querySelectorAll('.counter[data-sec="' + sec + '"]').forEach(x => x.classList.add("lifted")); } }, 450); }
+    }
+  });
+  document.addEventListener("pointerup", ev => {
+    if (!drag) return;
+    const d = drag; drag = null; clearTimeout(overDeckTimer);
+    if (d.ghost) d.ghost.remove();
+    if (!d.moved) { // a click: select, or deselect
+      S.selected = S.selected === d.sec ? null : d.sec; render(); if (S.selected) markTargets(S.selected); return;
+    }
+    const t = targetAt(ev.clientX, ev.clientY);
+    if (t && t.kind === "station") assign(d.sec, t.target); else render();
+  });
+  // click-then-click: a station click while a counter is selected
+  document.addEventListener("click", ev => {
+    if (!S.selected) return;
+    if (ev.target.closest(".counter, select, .menu, .msg")) return;
+    const st = ev.target.closest("[data-target]");
+    if (st) { assign(S.selected, st.dataset.target); return; }
+    if (!ev.target.closest("[data-deck]")) { S.selected = null; render(); }
+  });
+
+  // context menu (right-click, or the keyboard's menu key / Shift+F10)
+  let menuEl = null;
+  function closeMenu() { if (menuEl) menuEl.remove(); menuEl = null; }
+  function openMenu(sec, x, y) {
+    closeMenu();
+    menuEl = document.createElement("div"); menuEl.className = "menu"; menuEl.setAttribute("role", "menu");
+    const head = document.createElement("div"); head.className = "mh"; head.textContent = sec + " · assign to"; menuEl.appendChild(head);
+    const targets = [...S.fires.map(f => "ff:" + f.id), ...Object.keys(STATIONS).filter(stationVisible)];
+    for (const t of targets) {
+      const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitem");
+      const why = S.assign[sec] === t ? "" : refusal(sec, t);
+      const turns = taskTurns(t);
+      b.innerHTML = "<span>" + taskName(t) + (turns ? " · " + turns + " turns" : "") + "</span>" + (why ? "<small>" + why + "</small>" : S.assign[sec] === t ? "<small>Current task</small>" : "");
+      if (S.assign[sec] === t) b.classList.add("cur");
+      b.disabled = !!why || S.assign[sec] === t;
+      b.onclick = () => { closeMenu(); assign(sec, t); };
+      menuEl.appendChild(b);
+    }
+    document.body.appendChild(menuEl);
+    const r = menuEl.getBoundingClientRect();
+    menuEl.style.left = Math.min(x, innerWidth - r.width - 8) + "px";
+    menuEl.style.top = Math.min(y, innerHeight - r.height - 8) + "px";
+    menuEl.querySelector("button:not(:disabled)")?.focus();
+  }
+  document.addEventListener("contextmenu", ev => {
+    const c = ev.target.closest(".counter, .mini[data-sec]"); if (!c) return;
+    ev.preventDefault(); openMenu(c.dataset.sec, ev.clientX, ev.clientY);
+  });
+  document.addEventListener("pointerdown", ev => { if (menuEl && !ev.target.closest(".menu")) closeMenu(); }, true);
+  document.addEventListener("keydown", ev => {
+    const c = document.activeElement?.closest?.(".counter");
+    if (c && (ev.key === "ContextMenu" || (ev.key === "F10" && ev.shiftKey))) { ev.preventDefault(); const r = c.getBoundingClientRect(); openMenu(c.dataset.sec, r.right, r.top); return; }
+    if (c && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); S.selected = S.selected === c.dataset.sec ? null : c.dataset.sec; render(); if (S.selected) markTargets(S.selected); return; }
+    if (ev.key === "Escape") { if (menuEl) return closeMenu(); if (S.selected) { S.selected = null; render(); return; } if (S.open) { S.open = false; render(); } return; }
+    if ((ev.key === "c" || ev.key === "C") && !ev.target.closest("input, select")) { S.open = !S.open; render(); }
+  });
+
+  // ---------------- prototype controls ----------------
+  const $ = id => document.getElementById(id);
+  $("open-btn").onclick = () => { S.open = true; render(); };
+  $("close-btn").onclick = () => { S.open = false; render(); };
+  $("reset-btn").onclick = () => { defaults(); S.assign.S3 = "guns"; delete S.progress.S3; autoFire(); render(); };
+  $("ctl-ship").onchange = e => { S.shipKey = e.target.value; S.deck = "upper"; defaults(); render(); };
+  $("ctl-sail").onchange = e => {
+    S.sail = e.target.value; S.sailTarget = (SAIL_CHANGES[S.sail][0] || {}).to;
+    for (const s of occupants("rr")) if (stationDisabledReason("rr")) { S.assign[s] = "guns"; delete S.progress[s]; message(s + " left rigging repair: it is not possible at " + S.sail + " (8.F.3a). Its progress is lost.", "bad"); }
+    render();
+  };
+  $("ctl-tack").onchange = e => { S.tacking = e.target.checked; if (!S.tacking) for (const s of occupants("braces")) S.assign[s] = "guns"; render(); };
+  $("ctl-shrouds").onchange = e => { S.shroudsSevered = e.target.checked; if (!S.shroudsSevered) for (const s of occupants("rs")) S.assign[s] = "guns"; render(); };
+  $("ctl-wheel").onchange = e => { S.wheel = e.target.checked; render(); };
+  $("ctl-obsc").onchange = e => { S.obscured = e.target.checked; render(); };
+  $("ctl-s2").onchange = e => {
+    S.s2Gone = e.target.checked;
+    if (S.s2Gone) { const t = S.assign.S2; delete S.assign.S2; delete S.progress.S2; delete S.auto.S2; autoFire(); message("S2 was wiped out. Its task (" + taskName(t).toLowerCase() + ") is abandoned (4.B.3)." + (t && t.startsWith("ff:") ? " The next free section was sent to the fire." : ""), "bad"); }
+    else { S.assign.S2 = "guns"; autoFire(); }
+    render();
+  };
+  let nextFire = 2;
+  $("fire-plus").onclick = () => { S.fires.push({ id: nextFire++, started: S.turn }); autoFire(); $("fire-n").textContent = S.fires.length; render(); };
+  $("fire-minus").onclick = () => { const f = S.fires.pop(); if (f) for (const s of occupants("ff:" + f.id)) { S.assign[s] = "guns"; delete S.auto[s]; } $("fire-n").textContent = S.fires.length; render(); };
+  $("next-turn").onclick = () => {
+    S.turn++;
+    const done = [];
+    for (const [sec, p] of Object.entries(S.progress)) {
+      if (S.assign[sec] !== p.task) continue;
+      p.done++;
+      if (p.done >= taskTurns(p.task)) { done.push(sec + " finished " + taskName(p.task).toLowerCase()); S.assign[sec] = "guns"; delete S.progress[sec]; }
+    }
+    for (const k in S.auto) delete S.auto[k];
+    render();
+    message("Turn " + S.turn + ". Tasks in progress carried over" + (done.length ? "; " + done.join("; ") : "") + ".", "warn");
+  };
+
+  // ---------------- sea map + tactical inset ----------------
+  function hexPath(ctx, cx, cy, r) { ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = Math.PI / 6 + i * Math.PI / 3; ctx.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a)); } ctx.closePath(); }
+  function drawShip(ctx, x, y, ang, len, col) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+    ctx.fillStyle = "#e9e1cc"; ctx.beginPath(); ctx.moveTo(len * .55, 0); ctx.quadraticCurveTo(len * .3, -len * .2, -len * .45, -len * .16); ctx.lineTo(-len * .45, len * .16); ctx.quadraticCurveTo(len * .3, len * .2, len * .55, 0); ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, len * .06); ctx.beginPath(); ctx.ellipse(0, 0, len * .62, len * .3, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  }
+  function drawSea() {
+    const cv = $("sea"), r = cv.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
+    cv.width = Math.max(1, r.width * dpr); cv.height = Math.max(1, r.height * dpr);
+    const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr);
+    const cs = getComputedStyle(document.documentElement);
+    ctx.fillStyle = cs.getPropertyValue("--sea"); ctx.fillRect(0, 0, r.width, r.height);
+    ctx.strokeStyle = cs.getPropertyValue("--sea-line"); ctx.lineWidth = 1;
+    const R = 30, w = Math.sqrt(3) * R;
+    for (let row = -1; row * R * 1.5 < r.height + R; row++) for (let col = -1; col * w < r.width + w; col++) { hexPath(ctx, col * w + (row % 2 ? w / 2 : 0), row * R * 1.5, R); ctx.stroke(); }
+    drawShip(ctx, r.width * .32, r.height * .5, 0, 70, "#62b47d");
+    drawShip(ctx, r.width * .32 + 4 * w * .9, r.height * .5 + 3 * R * 1.5 * .9, Math.PI, 70, "#e0574d");
+  }
+  function drawInset() {
+    const cv = $("inset"); const ctx = cv.getContext("2d"); const cs = getComputedStyle(document.documentElement);
+    ctx.fillStyle = cs.getPropertyValue("--sea"); ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.strokeStyle = cs.getPropertyValue("--sea-line"); const R = 16, w = Math.sqrt(3) * R;
+    for (let row = -1; row * R * 1.5 < cv.height + R; row++) for (let col = -1; col * w < cv.width + w; col++) { hexPath(ctx, col * w + (row % 2 ? w / 2 : 0), row * R * 1.5, R); ctx.stroke(); }
+    drawShip(ctx, 110, 92, 0, 38, "#62b47d");
+    drawShip(ctx, 230, 168, Math.PI, 38, "#e0574d");
+    // wind from SW
+    ctx.save(); ctx.translate(36, 196); ctx.rotate(-Math.PI / 4 - Math.PI / 2 + Math.PI); ctx.strokeStyle = "#e6ebf1"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(0, 14); ctx.lineTo(0, -14); ctx.moveTo(-6, -6); ctx.lineTo(0, -14); ctx.lineTo(6, -6); ctx.stroke(); ctx.restore();
+    ctx.fillStyle = "#e6ebf1"; ctx.font = "600 12px " + cs.getPropertyValue("--font-body"); ctx.fillText("starboard", 150, 140);
+  }
+  addEventListener("resize", () => { drawSea(); sizeBigDeck(); });
+
+  defaults(); render(); drawSea();
+})();
+</script>

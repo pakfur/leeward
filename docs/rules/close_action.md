@@ -1345,9 +1345,9 @@ c. Exploding Ships. When a ship explodes, it casts burning debris for a <mark>6-
 
 HINT: Ships not yet on fire may voluntarily plot FF. The advantage to doing this is if a fire breaks out, they get a head start on putting it out, and may put it out before losing any damage.
 
-**8.E.3 Rolling for Extinguishing the Fire.** During the Maintenance Phase of each g-t, a ship which has plotted FF rolls one <mark>d10</mark> on the Unfouling table for each fire it is fighting. If the DR < the indicated number, the fire is out. Note: struck ships still fight fires.
+**8.E.3 Rolling for Extinguishing the Fire.** During the Maintenance Phase of each g-t, a ship which has plotted FF rolls one <mark>d10</mark> on the Unfouling table for each fire it is fighting. If the DR ≤ the indicated number, the fire is out. Note: struck ships still fight fires.
 
-**8.E.4 Fires Spreading.** Fires may spread from a ship on fire to all ships grappled and fouled to the ship on fire. During the "Fire <mark>Spreading"</mark> portion of the Fire and Explosions sub-phase, roll a <mark>d10</mark> for each ship grappled or fouled to a ship on fire. If the DR is <4 (+ SK of the ship being spread to), the fire spreads to the grappled/fouled ship. Note that fires can spread to ships already on fire.
+**8.E.4 Fires Spreading.** Fires may spread from a ship on fire to all ships grappled and fouled to the ship on fire. During the "Fire <mark>Spreading"</mark> portion of the Fire and Explosions sub-phase, roll a <mark>d10</mark> for each ship grappled or fouled to a ship on fire. If the DR is ≤4 (± SK of the ship being spread to), the fire spreads to the grappled/fouled ship. Note that fires can spread to ships already on fire.
 
 **8.E.5 Multiple Fires.** A ship can have more than one fire burning aboard her at the same time; there is no theoretical maximum number of fires. In addition to the normal causes of fires (hull critical hits #10 and #12, spreading from a burning ship, flaming debris), additional fires grow from existing fires if the original fires are not extinguished.
 
@@ -1363,7 +1363,7 @@ HINT: Ships not yet on fire may voluntarily plot FF. The advantage to doing this
 
 **EXPLANATION:** Next to foundering or shipwreck, the greatest fear of any sailor aboard a wooden sailing ship was fire, due to the mass of combustible materials (like pitch, tarred rigging — and especially gunpowder!) on board.
 
-**8.E.8 Effects of Fire — Fire Damage and Explosions.** Each g-t a ship is burning, including the g-t it catches fire, it "loses 1H and 1R for each fire. Mark out this damage during the Fire & Explosions sub-phase of the Maintenance Phase (see Sequence of Play). If the ship loses its last hull box and a fire is still burning, the ship strikes and begins rolling to explode. Roll 2d6; a result of <2 causes the ship to ex- plode. Otherwise the ship continues to burn; roll again for <mark>exploding</mark> during the Fire & Explosions sub-phase of the Maintenance Phase of the subsequent g-t; there is a —1 DRM each additional <mark>g-t</mark> it is on fire.
+**8.E.8 Effects of Fire — Fire Damage and Explosions.** Each g-t a ship is burning, including the g-t it catches fire, it "loses 1H and 1R for each fire. Mark out this damage during the Fire & Explosions sub-phase of the Maintenance Phase (see Sequence of Play). If the ship loses its last hull box and a fire is still burning, the ship strikes and begins rolling to explode. Roll 2d6; a result of ≤2 causes the ship to explode. Otherwise the ship continues to burn; roll again for <mark>exploding</mark> during the Fire & Explosions sub-phase of the Maintenance Phase of the subsequent g-t; there is a —1 DRM each additional <mark>g-t</mark> it is on fire.
 
 **EXAMPLE:** A ship begins rolling to explode on g-t 12. On that <mark>g-tit</mark> needs a 2 to explode. On g-t 13, it would need a 2 or 3; on <mark>g++</mark> 14, a 2 through 4, etc.
 
@@ -1373,7 +1373,7 @@ HINT: Ships not yet on fire may voluntarily plot FF. The advantage to doing this
 
 ![Table: 8.E FIRES AND EXPLOSIONS](images/rb-p26-1.png)
 
-**8.E.11 Flaming Debris.** All ships within six hexes of the <mark>exploding</mark> ship must roll a d6 to see if they catch fire. Each ship catches fire if the DR = its range from the exploding ship, except that a DR of <mark>"1°</mark> never causes a fire. <mark>Ships:</mark> grappled or fouled to the exploding ship <mark>a/ways</mark> catch fire.
+**8.E.11 Flaming Debris.** All ships within six hexes of the <mark>exploding</mark> ship must roll a d6 to see if they catch fire. Each ship catches fire if the DR ≥ its range from the exploding ship, except that a DR of <mark>"1°</mark> never causes a fire. <mark>Ships:</mark> grappled or fouled to the exploding ship <mark>a/ways</mark> catch fire.
 
 **EXAMPLE:** A ship <mark>5</mark> hexes away is on fire if it rolls <mark>aS</mark> or 6. A ship adjacent to the exploding ship is afire on a DR of 2-6 (unless it is grappled or fouled to the <mark>expleding</mark> ship; it would then automatically catch fire).
 
@@ -1387,7 +1387,7 @@ HINT: Ships not yet on fire may voluntarily plot FF. The advantage to doing this
 
 a. Rigging Repairs. Ships at FS, Furled, or Dismasted, may plot to repair rigging boxes.
 
-b. Hull Repairs. Ships which move < 4 MPs in a <mark>g-t</mark> may plot to repair hull boxes.
+b. Hull Repairs. Ships which move ≤ 4 MPs in a <mark>g-t</mark> may plot to repair hull boxes.
 
 **8.F.4 Crew Assignment.** Only one CS may repair a given damage type on a given <mark>g-t.</mark> Different CSs may repair different damage types at the same time. (Thus one CS could plot RR while another plots RH; but two CSs could not both plot RR.) The number of g-t's required to repair is modified <!-- pdf p.30, Rules Book p.27 --> by the repairing <mark>ship's</mark> SK. Failing to plot a repair continuously <mark>(cr</mark> being unable to plot, due to exceeding limits in 8.F.3) negates the repair; cross out accumulated repairs.
 
