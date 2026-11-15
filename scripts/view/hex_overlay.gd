@@ -82,7 +82,9 @@ func _ready() -> void:
 	_collision_material = _create_material(COLOR_COLLISION)
 
 
-## Offered moves in green; any listed in `collision_hexes` (they hold another ship) in orange.
+## Offered moves in green; any listed in `collision_hexes` in orange. A collision hex that is not
+## an offered move (the other ship's hex a turn's stern would swing into) is drawn in orange too,
+## but is not clickable.
 func show_valid_hexes(hexes: Array, hex_grid: HexGrid, collision_hexes: Array = []) -> void:
 	clear_valid_hexes()
 	_valid_hex_positions.clear()
@@ -93,6 +95,10 @@ func show_valid_hexes(hexes: Array, hex_grid: HexGrid, collision_hexes: Array = 
 		var world_pos = hex_grid.axial_to_world(hex_pos.x, hex_pos.y)
 		var material := _collision_material if collision_hexes.has(hex_pos) else _valid_material
 		_add_hex_mesh(valid_hexes_node, world_pos, hex_grid.hex_size, material)
+	for hex_pos in collision_hexes:
+		if not _valid_hex_positions.has(hex_pos):
+			var world_pos = hex_grid.axial_to_world(hex_pos.x, hex_pos.y)
+			_add_hex_mesh(valid_hexes_node, world_pos, hex_grid.hex_size, _collision_material)
 
 
 ## One hex per plotted step: the ship's bow hex after it (a turn keeps the bow hex).

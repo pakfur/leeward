@@ -91,3 +91,8 @@ static func occupied_hexes(hexes: Array, ships: Array, active_ship_id: String) -
 
 static func collision_text(ship_name: String) -> String:
 	return "Collision risk: %s is here" % ship_name
+
+
+## A turn whose stern would swing into another ship's hex.
+static func swing_collision_text(ship_name: String) -> String:
+	return "Stern would swing into %s" % ship_name

@@ -54,7 +54,8 @@ var hex_overlay: Node3D = null  # HexOverlay instance
 var submitted_paths: Dictionary = {}  # ship_id -> Array[PlotStep]
 var _hover_candidates: Dictionary = {}  # Vector2i click target -> MoveMetadata (resulting bow hex and facing, server-provided)
 var _last_hover_hex: Vector2i = Vector2i(-99, -99)  # avoids re-raycasting when the hovered hex is unchanged
-var _collision_names: Dictionary = {}  # offered hex -> name of the ship already in it
+var _collision_warnings: Dictionary = {}  # offered click target -> hover warning (it runs into another ship)
+var _collision_marks: Array[Vector2i] = []  # hexes drawn in the collision colour: risky click targets and swung-into hexes
 var _path_collision_text: String = ""  # warning when the plotted path enters another ship's hex
 var _ma_by_len: Dictionary = {}  # plotted path length -> server's remaining movement at that length
 var _allowance_notes: Dictionary = {}  # plotted path length -> allowance-change note for that step
@@ -845,7 +846,7 @@ func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_va
 	var ship_state = GameState.get_ship(ship_id)
 	if hex_overlay and hex_map:
 		var hex_grid = hex_map.get_hex_grid()
-		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid, _collision_names.keys())
+		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid, _collision_marks)
 
 		# Show blocked directions as red overlays
 		if ship_state:
@@ -877,7 +878,7 @@ func _show_plot_step(plotted_path: Array, vnh: MovementTypes.ValidNextHexes, can
 	_update_collision_hexes(vnh, plotted_path)
 	if hex_overlay and hex_map:
 		var hex_grid = hex_map.get_hex_grid()
-		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid, _collision_names.keys())
+		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid, _collision_marks)
 		hex_overlay.show_plotted_path(plotted_path, hex_grid)
 
 		# Show blocked directions from current position
@@ -937,17 +938,14 @@ func _plotted_heading_code(plotted_path: Array) -> String:
 func _update_collision_hexes(vnh: MovementTypes.ValidNextHexes, plotted_path: Array) -> void:
 	var active_id: String = movement_client.active_ship_id if movement_client else ""
 	var ships: Array = GameState.get_all_ships()
-	_collision_names = offered_collisions(vnh, ships, active_id)
+	var found := offered_collisions(vnh, ships, active_id)
+	_collision_warnings = found["warnings"]
+	_collision_marks = found["marks"]
 	_path_collision_text = ""
 	var ship_state: ShipState = GameState.get_ship(active_id)
-	if ship_state == null:
-		return
-	var path_hexes := path_entered_hexes(plotted_path, ship_state.hex_position, ship_state.facing)
-	var on_path := PlanningText.occupied_hexes(path_hexes, ships, active_id)
-	for hex in path_hexes:
-		if on_path.has(hex):
-			_path_collision_text = PlanningText.collision_text(on_path[hex])
-			break
+	if ship_state:
+		_path_collision_text = path_collision_text(plotted_path, ship_state.hex_position, ship_state.facing,
+			ships, active_id)
 
 ## The one hex an offered move enters: an ahead move its new bow hex (the click target), a turn
 ## the hex its stern swings into.
@@ -956,20 +954,42 @@ static func move_entered_hex(vm: MovementTypes.ValidMove) -> Vector2i:
 		return vm.hex
 	return HexGrid.stern_of(vm.metadata.resulting_hex, vm.metadata.resulting_facing)
 
-## Offered moves that enter a hex of another ship (bow or stern): click target -> that ship's name.
+## Offered moves that enter a hex of another ship (bow or stern):
+## {"warnings": {click target: hover text}, "marks": Array[Vector2i]}. An ahead move enters its
+## click target ("Collision risk: X is here"; one mark). A turn enters the hex its stern swings
+## into ("Stern would swing into X"); both its click target and that hex are marked.
 static func offered_collisions(vnh: MovementTypes.ValidNextHexes, ships: Array, active_id: String) -> Dictionary:
-	var result := {}
-	if vnh == null:
-		return result
-	var moves: Array = vnh.get_all_valid_moves()
-	var entered: Array = []
-	for vm in moves:
-		entered.append(move_entered_hex(vm))
+	var warnings := {}
+	var marks: Array[Vector2i] = []
+	if vnh != null:
+		var moves: Array = vnh.get_all_valid_moves()
+		var entered: Array = []
+		for vm in moves:
+			entered.append(move_entered_hex(vm))
+		var names := PlanningText.occupied_hexes(entered, ships, active_id)
+		for i in range(moves.size()):
+			if not names.has(entered[i]):
+				continue
+			var click: Vector2i = moves[i].hex
+			var swing: bool = entered[i] != click
+			warnings[click] = PlanningText.swing_collision_text(names[entered[i]]) if swing \
+				else PlanningText.collision_text(names[entered[i]])
+			for h in ([click, entered[i]] if swing else [click]):
+				if not marks.has(h):
+					marks.append(h)
+	return {"warnings": warnings, "marks": marks}
+
+## Warning for the plotted path: the first step that enters another ship's hex, worded as for the
+## offered moves ("" when the path is clear).
+static func path_collision_text(plotted_path: Array, start_bow: Vector2i, start_facing: int, ships: Array, active_id: String) -> String:
+	var entered := path_entered_hexes(plotted_path, start_bow, start_facing)
 	var names := PlanningText.occupied_hexes(entered, ships, active_id)
-	for i in range(moves.size()):
+	for i in range(entered.size()):
 		if names.has(entered[i]):
-			result[moves[i].hex] = names[entered[i]]
-	return result
+			if entered[i] != plotted_path[i].hex:  # a turn: the stern swung into it
+				return PlanningText.swing_collision_text(names[entered[i]])
+			return PlanningText.collision_text(names[entered[i]])
+	return ""
 
 ## The hex each plotted step enters, from the ship's bow and facing before the plot: an ahead
 ## step its new bow hex, a turn (same bow hex, new facing) its swung stern hex.
@@ -991,8 +1011,8 @@ func _show_collision_warning(hover_hex: Vector2i) -> void:
 	if not current_planning_ui:
 		return
 	var text := _path_collision_text
-	if _collision_names.has(hover_hex):
-		text = PlanningText.collision_text(_collision_names[hover_hex])
+	if _collision_warnings.has(hover_hex):
+		text = _collision_warnings[hover_hex]
 	current_planning_ui.set_collision_warning(text)
 
 func _rebuild_hover_candidates(valid_hexes: MovementTypes.ValidNextHexes) -> void:
@@ -1006,7 +1026,8 @@ func _on_plotting_cancelled(ship_id: String) -> void:
 	if indicator_overlay:
 		indicator_overlay.set_info_enabled(true)
 	_hover_candidates.clear()
-	_collision_names.clear()
+	_collision_warnings.clear()
+	_collision_marks.clear()
 	_path_collision_text = ""
 	_clear_hover()
 	Trace.trace_log("GameController", "Plotting cancelled for ship %s" % ship_id)
@@ -1020,7 +1041,8 @@ func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
 	if indicator_overlay:
 		indicator_overlay.set_info_enabled(true)
 	_hover_candidates.clear()
-	_collision_names.clear()
+	_collision_warnings.clear()
+	_collision_marks.clear()
 	_path_collision_text = ""
 	_clear_hover()
 	Trace.trace_log("GameController", "Movement submitted for ship %s: %d steps" % [ship_id, final_path.size()])

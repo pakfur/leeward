@@ -82,8 +82,13 @@ func test_turn_warns_when_the_stern_swings_into_a_ship() -> void:
 	var me := _ship("me", Vector2i(0, 0), 0)
 	var other := _ship("other", Vector2i(1, -1), 0)
 	var vnh := _offer(Vector2i(0, 0), 0)
-	var warned := GameControllerScript.offered_collisions(vnh, [me, other], "me")
-	assert_eq(warned, {vnh.starboard.hex: "Other"})
+	var found := GameControllerScript.offered_collisions(vnh, [me, other], "me")
+	var swung := HexGrid.stern_of(Vector2i(0, 0), 1)
+	assert_eq(swung, Vector2i(0, -1))
+	assert_eq(found["warnings"], {vnh.starboard.hex: "Stern would swing into Other"},
+		"the risky choice warns on hover, naming the swing")
+	assert_eq(found["marks"], [vnh.starboard.hex, swung] as Array[Vector2i],
+		"both the click target and the hex the stern swings into are marked")
 
 
 func test_ahead_move_warns_on_the_new_bow_hex_including_a_stern() -> void:
@@ -91,8 +96,29 @@ func test_ahead_move_warns_on_the_new_bow_hex_including_a_stern() -> void:
 	var other := _ship("other", Vector2i(1, 1), 5)  # bow (1,1), stern (0,2): not ahead of me
 	var blocker := _ship("blocker", Vector2i(2, 0), 0)  # stern (1,0): right ahead of me
 	var vnh := _offer(Vector2i(0, 0), 0)
-	var warned := GameControllerScript.offered_collisions(vnh, [me, other, blocker], "me")
-	assert_eq(warned.get(Vector2i(1, 0), ""), "Blocker")
+	var found := GameControllerScript.offered_collisions(vnh, [me, other, blocker], "me")
+	assert_eq(found["warnings"], {Vector2i(1, 0): "Collision risk: Blocker is here"})
+	assert_eq(found["marks"], [Vector2i(1, 0)] as Array[Vector2i], "one mark: the hex entered is the click target")
+
+
+func test_plotted_path_warning_names_the_swing() -> void:
+	var me := _ship("me", Vector2i(0, 0), 0)
+	var other := _ship("other", Vector2i(2, -1), 0)  # stern (1,-1)
+	var path: Array = [
+		MovementTypes.PlotStep.new(Vector2i(1, 0), 0),  # ahead into (1,0): clear
+		MovementTypes.PlotStep.new(Vector2i(1, 0), 1),  # starboard turn: stern swings into (1,-1)
+	]
+	assert_eq(GameControllerScript.path_collision_text(path, Vector2i(0, 0), 0, [me, other], "me"),
+		"Stern would swing into Other")
+	assert_eq(GameControllerScript.path_collision_text(path.slice(0, 1), Vector2i(0, 0), 0, [me, other], "me"), "")
+
+
+func test_plotted_ahead_step_keeps_the_collision_wording() -> void:
+	var me := _ship("me", Vector2i(0, 0), 0)
+	var other := _ship("other", Vector2i(2, 0), 0)  # stern (1,0)
+	var path: Array = [MovementTypes.PlotStep.new(Vector2i(1, 0), 0)]
+	assert_eq(GameControllerScript.path_collision_text(path, Vector2i(0, 0), 0, [me, other], "me"),
+		"Collision risk: Other is here")
 
 
 func test_plotted_turn_enters_its_swung_stern_hex() -> void:
@@ -102,3 +128,19 @@ func test_plotted_turn_enters_its_swung_stern_hex() -> void:
 	]
 	assert_eq(GameControllerScript.path_entered_hexes(path, Vector2i(0, 0), 0),
 		[Vector2i(1, 0), HexGrid.stern_of(Vector2i(1, 0), 1)] as Array[Vector2i])
+
+
+func test_overlay_paints_the_swung_into_hex_but_does_not_offer_it() -> void:
+	var overlay: Node3D = preload("res://scripts/view/hex_overlay.gd").new()
+	add_child_autofree(overlay)
+	var vnh := _offer(Vector2i(0, 0), 0)
+	var swung := Vector2i(0, -1)
+	overlay.show_valid_hexes(vnh.get_all_valid_moves(), grid, [vnh.starboard.hex, swung])
+	assert_eq(overlay.valid_hexes_node.get_child_count(), 4, "three offered hexes and the swung-into hex")
+	var collision_meshes := 0
+	for child in overlay.valid_hexes_node.get_children():
+		if (child as MeshInstance3D).material_override == overlay._collision_material:
+			collision_meshes += 1
+	assert_eq(collision_meshes, 2, "the risky click target and the swung-into hex")
+	var swung_world := grid.axial_to_world(swung.x, swung.y)
+	assert_eq(overlay.get_valid_hex_at_world_pos(swung_world, grid), Vector2i(-99, -99), "not clickable")

@@ -66,6 +66,7 @@ func test_occupied_hexes_include_a_ships_stern() -> void:
 
 func test_collision_text() -> void:
 	assert_eq(PlanningText.collision_text("Foe"), "Collision risk: Foe is here")
+	assert_eq(PlanningText.swing_collision_text("Foe"), "Stern would swing into Foe")
 
 
 func test_name_and_type_reads_name_then_type() -> void:
