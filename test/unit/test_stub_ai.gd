@@ -343,8 +343,9 @@ func test_ai_turns_back_toward_enemy_astern() -> void:
 
 
 func test_engaged_ship_with_no_better_option_does_not_move() -> void:
+	# Both ships face east, side by side: both of the AI's batteries bear at range 1.
 	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 2)
-	var enemy = _make_ship("p1", 0, HexGrid.DIRECTIONS[1], 3, 0)
+	var enemy = _make_ship("p1", 0, Vector2i(0, 1), 0, 0)
 	_add_ship(ai)
 	_add_ship(enemy)
 	stub_ai.plot_all_ai_ships()
@@ -519,3 +520,59 @@ func test_plot_step_stores_bow_hex() -> void:
 	var step: MovementTypes.PlotStep = response.plotted_path.back()
 	assert_eq(step.hex, Vector2i(5, 5), "The stored step is the unchanged bow hex")
 	assert_eq(step.facing, 1)
+
+
+# ===========================================================================
+# Two-hex footprints
+# ===========================================================================
+
+func test_ai_scores_broadside_against_two_hex_enemy() -> void:
+	# Enemy bow (5,0) facing 0, stern (4,0). The firer faces east with its keel on row 2.
+	var enemy = _make_ship("p1", 0, Vector2i(5, 0), 0, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(5, 2), 0, 0)
+	_add_ship(enemy)
+	_add_ship(ai)
+	var occupied := {}
+	var geometry: FireGeometry = GameState.fire_geometry
+
+	var both_bow := Vector2i(5, 2)
+	var one_bow := Vector2i(2, 2)
+	var both_hexes: Array[Vector2i] = [both_bow, HexGrid.stern_of(both_bow, 0)]
+	var one_hexes: Array[Vector2i] = [one_bow, HexGrid.stern_of(one_bow, 0)]
+	var count_both := 0
+	var count_one := 0
+	for h in both_hexes:
+		if geometry.battery_bears(h, 0, ShipState.PORT, enemy.occupied_hexes(), occupied):
+			count_both += 1
+	for h in one_hexes:
+		if geometry.battery_bears(h, 0, ShipState.PORT, enemy.occupied_hexes(), occupied):
+			count_one += 1
+	assert_eq(count_both, 2, "fixture: both batteries bear from the abeam position")
+	assert_eq(count_one, 1, "fixture: only one battery bears from the offset position")
+
+	var both_score := stub_ai._score_position(both_bow, 0, enemy, occupied)
+	var one_score := stub_ai._score_position(one_bow, 0, enemy, occupied)
+	assert_gt(one_score, 0, "a single bearing battery is still a firing position")
+	assert_gt(both_score, one_score, "two batteries bearing outscore one")
+
+
+func test_ai_never_plots_stern_into_occupied_hex() -> void:
+	env.wind_direction = 3
+	# AI bow (5,5) facing east, stern (4,5); a friend lies alongside on row 6 (stern (4,6)).
+	# Turning to port (facing 5) would swing the stern onto (4,6). The enemy is far to the north-east.
+	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 0, 2)
+	var friend = _make_ship("ai2", 1, Vector2i(5, 6), 0, 0)
+	var enemy = _make_ship("p1", 0, Vector2i(14, -6), 3, 0)
+	_add_ship(ai)
+	_add_ship(friend)
+	_add_ship(enemy)
+	var blocked: Array[Vector2i] = friend.occupied_hexes()
+
+	stub_ai.plot_all_ai_ships()
+
+	var steps: Array = ai.plotted_actions.get("movement", [])
+	assert_gt(steps.size(), 0, "the AI still plots something")
+	for step in steps:
+		var bow := Vector2i(int(step["hex"]["q"]), int(step["hex"]["r"]))
+		var stern := HexGrid.stern_of(bow, int(step["facing"]))
+		assert_false(stern in blocked, "step %s facing %d swings the stern into the friend" % [bow, step["facing"]])

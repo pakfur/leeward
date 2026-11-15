@@ -13,6 +13,8 @@ extends RefCounted
 ## A broadside shot at or inside this range scores as a firing position.
 const FIRING_RANGE := 5
 const FIRING_POSITION_BASE := 1000
+## Added to a firing position's score for each battery beyond the first that bears.
+const SECOND_BATTERY_BONUS := 10
 ## Two-target modifier from the chart; a second broadside is held when it would not survive it.
 const TWO_TARGET_PENALTY := 12
 
@@ -182,10 +184,12 @@ func _strategy_engage(
 	if enemy == null:
 		return version  # nothing to engage: submit the session with an empty path
 
-	var occupied: Dictionary = {}
-	for other in game_state.get_all_ships():
-		if other.ship_id != ship_state.ship_id:
-			occupied[other.hex_position] = true
+	var ships: Array[ShipState] = []
+	ships.assign(game_state.get_all_ships())
+	# Footprints of everyone else: a turn may not swing the stern into one (the resolver would
+	# cancel it), and lines of sight pass the firer and the enemy but not the rest.
+	var others := Occupancy.build(ships, [ship_state.ship_id])
+	var occupied := Occupancy.build(ships, [ship_state.ship_id, enemy.ship_id])
 
 	var current_hex := ship_state.hex_position
 	var current_facing := ship_state.facing
@@ -194,14 +198,18 @@ func _strategy_engage(
 	var can_submit := started.can_submit
 
 	while current_valid and current_valid.has_any_moves():
-		var stay_score := _score_position(current_hex, current_facing, enemy.hex_position, occupied)
+		var stay_score := _score_position(current_hex, current_facing, enemy, occupied)
 		var best: MovementTypes.ValidMove = null
 		var best_score := 0
 		for move in current_valid.get_all_valid_moves():
-			var move_score := _score_position(move.metadata.resulting_hex, move.metadata.resulting_facing, enemy.hex_position, occupied)
+			if _stern_blocked(move, current_hex, others):
+				continue
+			var move_score := _score_position(move.metadata.resulting_hex, move.metadata.resulting_facing, enemy, occupied)
 			if best == null or _option_beats(move, move_score, best, best_score, current_facing):
 				best = move
 				best_score = move_score
+		if best == null:
+			break
 		# An engaged ship holds position unless an option is strictly better; otherwise it keeps
 		# way on and works round toward the enemy, even through a lower-scoring step.
 		if can_submit and stay_score > 0 and best_score <= stay_score:
@@ -236,19 +244,39 @@ func _nearest_enemy(ship_state: ShipState) -> ShipState:
 	return nearest
 
 
-## Engaged (enemy in a broadside arc, range <= 5, clear line of sight): 1000 - range, always > 0.
-## Otherwise -(2 * distance + misalignment), where misalignment is the number of 60 degree steps
-## between the facing and the direction from `hex` toward the enemy.
-func _score_position(hex: Vector2i, facing: int, enemy_hex: Vector2i, occupied: Dictionary) -> int:
+## True when `move` is a turn whose swung stern would land in a hex in `others`.
+func _stern_blocked(move: MovementTypes.ValidMove, current_hex: Vector2i, others: Dictionary) -> bool:
+	var meta := move.metadata
+	if meta.resulting_hex != current_hex:
+		return false
+	return others.has(HexGrid.stern_of(meta.resulting_hex, meta.resulting_facing))
+
+
+## Score the firer with its bow at `bow` pointing `facing`. `occupied` holds every other footprint
+## except the enemy's. Engaged (a battery bears on the enemy footprint within range <= 5):
+## 1000 - range, plus a bonus per extra battery bearing, always > 0. Otherwise
+## -(2 * distance + misalignment) from bow to enemy bow, where misalignment is the number of
+## 60 degree steps between the facing and the direction toward the enemy.
+func _score_position(bow: Vector2i, facing: int, enemy: ShipState, occupied: Dictionary) -> int:
 	var geometry: FireGeometry = game_state.fire_geometry
-	var distance := geometry.hex_grid.hex_distance(hex.x, hex.y, enemy_hex.x, enemy_hex.y)
-	if distance <= FIRING_RANGE \
-			and geometry.bearing_side(hex, facing, enemy_hex) != -1 \
-			and geometry.has_line_of_sight(hex, enemy_hex, occupied):
-		return FIRING_POSITION_BASE - distance
+	var firer_hexes: Array[Vector2i] = [bow, HexGrid.stern_of(bow, facing)]
+	var enemy_hexes := enemy.occupied_hexes()
+	var range_hexes := geometry.range_between(firer_hexes, enemy_hexes)
+	if range_hexes <= FIRING_RANGE:
+		var batteries := 0
+		for side in GunneryCalculator.SIDES:
+			var bearing := 0
+			for battery in firer_hexes:
+				if geometry.battery_bears(battery, facing, side, enemy_hexes, occupied):
+					bearing += 1
+			batteries = maxi(batteries, bearing)
+		if batteries > 0:
+			return FIRING_POSITION_BASE - range_hexes + SECOND_BATTERY_BONUS * (batteries - 1)
+	var enemy_bow := enemy.hex_position
+	var distance := geometry.hex_grid.hex_distance(bow.x, bow.y, enemy_bow.x, enemy_bow.y)
 	var misalignment := 0
-	if hex != enemy_hex:
-		var toward := geometry.hex_grid.get_facing_direction(hex.x, hex.y, enemy_hex.x, enemy_hex.y)
+	if bow != enemy_bow:
+		var toward := geometry.hex_grid.get_facing_direction(bow.x, bow.y, enemy_bow.x, enemy_bow.y)
 		var steps := absi(facing - toward) % 6
 		misalignment = mini(steps, 6 - steps)
 	return -(2 * distance + misalignment)
