@@ -948,7 +948,7 @@ func _collision_foulings(b_already_fouled_in_state: bool, b_already_fouled_this_
 		p.ship_map = {"ship_a": state_a, "ship_b": state_b}
 		p.results = {"ship_a": result_a, "ship_b": result_b}
 		p.current_hexes = {"ship_a": state_a.hex_position, "ship_b": state_b.hex_position}
-		test_resolver._apply_collision(p, "ship_a", "ship_b", 0)
+		test_resolver._apply_collision(p, MovementResolver.Segment.new(), "ship_a", "ship_b")
 		if result_a.fouled_with != "":
 			count += 1
 			assert_eq(result_b.fouled_with, "ship_a", "a new fouling is mutual")
@@ -2212,3 +2212,80 @@ func test_rollback_resolution_is_deterministic() -> void:
 	var first: Dictionary = _run_cascade(777).log.to_dict()
 	var second: Dictionary = _run_cascade(777).log.to_dict()
 	assert_eq(second, first, "Same seed, same log, with chained rollbacks")
+
+
+# ===========================================================================
+# Rings: each ship's bow enters the next one's old stern (a cycle, see _resolve_impulse)
+# ===========================================================================
+
+## A (bow (5,5) E), B (bow (5,6) SW) and C (bow (4,6) NW) each sail one ahead into the next one's
+## old stern: A into B's (6,5), B into C's (4,7), C into A's (4,5). Returns the three ships.
+func _make_ring(crew_b: String = "B") -> Array[ShipState]:
+	env.wind_direction = 3
+	var a = _make_ship_state(Vector2i(5, 5), 0, 1, "C", "ship_a")  # stern (4,5)
+	var b = _make_ship_state(Vector2i(5, 6), 2, 1, "C", "ship_b", 3, crew_b)  # stern (6,5)
+	var c = _make_ship_state(Vector2i(4, 6), 4, 1, "C", "ship_c")  # stern (4,7)
+	assert_eq(b.stern_hex(), Vector2i(6, 5))
+	assert_eq(c.stern_hex(), Vector2i(4, 7))
+	_plot_straight(a, 1)
+	_plot_straight(b, 1)
+	_plot_straight(c, 1)
+	return [a, b, c] as Array[ShipState]
+
+
+func test_ring_of_ships_entering_each_others_old_sterns_all_move() -> void:
+	var ships := _make_ring()
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+	assert_eq(ships[0].hex_position, Vector2i(6, 5), "A enters B's old stern")
+	assert_eq(ships[1].hex_position, Vector2i(4, 7), "B enters C's old stern")
+	assert_eq(ships[2].hex_position, Vector2i(4, 5), "C enters A's old stern")
+	_assert_no_overlap(ships)
+
+
+func test_ring_with_a_member_blocked_from_outside_never_overlaps() -> void:
+	# D (crew A) contests B's target (4,7) with B (crew G): D always wins (+6), so B stays and keeps its
+	# stern on (6,5), under A's bow, which sailed in assuming B would leave. The cycle is broken and the
+	# pass run again: A now meets B's stern (6,5), C meets A's kept stern (4,5), and D meets C's kept
+	# stern (4,7). Nobody in the ring moves and final footprints never overlap.
+	var ships := _make_ring("G")
+	var d = _make_ship_state(Vector2i(3, 7), 0, 1, "C", "ship_d", 3, "A")  # bow (3,7), stern (2,7)
+	_plot_straight(d, 1)  # bow into (4,7)
+	ships.append(d)
+
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+
+	var expected := {"ship_a": [Vector2i(5, 5), "ship_b"], "ship_c": [Vector2i(4, 6), "ship_a"],
+		"ship_d": [Vector2i(3, 7), "ship_c"]}
+	for sid in expected:
+		var result = log.get_result(sid)
+		assert_eq(result.final_hex, expected[sid][0], "%s stays" % sid)
+		assert_eq(result.blocked_by, expected[sid][1], "%s meets the stern %s keeps" % [sid, expected[sid][1]])
+		assert_eq(_events_of(result, MovementTypes.ResolutionEventType.MOVE).size(), 0,
+			"%s's step is not executed" % sid)
+	assert_eq(ships[1].hex_position, Vector2i(5, 6), "B stays")
+	assert_eq(Occupancy.overlapping_ids(ships), [] as Array[String], "No two ships overlap")
+
+
+func test_collision_holds_the_old_stern_of_a_ship_whose_group_has_not_run() -> void:
+	# A5: a ship stopped by a collision before its own group runs keeps its old stern at once, so no bow
+	# (not even one let in by the cycle fallback) can enter it.
+	var a = _make_ship_state(Vector2i(4, 5), 0, 1, "C", "ship_a")
+	var b = _make_ship_state(Vector2i(5, 5), 3, 1, "C", "ship_b")  # bow (5,5) W, stern (6,5)
+	var p := MovementResolver.ResolutionPass.new()
+	p.ship_map = {"ship_a": a, "ship_b": b}
+	p.results = {"ship_a": MovementTypes.ShipResolutionResult.new("ship_a"),
+		"ship_b": MovementTypes.ShipResolutionResult.new("ship_b")}
+	p.current_hexes = {"ship_a": a.hex_position, "ship_b": b.hex_position}
+	p.current_facings = {"ship_a": 0, "ship_b": 3}
+	p.stopped = {"ship_a": false, "ship_b": false}
+	var seg := MovementResolver.Segment.new()
+	seg.intended_moves = {"ship_a": {"hex": Vector2i(5, 5), "facing": 0}, "ship_b": {"hex": Vector2i(4, 5), "facing": 3}}
+	seg.start_bows = p.current_hexes.duplicate()
+	seg.start_facings = p.current_facings.duplicate()
+
+	resolver._apply_collision(p, seg, "ship_a", "ship_b")
+
+	assert_eq(seg.held.get(Vector2i(6, 5), ""), "ship_b", "B's old stern is held by B")
+	assert_true(seg.resolved.has("ship_b"), "B's group no longer holds anyone up")
