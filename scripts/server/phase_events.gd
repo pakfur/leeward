@@ -193,6 +193,9 @@ class PhaseEvent extends RefCounted:
 				text += " after bearing off"
 				if target_id != "":
 					text += " — %s was in the way" % other
+			"stern_contest":
+				if target_id != "":
+					text += " — it lost the contest with %s for the hex its stern was turning into" % other
 			"stern_blocked":
 				if target_id != "":
 					text += " — its stern was blocked by %s" % other

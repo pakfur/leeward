@@ -286,6 +286,31 @@ func test_stop_cause_for_stern_blocked() -> void:
 	assert_eq(MovementResolver.stop_cause(a), {"cause": "stern_blocked", "other": "b"})
 
 
+func test_stop_cause_for_lost_stern_contest() -> void:
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	var blocked := MovementTypes.ResolutionEvent.new("a", 0, T.STERN_BLOCKED)
+	blocked.detail = "lost stern contest to b"
+	a.events.append(blocked)
+	a.blocked_by = "b"
+	assert_eq(MovementResolver.stop_cause(a), {"cause": "stern_contest", "other": "b"})
+
+
+func test_lost_stern_contest_is_the_cause_even_if_rammed_later() -> void:
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	var blocked := MovementTypes.ResolutionEvent.new("a", 0, T.STERN_BLOCKED)
+	blocked.detail = "lost stern contest to b"
+	a.events.append(blocked)
+	a.blocked_by = "b"
+	a.collided_with = "c"  # c ran into the stopped ship afterwards
+	assert_eq(MovementResolver.stop_cause(a), {"cause": "stern_contest", "other": "b"})
+
+
+func test_stop_short_after_lost_stern_contest_names_the_winner() -> void:
+	var ev := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.STOPPED_SHORT, MOVE, "a", {"cause": "stern_contest"}, "b")
+	assert_eq(ev.to_text({"a": "Alpha", "b": "Bravo"}),
+		"Alpha stops short of its plotted course — it lost the contest with Bravo for the hex its stern was turning into")
+
+
 func test_stop_cause_for_overlap_rollback() -> void:
 	var a := MovementTypes.ShipResolutionResult.new("a")
 	var rollback := MovementTypes.ResolutionEvent.new("a", 1, T.OVERLAP_ROLLBACK)
