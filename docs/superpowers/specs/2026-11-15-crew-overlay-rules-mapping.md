@@ -6,6 +6,12 @@
 
 **Sources:** `docs/rules/close_action.md` 4.A.3, 4.B, 5.D.2a, 8.D.5, 8.E, 8.F, 10.B; the ship log's Crew Task Order Codes (`docs/rules/images/ship-log-*.png`); `2026-11-15-crew-tasks-fire-repairs-design.md` §1.1, the task table, which this file does not repeat.
 
+**Godot prototype:** approved 2026-11-15: `prototypes/crew_overlay/` (`make proto-crew`), a standalone port of the HTML prototype with no game state. Game-scale fixes made after review: progress and AUTO tags in the counter band; short station codes on the small deck cards; compact roster rows; more than two fires laid out along the deck.
+
+**Later-phase items from the review** (not blocking; carry into the full spec):
+1. **Fonts:** find and add period-appropriate fonts so the type matches the game's theme. The prototype uses Godot's default font; the HTML used IM Fell English SC, Source Sans 3 and Barlow Condensed. Check licences (OFL) before adding them to the repo.
+2. **"Automatic" crew setting:** an on/off switch on this screen. **On:** the server allocates crew by a fixed, predictable set of rules, the same rules every turn, so the player can foresee the result. **Off:** the player allocates every section. The spec must write those rules down: e.g. fires first (lowest free sailor section), then tasks in progress, then the plotted sail change and tacking crew, then repairs, with everyone else on the guns. It must also say whether the setting is per ship or per game.
+
 ## 1. The core idea
 
 - **A token is a crew section (CS).** A ship has five: S1–S4 (sailors) and M (marines), as on the ship log. A token shows its section's boxes left, e.g. "S2 · 3/3". An emptied section's token is gone.

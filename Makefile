@@ -2,7 +2,7 @@ GODOT := godot
 GUT_CLI := addons/gut/gut_cmdln.gd
 TEST_DIR := res://test/
 
-.PHONY: help test test-verbose test-file run play editor import clean version
+.PHONY: help test test-verbose test-file run play proto-crew editor import clean version
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -26,6 +26,9 @@ run: ## Run the game (starts at splash screen)
 
 play: ## Run directly into gameplay (skip menus)
 	$(GODOT) res://scenes/main_game.tscn
+
+proto-crew: ## Run the throwaway crew overlay prototype (no game state)
+	$(GODOT) res://prototypes/crew_overlay/crew_overlay_proto.tscn
 
 editor: ## Open in Godot Editor
 	$(GODOT) --editor
