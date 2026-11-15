@@ -263,3 +263,19 @@ func test_failed_drift_roll_holds_position() -> void:
 	assert_string_contains(text, "roll 2")
 	assert_string_contains(text, "needed 5")
 	assert_false(text.contains("{"), "no raw dictionary in: %s" % text)
+
+
+func test_partial_drift_text_names_the_pivot() -> void:
+	var log := PhaseEvents.PhaseLog.new()
+	var text := log.add(PhaseEvents.Type.DRIFT, 5, "s1", {
+		"roll": 7, "needed": 5, "modifier": 0, "drifted": true, "partial": "stern", "facing": 5,
+		"from": {"q": 3, "r": -2}, "to": {"q": 3, "r": -2}, "fouled": true}, "s2").to_text(NAMES)
+	assert_eq(text, "Surprise drifts partly: its stern slips downwind and it swings to face NE, blocked by Renard; the two ships are fouled together (drift roll 7, needed 5)")
+
+
+func test_partial_drift_text_without_fouling() -> void:
+	var log := PhaseEvents.PhaseLog.new()
+	var text := log.add(PhaseEvents.Type.DRIFT, 5, "s1", {
+		"roll": 7, "needed": 5, "modifier": 0, "drifted": true, "partial": "bow", "facing": 2,
+		"from": {"q": 3, "r": -2}, "to": {"q": 2, "r": -2}, "fouled": false}, "s2").to_text(NAMES)
+	assert_eq(text, "Surprise drifts partly: its bow slips downwind and it swings to face SW, blocked by Renard (drift roll 7, needed 5)")

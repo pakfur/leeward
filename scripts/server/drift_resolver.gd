@@ -98,6 +98,8 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 	var own_blocker := {}
 	var blocked := ""
 	var blocker: ShipState = null
+	var partial := ""
+	var pivot := {}
 	if drifts:
 		## The whole footprint shifts one hex downwind. The group's own hexes never block.
 		var group_ids: Array = []
@@ -124,12 +126,45 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 						if blocker == null:
 							blocker = occupant
 
+	if drifts and blocked == "ship" and group.size() == 1 and group[0].fouled_with == "":
+		# Partial drift (8.A.5): only the bow or only the stern is blocked by a ship; the free end
+		# drifts and the ship pivots on the other, if that leaves a legal two-hex footprint.
+		var lone: ShipState = group[0]
+		var bow_to: Vector2i = _hex_grid.get_neighbor(lone.hex_position.x, lone.hex_position.y, downwind_dir)
+		var stern_from: Vector2i = lone.stern_hex()
+		var stern_to: Vector2i = _hex_grid.get_neighbor(stern_from.x, stern_from.y, downwind_dir)
+		var others_now: Dictionary = Occupancy.build(game_state.get_all_ships(), [lone.ship.ship_id])
+		var bow_blocked: bool = others_now.has(bow_to)
+		var stern_blocked: bool = others_now.has(stern_to)
+		if bow_blocked != stern_blocked:
+			var free_end := "stern" if bow_blocked else "bow"
+			var result: Dictionary = _partial_drift(lone, free_end, downwind_dir)
+			if not result.is_empty():
+				partial = free_end
+				pivot = result
+
 	var moved: bool = drifts and blocked == ""
 	# The fouling roll comes after the drift roll (dice order unchanged); its outcome is logged on
 	# the drift line, so a single line tells what happened. null: no fouling roll was made.
 	var fouled: Variant = null
 	if blocked == "ship" and group.size() == 1:
 		fouled = _try_foul(group[0], blocker)
+
+	if partial != "":
+		var lone: ShipState = group[0]
+		var from_hex: Vector2i = lone.hex_position
+		var new_bow: Vector2i = pivot["bow"]
+		var partial_data := {
+			"roll": roll, "needed": needed, "modifier": modifier, "drifted": true,
+			"from": {"q": from_hex.x, "r": from_hex.y}, "to": {"q": new_bow.x, "r": new_bow.y},
+			"partial": partial, "facing": pivot["facing"],
+		}
+		if fouled != null:
+			partial_data["fouled"] = fouled
+		game_state.turn_log.add(PhaseEvents.Type.DRIFT, phase, lone.ship.ship_id, partial_data, blocker.ship.ship_id)
+		game_state.ship_controller.set_ship_position(lone.ship.ship_id, new_bow)
+		game_state.ship_controller.set_ship_facing(lone.ship.ship_id, pivot["facing"])
+		return
 
 	for ship in group:
 		var sid: String = ship.ship.ship_id
@@ -159,6 +194,23 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 	if moved:
 		for ship in group:
 			game_state.ship_controller.set_ship_position(ship.ship.ship_id, targets[ship.ship.ship_id])
+
+
+## The footprint after only one end of `ship` drifts one hex downwind: the free end ("bow" or
+## "stern") moves, the other stays. Returns {bow, facing}, or {} when the two hexes would not be
+## neighbours (5.A.2c: a ship always points at its other hex), so the ship does not drift.
+func _partial_drift(ship: ShipState, free_end: String, downwind_dir: int) -> Dictionary:
+	var step: Vector2i = HexGrid.DIRECTIONS[downwind_dir]
+	var new_bow: Vector2i = ship.hex_position
+	var new_stern: Vector2i = ship.stern_hex()
+	if free_end == "stern":
+		new_stern += step
+	else:
+		new_bow += step
+	var facing: int = HexGrid.DIRECTIONS.find(new_bow - new_stern)
+	if facing < 0:
+		return {}
+	return {"bow": new_bow, "facing": facing}
 
 
 ## Rolls to foul a drifter against the ship blocking it. Returns whether they fouled, or null when

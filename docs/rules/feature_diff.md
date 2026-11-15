@@ -72,7 +72,7 @@ These are the gaps and differences that most change how a game plays out, in rou
 | Exceptions to being in irons (WS just rose from 0, cut cable, anchored) | 3.D.4c, 5.D.4 | A ship at WF=L with speed 0 always counts as in irons. |
 | Reverse tack | 5.D.3 | |
 | Contested-hex winner may force the loser into the hex | 6.C.3 | The winner always enters. |
-| Overlapping ships and stern-vs-stern contests | 6.B, 6.C.5 | Ships are 2-hex but never overlap yet; a turn whose stern would swing into a ship is cancelled (`STERN_BLOCKED`). Phase 2. |
+| Overlapping ships and stern-vs-stern contests | 6.B, 6.C.5 | Implemented in Phase 2 (overlap with rollback, stern contests). |
 | Order of bear-off resolution and the once-per-turn limit | 6.D.3b–c, 6.D.5 | Hexes are resolved in dictionary order. |
 | Game ends by mutual agreement, or when one side has no ship that can move and fight | 2.A.1 | Leeward ends only when a side is all struck, or at `turn_limit`. A side that is dismasted but not struck keeps the game going. |
 | Struck ships count as CQ G | 9.C.4 | Only matters once firefighting and ungrappling exist. |
@@ -112,7 +112,7 @@ These are the gaps and differences that most change how a game plays out, in rou
 
 These are conscious design choices. They are listed because each one removes board-game outcomes.
 
-- **Ships are 2-hex (Phase 1 done).** Per-hex LOS and partial targets (7.B.4–6), range to the closest hex, rake per 7.E.2, the automatic half broadside, bow-pivot turning and speed counting turns (5.E.2) are implemented. **Still open (Phases 2–3):** overlap (6.B), stern-vs-stern contests (6.C.5), partial drift (8.A.5) and explicit battery orders (7.B.1; the half broadside is applied automatically, there is no choice of battery).
+- **Ships are 2-hex (Phase 1 done).** Per-hex LOS and partial targets (7.B.4–6), range to the closest hex, rake per 7.E.2, the automatic half broadside, bow-pivot turning and speed counting turns (5.E.2) are implemented. **Phase 2 done:** temporary overlap and rollback for swinging sterns (6.B), stern-vs-stern contests (6.C.5) and partial drift of a single unfouled ship (8.A.5: the free end drifts, the ship pivots, then fouling is rolled; groups never partially drift). **Still open (Phase 3):** explicit battery orders (7.B.1; the half broadside is applied automatically, there is no choice of battery).
 - **A separate fire-declaration step after movement** (2.B.2, 7.A.2). Orders stay hidden until both sides have submitted. The outcome is the same as the board game's simultaneous fire.
 - **Two sides, one human against the stub AI.** The multi-player rules (signalling 11.B, limited information 14.C) have nothing to apply to.
 - **Struck ships cannot be targeted** (see the 9.C.3 row in §3).

@@ -290,6 +290,8 @@ class PhaseEvent extends RefCounted:
 		var from_hex := _hex_text("from")
 		var at := " at %s" % from_hex if from_hex != "" else ""
 		var dice := "rolled %s, needed %s" % [_roll_text(), _val("needed")]
+		if data.get("drifted", false) and data.has("partial"):
+			return _partial_drift_text(who, other)
 		if data.get("drifted", false):
 			var text := "%s drifts downwind" % who
 			if from_hex != "" and data.has("to"):
@@ -312,6 +314,19 @@ class PhaseEvent extends RefCounted:
 				return "%s would drift (%s) but is held back by %s, fouled alongside, and holds position%s" % [
 					who, dice, partner, at]
 		return "%s would drift (%s) but is blocked and holds position%s" % [who, dice, at]
+
+	## A partial drift (8.A.5): one end slips downwind and the ship swings round on the other.
+	func _partial_drift_text(who: String, other: String) -> String:
+		var names := ["E", "SE", "SW", "W", "NW", "NE"]
+		var facing := int(data.get("facing", -1))
+		var text := "%s drifts partly: its %s slips downwind" % [who, str(data["partial"])]
+		if facing >= 0 and facing < names.size():
+			text += " and it swings to face %s" % names[facing]
+		if target_id != "":
+			text += ", blocked by %s" % other
+		if data.get("fouled", false):
+			text += "; the two ships are fouled together"
+		return text + " (drift roll %s, needed %s)" % [_roll_text(), _val("needed")]
 
 	func _unfoul_text(who: String, other: String) -> String:
 		# Either ship's success frees the pair, so a failure never claims the pair stays fouled.
