@@ -53,3 +53,14 @@ func test_a_scenario_minimap_texture_is_used() -> void:
 		assert_not_null(minimap.background.texture)
 	minimap.configure_for_scenario({"minimap_texture": ""})
 	assert_null(minimap.background.texture, "the next game's scenario without one clears it")
+
+
+func test_ship_icon_sits_at_the_ship_centre() -> void:
+	# Bow (3,2) facing E: stern (2,2). The icon goes midway between them, not on the bow.
+	var ship := ShipState.new()
+	ship.hex_position = Vector2i(3, 2)
+	ship.facing = 0
+	var grid := HexGrid.new(1.0)
+	var expected := (grid.axial_to_world(3, 2) + grid.axial_to_world(2, 2)) / 2.0
+	var script: GDScript = load("res://scripts/ui/minimap.gd")
+	assert_eq(script.ship_world_position(grid, ship), expected)

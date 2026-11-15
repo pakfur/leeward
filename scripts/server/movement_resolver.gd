@@ -29,6 +29,10 @@ var _contest_amendments: Array = []
 ## tacking die is still drawn on segment 0, so the rolls after it are the ones of the first pass, and the
 ## roll stays in the log.
 var _tacks_dropped: Dictionary = {}
+## Stern contests rolled this pass: {segment, winner, rolls: {ship_id: [CONTESTED_HEX_ROLL events]}}.
+## A contest whose winner's turn is then rolled back no longer happens in the replay; its rolls are put
+## back into the final log (see run()).
+var _contests: Array = []
 
 var rng: RandomNumberGenerator:
 	get:
@@ -71,6 +75,7 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 	var rng_start: int = rng.state
 	var amended: Dictionary = {}  # ship_id -> steps actually resolved
 	var rollbacks: Dictionary = {}  # ship_id -> the rollback or lost stern contest that amended its plot
+	var undone_contests: Array = []  # contests whose winner's turn was rolled back (see _contests)
 	var outcome: Dictionary = {}
 	# All overlaps that fail at the same segment end are rolled back together (they are simultaneous,
 	# 6.B.4); the pass then restarts.
@@ -86,6 +91,9 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 			var sid: String = rb.ship_id
 			amended[sid] = _amended_steps(ship_map[sid], amended.get(sid, plotted[sid]), rb)
 			rollbacks[sid] = rb
+			for contest in outcome.contests:
+				if rb.get("kind", "") != "contest" and contest.winner == sid and contest.segment == rb.segment:
+					undone_contests.append(contest)
 			Trace.trace_log("MovementResolver", "plot amended", {"ship": sid, "segment": rb.segment,
 				"other": rb.other_id, "reason": rb.reason, "steps": amended[sid].size()})
 
@@ -102,6 +110,8 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 			continue
 		_record_rollback(results[sid], rollbacks[sid], amended[sid].size())
 		log.max_impulses = maxi(log.max_impulses, rollbacks[sid].segment + 2)
+	for contest in undone_contests:
+		_record_undone_contest(results, contest)
 	for sid in results:
 		log.add_result(results[sid])
 
@@ -109,8 +119,8 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 
 
 ## One resolution of every ship's steps (`amended` overrides a ship's plot). Returns {"results",
-## "max_impulses", "rollbacks"}; when an overlap fails its check the pass stops there and "rollbacks"
-## lists the turns to undo.
+## "max_impulses", "rollbacks", "contests"}; when an overlap fails its check the pass stops there and
+## "rollbacks" lists the turns to undo; "contests" lists the stern contests rolled (see _contests).
 func _resolve_pass(
 	ships: Array[ShipState],
 	ship_map: Dictionary,
@@ -127,6 +137,7 @@ func _resolve_pass(
 	var pivots_this_turn: Dictionary = {}
 	_pending_overlaps = {}
 	_contest_amendments = []
+	_contests = []
 	_tacks_dropped = {}
 	for sid in amended:
 		if _find_tacking_impulse(ship_map[sid], plotted[sid]) == 0 \
@@ -178,10 +189,10 @@ func _resolve_pass(
 		if failed.is_empty():
 			failed = _contest_amendments
 		if not failed.is_empty():
-			return {"results": results, "max_impulses": max_impulses, "rollbacks": failed}
+			return {"results": results, "max_impulses": max_impulses, "rollbacks": failed, "contests": _contests}
 		_note_overlaps(impulse, results, current_hexes, current_facings)
 
-	return {"results": results, "max_impulses": max_impulses, "rollbacks": []}
+	return {"results": results, "max_impulses": max_impulses, "rollbacks": [], "contests": _contests}
 
 
 ## ============================================================================
@@ -476,6 +487,10 @@ func _stern_contest(
 	for sid in ids:
 		marks[sid] = (results[sid] as MovementTypes.ShipResolutionResult).events.size()
 	var winner: String = _roll_contest(ids, impulse, ship_map, results)
+	var rolls: Dictionary = {}
+	for sid in ids:
+		rolls[sid] = (results[sid] as MovementTypes.ShipResolutionResult).events.slice(marks[sid])
+	_contests.append({"segment": impulse, "winner": winner, "rolls": rolls})
 	var losers: Array = []
 	for sid in ids:
 		if sid == winner:
@@ -639,20 +654,38 @@ func _record_contest(results: Dictionary, contest: Dictionary, steps_resolved: i
 		if not _reached_segment(results[sid], contest.segment):
 			return
 	for sid in contest.events:
-		var result: MovementTypes.ShipResolutionResult = results[sid]
-		var at: int = 0
-		while at < result.events.size() and (result.events[at].impulse < contest.segment \
-				or (result.events[at].impulse == contest.segment \
-					and result.events[at].event_type == MovementTypes.ResolutionEventType.TACKING_ROLL)):
-			at += 1
-		for ev in contest.events[sid]:
-			result.events.insert(at, ev)
-			at += 1
+		_insert_at_segment_start(results[sid], contest.segment, contest.events[sid])
 	var loser: MovementTypes.ShipResolutionResult = results[contest.ship_id]
 	if loser.blocked_by == "":
 		loser.blocked_by = contest.other_id
 	if loser.stopped_at_impulse < 0 and steps_resolved <= contest.segment:
 		loser.stopped_at_impulse = contest.segment
+
+
+## Put back the rolls of a stern contest whose winner's turn was rolled back (6.B.4): in the final pass
+## the contest no longer happens, but it was rolled. Skipped when the winner no longer reaches that
+## segment, or when the final pass rolled the contest itself.
+func _record_undone_contest(results: Dictionary, contest: Dictionary) -> void:
+	if not _reached_segment(results[contest.winner], contest.segment):
+		return
+	for sid in contest.rolls:
+		for ev in (results[sid] as MovementTypes.ShipResolutionResult).events:
+			if ev.event_type == MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL and ev.impulse == contest.segment:
+				return
+	for sid in contest.rolls:
+		_insert_at_segment_start(results[sid], contest.segment, contest.rolls[sid])
+
+
+## Insert `events` at the start of `segment` in the result, after any tacking roll of that segment.
+func _insert_at_segment_start(result: MovementTypes.ShipResolutionResult, segment: int, events: Array) -> void:
+	var at: int = 0
+	while at < result.events.size() and (result.events[at].impulse < segment \
+			or (result.events[at].impulse == segment \
+				and result.events[at].event_type == MovementTypes.ResolutionEventType.TACKING_ROLL)):
+		at += 1
+	for ev in events:
+		result.events.insert(at, ev)
+		at += 1
 
 
 ## Insert `ev` after the result's last event of the same or an earlier impulse.

@@ -47,6 +47,22 @@ func test_fire_button_text_always_says_what_it_does() -> void:
 	assert_eq(FirePanel.fire_button_text(0), "Hold all fire")
 	assert_eq(FirePanel.fire_button_text(1), "Fire 1 broadside")
 	assert_eq(FirePanel.fire_button_text(2), "Fire 2 broadsides")
+	assert_eq(FirePanel.fire_button_text(0, 2), "Fire 2 half broadsides")
+	assert_eq(FirePanel.fire_button_text(1, 1), "Fire 1 broadside and 1 half broadside")
+
+
+func test_fire_button_counts_a_split_side_as_two_half_broadsides() -> void:
+	var sides := {ShipState.STARBOARD: {"bow": "t1", "stern": "t2"}, ShipState.PORT: {"bow": "", "stern": ""}}
+	var orders := FirePanel.panel_orders("own", sides, {"t1": 3, "t2": 4})
+	assert_eq(orders.size(), 2, "setup: one order per battery")
+	assert_eq(FirePanel.fire_button_text_for(orders), "Fire 2 half broadsides")
+	sides[ShipState.PORT] = {"bow": "t1", "stern": "t1"}
+	orders = FirePanel.panel_orders("own", sides, {"t1": 3, "t2": 4})
+	assert_eq(FirePanel.fire_button_text_for(orders), "Fire 1 broadside and 2 half broadsides")
+	# The panel's get_all_orders() hands over an untyped Array.
+	var untyped: Array = []
+	untyped.append_array(orders)
+	assert_eq(FirePanel.fire_button_text_for(untyped), "Fire 1 broadside and 2 half broadsides")
 
 
 func test_locked_toggles_explain_why() -> void:

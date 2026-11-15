@@ -220,11 +220,27 @@ static func panel_orders(ship_id: String, sides: Dictionary, ranges: Dictionary)
 	return orders
 
 
-## What the main button does: "Fire 1 broadside" / "Fire 2 broadsides" / "Hold all fire".
-static func fire_button_text(order_count: int) -> String:
-	if order_count <= 0:
+## What the main button does: "Fire 1 broadside", "Fire 2 half broadsides", "Fire 1 broadside and
+## 1 half broadside" or "Hold all fire". A full-broadside order counts as a broadside, a bow or stern
+## battery order as a half broadside (a side split between two targets is two half broadsides).
+static func fire_button_text(full_count: int, half_count: int = 0) -> String:
+	var parts := PackedStringArray()
+	if full_count > 0:
+		parts.append("%d broadside%s" % [full_count, "" if full_count == 1 else "s"])
+	if half_count > 0:
+		parts.append("%d half broadside%s" % [half_count, "" if half_count == 1 else "s"])
+	if parts.is_empty():
 		return "Hold all fire"
-	return "Fire %d broadside%s" % [order_count, "" if order_count == 1 else "s"]
+	return "Fire " + " and ".join(parts)
+
+
+## fire_button_text() for a set of orders.
+static func fire_button_text_for(orders: Array) -> String:
+	var full := 0
+	for order in orders:
+		if order.battery == GunneryTypes.BATTERY_FULL:
+			full += 1
+	return fire_button_text(full, orders.size() - full)
 
 
 ## Radio-style marker so the chosen row is obvious at a glance.
@@ -753,9 +769,9 @@ func _on_side_changed(ship_id: String, _side: int) -> void:
 
 func _update_fire_button() -> void:
 	if fire_button.text != "Orders submitted":
-		var order_count := get_all_orders().size()
-		fire_button.text = fire_button_text(order_count)
-		instructions_label.text = footer_text(order_count, targets_changed())
+		var orders := get_all_orders()
+		fire_button.text = fire_button_text_for(orders)
+		instructions_label.text = footer_text(orders.size(), targets_changed())
 	if two_target_label:
 		two_target_label.text = two_target_note(DataManager.combat_tables.flat_modifier("two_targets")) \
 			if DataManager.combat_tables else ""

@@ -2118,6 +2118,40 @@ func test_complete_overlap_winner_without_further_mps_cannot_turn_either() -> vo
 	_assert_no_overlap(ships)
 
 
+func test_contest_rolls_stay_in_the_log_when_the_winner_is_rolled_back() -> void:
+	# Turn-only complete overlap (6.B.5): the ships contest, the winner's stern stays on the loser's bow
+	# and is rolled back, and in the replay both turns are rolled back. The contest rolls stay in the log.
+	env.wind_direction = 2
+	var ship_a = _make_ship_state(Vector2i(5, 5), 3, 2, "C", "ship_a")
+	var ship_b = _make_ship_state(Vector2i(5, 6), 0, 2, "C", "ship_b")
+	GameState.ship_controller.set_plotted_movement("ship_a", [{"hex": {"q": 5, "r": 5}, "facing": 4}])
+	GameState.ship_controller.set_plotted_movement("ship_b", [{"hex": {"q": 5, "r": 6}, "facing": 1}])
+	var ships: Array[ShipState] = [ship_a, ship_b]
+
+	var log = resolver.run(ships, env)
+
+	var winners := 0
+	for sid in ["ship_a", "ship_b"]:
+		var result = log.get_result(sid)
+		var rolls = _events_of(result, MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL)
+		assert_gt(rolls.size(), 0, "%s's contest roll is in the log" % sid)
+		for ev in rolls:
+			assert_eq(ev.impulse, 0)
+		if not rolls.is_empty() and rolls.back().success:
+			winners += 1
+		assert_eq(_events_of(result, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK).size(), 1)
+		assert_false(_has_event(result, MovementTypes.ResolutionEventType.STERN_BLOCKED),
+			"%s: the final pass has no lost contest" % sid)
+		# Told in order: the contest, then the stern swinging in, then back.
+		var order: Array = []
+		for ev in result.events:
+			if order.is_empty() or order.back() != ev.event_type:
+				order.append(ev.event_type)
+		assert_eq(order, [MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL,
+			MovementTypes.ResolutionEventType.OVERLAP, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK])
+	assert_eq(winners, 1, "One ship won the contest")
+
+
 ## Cascade: X sails ahead into (6,5), the hex W's stern leaves as W turns into (5,5), X's bow hex
 ## at the start (an overlap X clears by turning next segment). X's turn swings its stern onto stopped
 ## V and is never cleared, so X is rolled back; X's stern then stays on (5,5), so W's overlap is not

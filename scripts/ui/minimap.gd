@@ -224,6 +224,12 @@ func _create_ship_icon(ship_id: String) -> void:
 
 	Trace.trace_log("MiniMap", "Created icon for ship %s" % ship_id)
 
+## Where a ship's icon goes in world space: the centre of its two hexes (bow and stern), as on the
+## main map.
+static func ship_world_position(grid: HexGrid, ship: ShipState) -> Vector3:
+	return grid.ship_center_world(ship.hex_position, ship.facing)
+
+
 func _update_ship_positions() -> void:
 	"""Update positions of all ship icons"""
 	for ship_id in ship_icons.keys():
@@ -236,7 +242,7 @@ func _update_ship_positions() -> void:
 		# Same hex -> world mapping as the main map (pointy-top axial; x east, z south),
 		# and the minimap draws +X right and +Z down, i.e. north up like the main camera.
 		var grid: HexGrid = hex_map.get_hex_grid() if hex_map and hex_map.has_method("get_hex_grid") else _hex_grid
-		var world_pos = grid.axial_to_world(ship.hex_position.x, ship.hex_position.y)
+		var world_pos = ship_world_position(grid, ship)
 
 		# Convert to minimap coordinates
 		var minimap_pos = _world_to_minimap(world_pos)
