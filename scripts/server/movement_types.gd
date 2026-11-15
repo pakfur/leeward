@@ -383,7 +383,41 @@ enum ResolutionEventType {
 	STERN_BLOCKED,  # a turn cancelled outright; detail "lost stern contest to <id>" (6.B.4c, 6.B.5, 6.C.5)
 	OVERLAP,  # a swinging stern entered a hex another ship holds or enters (6.B.2); detail "overlaps <id>[, <id>]"
 	OVERLAP_ROLLBACK,  # the overlap was not cleared on the next segment: the turn is undone (6.B.4)
+	BEARING_OFF_DECLINED,  # the ship held its course and collides on purpose (6.D.3, 6.E.1)
 }
+
+## Choices for a potential collision (6.D): bear off to port or starboard, or hold course and collide.
+const BEAR_OFF_PORT := "port"
+const BEAR_OFF_STARBOARD := "starboard"
+const BEAR_OFF_COLLIDE := "collide"
+
+
+## A potential collision waiting for its owner's decision (6.D.1-6.D.3). `eligible` lists the
+## directions a turn is legal in at that point of the plot (6.D.2); "collide" is always allowed.
+## `number` is the Bearing Off chart's "roll <= n" (-1 = NA), `drm` its modifiers; `chance` the odds.
+class BearOffSituation extends RefCounted:
+	var ship_id: String = ""
+	var blocker_id: String = ""
+	var segment: int = 0
+	var bow: Vector2i = Vector2i.ZERO
+	var facing: int = 0
+	var eligible: Array[String] = []
+	var number: int = -1
+	var drm: int = 0
+	var chance: float = 0.0
+	## 6.D.3a: the player may see every other ship's plot. ship_id -> the bow hexes (Array[Vector2i])
+	## of its steps from this segment on.
+	var other_plots: Dictionary = {}
+
+	func choices() -> Array[String]:
+		var all: Array[String] = eligible.duplicate()
+		all.append(BEAR_OFF_COLLIDE)
+		return all
+
+	func to_dict() -> Dictionary:
+		return {"ship_id": ship_id, "blocker_id": blocker_id, "segment": segment,
+			"bow": {"q": bow.x, "r": bow.y}, "facing": facing, "eligible": eligible,
+			"number": number, "drm": drm, "chance": chance}
 
 class ResolutionEvent extends RefCounted:
 	var ship_id: String = ""
@@ -468,6 +502,15 @@ class ResolutionLog extends RefCounted:
 	var turn: int = 0
 	var ship_results: Dictionary = {}
 	var max_impulses: int = 0
+	## A potential collision waiting for the player's decision: the log is complete only before
+	## `pending_bear_off.segment`; play it up to there, then ask (see TurnPhaseController).
+	var pending_bear_off: BearOffSituation = null
+	## Playback starts here: segments before it were shown from an earlier log of the same turn,
+	## which this one repeats exactly.
+	var resume_impulse: int = 0
+
+	func is_complete() -> bool:
+		return pending_bear_off == null
 
 	func _init(p_turn: int = 0) -> void:
 		turn = p_turn

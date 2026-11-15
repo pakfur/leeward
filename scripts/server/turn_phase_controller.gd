@@ -9,6 +9,9 @@ signal resolution_log_ready(log: MovementTypes.ResolutionLog)
 signal fire_declaration_requested()
 signal combat_log_ready(log: PhaseEvents.PhaseLog)
 signal game_over(result: Dictionary)
+## Movement playback reached a potential collision of a prompted player's ship (6.D.3): the player
+## answers with player_submit_bear_off.
+signal bear_off_decision_requested(situation: MovementTypes.BearOffSituation)
 
 enum GamePhase {
 	SETUP,
@@ -35,6 +38,11 @@ var _pending_resolution_log: MovementTypes.ResolutionLog = null
 var combat_step: CombatStep = CombatStep.NONE
 var _fire_orders: Array = [[], []]  # per player: Array[GunneryTypes.FireOrder]
 var _fire_ready: Array[bool] = [false, false]
+## Players whose ships' bear-off decisions are asked for (6.D.3); everyone else's ships decide by
+## StubAI.bear_off_choice. Empty (no prompts) unless the game wires a human player in.
+var bear_off_prompt_player_ids: Array[int] = []
+## This turn's answers: ship_id -> {choice, segment} (see MovementResolver.run).
+var _bear_off_decisions: Dictionary = {}
 ## Set when END_TURN finds a victory: {"winner", "reason", "points", "turn"}. {} while the game runs.
 var game_result: Dictionary = {}
 
@@ -57,6 +65,7 @@ func start_new_game() -> void:
 	_fire_orders = [[], []]
 	_fire_ready = [false, false]
 	_pending_resolution_log = null
+	_bear_off_decisions = {}
 	current_phase = GamePhase.SETUP  # Start in SETUP so advance_phase() enters ENVIRONMENT
 
 	Trace.trace_log("TurnPhase", "Game started - Turn: %d" % current_turn)
@@ -170,15 +179,72 @@ func _enter_movement_resolution_phase() -> void:
 	if game_state.sail_controller:
 		game_state.sail_controller.begin_plotted_changes()
 
+	_bear_off_decisions = {}
 	if game_state.movement_resolver and game_state.environment:
-		var all_ships = game_state.get_all_ships()
-		@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
-		var log = game_state.movement_resolver.run(all_ships, game_state.environment)
-		_pending_resolution_log = log
-		Trace.trace_log("TurnPhase", "MOVEMENT_RESOLUTION resolver done", {"turn": log.turn, "ships": log.ship_results.size()})
-		resolution_log_ready.emit(log)
+		_run_movement_resolution(0)
 	else:
 		advance_phase()
+
+
+## Run the resolver with this turn's bear-off answers and hand the log to the view, which plays it
+## from `resume_impulse`. An incomplete log (a prompted ship's potential collision) is played up to
+## that segment; the view then calls on_playback_paused().
+func _run_movement_resolution(resume_impulse: int) -> void:
+	var all_ships = game_state.get_all_ships()
+	@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
+	var log = game_state.movement_resolver.run(all_ships, game_state.environment, _bear_off_decisions,
+		_bear_off_prompt_ship_ids(all_ships))
+	log.resume_impulse = resume_impulse
+	_pending_resolution_log = log
+	Trace.trace_log("TurnPhase", "MOVEMENT_RESOLUTION resolver done", {"turn": log.turn,
+		"ships": log.ship_results.size(), "complete": log.is_complete()})
+	resolution_log_ready.emit(log)
+
+
+func _bear_off_prompt_ship_ids(ships: Array) -> Array:
+	var ids: Array = []
+	for s in ships:
+		if s.player_id in bear_off_prompt_player_ids:
+			ids.append(s.ship_id)
+	return ids
+
+
+## The view played an incomplete log up to its potential collision: ask the owner.
+func on_playback_paused() -> void:
+	if not is_server:
+		push_error("TurnPhaseController: Cannot pause playback on client")
+		return
+	if current_phase != GamePhase.MOVEMENT_RESOLUTION or _pending_resolution_log == null \
+			or _pending_resolution_log.is_complete():
+		push_error("TurnPhaseController: on_playback_paused with no decision pending")
+		return
+	bear_off_decision_requested.emit(_pending_resolution_log.pending_bear_off)
+
+
+## The owner's answer to the pending potential collision (6.D.3): "port", "starboard" or "collide".
+## Returns "" when accepted (the resolution runs again and playback resumes at that segment), else
+## the reason it was refused.
+func player_submit_bear_off(player_id: int, ship_id: String, choice: String) -> String:
+	if not is_server:
+		push_error("TurnPhaseController: Cannot submit a bear-off decision on client")
+		return "bear-off decisions can only be submitted on the server"
+	if not game_result.is_empty():
+		return "the game is over"
+	if current_phase != GamePhase.MOVEMENT_RESOLUTION or _pending_resolution_log == null \
+			or _pending_resolution_log.is_complete():
+		return "no bear-off decision pending"
+	var situation: MovementTypes.BearOffSituation = _pending_resolution_log.pending_bear_off
+	if situation.ship_id != ship_id:
+		return "the decision pending is for %s" % situation.ship_id
+	var ship = game_state.get_ship(ship_id)
+	if ship == null or ship.player_id != player_id:
+		return "player %d does not command %s" % [player_id, ship_id]
+	if not choice in situation.choices():
+		return "%s is not a legal choice here" % choice
+	_bear_off_decisions[ship_id] = {"choice": choice, "segment": situation.segment}
+	Trace.trace_log("TurnPhase", "Bear-off decision", {"ship": ship_id, "choice": choice, "segment": situation.segment})
+	_run_movement_resolution(situation.segment)
+	return ""
 
 
 func on_playback_completed() -> void:
@@ -189,6 +255,9 @@ func on_playback_completed() -> void:
 		return
 	if current_phase != GamePhase.MOVEMENT_RESOLUTION:
 		push_error("TurnPhaseController: on_playback_completed called outside MOVEMENT_RESOLUTION")
+		return
+	if _pending_resolution_log and not _pending_resolution_log.is_complete():
+		push_error("TurnPhaseController: on_playback_completed with a bear-off decision pending")
 		return
 	if _pending_resolution_log:
 		var all_ships = game_state.get_all_ships()

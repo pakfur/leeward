@@ -11,6 +11,7 @@ enum Type {
 	DRIFT, FOULED, UNFOUL, SAIL_CHANGE, VICTORY, HOLD_FIRE,
 	COLLISION, STOPPED_SHORT, IN_IRONS, WIND,
 	TURN_UNDONE,  # a plotted turn rolled back or lost to a stern contest; the ship sailed on ahead instead
+	BEAR_OFF,  # a potential collision (6.D): {choice: port/starboard/collide, success, roll, needed, drm}
 }
 
 const MODIFIER_LABELS := {
@@ -194,6 +195,8 @@ class PhaseEvent extends RefCounted:
 				return "%s is still in irons" % who
 			Type.WIND:
 				return _wind_text()
+			Type.BEAR_OFF:
+				return _bear_off_text(who, other)
 			Type.UNFOUL:
 				return _unfoul_text(who, other)
 			Type.SAIL_CHANGE:
@@ -201,6 +204,19 @@ class PhaseEvent extends RefCounted:
 			Type.VICTORY:
 				return _victory_text()
 		return "%s: event %d" % [who, type]
+
+	## "X bears off to starboard to avoid Y (rolled 2, needed ≤ 5)", "X fails to bear off …", or
+	## "X holds course into Y".
+	func _bear_off_text(who: String, other: String) -> String:
+		var choice := str(data.get("choice", ""))
+		if choice == MovementTypes.BEAR_OFF_COLLIDE:
+			return "%s holds course into %s" % [who, other]
+		var drm := int(data.get("drm", 0))
+		var roll_text := "rolled %d%s, needed ≤ %d" % [int(data.get("roll", 0)),
+			" %+d" % drm if drm != 0 else "", int(data.get("needed", 0))]
+		if data.get("success", false):
+			return "%s bears off to %s to avoid %s (%s)" % [who, choice, other, roll_text]
+		return "%s fails to bear off to %s (%s)" % [who, choice, roll_text]
 
 	## "… stops short of its plotted course", with the cause the resolution recorded, if any.
 	func _stopped_short_text(who: String, other: String) -> String:

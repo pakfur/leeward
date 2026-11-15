@@ -530,7 +530,9 @@ func test_contested_hex_loser_gets_bearing_off_or_collision() -> void:
 
 	assert_true(has_bearoff_roll or has_pivot_denied, "Loser should attempt bearing off or be denied pivot")
 	if has_bearoff_roll and not has_collision:
-		assert_true(loser_result.stopped_at_impulse >= 0, "Bearing-off success should stop the ship")
+		# 6.D.4: a successful bear-off turns the ship where it stands
+		assert_ne(loser_result.final_facing, (state_a if loser_result == result_a else state_b).facing,
+			"Bearing-off success turns the ship")
 	if has_pivot_denied:
 		assert_true(has_collision, "Pivot denied should result in collision")
 
@@ -658,9 +660,10 @@ func test_ramming_a_stopped_ship_only_the_rammer_loses_rigging() -> void:
 	ship_a.plotted_actions.movement = [{"hex": {"q": 6, "r": 5}, "facing": 0}]
 	var ships: Array[ShipState] = [ship_a, stopped_ship]
 
+	var hold := {"ship_a": {"choice": MovementTypes.BEAR_OFF_COLLIDE, "segment": 0}}
 	for seed_value in [1, 2, 3, 4, 5]:
 		rng.seed = seed_value
-		var log = resolver.run(ships, env)
+		var log = resolver.run(ships, env, hold)
 		var result_a = log.get_result("ship_a")
 		var result_s = log.get_result("stopped")
 		assert_eq(result_a.collided_with, "stopped")
@@ -672,8 +675,8 @@ func test_ramming_a_stopped_ship_only_the_rammer_loses_rigging() -> void:
 
 func test_ships_running_into_each_other_both_lose_rigging() -> void:
 	# 6.E.3: "If the two ships run into one another, both ships must roll". Head-on: A (bow (5,5),
-	# heading E) and B (bow (6,5), heading W) each plot one hex ahead into the other's bow. Neither can
-	# bear off (speed 3, maneuverability A), so they collide.
+	# heading E) and B (bow (6,5), heading W) each plot one hex ahead into the other's bow. Both hold
+	# course instead of bearing off (6.E.1), so they collide.
 	var ship_a = _make_ship_state(Vector2i(5, 5), 0, 3, "A", "ship_a", 3, "A")
 	ship_a.sail_state = "PS"
 	ship_a.plotted_actions.movement = [{"hex": {"q": 6, "r": 5}, "facing": 0}]
@@ -681,8 +684,10 @@ func test_ships_running_into_each_other_both_lose_rigging() -> void:
 	ship_b.sail_state = "MS"
 	ship_b.plotted_actions.movement = [{"hex": {"q": 5, "r": 5}, "facing": 3}]
 	var ships: Array[ShipState] = [ship_a, ship_b]
+	var hold := {"ship_a": {"choice": MovementTypes.BEAR_OFF_COLLIDE, "segment": 0},
+		"ship_b": {"choice": MovementTypes.BEAR_OFF_COLLIDE, "segment": 0}}
 
-	var log = resolver.run(ships, env)
+	var log = resolver.run(ships, env, hold)
 	var result_a = log.get_result("ship_a")
 	var result_b = log.get_result("ship_b")
 
@@ -1090,8 +1095,8 @@ func test_clear_turn_flags() -> void:
 # ===========================================================================
 
 func test_bearing_off_pivot_denied_no_forward_hexes() -> void:
-	# Ship at speed 3, maneuverability A needs 2 forward hexes before turning (turning_table same_direction/3/a=2).
-	# Move it directly into a blocker on impulse 0 — 0 forward hexes, pivot should be denied.
+	# 6.D.2: a ship may bear off only if a turn is legal there. The mover turns starboard on segment 0
+	# and meets the blocker on segment 1: it "just turned in the previous MP", so it cannot bear off.
 	var hex_grid = HexGrid.new()
 	var blocker_pos = Vector2i(6, 5)
 	var blocker = _make_ship_state(blocker_pos, 1, 0, "C", "blocker")
@@ -1113,8 +1118,12 @@ func test_bearing_off_pivot_denied_no_forward_hexes() -> void:
 		"crew_count": [3, 3, 3, 3],
 		"marine_count": 2,
 	})
+	var blocker_ahead: Vector2i = Vector2i(5, 6)  # ahead of the mover after its turn to SE
+	blocker.hex_position = blocker_ahead
+	blocker.facing = 0  # bow (5,6), stern (4,6)
 	mover.plotted_actions.movement = [
-		{"hex": {"q": blocker_pos.x, "r": blocker_pos.y}, "facing": 0}
+		{"hex": {"q": 5, "r": 5}, "facing": 1},
+		{"hex": {"q": blocker_ahead.x, "r": blocker_ahead.y}, "facing": 1},
 	]
 
 	var ships: Array[ShipState] = [blocker, mover]
@@ -1132,7 +1141,7 @@ func test_bearing_off_pivot_denied_no_forward_hexes() -> void:
 		if ev.event_type == MovementTypes.ResolutionEventType.BEARING_OFF_ROLL:
 			has_bearoff_roll = true
 
-	assert_true(has_pivot_denied, "Should deny pivot when insufficient forward hexes")
+	assert_true(has_pivot_denied, "Should deny the bear-off right after a turn")
 	assert_true(has_collision, "Denied pivot should result in collision")
 	assert_false(has_bearoff_roll, "Should not attempt bearing-off roll when pivot denied")
 
@@ -2287,6 +2296,15 @@ func test_rollback_resolution_is_deterministic() -> void:
 # Rings: each ship's bow enters the next one's old stern (a cycle, see _resolve_impulse)
 # ===========================================================================
 
+
+## Bear-off decisions that hold course on segment 0 (6.E.1): for tests about what blocked ships do
+## next, not about bearing off.
+func _hold_course(ids: Array) -> Dictionary:
+	var decisions := {}
+	for sid in ids:
+		decisions[sid] = {"choice": MovementTypes.BEAR_OFF_COLLIDE, "segment": 0}
+	return decisions
+
 ## A (bow (5,5) E), B (bow (5,6) SW) and C (bow (4,6) NW) each sail one ahead into the next one's
 ## old stern: A into B's (6,5), B into C's (4,7), C into A's (4,5). Returns the three ships.
 func _make_ring(crew_b: String = "B") -> Array[ShipState]:
@@ -2322,7 +2340,7 @@ func test_ring_with_a_member_blocked_from_outside_never_overlaps() -> void:
 	_plot_straight(d, 1)  # bow into (4,7)
 	ships.append(d)
 
-	var log = resolver.run(ships, env)
+	var log = resolver.run(ships, env, _hold_course(["ship_a", "ship_b", "ship_c", "ship_d"]))
 	resolver.apply_results(log, ships)
 
 	var expected := {"ship_a": [Vector2i(5, 5), "ship_b"], "ship_c": [Vector2i(4, 6), "ship_a"],
@@ -2352,7 +2370,7 @@ func test_only_the_ring_that_went_wrong_is_broken() -> void:
 		_plot_straight(s, 1)
 		ships.append(s)
 
-	var log = resolver.run(ships, env)
+	var log = resolver.run(ships, env, _hold_course(["ship_a", "ship_b", "ship_c", "ship_d"]))
 	resolver.apply_results(log, ships)
 
 	assert_eq(ships[0].hex_position, Vector2i(5, 5), "The blocked ring stays (A)")
@@ -2672,3 +2690,181 @@ func test_three_sterns_contest_keeps_its_result_in_the_replay() -> void:
 		if turned.size() == 1:
 			assert_eq(lost_to.keys(), turned, "seed %d: every loser lost to the ship that turned" % seed_value)
 		_assert_no_overlap(ships)
+
+
+# ===========================================================================
+# Bearing off as the owner's decision (6.D)
+# ===========================================================================
+
+## Mover (crew A, maneuver D, speed 7: deceleration 4, minimum 3 MPs) plots three hexes east from
+## bow (5,5); a stopped ship holds (7,5), so the mover meets it on segment 1 after one hex.
+func _bear_off_setup() -> Array[ShipState]:
+	var blocker = _make_ship_state(Vector2i(7, 5), 1, 0, "C", "blocker")  # bow (7,5), stern (7,4)
+	var mover = _make_ship_state(Vector2i(5, 5), 0, 7, "D", "mover", 3, "A")
+	_plot_straight(mover, 3)
+	return [mover, blocker] as Array[ShipState]
+
+
+func _decide(choice: String, segment: int = 1) -> Dictionary:
+	return {"mover": {"choice": choice, "segment": segment}}
+
+
+func test_prompted_ship_pauses_the_resolution_at_its_potential_collision() -> void:
+	var ships := _bear_off_setup()
+	var log = resolver.run(ships, env, {}, ["mover"])
+	assert_false(log.is_complete(), "6.D.3: the owner decides")
+	var situation: MovementTypes.BearOffSituation = log.pending_bear_off
+	assert_eq(situation.ship_id, "mover")
+	assert_eq(situation.blocker_id, "blocker")
+	assert_eq(situation.segment, 1)
+	assert_eq(situation.bow, Vector2i(6, 5))
+	assert_eq(situation.eligible, ["port", "starboard"] as Array[String], "6.D.2: a first turn is legal either way")
+	assert_eq(situation.number, DataManager.get_bearing_off_number("A", "D"))
+	assert_eq(situation.drm, 0, "3 MPs plotted: no DRM")
+	assert_eq(situation.choices(), ["port", "starboard", "collide"] as Array[String])
+	var moves: Array = _events_of(log.get_result("mover"), MovementTypes.ResolutionEventType.MOVE)
+	assert_eq(moves.size(), 1, "The step before the potential collision is in the log")
+
+
+func test_the_log_before_the_decision_repeats_exactly() -> void:
+	var ships := _bear_off_setup()
+	rng.seed = 7
+	var paused = resolver.run(ships, env, {}, ["mover"])
+	rng.seed = 7
+	var decided = resolver.run(ships, env, _decide("starboard"), ["mover"])
+	assert_true(decided.is_complete())
+	for sid in ["mover", "blocker"]:
+		var before_a: Array = []
+		var before_b: Array = []
+		for ev in paused.get_result(sid).events:
+			if ev.impulse < 1:
+				before_a.append(ev.to_dict())
+		for ev in decided.get_result(sid).events:
+			if ev.impulse < 1:
+				before_b.append(ev.to_dict())
+		assert_eq(before_b, before_a, "%s: playback can resume at segment 1" % sid)
+
+
+func test_successful_bear_off_turns_then_meets_the_deceleration_minimum() -> void:
+	# 6.D.4: the ship turns the chosen way, then moves ahead only as far as its deceleration requires
+	# (speed 7 - 4 = 3 MPs: one ahead, the turn, one more ahead on the new heading).
+	var ships := _bear_off_setup()
+	var found := false
+	for seed_value in range(1, 40):
+		rng.seed = seed_value
+		var log = resolver.run(ships, env, _decide("starboard"), ["mover"])
+		var result = log.get_result("mover")
+		var rolls: Array = _events_of(result, MovementTypes.ResolutionEventType.BEARING_OFF_ROLL)
+		if rolls.is_empty() or not rolls[0].success:
+			continue
+		found = true
+		assert_eq(rolls[0].impulse, 1)
+		assert_eq(result.final_facing, 1, "Turned to starboard (SE)")
+		assert_eq(result.final_hex, Vector2i(6, 6), "Then one hex ahead to meet the deceleration minimum")
+		assert_eq(_events_of(result, MovementTypes.ResolutionEventType.MOVE).size(), 3)
+		assert_eq(result.collided_with, "", "No collision")
+		assert_eq(result.events.find(rolls[0]) < result.events.find(
+			_events_of(result, MovementTypes.ResolutionEventType.MOVE)[1]), true, "The roll comes before the turn")
+		break
+	assert_true(found, "Some seed bears off (A/D needs <= 7)")
+
+
+func test_failed_bear_off_collides() -> void:
+	var ships := _bear_off_setup()
+	var found := false
+	for seed_value in range(1, 80):
+		rng.seed = seed_value
+		var log = resolver.run(ships, env, _decide("port"), ["mover"])
+		var result = log.get_result("mover")
+		var rolls: Array = _events_of(result, MovementTypes.ResolutionEventType.BEARING_OFF_ROLL)
+		if rolls.is_empty() or rolls[0].success:
+			continue
+		found = true
+		assert_eq(result.collided_with, "blocker", "6.E.1: a failed bear-off is a collision")
+		assert_eq(result.final_facing, 0)
+		break
+	assert_true(found, "Some seed fails (d10 8 or 9)")
+
+
+func test_holding_course_collides_without_a_roll() -> void:
+	var ships := _bear_off_setup()
+	var log = resolver.run(ships, env, _decide(MovementTypes.BEAR_OFF_COLLIDE), ["mover"])
+	var result = log.get_result("mover")
+	assert_true(_has_event(result, MovementTypes.ResolutionEventType.BEARING_OFF_DECLINED))
+	assert_false(_has_event(result, MovementTypes.ResolutionEventType.BEARING_OFF_ROLL), "No roll")
+	assert_eq(result.collided_with, "blocker")
+
+
+func test_a_decision_for_another_segment_is_asked_again() -> void:
+	var ships := _bear_off_setup()
+	var log = resolver.run(ships, env, _decide("starboard", 0), ["mover"])
+	assert_false(log.is_complete(), "The answer was for segment 0; the collision is on segment 1")
+
+
+func test_a_ship_bears_off_only_once_per_turn() -> void:
+	# 6.D.5: after bearing off to starboard, the mover's deceleration step ahead (to (6,6)) meets a
+	# second stopped ship: that potential collision is automatic.
+	var ships := _bear_off_setup()
+	var second = _make_ship_state(Vector2i(6, 6), 0, 0, "C", "second")  # bow (6,6), stern (5,6)
+	ships.append(second)
+	var found := false
+	for seed_value in range(1, 40):
+		rng.seed = seed_value
+		var log = resolver.run(ships, env, _decide("starboard"), ["mover"])
+		var result = log.get_result("mover")
+		var rolls: Array = _events_of(result, MovementTypes.ResolutionEventType.BEARING_OFF_ROLL)
+		if rolls.is_empty() or not rolls[0].success:
+			continue
+		found = true
+		assert_eq(rolls.size(), 1, "No second attempt")
+		assert_eq(result.collided_with, "second", "The second potential collision is automatic")
+		var denied: Array = _events_of(result, MovementTypes.ResolutionEventType.BEARING_OFF_PIVOT_DENIED)
+		assert_eq(denied.size(), 1)
+		assert_eq(denied[0].detail, "already bore off this turn")
+		break
+	assert_true(found)
+
+
+func test_unprompted_ships_never_ram() -> void:
+	# The AI decides for ships not prompted: it always tries to bear off when it can.
+	var ships := _bear_off_setup()
+	var log = resolver.run(ships, env)
+	assert_true(log.is_complete())
+	var result = log.get_result("mover")
+	assert_false(_has_event(result, MovementTypes.ResolutionEventType.BEARING_OFF_DECLINED))
+	assert_eq(_events_of(result, MovementTypes.ResolutionEventType.BEARING_OFF_ROLL).size(), 1)
+
+
+func test_ai_bears_off_away_from_the_blocker() -> void:
+	var situation := MovementTypes.BearOffSituation.new()
+	situation.bow = Vector2i(6, 5)
+	situation.facing = 0
+	situation.eligible = ["port", "starboard"] as Array[String]
+	# Blocker on (7,5) and (7,4): to port (NE) the next hex (7,4) is the blocker; to starboard (SE)
+	# the next hex (6,6) is clear.
+	assert_eq(StubAI.bear_off_choice(situation, [Vector2i(7, 5), Vector2i(7, 4)]), "starboard")
+	situation.eligible = ["port"] as Array[String]
+	assert_eq(StubAI.bear_off_choice(situation, [Vector2i(7, 5), Vector2i(7, 4)]), "port", "Never rams")
+	situation.eligible = [] as Array[String]
+	assert_eq(StubAI.bear_off_choice(situation, [Vector2i(7, 5)]), "collide", "No legal turn")
+
+
+func test_bear_off_log_text() -> void:
+	var ok := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.BEAR_OFF, TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION, "a",
+		{"choice": "starboard", "success": true, "roll": 2, "needed": 5, "drm": 1}, "b")
+	assert_eq(ok.to_text({}), "a bears off to starboard to avoid b (rolled 2 +1, needed ≤ 5)")
+	var held := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.BEAR_OFF, TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION, "a", {"choice": "collide"}, "b")
+	assert_eq(held.to_text({}), "a holds course into b")
+
+
+func test_the_situation_carries_the_other_ships_remaining_plots() -> void:
+	# 6.D.3a: the player may see the other ships' plots; only steps from the paused segment on.
+	var ships := _bear_off_setup()
+	var other = _make_ship_state(Vector2i(5, 8), 0, 2, "C", "other")  # far away, sails two hexes east
+	_plot_straight(other, 2)
+	ships.append(other)
+	var log = resolver.run(ships, env, {}, ["mover"])
+	var plots: Dictionary = log.pending_bear_off.other_plots
+	assert_eq(plots.get("other"), [Vector2i(7, 8)] as Array[Vector2i], "Its step on segment 1 only")
+	assert_false(plots.has("blocker"), "A ship with no plot shows nothing")
+	assert_false(plots.has("mover"), "Not the deciding ship itself")

@@ -106,6 +106,9 @@ func _ready() -> void:
 		GameState.phase_controller.fire_declaration_requested.connect(_on_fire_declaration_requested)
 		GameState.phase_controller.combat_log_ready.connect(_on_combat_log_ready)
 		GameState.phase_controller.game_over.connect(_on_game_over)
+		GameState.phase_controller.bear_off_decision_requested.connect(_on_bear_off_decision_requested)
+		# The human player's ships ask before bearing off (6.D.3); the AI's decide for themselves.
+		GameState.phase_controller.bear_off_prompt_player_ids = [HUMAN_PLAYER_ID] as Array[int]  # SCV:ALLOW
 
 	# Set up OceanView for water shader updates
 	if GameState.environment_controller and hex_map:
@@ -1137,7 +1140,52 @@ func _on_resolution_log_ready(log: MovementTypes.ResolutionLog) -> void:
 	add_child(playback_controller)
 
 	playback_controller.playback_completed.connect(_on_playback_completed, CONNECT_ONE_SHOT)
+	playback_controller.playback_paused.connect(_on_playback_paused, CONNECT_ONE_SHOT)
 	playback_controller.play(log)
+
+
+## Playback reached a potential collision of one of the player's ships: the server asks for the
+## decision (bear_off_decision_requested).
+func _on_playback_paused() -> void:
+	if _leaving:
+		return
+	# Intentional view→controller callback, like playback completion  SCV:ALLOW
+	if GameState.phase_controller:
+		GameState.phase_controller.on_playback_paused()
+
+
+## 6.D.3: show the decision in the context panel, with the rest of every other ship's plotted move
+## (situation.other_plots, chosen by the server) on the map.
+func _on_bear_off_decision_requested(situation: MovementTypes.BearOffSituation) -> void:
+	var ship: ShipState = GameState.get_ship(situation.ship_id)
+	var blocker: ShipState = GameState.get_ship(situation.blocker_id)
+	var panel := BearOffPanel.new()
+	panel.setup(situation, ship.ship_name if ship else situation.ship_id,
+		blocker.ship_name if blocker else situation.blocker_id)
+	panel.choice_made.connect(_on_bear_off_chosen.bind(panel))
+	if context_panel:
+		context_panel.set_context_title("Collision Ahead")
+		context_panel.set_context_content(panel)
+	else:
+		add_child(panel)
+	current_planning_ui = null
+	if hex_overlay and hex_map:
+		for other_id in situation.other_plots:
+			var steps: Array = []
+			for hex: Vector2i in situation.other_plots[other_id]:
+				steps.append(MovementTypes.PlotStep.new(hex))
+			hex_overlay.show_submitted_path(other_id, steps, hex_map.get_hex_grid())
+
+
+func _on_bear_off_chosen(ship_id: String, choice: String, panel: BearOffPanel) -> void:
+	var reason := "bear-off decisions can only be submitted on the server"
+	# Single-player: submit player 0's decision under the server guard  SCV:ALLOW
+	if GameState.is_server and GameState.phase_controller:
+		reason = GameState.phase_controller.player_submit_bear_off(HUMAN_PLAYER_ID, ship_id, choice)
+	else:
+		push_warning("Client bear-off submission not yet implemented - needs network layer")
+	if reason != "" and is_instance_valid(panel):
+		panel.show_error(reason)
 
 
 func _on_playback_completed() -> void:

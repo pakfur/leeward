@@ -48,6 +48,36 @@ func plot_all_ai_ships() -> void:
 		_plot_ship(ship_state, controller, strategy)
 
 
+## A potential collision (6.D) for a ship the AI decides for. It always tries to bear off when a turn
+## is legal (it never rams on purpose) and turns the way whose new bow lies farther from the ship in
+## its way; on a tie, starboard. Deterministic, no dice.
+static func bear_off_choice(situation: MovementTypes.BearOffSituation, blocker_hexes: Array) -> String:
+	if situation.eligible.is_empty():
+		return MovementTypes.BEAR_OFF_COLLIDE
+	var best: String = situation.eligible[0]
+	var best_distance: int = -1
+	for choice in [MovementTypes.BEAR_OFF_STARBOARD, MovementTypes.BEAR_OFF_PORT]:
+		if not choice in situation.eligible:
+			continue
+		var facing: int = (situation.facing + 1) % 6 if choice == MovementTypes.BEAR_OFF_STARBOARD \
+				else (situation.facing + 5) % 6
+		var ahead: Vector2i = situation.bow + HexGrid.DIRECTIONS[facing]
+		var distance: int = 1 << 30
+		for h in blocker_hexes:
+			distance = mini(distance, _axial_distance(ahead, h))
+		if distance > best_distance:
+			best_distance = distance
+			best = choice
+	return best
+
+
+static func _axial_distance(a: Vector2i, b: Vector2i) -> int:
+	var dq := a.x - b.x
+	var dr := a.y - b.y
+	@warning_ignore("integer_division")
+	return (absi(dq) + absi(dr) + absi(dq + dr)) / 2
+
+
 ## Declare fire for the AI side (player 1).
 func submit_fire_orders() -> void:
 	assert(game_state.is_server, "StubAI: Must only run on server")

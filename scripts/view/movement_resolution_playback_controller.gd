@@ -1,10 +1,12 @@
 class_name MovementResolutionPlaybackController
 extends Node
-## Consumes a ResolutionLog and animates ships hex-by-hex.
-## Pauses for contested-hex surrender / bear-off prompts on player ships.
-## Emits playback_completed when done.
+## Consumes a ResolutionLog and animates ships hex-by-hex, from the log's resume_impulse.
+## A complete log ends with playback_completed. An incomplete one (a potential collision waiting for
+## the player's bear-off decision, 6.D.3) is played up to that segment and ends with playback_paused;
+## the re-run log that follows the answer is played from there.
 
 signal playback_completed()
+signal playback_paused()
 
 const IMPULSE_DURATION_MS: float = 200.0
 const IMPULSE_GAP_MS: float = 50.0
@@ -40,6 +42,10 @@ func play(log: MovementTypes.ResolutionLog) -> void:
 	_playing = false
 	if _aborted:
 		return
+	if not log.is_complete():
+		Trace.trace_log("Playback", "paused", {"turn": log.turn, "segment": log.pending_bear_off.segment})
+		playback_paused.emit()
+		return
 	Trace.trace_log("Playback", "complete", {"turn": log.turn})
 	playback_completed.emit()
 
@@ -65,12 +71,14 @@ func is_aborted() -> bool:
 func _play_all_impulses() -> void:
 	var events_by_impulse: Dictionary = _group_events_by_impulse()
 
-	# Play pre-impulse events (impulse -1 equivalent: tacking rolls, in-irons, skip_no_plot at impulse 0)
+	# Play pre-impulse events (impulse -1 equivalent: tacking rolls, in-irons, skip_no_plot at impulse 0),
+	# unless an earlier log of this turn already showed them.
 	var pre_events: Array = _collect_pre_movement_events()
-	if not pre_events.is_empty():
+	if not pre_events.is_empty() and _log.resume_impulse == 0:
 		await _play_event_batch(pre_events)
 
-	for impulse in range(_log.max_impulses):
+	var last_impulse: int = _log.max_impulses if _log.is_complete() else _log.pending_bear_off.segment
+	for impulse in range(_log.resume_impulse, last_impulse):
 		if _aborted:
 			return
 		var impulse_events: Array = events_by_impulse.get(impulse, [])

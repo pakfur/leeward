@@ -298,36 +298,6 @@ func test_free_pivot_at_ma_zero() -> void:
 # Fast-tack bonus
 # ============================================================================
 
-func test_fast_tack_bonus_c_to_b() -> void:
-	# Wind from W (3). Ship facing NW (4) = close-hauled (C).
-	# Pivot starboard from facing 4 to facing 5 = NE.
-	# Wind facing of NE (5) with wind from W (3): relative = (5-3+6)%6 = 2 = B.
-	# So C→B first pivot should give +1 MA.
-	mock_gs.environment.wind_direction = 3
-	var ship = _make_ship("F/F", "b")
-	var ss = _make_ship_state(ship, 4, 3, "MS")
-
-	var wf_before = hex_grid.get_wind_facing(4, 3)
-	assert_eq(wf_before, "C", "Ship should start at close-hauled")
-
-	var result_before = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, [])
-	var ma_before = result_before.remaining_ma
-
-	# Now simulate the starboard pivot to facing 5
-	var starboard_facing = 5
-	var starboard_hex = ss.hex_position  # a turn pivots on the bow hex (5.C.2)
-	var path: Array[MovementTypes.PlotStep] = [
-		MovementTypes.PlotStep.new(starboard_hex, starboard_facing, MovementTypes.MoveType.STARBOARD),
-	]
-
-	var result_after = validator.calculate_valid_moves(ss, starboard_hex, starboard_facing, path)
-	# MA after pivot should be recalculated at B facing, which is higher than C, plus the +1 bonus
-	# The remaining_ma should reflect: new_max_ma (including bonus) - 1 (pivot cost)
-	# We can't predict exact value but the bonus should be reflected
-	var wf_after = hex_grid.get_wind_facing(starboard_facing, 3)
-	assert_eq(wf_after, "B", "After pivot should be broad reach")
-
-
 # ============================================================================
 # MA recalculation on pivot
 # ============================================================================

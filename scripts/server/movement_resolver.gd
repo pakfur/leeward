@@ -8,10 +8,16 @@ extends RefCounted
 ## the turning ship's plot and the resolution is run again (see run()). Two sterns swinging into one
 ## hex with no further MPs (6.C.1b), or two ships swinging onto each other's bows (6.B.5), contest it:
 ## the winner turns, the loser's turn is cancelled.
+## A ship about to run into another may bear off (6.D): its owner's choice (port, starboard or hold
+## course) comes in `bear_off_decisions`; a ship in `prompt_ids` with no decision stops the resolution
+## there (the log comes back incomplete, see ResolutionLog.pending_bear_off), any other ship decides
+## by StubAI.bear_off_choice. A ship that bears off turns, then moves ahead to its deceleration
+## minimum: its plot is amended and the resolution run again, like an overlap rollback.
 
 var game_state: Node = null
 var hex_grid: HexGrid = null
 var _explicit_rng: RandomNumberGenerator = null
+var _plot_validator: MovementValidator = null  # the turning rules for bearing off (see _validator)
 
 
 ## One resolution pass (see run()): every ship's steps, pose and progress, and the overlap bookkeeping
@@ -52,6 +58,18 @@ class ResolutionPass:
 	## contests settled in an earlier pass whose loser's plot was amended (input). Replayed, such a
 	## contest keeps its result among the ships still in it (see _stern_contest).
 	var settled_contests: Dictionary = {}
+	## ship_id -> {choice, segment}: the owners' answers to potential collisions (input, see run()).
+	var bear_off_decisions: Dictionary = {}
+	## Ships whose bear-off decision must come from their player (input).
+	var prompt_ids: Array = []
+	## ship_id -> the bear-off rollback (kind "bear_off") of a ship that bore off in an earlier pass
+	## (input): it bears off once per g-t (6.D.5), so a later potential collision is automatic.
+	var settled_bear_offs: Dictionary = {}
+	## Bear-offs that succeeded this pass: rollbacks of kind "bear_off" that amend the ship's plot.
+	var bear_off_amendments: Array = []
+	## The first potential collision of a prompted ship with no decision yet; the pass stops at the
+	## end of its segment.
+	var decision_needed: MovementTypes.BearOffSituation = null
 
 
 ## One segment of a pass: the steps the ships make on it and the hexes held while they make them.
@@ -92,7 +110,13 @@ func _init(p_game_state: Node = null, p_rng: RandomNumberGenerator = null) -> vo
 ## Main entry point
 ## ============================================================================
 
-func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementTypes.ResolutionLog:
+## `bear_off_decisions`: ship_id -> {choice, segment} (MovementTypes.BEAR_OFF_*), the owners' answers
+## so far; `prompt_ids`: ships whose decision must come from their player. When such a ship meets a
+## potential collision with no decision for that segment, the returned log is incomplete
+## (`pending_bear_off`); run again with the answer added. Everything before that segment repeats
+## exactly, dice included.
+func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisions: Dictionary = {},
+		prompt_ids: Array = []) -> MovementTypes.ResolutionLog:
 	@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 	var log = MovementTypes.ResolutionLog.new(game_state.current_turn if game_state else 0)
 
@@ -126,12 +150,14 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 	var undone_contests: Array = []  # contests whose winner's turn was rolled back (ResolutionPass.contests)
 	var cycle_breaks: Dictionary = {}  # cycle key -> segment (ResolutionPass.cycle_breaks)
 	var settled_contests: Dictionary = {}  # ResolutionPass.settled_contests
+	var settled_bear_offs: Dictionary = {}  # ResolutionPass.settled_bear_offs
 	var outcome: Dictionary = {}
 	# All overlaps that fail at the same segment end are rolled back together (they are simultaneous,
 	# 6.B.4); the pass then restarts.
 	for attempt in range(pass_limit):
 		rng.state = rng_start
-		outcome = _resolve_pass(ships, ship_map, plotted, amended, cycle_breaks, settled_contests, environment)
+		outcome = _resolve_pass(ships, ship_map, plotted, amended, cycle_breaks, settled_contests, environment,
+			bear_off_decisions, prompt_ids, settled_bear_offs)
 		if outcome.rollbacks.is_empty() and outcome.failed_cycles.is_empty():
 			break
 		if attempt == pass_limit - 1:
@@ -151,14 +177,17 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 			rollbacks[sid] = rb
 			if rb.get("kind", "") == "contest":
 				settled_contests[_segment_hex_key(rb.segment, rb.hex)] = {"winner": rb.other_id, "rolls": rb.rolls}
+			if rb.get("kind", "") == "bear_off":
+				settled_bear_offs[sid] = rb
 			for contest in outcome.contests:
-				if rb.get("kind", "") != "contest" and contest.winner == sid and contest.segment == rb.segment:
+				if rb.get("kind", "") == "" and contest.winner == sid and contest.segment == rb.segment:
 					undone_contests.append(contest)
 			Trace.trace_log("MovementResolver", "plot amended", {"ship": sid, "segment": rb.segment,
 				"other": rb.get("overlapping", [rb.other_id]), "reason": rb.reason, "steps": amended[sid].size()})
 
 	var results: Dictionary = outcome.results
 	log.max_impulses = outcome.max_impulses
+	log.pending_bear_off = outcome.get("decision")
 	for sid in rollbacks:
 		# A rollback found in an earlier pass can go stale: a later rollback of another ship may stop
 		# this one before it ever reaches the overlap segment. Its amended plot still stands, but the
@@ -167,6 +196,9 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 			continue
 		if rollbacks[sid].get("kind", "") == "contest":
 			_record_contest(results, rollbacks[sid], amended[sid].size())
+			continue
+		if rollbacks[sid].get("kind", "") == "bear_off":
+			_record_bear_off(results, rollbacks[sid])
 			continue
 		_record_rollback(results[sid], rollbacks[sid], amended[sid].size())
 		log.max_impulses = maxi(log.max_impulses, rollbacks[sid].segment + 2)
@@ -190,13 +222,19 @@ func _resolve_pass(
 	amended: Dictionary,
 	cycle_breaks: Dictionary,
 	settled_contests: Dictionary,
-	environment: EnvironmentState
+	environment: EnvironmentState,
+	bear_off_decisions: Dictionary = {},
+	prompt_ids: Array = [],
+	settled_bear_offs: Dictionary = {}
 ) -> Dictionary:
 	var p := ResolutionPass.new()
 	p.ship_map = ship_map
 	p.environment = environment
 	p.cycle_breaks = cycle_breaks
 	p.settled_contests = settled_contests
+	p.bear_off_decisions = bear_off_decisions
+	p.prompt_ids = prompt_ids
+	p.settled_bear_offs = settled_bear_offs
 	for sid in amended:
 		if _find_tacking_impulse(ship_map[sid], plotted[sid]) == 0 \
 				and _find_tacking_impulse(ship_map[sid], amended[sid]) != 0:
@@ -250,10 +288,13 @@ func _resolve_pass(
 			return {"results": p.results, "max_impulses": max_impulses, "rollbacks": [], "contests": p.contests,
 				"failed_cycles": p.failed_cycles}
 		if failed.is_empty():
-			failed = p.contest_amendments
+			failed = p.contest_amendments + p.bear_off_amendments
 		if not failed.is_empty():
 			return {"results": p.results, "max_impulses": max_impulses, "rollbacks": failed, "contests": p.contests,
 				"failed_cycles": []}
+		if p.decision_needed != null:
+			return {"results": p.results, "max_impulses": max_impulses, "rollbacks": [], "contests": p.contests,
+				"failed_cycles": [], "decision": p.decision_needed}
 		_note_overlaps(p, seg)
 
 	return {"results": p.results, "max_impulses": max_impulses, "rollbacks": [], "contests": p.contests,
@@ -679,6 +720,16 @@ func _check_overlaps(p: ResolutionPass, impulse: int) -> Array:
 ## like any other, so they may meet a ship and bear off or collide.
 func _amended_steps(ship_state: ShipState, steps: Array, rollback: Dictionary) -> Array:
 	var kept: Array = steps.slice(0, rollback.segment)
+	if rollback.get("kind", "") == "bear_off":
+		# 6.D.4: the ship turns where it bore off, then moves ahead only as far as its deceleration
+		# limit requires, on its new heading.
+		var turned_bow: Vector2i = rollback.pre_bow
+		kept.append({"hex": {"q": turned_bow.x, "r": turned_bow.y}, "facing": rollback.facing})
+		var needed: int = _deceleration_minimum(ship_state, rollback.facing)
+		while kept.size() < needed:
+			turned_bow += HexGrid.DIRECTIONS[rollback.facing]
+			kept.append({"hex": {"q": turned_bow.x, "r": turned_bow.y}, "facing": rollback.facing})
+		return kept
 	var minimum: int = _deceleration_minimum(ship_state, rollback.pre_facing)
 	var bow: Vector2i = rollback.pre_bow
 	while kept.size() < minimum:
@@ -751,6 +802,22 @@ func _record_contest(results: Dictionary, contest: Dictionary, steps_resolved: i
 		loser.blocked_by = contest.other_id
 	if loser.stopped_at_impulse < 0 and steps_resolved <= contest.segment:
 		loser.stopped_at_impulse = contest.segment
+
+
+## Put a successful bear-off back into the final log: its roll, told on its segment before the turn
+## the amended plot makes there. Skipped when the ship no longer reaches that segment.
+func _record_bear_off(results: Dictionary, bear_off: Dictionary) -> void:
+	var result: MovementTypes.ShipResolutionResult = results[bear_off.ship_id]
+	if not _reached_segment(result, bear_off.segment):
+		return
+	# Each insert goes before the segment's other events, so the bear-off roll first, then the contest
+	# rolls in front of it.
+	_insert_at_segment_start(result, bear_off.segment, bear_off.events)
+	for sid in bear_off.contest_rolls:
+		if results.has(sid) and not _has_contest_roll(results[sid], bear_off.segment):
+			_insert_at_segment_start(results[sid], bear_off.segment, bear_off.contest_rolls[sid])
+	if result.blocked_by == "":
+		result.blocked_by = bear_off.other_id
 
 
 ## Put back the rolls of a stern contest whose winner's turn was rolled back (6.B.4): in the final pass
@@ -931,68 +998,145 @@ func _crew_quality_index(quality: String) -> int:
 ## Bearing off & collision
 ## ============================================================================
 
+## A potential collision (6.D.1): `loser_id` cannot enter the hex `blocker_id` holds. The owner may
+## bear off if a turn is legal there (6.D.2): its choice comes from `bear_off_decisions`, from the
+## player (a prompted ship with no decision stops the pass at the end of this segment) or from
+## StubAI.bear_off_choice. Holding course collides (6.E.1). A successful roll queues a bear-off
+## rollback: the plot is amended (turn, then ahead to the deceleration minimum) and the pass re-run.
 func _resolve_collision_or_bearoff(p: ResolutionPass, seg: Segment, loser_id: String, blocker_id: String) -> void:
 	var impulse: int = seg.impulse
 	var loser: ShipState = p.ship_map[loser_id]
 	var loser_result: MovementTypes.ShipResolutionResult = p.results[loser_id]
-	var current_hexes: Dictionary = p.current_hexes
-	var forward_hexes: int = p.forward_since_turn.get(loser_id, 0)
-	var maneuverability: String = loser.ship.maneuverability if loser.ship else "b"
 	loser_result.blocked_by = blocker_id
 
-	if not _is_bearing_off_pivot_legal(loser, forward_hexes):
+	var situation := bear_off_situation(p, loser_id, blocker_id, impulse)
+	if p.settled_bear_offs.has(loser_id) or situation.eligible.is_empty():
 		var deny_ev = MovementTypes.ResolutionEvent.new(
 			loser_id, impulse, MovementTypes.ResolutionEventType.BEARING_OFF_PIVOT_DENIED
 		)
-		deny_ev.from_hex = current_hexes[loser_id]
-		deny_ev.to_hex = current_hexes[loser_id]
+		deny_ev.from_hex = p.current_hexes[loser_id]
+		deny_ev.to_hex = p.current_hexes[loser_id]
 		deny_ev.facing = loser_result.final_facing
 		deny_ev.success = false
-		var min_required: int = _get_min_forward_for_pivot(loser)
-		deny_ev.detail = "pivot not legal: forward_hexes=%d min_required=%d speed=%d maneuverability=%s" % [
-			forward_hexes, min_required, loser.speed, maneuverability
-		]
+		deny_ev.detail = "already bore off this turn" if p.settled_bear_offs.has(loser_id) \
+			else "no legal turn: speed=%d" % loser.speed
 		loser_result.events.append(deny_ev)
 		_apply_collision(p, seg, loser_id, blocker_id)
 		return
 
-	# Bearing Off table (6.D.2): d10 (0-9) + DRMs <= the chart number succeeds; NA never does.
-	var crew_quality: String = loser.crew_quality
-	var number: int = DataManager.get_bearing_off_number(crew_quality, maneuverability)
-	var drm: int = _bearing_off_drm(loser, p.steps_by_ship.get(loser_id, []).size())
-	var d10: int = rng.randi_range(0, 9)
-	var success: bool = number >= 0 and d10 + drm <= number
-	var roll_value: float = float(d10)
-	var threshold: float = float(number)
-
-	var ev = MovementTypes.ResolutionEvent.new(
-		loser_id, impulse, MovementTypes.ResolutionEventType.BEARING_OFF_ROLL
-	)
-	ev.from_hex = current_hexes[loser_id]
-	ev.to_hex = current_hexes[loser_id]
-	ev.facing = loser_result.final_facing
-	ev.roll = roll_value
-	ev.threshold = threshold
-	ev.success = success
-	ev.detail = "crew=%s maneuver=%s d10=%d drm=%+d needed<=%d" % [crew_quality, maneuverability, d10, drm, number]
-	loser_result.events.append(ev)
-
-	if success:
-		var stop_ev = MovementTypes.ResolutionEvent.new(
-			loser_id, impulse, MovementTypes.ResolutionEventType.STOPPED
-		)
-		stop_ev.from_hex = current_hexes[loser_id]
-		stop_ev.to_hex = current_hexes[loser_id]
-		stop_ev.facing = loser_result.final_facing
-		stop_ev.success = true
-		stop_ev.detail = "bore off successfully, movement ends"
-		loser_result.events.append(stop_ev)
-
+	var choice: String = ""
+	var decision: Dictionary = p.bear_off_decisions.get(loser_id, {})
+	if int(decision.get("segment", -1)) == impulse and str(decision.get("choice", "")) in situation.choices():
+		choice = str(decision.choice)
+	elif loser_id in p.prompt_ids:
+		# The player decides (6.D.3): the ship waits where it is; the pass ends with this segment.
+		if p.decision_needed == null:
+			p.decision_needed = situation
 		loser_result.stopped_at_impulse = impulse
 		p.stopped[loser_id] = true
 		return
+	else:
+		choice = StubAI.bear_off_choice(situation, _footprint(blocker_id, p.current_hexes, p.current_facings))
 
-	_apply_collision(p, seg, loser_id, blocker_id)
+	if choice == MovementTypes.BEAR_OFF_COLLIDE:
+		var held_ev = MovementTypes.ResolutionEvent.new(
+			loser_id, impulse, MovementTypes.ResolutionEventType.BEARING_OFF_DECLINED
+		)
+		held_ev.from_hex = p.current_hexes[loser_id]
+		held_ev.to_hex = p.current_hexes[loser_id]
+		held_ev.facing = loser_result.final_facing
+		held_ev.detail = "held course into %s" % blocker_id
+		loser_result.events.append(held_ev)
+		_apply_collision(p, seg, loser_id, blocker_id)
+		return
+
+	# Bearing Off table (6.D.2): d10 (0-9) + DRMs <= the chart number succeeds; NA never does.
+	var d10: int = rng.randi_range(0, 9)
+	var success: bool = situation.number >= 0 and d10 + situation.drm <= situation.number
+	var ev = MovementTypes.ResolutionEvent.new(
+		loser_id, impulse, MovementTypes.ResolutionEventType.BEARING_OFF_ROLL
+	)
+	ev.from_hex = p.current_hexes[loser_id]
+	ev.to_hex = p.current_hexes[loser_id]
+	ev.facing = loser_result.final_facing
+	ev.roll = float(d10)
+	ev.threshold = float(situation.number)
+	ev.success = success
+	ev.detail = "%s crew=%s maneuver=%s d10=%d drm=%+d needed<=%d" % [choice, loser.crew_quality,
+		loser.ship.maneuverability if loser.ship else "b", d10, situation.drm, situation.number]
+	loser_result.events.append(ev)
+
+	if not success:
+		_apply_collision(p, seg, loser_id, blocker_id)
+		return
+
+	# 6.D.4: turn, then meet the deceleration minimum. Amend the plot and run the pass again.
+	var old_facing: int = p.current_facings[loser_id]
+	var new_facing: int = (old_facing + 5) % 6 if choice == MovementTypes.BEAR_OFF_PORT else (old_facing + 1) % 6
+	# A contested hex lost on this segment (6.D.1) no longer happens in the replay, where the ship turns
+	# instead: its rolls are kept and put back into the final log with the bear-off roll.
+	var contest_rolls: Dictionary = {}
+	for sid in [loser_id, blocker_id]:
+		var rolls: Array = []
+		for other_ev in p.results[sid].events:
+			if other_ev.event_type == MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL and other_ev.impulse == impulse:
+				rolls.append(other_ev)
+		if not rolls.is_empty():
+			contest_rolls[sid] = rolls
+	p.bear_off_amendments.append({"kind": "bear_off", "ship_id": loser_id, "segment": impulse,
+		"pre_bow": p.current_hexes[loser_id], "pre_facing": old_facing, "facing": new_facing,
+		"other_id": blocker_id, "reason": "bore off %s" % choice, "events": [ev], "contest_rolls": contest_rolls})
+	loser_result.stopped_at_impulse = impulse
+	p.stopped[loser_id] = true
+
+
+## The potential collision as its owner sees it (6.D.2): which turns are legal at this point of the
+## plot (the turning rules the plotting validator applies, on the steps made so far) and the odds.
+func bear_off_situation(p: ResolutionPass, sid: String, blocker_id: String, impulse: int) -> MovementTypes.BearOffSituation:
+	var ship_state: ShipState = p.ship_map[sid]
+	var situation := MovementTypes.BearOffSituation.new()
+	situation.ship_id = sid
+	situation.blocker_id = blocker_id
+	situation.segment = impulse
+	situation.bow = p.current_hexes[sid]
+	situation.facing = p.current_facings[sid]
+	var path: Array[MovementTypes.PlotStep] = []
+	var facing: int = ship_state.facing
+	for step in p.steps_by_ship[sid].slice(0, impulse):
+		var step_facing: int = int(step.get("facing", facing))
+		var hex := Vector2i(int(step.get("hex", {}).get("q", 0)), int(step.get("hex", {}).get("r", 0)))
+		var move_type := MovementTypes.MoveType.FORWARD
+		if step_facing == (facing + 5) % 6:
+			move_type = MovementTypes.MoveType.PORT
+		elif step_facing != facing:
+			move_type = MovementTypes.MoveType.STARBOARD
+		path.append(MovementTypes.PlotStep.new(hex, step_facing, move_type))
+		facing = step_facing
+	if ship_state.speed > 0:  # a stopped ship cannot turn away (the turning chart has no speed 0 row)
+		var moves = _validator().calculate_valid_moves(ship_state, situation.bow, situation.facing, path)
+		if moves.valid_hexes.port != null:
+			situation.eligible.append(MovementTypes.BEAR_OFF_PORT)
+		if moves.valid_hexes.starboard != null:
+			situation.eligible.append(MovementTypes.BEAR_OFF_STARBOARD)
+	var maneuverability: String = ship_state.ship.maneuverability if ship_state.ship else "b"
+	situation.number = DataManager.get_bearing_off_number(ship_state.crew_quality, maneuverability)
+	situation.drm = _bearing_off_drm(ship_state, p.steps_by_ship[sid].size())
+	situation.chance = 0.0 if situation.number < 0 else clampf((situation.number - situation.drm + 1) / 10.0, 0.0, 1.0)
+	for other_id in p.steps_by_ship:
+		if other_id == sid or p.stopped.get(other_id, false):
+			continue
+		var hexes: Array[Vector2i] = []
+		for step in p.steps_by_ship[other_id].slice(impulse):
+			hexes.append(Vector2i(int(step.get("hex", {}).get("q", 0)), int(step.get("hex", {}).get("r", 0))))
+		if not hexes.is_empty():
+			situation.other_plots[other_id] = hexes
+	return situation
+
+
+func _validator() -> MovementValidator:
+	if _plot_validator == null:
+		_plot_validator = MovementValidator.new(game_state)
+	return _plot_validator
 
 
 func _update_turn_tracking(p: ResolutionPass, sid: String, prev_facing: int, new_facing: int) -> void:
@@ -1001,23 +1145,6 @@ func _update_turn_tracking(p: ResolutionPass, sid: String, prev_facing: int, new
 	else:
 		p.pivots_this_turn[sid] = p.pivots_this_turn.get(sid, 0) + 1
 		p.forward_since_turn[sid] = 0
-
-
-func _is_bearing_off_pivot_legal(ship_state: ShipState, forward_hexes: int) -> bool:
-	var min_required: int = _get_min_forward_for_pivot(ship_state)
-	if min_required < 0:
-		return false
-	return forward_hexes >= min_required
-
-
-func _get_min_forward_for_pivot(ship_state: ShipState) -> int:
-	var maneuverability: String = ship_state.ship.maneuverability if ship_state.ship else "b"
-	var ship_speed: int = ship_state.speed
-	if ship_speed <= 0:
-		return -1
-	return DataManager.get_min_heading_change_movement_required(
-		"same_direction", ship_speed, maneuverability
-	)
 
 
 func _apply_collision(p: ResolutionPass, seg: Segment, ship_a_id: String, ship_b_id: String) -> void:
@@ -1460,6 +1587,13 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 		elif result.immobilized:
 			turn_log.add(PhaseEvents.Type.IN_IRONS, phase, sid, {"cause": "irons"})
 		for ev in result.events:
+			if ev.event_type == MovementTypes.ResolutionEventType.BEARING_OFF_ROLL:
+				turn_log.add(PhaseEvents.Type.BEAR_OFF, phase, sid, {"choice": ev.detail.get_slice(" ", 0),
+					"success": ev.success, "roll": int(ev.roll), "needed": int(ev.threshold),
+					"drm": _detail_drm(ev.detail)}, result.blocked_by)
+			elif ev.event_type == MovementTypes.ResolutionEventType.BEARING_OFF_DECLINED:
+				turn_log.add(PhaseEvents.Type.BEAR_OFF, phase, sid, {"choice": MovementTypes.BEAR_OFF_COLLIDE},
+					result.blocked_by)
 			if ev.event_type == MovementTypes.ResolutionEventType.COLLISION and ev.detail.begins_with("collided with"):
 				var at := _collision_hex(ev)
 				turn_log.add(PhaseEvents.Type.COLLISION, phase, sid, {"hex": {"q": at.x, "r": at.y}},
@@ -1488,6 +1622,14 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 
 ## For a lost stern contest, the deciding (last) rolls of the loser and the winner, DRMs added, as
 ## data "roll" and "other_roll".
+## The "drm=+1" field of a BEARING_OFF_ROLL detail.
+static func _detail_drm(detail: String) -> int:
+	for part in detail.split(" "):
+		if part.begins_with("drm="):
+			return int(part.substr(4))
+	return 0
+
+
 static func _add_contest_rolls(data: Dictionary, loser: MovementTypes.ShipResolutionResult,
 		winner: MovementTypes.ShipResolutionResult) -> void:
 	if data.get("cause", "") != "stern_contest" or winner == null:
@@ -1523,7 +1665,7 @@ static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary
 	if result.collided_with != "":
 		return {"cause": "collision", "other": result.collided_with}
 	for ev in result.events:
-		if ev.event_type == MovementTypes.ResolutionEventType.STOPPED and ev.success:
+		if ev.event_type == MovementTypes.ResolutionEventType.BEARING_OFF_ROLL and ev.success:
 			return {"cause": "bore_off", "other": result.blocked_by}
 		if ev.event_type == MovementTypes.ResolutionEventType.STERN_BLOCKED:
 			return _stern_blocked_cause(result)

@@ -19,6 +19,16 @@ class PoseSpy extends MovementResolutionPlaybackController:
 		poses.append(snap)
 
 
+## Records which impulses' moves are animated (no ship views needed).
+class ImpulseSpy extends MovementResolutionPlaybackController:
+	var animated: Array = []
+
+	func _animate_moves(move_events: Array) -> void:
+		for ev in move_events:
+			if not animated.has(ev.impulse):
+				animated.append(ev.impulse)
+
+
 func before_each() -> void:
 	hex_grid = HexGrid.new()
 	playback = MovementResolutionPlaybackController.new(hex_grid, {}, 0)
@@ -714,3 +724,33 @@ func test_aborted_playback_never_reports_completion() -> void:
 	assert_signal_not_emitted(playback, "playback_completed", "leaving the game abandons playback")
 	assert_false(playback.is_playing())
 
+
+
+## ============================================================================
+## Bear-off pause and resume (6.D.3)
+## ============================================================================
+
+func test_incomplete_log_plays_up_to_the_decision_and_pauses() -> void:
+	var log = _make_multi_impulse_log(4)
+	log.pending_bear_off = MovementTypes.BearOffSituation.new()
+	log.pending_bear_off.segment = 2
+	var spy := ImpulseSpy.new(hex_grid, {}, 0)
+	add_child_autofree(spy)
+	watch_signals(spy)
+	spy.play(log)
+	await wait_for_signal(spy.playback_paused, 3.0)
+	assert_signal_emitted(spy, "playback_paused")
+	assert_signal_not_emitted(spy, "playback_completed", "Not finished: a decision is pending")
+	assert_eq(spy.animated, [0, 1], "Segments before the potential collision only")
+
+
+func test_resumed_log_plays_from_its_resume_impulse() -> void:
+	var log = _make_multi_impulse_log(4)
+	log.resume_impulse = 2
+	var spy := ImpulseSpy.new(hex_grid, {}, 0)
+	add_child_autofree(spy)
+	watch_signals(spy)
+	spy.play(log)
+	await wait_for_signal(spy.playback_completed, 3.0)
+	assert_signal_emitted(spy, "playback_completed")
+	assert_eq(spy.animated, [2, 3], "The segments already shown are not played again")

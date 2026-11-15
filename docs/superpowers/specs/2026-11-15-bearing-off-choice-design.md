@@ -1,6 +1,6 @@
 # Bearing off as a player decision (pause and prompt): design
 
-**Status:** draft for review. **Feature diff:** §1 item 7, §3 row 6.D. **Rules:** 6.D.1–6.D.5, 6.E.1, 5.C (turning limits), 5.E (deceleration).
+**Status:** implemented (2026-11-15). Decisions: pause playback (A), show other ships' remaining plots, AI never rams. The prompt lives in the context panel (where fire orders are declared) rather than a modal. Not done: 6.D.3c same-segment d10 ordering (§2.2 of the feature diff). **Feature diff:** §1 item 7, §3 row 6.D. **Rules:** 6.D.1–6.D.5, 6.E.1, 5.C (turning limits), 5.E (deceleration).
 
 ## 1. What the rules ask for
 
