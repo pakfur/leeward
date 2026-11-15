@@ -379,6 +379,7 @@ enum ResolutionEventType {
 	FOULING,
 	COLLISION_RIGGING_LOSS,
 	STOPPED,
+	STERN_BLOCKED,  # a turn whose swinging stern would enter a held or entered hex is cancelled
 }
 
 class ResolutionEvent extends RefCounted:
@@ -388,6 +389,7 @@ class ResolutionEvent extends RefCounted:
 	var from_hex: Vector2i = Vector2i.ZERO
 	var to_hex: Vector2i = Vector2i.ZERO
 	var facing: int = 0
+	var from_facing: int = 0  # facing before the step (MOVE events)
 	var roll: float = -1.0
 	var threshold: float = -1.0
 	var success: bool = true
@@ -406,6 +408,7 @@ class ResolutionEvent extends RefCounted:
 			"from_hex": {"q": from_hex.x, "r": from_hex.y},
 			"to_hex": {"q": to_hex.x, "r": to_hex.y},
 			"facing": facing,
+			"from_facing": from_facing,
 			"success": success,
 		}
 		if roll >= 0.0:

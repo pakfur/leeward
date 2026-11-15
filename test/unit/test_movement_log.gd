@@ -200,6 +200,7 @@ func test_resolver_records_which_ship_was_in_the_way() -> void:
 	var still := ShipState.new()
 	still.ship = Ship.from_dict({"ship_id": "s", "ship_name": "Still", "maneuverability": "B"})
 	still.hex_position = Vector2i(1, 0)
+	still.facing = 1  # stern on (1, -1), clear of the mover's bow on (0, 0)
 	var env := EnvironmentState.new()
 	var ships: Array[ShipState] = [mover, still]
 	var log := MovementResolver.new(null, RandomNumberGenerator.new()).run(ships, env)
@@ -243,3 +244,30 @@ func test_stopped_short_counts_executed_turns_and_moves() -> void:
 	assert_eq(stops.size(), 1)
 	assert_eq(stops[0].data["moved"], 2)
 	assert_eq(stops[0].data["planned"], 3)
+
+
+func test_stop_short_after_stern_blocked_names_the_blocking_ship() -> void:
+	var log := MovementTypes.ResolutionLog.new(1)
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	var blocked := MovementTypes.ResolutionEvent.new("a", 0, T.STERN_BLOCKED)
+	blocked.detail = "stern blocked by b"
+	a.events.append(blocked)
+	a.blocked_by = "b"
+	a.stopped_at_impulse = 0
+	log.add_result(a)
+	log.add_result(MovementTypes.ShipResolutionResult.new("b"))
+	var ships: Array[ShipState] = [_ship("a", 2), _ship("b", 0)]
+	resolver.log_outcomes(log, ships, turn_log)
+	var stops := turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT)
+	assert_eq(stops.size(), 1)
+	assert_eq(stops[0].data["cause"], "stern_blocked")
+	assert_eq(stops[0].target_id, "b")
+	assert_eq(stops[0].to_text({"a": "Alpha", "b": "Bravo"}),
+		"Alpha stops short of its plotted course — its stern was blocked by Bravo")
+
+
+func test_stop_cause_for_stern_blocked() -> void:
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	a.events.append(MovementTypes.ResolutionEvent.new("a", 0, T.STERN_BLOCKED))
+	a.blocked_by = "b"
+	assert_eq(MovementResolver.stop_cause(a), {"cause": "stern_blocked", "other": "b"})

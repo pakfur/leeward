@@ -1273,3 +1273,221 @@ func test_turn_only_ship_is_stopped() -> void:
 	assert_eq(state.speed, 0, "A ship that only turns is stopped")
 	assert_false(state.moved_this_turn)
 	assert_eq(GameState.turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT).size(), 0)
+
+
+# ===========================================================================
+# Two-hex footprints (Task 4): bow-entries and stern-entries
+# ===========================================================================
+
+func _events_of(result: MovementTypes.ShipResolutionResult, event_type) -> Array:
+	var found: Array = []
+	for ev in result.events:
+		if ev.event_type == event_type:
+			found.append(ev)
+	return found
+
+
+func test_entered_hex_ahead_is_new_bow_turn_is_new_stern() -> void:
+	assert_eq(resolver._entered_hex(Vector2i(5, 5), 0, Vector2i(6, 5), 0), Vector2i(6, 5),
+		"An ahead step enters its new bow hex")
+	assert_eq(resolver._entered_hex(Vector2i(5, 5), 0, Vector2i(5, 5), 1), Vector2i(5, 4),
+		"A turn enters its new stern hex")
+
+
+func test_bow_into_stopped_ships_stern_is_conflict() -> void:
+	# B (stopped) has its bow on (6, 6) facing SE, so its stern is on (6, 5): right ahead of A.
+	var blocker = _make_ship_state(Vector2i(6, 6), 1, 0, "C", "ship_b")
+	assert_eq(blocker.stern_hex(), Vector2i(6, 5))
+	var mover = _make_ship_state(Vector2i(5, 5), 0, 1, "C", "ship_a")
+	mover.plotted_actions.movement = [{"hex": {"q": 6, "r": 5}, "facing": 0}]
+	var ships: Array[ShipState] = [blocker, mover]
+
+	var result = resolver.run(ships, env).get_result("ship_a")
+
+	var conflict: bool = _has_event(result, MovementTypes.ResolutionEventType.BEARING_OFF_ROLL) \
+		or _has_event(result, MovementTypes.ResolutionEventType.COLLISION)
+	assert_true(conflict, "Entering a stopped ship's stern hex is a potential collision")
+	assert_eq(result.blocked_by, "ship_b")
+	assert_eq(result.final_hex, Vector2i(5, 5), "A does not enter B's stern hex")
+
+
+func test_two_bows_same_hex_contested() -> void:
+	# A and B approach (5, 5) from W and E; their sterns trail behind on (3, 5) and (7, 5).
+	var state_a = _make_ship_state(Vector2i(4, 5), 0, 1, "C", "ship_a")
+	state_a.plotted_actions.movement = [{"hex": {"q": 5, "r": 5}, "facing": 0}]
+	var state_b = _make_ship_state(Vector2i(6, 5), 3, 1, "C", "ship_b")
+	state_b.plotted_actions.movement = [{"hex": {"q": 5, "r": 5}, "facing": 3}]
+	var ships: Array[ShipState] = [state_a, state_b]
+
+	var log = resolver.run(ships, env)
+	var result_a = log.get_result("ship_a")
+	var result_b = log.get_result("ship_b")
+
+	assert_true(_has_event(result_a, MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL))
+	assert_true(_has_event(result_b, MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL))
+	var at_target: int = int(result_a.final_hex == Vector2i(5, 5)) + int(result_b.final_hex == Vector2i(5, 5))
+	assert_eq(at_target, 1, "Exactly one bow enters the contested hex")
+
+
+func test_stern_swing_into_occupied_hex_cancels_turn() -> void:
+	# A on (5, 5) facing E turns to starboard (facing 1): its new stern would be (5, 4), where B lies.
+	var state_a = _make_ship_state(Vector2i(5, 5), 0, 3, "C", "ship_a")
+	assert_eq(HexGrid.stern_of(Vector2i(5, 5), 1), Vector2i(5, 4))
+	GameState.ship_controller.set_plotted_movement("ship_a", [
+		{"hex": {"q": 5, "r": 5}, "facing": 1},
+		{"hex": {"q": 5, "r": 6}, "facing": 1},
+	])
+	var state_b = _make_ship_state(Vector2i(5, 4), 3, 0, "C", "ship_b")  # bow (5,4), stern (6,4)
+	var ships: Array[ShipState] = [state_a, state_b]
+
+	var log = resolver.run(ships, env)
+	var result = log.get_result("ship_a")
+
+	assert_eq(result.final_hex, Vector2i(5, 5), "A keeps its bow hex")
+	assert_eq(result.final_facing, 0, "A keeps its facing: the turn is cancelled")
+	var blocked = _events_of(result, MovementTypes.ResolutionEventType.STERN_BLOCKED)
+	assert_eq(blocked.size(), 1, "One STERN_BLOCKED event")
+	assert_eq(blocked[0].detail, "stern blocked by ship_b")
+	assert_false(_has_event(result, MovementTypes.ResolutionEventType.COLLISION), "No collision")
+	assert_false(_has_event(result, MovementTypes.ResolutionEventType.BEARING_OFF_ROLL), "No bearing off")
+	assert_eq(_events_of(result, MovementTypes.ResolutionEventType.MOVE).size(), 0,
+		"A stops for the rest of the turn")
+	assert_eq(result.blocked_by, "ship_b")
+
+
+func test_side_by_side_turn_away_blocked_in_phase_1() -> void:
+	# Diagram 14 A: ship 1 lies alongside ship 2 and turns away from it, P1 (port turn, one ahead).
+	# Turning away swings ship 1's stern into ship 2's stern hex. 6.B.2 allows that overlap when it is
+	# cleared on the next segment, but Phase 1 has no overlap allowance, so the turn is cancelled.
+	# Task 10 changes this test to expect the turn and the move ahead.
+	var ship_1 = _make_ship_state(Vector2i(5, 5), 0, 3, "C", "ship_1")  # bow (5,5), stern (4,5)
+	var ship_2 = _make_ship_state(Vector2i(5, 6), 0, 0, "C", "ship_2")  # bow (5,6), stern (4,6)
+	assert_eq(HexGrid.stern_of(Vector2i(5, 5), 5), ship_2.stern_hex(), "The swing lands on ship 2's stern")
+	GameState.ship_controller.set_plotted_movement("ship_1", [
+		{"hex": {"q": 5, "r": 5}, "facing": 5},
+		{"hex": {"q": 6, "r": 4}, "facing": 5},
+	])
+	var ships: Array[ShipState] = [ship_1, ship_2]
+
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+	var result = log.get_result("ship_1")
+
+	assert_eq(result.final_hex, Vector2i(5, 5))
+	assert_eq(result.final_facing, 0)
+	assert_eq(_events_of(result, MovementTypes.ResolutionEventType.STERN_BLOCKED).size(), 1)
+	assert_false(_has_event(log.get_result("ship_2"), MovementTypes.ResolutionEventType.COLLISION))
+	assert_eq(ship_1.speed, 0, "Ship 1 never moved ahead, so it is stopped")
+	assert_false(ship_1.moved_this_turn)
+	var stops := GameState.turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT)
+	assert_eq(stops.size(), 1, "The cancelled plot is logged as stopped short")
+	assert_eq(stops[0].data.get("cause", ""), "stern_blocked")
+	assert_eq(stops[0].target_id, "ship_2")
+
+
+func test_stern_swing_into_hex_entered_by_a_bow_yields_to_the_bow() -> void:
+	# 6.B.4b: bows beat sterns. A turns its stern into (5, 4) while B's bow sails into it.
+	var state_a = _make_ship_state(Vector2i(5, 5), 0, 3, "C", "ship_a")
+	GameState.ship_controller.set_plotted_movement("ship_a", [{"hex": {"q": 5, "r": 5}, "facing": 1}])
+	var state_b = _make_ship_state(Vector2i(4, 4), 0, 2, "C", "ship_b")  # bow (4,4) heading E
+	GameState.ship_controller.set_plotted_movement("ship_b", [{"hex": {"q": 5, "r": 4}, "facing": 0}])
+	var ships: Array[ShipState] = [state_a, state_b]
+
+	var log = resolver.run(ships, env)
+
+	assert_eq(log.get_result("ship_b").final_hex, Vector2i(5, 4), "B's bow enters, as if A's stern were not there")
+	assert_false(_has_event(log.get_result("ship_b"), MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL))
+	var result_a = log.get_result("ship_a")
+	assert_eq(result_a.final_facing, 0, "A's turn is cancelled")
+	assert_eq(_events_of(result_a, MovementTypes.ResolutionEventType.STERN_BLOCKED).size(), 1)
+
+
+func test_cancelled_turn_keeps_its_old_stern_hex() -> void:
+	# A's turn is blocked by B, so A's stern stays on (4, 5); C's bow sailing into (4, 5) that same
+	# segment runs into A instead of sharing the hex.
+	var state_a = _make_ship_state(Vector2i(5, 5), 0, 3, "C", "ship_a")  # stern (4,5)
+	GameState.ship_controller.set_plotted_movement("ship_a", [{"hex": {"q": 5, "r": 5}, "facing": 1}])
+	_make_ship_state(Vector2i(5, 4), 3, 0, "C", "ship_b")  # bow (5,4), stern (6,4): blocks the swing
+	var state_c = _make_ship_state(Vector2i(4, 6), 4, 2, "C", "ship_c")  # bow (4,6) heading NW, stern (4,7)
+	GameState.ship_controller.set_plotted_movement("ship_c", [{"hex": {"q": 4, "r": 5}, "facing": 4}])
+	var ships: Array[ShipState] = [state_a, GameState.ships["ship_b"], state_c]
+
+	var log = resolver.run(ships, env)
+
+	assert_eq(_events_of(log.get_result("ship_a"), MovementTypes.ResolutionEventType.STERN_BLOCKED).size(), 1)
+	assert_eq(log.get_result("ship_c").blocked_by, "ship_a", "A's kept stern is in C's way")
+	assert_eq(log.get_result("ship_c").final_hex, Vector2i(4, 6))
+
+func test_struck_ship_both_hexes_block() -> void:
+	# A struck ship lying E with bow (7, 5), stern (6, 5): A sailing E runs into its stern hex.
+	var struck = _make_ship_state(Vector2i(7, 5), 0, 0, "C", "struck")
+	struck.status = ShipState.Status.STRUCK
+	var mover = _make_ship_state(Vector2i(4, 5), 0, 2, "C", "mover")
+	_plot_straight(mover, 2)
+	var ships: Array[ShipState] = [struck, mover]
+
+	var result = resolver.run(ships, env).get_result("mover")
+
+	assert_eq(result.blocked_by, "struck", "The struck ship's stern hex is in the way")
+	assert_ne(result.final_hex, Vector2i(6, 5), "The mover does not enter the stern hex")
+	assert_eq(result.final_hex, Vector2i(5, 5), "It makes its first step only")
+
+
+func test_moving_through_own_old_stern_is_free() -> void:
+	# A ship never conflicts with its own hexes: ahead and turn steps run free when alone.
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3, "C", "solo")
+	GameState.ship_controller.set_plotted_movement("solo", [
+		{"hex": {"q": 6, "r": 5}, "facing": 0},
+		{"hex": {"q": 6, "r": 5}, "facing": 1},
+		{"hex": {"q": 6, "r": 6}, "facing": 1},
+	])
+	var ships: Array[ShipState] = [state]
+
+	var result = resolver.run(ships, env).get_result("solo")
+
+	assert_eq(_events_of(result, MovementTypes.ResolutionEventType.MOVE).size(), 3, "All three steps execute")
+	assert_eq(result.final_hex, Vector2i(6, 6))
+	assert_eq(result.blocked_by, "")
+	assert_false(_has_event(result, MovementTypes.ResolutionEventType.STERN_BLOCKED))
+
+
+func test_follower_enters_leaders_vacated_stern() -> void:
+	# Line ahead: the follower's bow sails into the hex the leader's stern leaves (Diagram 13 A).
+	var leader = _make_ship_state(Vector2i(7, 5), 0, 2, "C", "leader")  # bow (7,5), stern (6,5)
+	var follower = _make_ship_state(Vector2i(5, 5), 0, 2, "C", "follower")  # bow (5,5), stern (4,5)
+	_plot_straight(leader, 2)
+	_plot_straight(follower, 2)
+	var ships: Array[ShipState] = [follower, leader]
+
+	var log = resolver.run(ships, env)
+
+	assert_eq(log.get_result("leader").final_hex, Vector2i(9, 5))
+	assert_eq(log.get_result("follower").final_hex, Vector2i(7, 5))
+	assert_eq(log.get_result("follower").blocked_by, "")
+
+
+func test_bows_meeting_head_on_cannot_pass_through() -> void:
+	# Bows on adjacent hexes, heading at each other: each bow enters a hex the other ship keeps.
+	var state_a = _make_ship_state(Vector2i(5, 5), 0, 1, "C", "ship_a")
+	var state_b = _make_ship_state(Vector2i(6, 5), 3, 1, "C", "ship_b")
+	_plot_straight(state_a, 1)
+	_plot_straight(state_b, 1)
+	var ships: Array[ShipState] = [state_a, state_b]
+
+	var log = resolver.run(ships, env)
+
+	assert_eq(log.get_result("ship_a").final_hex, Vector2i(5, 5), "A cannot sail through B")
+	assert_eq(log.get_result("ship_b").final_hex, Vector2i(6, 5), "B cannot sail through A")
+
+
+func test_move_event_records_from_facing() -> void:
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3)
+	GameState.ship_controller.set_plotted_movement(state.ship_id, [
+		{"hex": {"q": 5, "r": 5}, "facing": 1},
+		{"hex": {"q": 5, "r": 6}, "facing": 1},
+	])
+	var result = _run_one(state)
+	var moves = _events_of(result, MovementTypes.ResolutionEventType.MOVE)
+	assert_eq(moves[0].from_facing, 0)
+	assert_eq(moves[0].facing, 1)
+	assert_eq(moves[1].from_facing, 1)

@@ -193,6 +193,9 @@ class PhaseEvent extends RefCounted:
 				text += " after bearing off"
 				if target_id != "":
 					text += " — %s was in the way" % other
+			"stern_blocked":
+				if target_id != "":
+					text += " — its stern was blocked by %s" % other
 		return text
 
 	func _fire_text(who: String, other: String) -> String:

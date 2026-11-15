@@ -2,7 +2,8 @@ class_name MovementResolver
 extends RefCounted
 ## MovementResolver - Resolves plotted movement impulse-by-impulse
 ## Multi-ship resolution: contested hexes, bearing off, collisions, fouling.
-## Ships move simultaneously; contests checked per impulse.
+## Ships move simultaneously; contests checked per impulse. Every ship holds two hexes, bow and
+## stern; each step enters one hex: an ahead step its new bow hex, a turn its new stern hex.
 
 var game_state: Node = null
 var hex_grid: HexGrid = null
@@ -34,7 +35,8 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 	var log = MovementTypes.ResolutionLog.new(game_state.current_turn if game_state else 0)
 
 	var results: Dictionary = {}
-	var current_hexes: Dictionary = {}
+	var current_hexes: Dictionary = {}  # ship_id -> bow hex
+	var current_facings: Dictionary = {}  # ship_id -> facing
 	var stopped: Dictionary = {}
 	var steps_by_ship: Dictionary = {}
 	var forward_since_turn: Dictionary = {}
@@ -46,6 +48,7 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 		result.final_facing = ship_state.facing
 		results[ship_state.ship_id] = result
 		current_hexes[ship_state.ship_id] = ship_state.hex_position
+		current_facings[ship_state.ship_id] = ship_state.facing
 		stopped[ship_state.ship_id] = false
 		forward_since_turn[ship_state.ship_id] = 0
 		pivots_this_turn[ship_state.ship_id] = 0
@@ -78,7 +81,7 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 		ship_map[ship_state.ship_id] = ship_state
 
 	for impulse in range(max_impulses):
-		_resolve_impulse(impulse, ships, ship_map, steps_by_ship, results, current_hexes, stopped, environment, forward_since_turn, pivots_this_turn)
+		_resolve_impulse(impulse, ships, ship_map, steps_by_ship, results, current_hexes, current_facings, stopped, environment, forward_since_turn, pivots_this_turn)
 
 	for sid in results:
 		log.add_result(results[sid])
@@ -97,6 +100,7 @@ func _resolve_impulse(
 	steps_by_ship: Dictionary,
 	results: Dictionary,
 	current_hexes: Dictionary,
+	current_facings: Dictionary,
 	stopped: Dictionary,
 	environment: EnvironmentState,
 	forward_since_turn: Dictionary,
@@ -139,17 +143,48 @@ func _resolve_impulse(
 	if intended_moves.is_empty():
 		return
 
-	var hex_targets: Dictionary = {}
+	# Hexes held during this segment: every hex of a ship that is not moving, and the bow hex of
+	# every moving ship (an ahead step turns it into the stern, a turn pivots on it). A moving ship's
+	# old stern hex is released as it moves.
+	var held: Dictionary = Occupancy.from_positions(current_hexes, current_facings, intended_moves.keys())
 	for sid in intended_moves:
-		var target_hex: Vector2i = intended_moves[sid].hex
-		if not hex_targets.has(target_hex):
-			hex_targets[target_hex] = []
-		hex_targets[target_hex].append(sid)
+		held[current_hexes[sid]] = sid
 
-	for target_hex in hex_targets:
-		var contesting_ids: Array = hex_targets[target_hex]
+	# Group the entered hexes, bow-entries (ahead) and stern-entries (turns) apart.
+	var bow_targets: Dictionary = {}
+	var stern_targets: Dictionary = {}
+	for sid in intended_moves:
+		var move: Dictionary = intended_moves[sid]
+		var bow: Vector2i = current_hexes[sid]
+		var facing: int = current_facings[sid]
+		var entered: Vector2i = _entered_hex(bow, facing, move.hex, move.facing)
+		var targets: Dictionary = stern_targets if _is_stern_entry(bow, facing, move.hex, move.facing) else bow_targets
+		if not targets.has(entered):
+			targets[entered] = []
+		targets[entered].append(sid)
 
-		var occupant_id: String = _find_stationary_occupant(target_hex, current_hexes, stopped, contesting_ids)
+	# Stern-entries (6.B.4a/b outcome, no overlap allowance yet): a swinging stern may only enter a
+	# hex nobody holds or enters. A bow entering the same hex goes ahead as if the stern were not there.
+	for entered in stern_targets:
+		for sid in stern_targets[entered]:
+			var blocker_id: String = _stern_blocker(sid, entered, held, bow_targets, stern_targets)
+			if blocker_id != "":
+				_cancel_turn(sid, blocker_id, impulse, results, current_hexes, current_facings, stopped)
+				held[HexGrid.stern_of(current_hexes[sid], current_facings[sid])] = sid  # it keeps its stern
+				continue
+			var prev_facing: int = current_facings[sid]
+			_apply_move(sid, intended_moves[sid].hex, intended_moves[sid].facing, impulse, results, current_hexes, current_facings)
+			_update_turn_tracking(sid, prev_facing, intended_moves[sid].facing, forward_since_turn, pivots_this_turn)
+
+	for target_hex in bow_targets:
+		var contesting_ids: Array = []
+		for sid in bow_targets[target_hex]:
+			if not stopped[sid]:  # a collision earlier in this segment already stopped it
+				contesting_ids.append(sid)
+		if contesting_ids.is_empty():
+			continue
+
+		var occupant_id: String = _find_holder(target_hex, held, contesting_ids)
 		if occupant_id != "":
 			for sid in contesting_ids:
 				_resolve_collision_or_bearoff(
@@ -159,14 +194,65 @@ func _resolve_impulse(
 
 		if contesting_ids.size() == 1:
 			var sid: String = contesting_ids[0]
-			var prev_facing: int = (results[sid] as MovementTypes.ShipResolutionResult).final_facing
-			_apply_move(sid, intended_moves[sid].hex, intended_moves[sid].facing, impulse, results, current_hexes)
+			var prev_facing: int = current_facings[sid]
+			_apply_move(sid, intended_moves[sid].hex, intended_moves[sid].facing, impulse, results, current_hexes, current_facings)
 			_update_turn_tracking(sid, prev_facing, intended_moves[sid].facing, forward_since_turn, pivots_this_turn)
 			continue
 
 		_resolve_contested_hex(
-			contesting_ids, target_hex, impulse, ship_map, results, current_hexes, stopped, intended_moves, environment, forward_since_turn, pivots_this_turn
+			contesting_ids, target_hex, impulse, ship_map, results, current_hexes, current_facings, stopped, intended_moves, environment, forward_since_turn, pivots_this_turn
 		)
+
+
+## The one hex a step enters: an ahead step (new hex) its new bow hex; a turn (same hex, new facing)
+## the new stern hex its stern swings into.
+func _entered_hex(bow: Vector2i, facing: int, step_hex: Vector2i, step_facing: int) -> Vector2i:
+	if _is_stern_entry(bow, facing, step_hex, step_facing):
+		return HexGrid.stern_of(bow, step_facing)
+	return step_hex
+
+
+func _is_stern_entry(bow: Vector2i, facing: int, step_hex: Vector2i, step_facing: int) -> bool:
+	return step_hex == bow and step_facing != facing
+
+
+## Who stops a stern swinging into `entered`: the ship holding the hex, else a bow entering it, else
+## another stern entering it. "" when the hex is free.
+func _stern_blocker(sid: String, entered: Vector2i, held: Dictionary, bow_targets: Dictionary, stern_targets: Dictionary) -> String:
+	if held.has(entered) and held[entered] != sid:
+		return held[entered]
+	for other_id in bow_targets.get(entered, []):
+		if other_id != sid:
+			return other_id
+	for other_id in stern_targets.get(entered, []):
+		if other_id != sid:
+			return other_id
+	return ""
+
+
+## The turn is cancelled: the ship keeps its bow hex and facing and stops for the rest of the turn.
+## No collision and no bearing off.
+func _cancel_turn(
+	sid: String,
+	blocker_id: String,
+	impulse: int,
+	results: Dictionary,
+	current_hexes: Dictionary,
+	current_facings: Dictionary,
+	stopped: Dictionary
+) -> void:
+	var result: MovementTypes.ShipResolutionResult = results[sid]
+	var ev = MovementTypes.ResolutionEvent.new(sid, impulse, MovementTypes.ResolutionEventType.STERN_BLOCKED)
+	ev.from_hex = current_hexes[sid]
+	ev.to_hex = current_hexes[sid]
+	ev.facing = current_facings[sid]
+	ev.from_facing = current_facings[sid]
+	ev.success = false
+	ev.detail = "stern blocked by %s" % blocker_id
+	result.events.append(ev)
+	result.blocked_by = blocker_id
+	result.stopped_at_impulse = impulse
+	stopped[sid] = true
 
 
 ## ============================================================================
@@ -180,6 +266,7 @@ func _resolve_contested_hex(
 	ship_map: Dictionary,
 	results: Dictionary,
 	current_hexes: Dictionary,
+	current_facings: Dictionary,
 	stopped: Dictionary,
 	intended_moves: Dictionary,
 	environment: EnvironmentState,
@@ -188,8 +275,8 @@ func _resolve_contested_hex(
 ) -> void:
 	var winner_id: String = _roll_contest(contesting_ids, impulse, ship_map, results)
 
-	var prev_facing: int = (results[winner_id] as MovementTypes.ShipResolutionResult).final_facing
-	_apply_move(winner_id, target_hex, intended_moves[winner_id].facing, impulse, results, current_hexes)
+	var prev_facing: int = current_facings[winner_id]
+	_apply_move(winner_id, target_hex, intended_moves[winner_id].facing, impulse, results, current_hexes, current_facings)
 	_update_turn_tracking(winner_id, prev_facing, intended_moves[winner_id].facing, forward_since_turn, pivots_this_turn)
 
 	for sid in contesting_ids:
@@ -527,7 +614,8 @@ func _apply_move(
 	facing: int,
 	impulse: int,
 	results: Dictionary,
-	current_hexes: Dictionary
+	current_hexes: Dictionary,
+	current_facings: Dictionary
 ) -> void:
 	var result: MovementTypes.ShipResolutionResult = results[sid]
 
@@ -537,26 +625,23 @@ func _apply_move(
 	ev.from_hex = current_hexes[sid]
 	ev.to_hex = target_hex
 	ev.facing = facing
+	ev.from_facing = current_facings[sid]
 	ev.success = true
 	result.events.append(ev)
 
 	current_hexes[sid] = target_hex
+	current_facings[sid] = facing
 	result.final_hex = target_hex
 	result.final_facing = facing
 
 
-func _find_stationary_occupant(
-	target_hex: Vector2i,
-	current_hexes: Dictionary,
-	stopped: Dictionary,
-	moving_ids: Array
-) -> String:
-	for sid in current_hexes:
-		if sid in moving_ids:
-			continue
-		if current_hexes[sid] == target_hex and stopped.get(sid, false):
-			return sid
-	return ""
+## The ship holding `target_hex` this segment (see `held` in _resolve_impulse), other than the
+## ships entering it. "" when nobody holds it.
+func _find_holder(target_hex: Vector2i, held: Dictionary, moving_ids: Array) -> String:
+	var holder: String = held.get(target_hex, "")
+	if holder == "" or holder in moving_ids:
+		return ""
+	return holder
 
 
 ## ============================================================================
@@ -819,13 +904,17 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 
 ## Why a ship's movement ended before its plot did, from its resolution result alone:
 ## {"cause": "collision", "other": id} when it collided (either ship), {"cause": "bore_off",
-## "other": id} when it bore off to avoid the ship in its way, {} when the result names no cause.
+## "other": id} when it bore off to avoid the ship in its way, {"cause": "stern_blocked", "other": id}
+## when its turn was cancelled because its stern would swing into that ship, {} when the result names
+## no cause.
 static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary:
 	if result.collided_with != "":
 		return {"cause": "collision", "other": result.collided_with}
 	for ev in result.events:
 		if ev.event_type == MovementTypes.ResolutionEventType.STOPPED and ev.success:
 			return {"cause": "bore_off", "other": result.blocked_by}
+		if ev.event_type == MovementTypes.ResolutionEventType.STERN_BLOCKED:
+			return {"cause": "stern_blocked", "other": result.blocked_by}
 	return {}
 
 

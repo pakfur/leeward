@@ -193,7 +193,7 @@ func _play_event_batch(events: Array) -> void:
 		match ev.event_type:
 			MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL:
 				has_contest = true
-			MovementTypes.ResolutionEventType.BEARING_OFF_ROLL:
+			MovementTypes.ResolutionEventType.BEARING_OFF_ROLL, MovementTypes.ResolutionEventType.STERN_BLOCKED:
 				has_bearing_off = true
 			MovementTypes.ResolutionEventType.COLLISION:
 				has_collision = true
