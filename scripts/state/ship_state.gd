@@ -80,8 +80,17 @@ func _init() -> void:
 	if hull_current_hp.is_empty():
 		hull_current_hp = [0, 0, 0, 0]
 
+## Stern hex, derived from the bow (`hex_position`) and facing.
+func stern_hex() -> Vector2i:
+	return HexGrid.stern_of(hex_position, facing)
+
+## Hexes covered by the ship: [bow, stern].
+func occupied_hexes() -> Array[Vector2i]:
+	return [hex_position, stern_hex()]
+
 func get_ship_size() -> int:
-	# deprecated - setting to 1 for all ships. May revert in the future
+	# Display size only; ships physically occupy two hexes (see occupied_hexes()).
+	# Stays 1 until the view is converted to two-hex ships.
 	return 1
 	#"""Determine ship size in hexes based on type"""
 	#if "corvette" in ship_type.to_lower():
