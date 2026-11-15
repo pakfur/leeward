@@ -356,10 +356,10 @@ func test_split_side_fires_each_battery_with_two_target_modifier() -> void:
 
 
 func test_both_sides_at_one_target_are_one_target() -> void:
-	# Port and starboard both naming B is a legal declaration (bow and stern of one side at one target
-	# is not: that must be declared a full broadside). The resolver does not count one target twice:
-	# no -12. B lies off A's starboard beam, so only the starboard broadside bears; no ship can lie in
-	# both broadside arcs of another, so the port order is skipped.
+	# Port and starboard both naming B passes FireRules.declaration_error (bow and stern of one side at
+	# one target does not), but validate_orders refuses the set, since port cannot bear: no ship can lie
+	# in both broadside arcs of another. The resolver skips the port order. Pins target_count
+	# de-duplication: one target named twice is still one target, so no -12.
 	_sixes()
 	_fire([_order("a_ship", "b_ship", "round", "low", "full", PORT),
 			_order("a_ship", "b_ship", "round", "low", "full", STARBOARD)])

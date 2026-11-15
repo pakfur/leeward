@@ -42,10 +42,11 @@ class ResolutionPass:
 	## A contest whose winner's turn is then rolled back no longer happens in the replay; its rolls are
 	## put back into the final log (see run()).
 	var contests: Array = []
-	## Keys (see _segment_hex_key) of cycles to break by holding the old stern their first group enters
-	## (input, from earlier passes).
+	## Key (see _segment_hex_key) -> segment: cycles to break by holding the old stern their first group
+	## enters (input, from earlier passes).
 	var cycle_breaks: Dictionary = {}
-	## Cycle keys of the segment whose cycle went wrong: a ship kept its stern after a bow sailed in.
+	## [{key, segment}] of the cycles that went wrong on a segment: the ship whose old stern the group let
+	## go first entered kept its pose, with that bow on its stern.
 	var failed_cycles: Array = []
 	## Key (see _segment_hex_key) -> {winner, rolls: {ship_id: [CONTESTED_HEX_ROLL events]}}: stern
 	## contests settled in an earlier pass whose loser's plot was amended (input). Replayed, such a
@@ -66,7 +67,8 @@ class Segment:
 	## ship_id -> true for moving ships whose step is settled: their group has run, or a collision
 	## stopped them first. A group entering a moving ship's hex waits for that ship (see _group_ready).
 	var resolved: Dictionary = {}
-	## Keys (see _segment_hex_key) of the groups let go first to break a cycle this segment.
+	## The groups let go first to break a cycle this segment: [{key, hex, owners}], `owners` the moving
+	## ships whose old stern `hex` is (the ships assumed to leave it).
 	var speculations: Array = []
 
 var rng: RandomNumberGenerator:
@@ -100,23 +102,29 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 	# the same die; a tacking roll whose turn was amended away is still drawn in its place (see
 	# ResolutionPass.tacks_dropped), so the dice after it stay where they were. Rolls from the
 	# rolled-back segment on may differ, since the ships stand elsewhere. Every rollback removes a
-	# plotted turn, so this ends.
+	# plotted turn.
 	# A cycle of ships each sailing into the next one's old stern is resolved on the assumption that
 	# they all move; when one of them is stopped after all (and keeps its stern under the bow of the ship
-	# behind), the pass is run again with that cycle broken (see _hold_for_owner). Each segment's cycles
-	# are broken once, so this ends too.
+	# behind), the pass is run again with that cycle broken (see _hold_for_owner). A broken cycle is never
+	# let go first again, so it cannot fail twice; a rollback drops the breaks from its segment on (they
+	# are found again if still needed).
+	# Bound: at most N rollbacks (N = steps that can be resolved; every rollback removes a turn), and
+	# between two rollbacks at most N breaks (at most one group let go first per step), so
+	# (N + 1) * (N + 1) passes always suffice. In practice it takes a handful.
 	var ship_map: Dictionary = {}
 	var plotted: Dictionary = {}
-	var pass_limit: int = 1
+	var step_bound: int = 0
 	for ship_state in ships:
 		ship_map[ship_state.ship_id] = ship_state
 		plotted[ship_state.ship_id] = _get_plotted_steps(ship_state)
-		pass_limit += 2 * plotted[ship_state.ship_id].size()  # rollbacks and broken cycles
+		# An amended plot is never longer than the plot or the deceleration minimum.
+		step_bound += maxi(plotted[ship_state.ship_id].size(), _deceleration_minimum(ship_state))
+	var pass_limit: int = (step_bound + 1) * (step_bound + 1)
 	var rng_start: int = rng.state
 	var amended: Dictionary = {}  # ship_id -> steps actually resolved
 	var rollbacks: Dictionary = {}  # ship_id -> the rollback or lost stern contest that amended its plot
 	var undone_contests: Array = []  # contests whose winner's turn was rolled back (ResolutionPass.contests)
-	var cycle_breaks: Dictionary = {}  # cycle key -> true (ResolutionPass.cycle_breaks)
+	var cycle_breaks: Dictionary = {}  # cycle key -> segment (ResolutionPass.cycle_breaks)
 	var settled_contests: Dictionary = {}  # ResolutionPass.settled_contests
 	var outcome: Dictionary = {}
 	# All overlaps that fail at the same segment end are rolled back together (they are simultaneous,
@@ -129,11 +137,16 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 		if attempt == pass_limit - 1:
 			push_error("MovementResolver: overlap rollbacks did not settle")
 			break
-		for key in outcome.failed_cycles:
-			cycle_breaks[key] = true
-			Trace.trace_log("MovementResolver", "cycle broken", {"cycle": key})
+		for cycle in outcome.failed_cycles:
+			cycle_breaks[cycle.key] = cycle.segment
+			Trace.trace_log("MovementResolver", "cycle broken", {"cycle": cycle.key})
 		for rb in outcome.rollbacks:
 			var sid: String = rb.ship_id
+			# An amended plot changes the steps from rb.segment on, so a cycle broken there or later may no
+			# longer need breaking: drop it; it is found again if it still goes wrong.
+			for key in cycle_breaks.keys():
+				if cycle_breaks[key] >= rb.segment:
+					cycle_breaks.erase(key)
 			amended[sid] = _amended_steps(ship_map[sid], amended.get(sid, plotted[sid]), rb)
 			rollbacks[sid] = rb
 			if rb.get("kind", "") == "contest":
@@ -348,7 +361,8 @@ func _resolve_impulse(p: ResolutionPass, impulse: int, ships: Array[ShipState]) 
 			if p.cycle_breaks.has(key):
 				_hold_for_owner(seg, pending[pick].hex, old_stern_owner)
 			else:
-				seg.speculations.append(key)
+				seg.speculations.append({"key": key, "hex": pending[pick].hex,
+					"owners": old_stern_owner.get(pending[pick].hex, [])})
 		var group: Dictionary = pending[pick]
 		pending.remove_at(pick)
 		if group.stern:
@@ -357,8 +371,8 @@ func _resolve_impulse(p: ResolutionPass, impulse: int, ships: Array[ShipState]) 
 			_resolve_bow_entries(p, seg, group.ids, group.hex)
 		for sid in group.ids:
 			_settle(p, seg, sid)
-	if not seg.speculations.is_empty() and _bow_in_kept_stern(p, seg):
-		p.failed_cycles = seg.speculations
+	if not seg.speculations.is_empty():
+		p.failed_cycles = _failed_speculations(p, seg)
 	return seg
 
 
@@ -383,10 +397,11 @@ func _hold_for_owner(seg: Segment, hex: Vector2i, old_stern_owner: Dictionary) -
 	seg.held[hex] = owners[0]
 
 
-## True when a ship that kept its pose this segment has another ship's bow on its old stern hex, sailed
-## in by an ahead step. Only a cycle can do that (the group let go first assumes the next ship leaves
-## its stern, see _resolve_impulse): the pass is then replayed with that cycle broken.
-func _bow_in_kept_stern(p: ResolutionPass, seg: Segment) -> bool:
+## Old stern hex -> ship for every ship that kept its pose this segment with another ship's bow on its
+## old stern, sailed in by an ahead step. Only a cycle can do that (the group let go first assumes the
+## next ship leaves its stern, see _resolve_impulse).
+func _bows_in_kept_sterns(p: ResolutionPass, seg: Segment) -> Dictionary:
+	var found: Dictionary = {}
 	for sid in seg.intended_moves:
 		if not _kept_pose(p, seg, sid):
 			continue
@@ -394,8 +409,27 @@ func _bow_in_kept_stern(p: ResolutionPass, seg: Segment) -> bool:
 		for other_id in seg.moves:
 			var ev: MovementTypes.ResolutionEvent = seg.moves[other_id]
 			if other_id != sid and ev.from_hex != ev.to_hex and p.current_hexes[other_id] == kept_stern:
-				return true
-	return false
+				found[kept_stern] = sid
+	return found
+
+
+## The cycles of this segment that went wrong ([{key, segment}], see ResolutionPass.failed_cycles): only
+## those whose assumed-to-leave ship kept its stern under the bow let in, so a cycle that worked in the
+## same segment is not broken in the replay. Ships further along a failed cycle meet the kept sterns in
+## the replay without their own cycle being broken. Should a bow sit on a kept stern with no speculation
+## to blame (not expected), every speculation of the segment is broken, so no overlap is ever kept.
+func _failed_speculations(p: ResolutionPass, seg: Segment) -> Array:
+	var intruded: Dictionary = _bows_in_kept_sterns(p, seg)
+	if intruded.is_empty():
+		return []
+	var failed: Array = []
+	for spec in seg.speculations:
+		if intruded.has(spec.hex) and intruded[spec.hex] in spec.owners:
+			failed.append({"key": spec.key, "segment": seg.impulse})
+	if failed.is_empty():
+		for spec in seg.speculations:
+			failed.append({"key": spec.key, "segment": seg.impulse})
+	return failed
 
 
 ## Key of a hex on a segment, for ResolutionPass.cycle_breaks and .settled_contests.

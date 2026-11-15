@@ -2292,6 +2292,36 @@ func test_ring_with_a_member_blocked_from_outside_never_overlaps() -> void:
 	assert_eq(Occupancy.overlapping_ids(ships), [] as Array[String], "No two ships overlap")
 
 
+func test_only_the_ring_that_went_wrong_is_broken() -> void:
+	# Two rings in one segment: the blocked ring of test_ring_with_a_member_blocked_from_outside_never_overlaps
+	# and a free copy of the ring 10 hexes east (E, F, G as A, B, C). Only the blocked ring's cycle is
+	# broken in the replay; the free ring still sails round, with no collision.
+	var ships := _make_ring("G")
+	var d = _make_ship_state(Vector2i(3, 7), 0, 1, "C", "ship_d", 3, "A")
+	_plot_straight(d, 1)
+	ships.append(d)
+	var e = _make_ship_state(Vector2i(15, 5), 0, 1, "C", "ship_e")  # stern (14,5)
+	var f = _make_ship_state(Vector2i(15, 6), 2, 1, "C", "ship_f")  # stern (16,5)
+	var g = _make_ship_state(Vector2i(14, 6), 4, 1, "C", "ship_g")  # stern (14,7)
+	for s in [e, f, g]:
+		_plot_straight(s, 1)
+		ships.append(s)
+
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+
+	assert_eq(ships[0].hex_position, Vector2i(5, 5), "The blocked ring stays (A)")
+	assert_eq(log.get_result("ship_a").blocked_by, "ship_b")
+	assert_eq(e.hex_position, Vector2i(16, 5), "E enters F's old stern")
+	assert_eq(f.hex_position, Vector2i(14, 7), "F enters G's old stern")
+	assert_eq(g.hex_position, Vector2i(14, 5), "G enters E's old stern")
+	for sid in ["ship_e", "ship_f", "ship_g"]:
+		var result = log.get_result(sid)
+		assert_false(_has_event(result, MovementTypes.ResolutionEventType.COLLISION), "%s: no collision" % sid)
+		assert_eq(result.blocked_by, "", "%s is not blocked" % sid)
+	assert_eq(Occupancy.overlapping_ids(ships), [] as Array[String], "No two ships overlap")
+
+
 func test_collision_holds_the_old_stern_of_a_ship_whose_group_has_not_run() -> void:
 	# A5: a ship stopped by a collision before its own group runs keeps its old stern at once, so no bow
 	# (not even one let in by the cycle fallback) can enter it.
