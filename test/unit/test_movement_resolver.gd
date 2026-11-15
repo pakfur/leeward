@@ -151,129 +151,130 @@ func test_no_movement_plotted() -> void:
 
 
 # ===========================================================================
-# Single-ship: tacking
+# Single-ship: turning at MA=0 (tacking, irons) — Close Action 5.D
 # ===========================================================================
 
-func test_tacking_success_continues_movement() -> void:
-	var state = _make_ship_state(Vector2i(5, 5), 5, 3, "D")
-	state.tacking = true
-
-	env.wind_direction = 0
+## Plot a single turn from the ship's current hex, as the validator would at MA=0.
+func _plot_turn(state: ShipState, new_facing: int) -> Vector2i:
 	var hex_grid = HexGrid.new()
-	var step1_hex = hex_grid.get_neighbor(5, 5, 5)
-	var step2_hex = hex_grid.get_neighbor(step1_hex.x, step1_hex.y, 0)
+	var turn_hex = hex_grid.get_neighbor(state.hex_position.x, state.hex_position.y, new_facing)
+	GameState.ship_controller.set_plotted_movement(state.ship_id, [
+		{"hex": {"q": turn_hex.x, "r": turn_hex.y}, "facing": new_facing},
+	])
+	return turn_hex
 
-	state.plotted_actions.movement = [
-		{"hex": {"q": step1_hex.x, "r": step1_hex.y}, "facing": 5},
-		{"hex": {"q": step2_hex.x, "r": step2_hex.y}, "facing": 0},
-	]
 
-	rng.seed = 1
-	resolver = MovementResolver.new(GameState, rng)
+## A seed whose first randf() is at most `limit`, so a tacking roll against a high threshold passes.
+func _seed_with_low_first_roll(limit: float) -> int:
+	for s in range(1, 1000):
+		var probe = RandomNumberGenerator.new()
+		probe.seed = s
+		if probe.randf() <= limit:
+			return s
+	return 1
 
+
+func _run_one(state: ShipState) -> MovementTypes.ShipResolutionResult:
 	var ships: Array[ShipState] = [state]
-	var log = resolver.run(ships, env)
-	var result = log.get_result("test_ship_1")
+	return resolver.run(ships, env).get_result(state.ship_id)
 
-	var has_tack_event = false
+
+func _has_event(result, event_type) -> bool:
 	for ev in result.events:
-		if ev.event_type == MovementTypes.ResolutionEventType.TACKING_ROLL:
-			has_tack_event = true
-
-	if not has_tack_event:
-		pass_test("No tacking detected for this path/wind combo — path does not cross L")
-	else:
-		if result.tacking_failed:
-			assert_true(result.immobilized, "Failed tack should immobilize")
-		else:
-			assert_false(result.immobilized, "Successful tack should not immobilize")
-			assert_eq(result.final_hex, step2_hex, "Should complete movement")
+		if ev.event_type == event_type:
+			return true
+	return false
 
 
-func test_tacking_failure_immobilizes() -> void:
-	var state = _make_ship_state(Vector2i(5, 5), 5, 3, "A")
-	state.tacking = true
+func test_tack_from_luffing_rolls_and_completes_turn() -> void:
+	# Wind from E (0), facing E = WF L, MA 0. The ship luffed last turn (speed 2), so it is not in irons.
+	var state = _make_ship_state(Vector2i(5, 5), 0, 2, "D")
+	env.wind_speed = 3  # D at WS 3: 90% (DRM +0.1 at L)
+	var turn_hex = _plot_turn(state, 1)
 
-	env.wind_direction = 0
+	rng.seed = _seed_with_low_first_roll(0.5)
+	resolver = MovementResolver.new(GameState, rng)
+	var result = _run_one(state)
+
+	assert_true(_has_event(result, MovementTypes.ResolutionEventType.TACKING_ROLL),
+		"A turn plotted at MA=0 must roll on the Tacking table")
+	assert_false(result.tacking_failed, "Low roll should pass")
+	assert_false(result.immobilized, "Successful tack should not immobilize")
+	assert_eq(result.final_facing, 1, "Ship completes the turn")
+	assert_eq(result.final_hex, turn_hex, "Ship completes the turn")
+
+
+func test_failed_tack_erases_the_turn() -> void:
+	# Maneuver A at WS 1 is 20%; three rigging sections gone (+0.6) and WF L (+0.1) make it impossible.
+	var state = _make_ship_state(Vector2i(5, 5), 0, 2, "A")
 	env.wind_speed = 1
+	var damaged: Array[int] = [0, 0, 0, 6]
+	state.rigging_current_hp = damaged
+	_plot_turn(state, 5)
 
-	var facing_L: int = env.wind_direction
+	var result = _run_one(state)
+
+	assert_true(_has_event(result, MovementTypes.ResolutionEventType.TACKING_ROLL), "Tacking roll made")
+	assert_true(result.tacking_failed, "Tack should fail")
+	assert_true(result.immobilized, "Failed tack leaves the ship in irons")
+	assert_eq(result.final_facing, 0, "Turn erased: heading unchanged")
+	assert_eq(result.final_hex, Vector2i(5, 5), "Turn erased: hex unchanged")
+
+
+func test_moving_ship_makes_no_tacking_roll() -> void:
+	# Wind from E (0), facing W (3) = running, MA > 0: an ordinary turn needs no roll.
+	var state = _make_ship_state(Vector2i(5, 5), 3, 3)
 	var hex_grid = HexGrid.new()
-	var step1_hex = hex_grid.get_neighbor(5, 5, facing_L)
+	var ahead = hex_grid.get_neighbor(5, 5, 3)
+	var turned = hex_grid.get_neighbor(ahead.x, ahead.y, 4)
+	GameState.ship_controller.set_plotted_movement(state.ship_id, [
+		{"hex": {"q": ahead.x, "r": ahead.y}, "facing": 3},
+		{"hex": {"q": turned.x, "r": turned.y}, "facing": 4},
+	])
 
-	state.plotted_actions.movement = [
-		{"hex": {"q": step1_hex.x, "r": step1_hex.y}, "facing": facing_L},
-	]
+	var result = _run_one(state)
 
-	rng.seed = 99999
-	resolver = MovementResolver.new(GameState, rng)
-
-	var ships: Array[ShipState] = [state]
-	var log = resolver.run(ships, env)
-	var result = log.get_result("test_ship_1")
-
-	var has_tack_roll = false
-	for ev in result.events:
-		if ev.event_type == MovementTypes.ResolutionEventType.TACKING_ROLL:
-			has_tack_roll = true
-
-	if has_tack_roll and result.tacking_failed:
-		assert_true(result.immobilized, "Failed tack should immobilize")
-		assert_eq(result.final_facing, facing_L, "Should face into wind (L)")
-	elif has_tack_roll and not result.tacking_failed:
-		pass_test("Tacking succeeded at this seed — not testing failure path")
-	else:
-		pass_test("No tacking roll triggered — wind/facing combo did not produce L")
-
-
-func test_tacking_not_flagged_no_roll() -> void:
-	var state = _make_ship_state()
-	state.tacking = false
-	_plot_straight(state, 2)
-
-	var ships: Array[ShipState] = [state]
-	var log = resolver.run(ships, env)
-	var result = log.get_result("test_ship_1")
-
-	for ev in result.events:
-		assert_ne(ev.event_type, MovementTypes.ResolutionEventType.TACKING_ROLL,
-			"No tacking roll should occur when tacking=false")
+	assert_false(_has_event(result, MovementTypes.ResolutionEventType.TACKING_ROLL),
+		"No tacking roll when the ship has movement allowance")
 
 
 # ===========================================================================
-# Single-ship: in-irons escape
+# Single-ship: in irons
 # ===========================================================================
 
-func test_in_irons_escape_attempt() -> void:
+func test_in_irons_without_a_plotted_turn_stays_in_irons() -> void:
 	var state = _make_ship_state(Vector2i(5, 5), 0, 0, "C")
 	env.wind_direction = 0
-	state.facing = 0
 
-	var ships: Array[ShipState] = [state]
-	var log = resolver.run(ships, env)
-	var result = log.get_result("test_ship_1")
+	var result = _run_one(state)
 
-	var has_escape_roll = false
-	for ev in result.events:
-		if ev.event_type == MovementTypes.ResolutionEventType.IN_IRONS_ESCAPE_ROLL:
-			has_escape_roll = true
-			assert_true(ev.roll >= 0.0 and ev.roll <= 1.0, "Roll should be 0-1")
-			assert_true(ev.threshold > 0.0, "Threshold should be > 0")
-
-	assert_true(has_escape_roll, "Should attempt in-irons escape when speed=0 and facing=wind")
+	assert_true(result.immobilized, "Ship stays in irons")
+	assert_false(_has_event(result, MovementTypes.ResolutionEventType.TACKING_ROLL), "No roll without a plotted turn")
+	assert_eq(result.final_facing, 0, "Heading unchanged")
 
 
-func test_not_in_irons_no_escape_roll() -> void:
+func test_in_irons_plotted_turn_can_turn_out() -> void:
+	var state = _make_ship_state(Vector2i(5, 5), 0, 0, "D")
+	env.wind_speed = 3  # 90%, DRM +0.2 (L and in irons)
+	var turn_hex = _plot_turn(state, 5)
+
+	rng.seed = _seed_with_low_first_roll(0.5)
+	resolver = MovementResolver.new(GameState, rng)
+	var result = _run_one(state)
+
+	assert_true(_has_event(result, MovementTypes.ResolutionEventType.TACKING_ROLL), "Turning out of irons rolls")
+	assert_false(result.immobilized, "Ship is out of irons")
+	assert_eq(result.final_facing, 5, "Ship turns out of the wind")
+	assert_eq(result.final_hex, turn_hex)
+
+
+func test_not_in_irons_when_off_the_wind() -> void:
 	var state = _make_ship_state(Vector2i(5, 5), 3, 0, "C")
 	env.wind_direction = 0
 
-	var ships: Array[ShipState] = [state]
-	var log = resolver.run(ships, env)
-	var result = log.get_result("test_ship_1")
+	var result = _run_one(state)
 
-	for ev in result.events:
-		assert_ne(ev.event_type, MovementTypes.ResolutionEventType.IN_IRONS_ESCAPE_ROLL,
-			"Ship facing W with wind from E is not in-irons")
+	assert_false(result.immobilized, "Ship facing W with wind from E is not in irons")
 
 
 # ===========================================================================
@@ -301,6 +302,13 @@ func test_tacking_drm_facing_luffing() -> void:
 	env.wind_direction = 0
 	var drm = resolver._calculate_tacking_drm(state)
 	assert_almost_eq(drm, 0.1, 0.001, "Facing L adds +0.1 DRM")
+
+
+func test_tacking_drm_in_irons() -> void:
+	var state = _make_ship_state(Vector2i(5, 5), 0, 0)
+	env.wind_direction = 0
+	var drm = resolver._calculate_tacking_drm(state)
+	assert_almost_eq(drm, 0.2, 0.001, "L (+0.1) and in irons (+0.1)")
 
 
 func test_tacking_drm_healthy_ship_not_luffing() -> void:
@@ -924,7 +932,9 @@ func test_contest_drm_class_advantage() -> void:
 	var drm_a = resolver._calculate_contest_drm_relative("ship_a", ["ship_a", "ship_b"], ship_map)
 	var drm_b = resolver._calculate_contest_drm_relative("ship_b", ["ship_a", "ship_b"], ship_map)
 
-	assert_true(drm_b > drm_a, "Class 4 ship should have higher DRM vs class 1 (larger class = advantage)")
+	assert_true(drm_a > drm_b, "Class 1 (largest) should beat class 4 (6.C.2c: +1 per class larger)")
+	assert_eq(drm_a, 3, "Three classes larger = +3")
+	assert_eq(drm_b, 0, "The smaller ship gets no class bonus")
 
 
 func test_contest_drm_more_mp_advantage() -> void:

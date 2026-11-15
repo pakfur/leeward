@@ -53,7 +53,7 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 		var ship_steps = _get_plotted_steps(ship_state)
 		if ship_steps.is_empty():
 			if _is_in_irons(ship_state, environment):
-				_resolve_in_irons_escape(ship_state, environment, result)
+				_remain_in_irons(ship_state, result)
 			else:
 				var ev = MovementTypes.ResolutionEvent.new(
 					ship_state.ship_id, 0, MovementTypes.ResolutionEventType.SKIP_NO_PLOT
@@ -126,8 +126,9 @@ func _resolve_impulse(
 			var result: MovementTypes.ShipResolutionResult = results[sid]
 			var tack_success: bool = _roll_tacking(ship_state, environment, result, impulse)
 			if not tack_success:
+				# The plotted turn is erased (5.D.1): the ship keeps its hex and heading.
 				result.final_hex = current_hexes[sid]
-				result.final_facing = _get_luffing_facing(ship_state, environment)
+				result.final_facing = ship_state.facing
 				result.immobilized = true
 				result.tacking_failed = true
 				stopped[sid] = true
@@ -275,7 +276,8 @@ func _calculate_contest_drm_relative(sid: String, all_ids: Array, ship_map: Dict
 			drm += cq_diff
 
 		var other_class: int = other.ship.ship_class if other.ship else 3
-		var class_diff: int = my_class - other_class
+		# +1 per class larger (6.C.2c); class 1 is the largest, so a lower number is the bigger ship
+		var class_diff: int = other_class - my_class
 		if class_diff > 0:
 			drm += class_diff
 
@@ -558,41 +560,18 @@ func _find_stationary_occupant(
 ## Tacking and in-irons (per-ship, unchanged from S06)
 ## ============================================================================
 
-func _resolve_in_irons_escape(
-	ship_state: ShipState,
-	environment: EnvironmentState,
-	result: MovementTypes.ShipResolutionResult
-) -> void:
-	var drm: float = _calculate_tacking_drm(ship_state)
-	var maneuverability: String = ship_state.ship.maneuverability if ship_state.ship else "b"
-	var threshold: float = DataManager.get_tacking_percent(maneuverability, environment.wind_speed)
-
-	var roll_value: float = rng.randf()
-	var adjusted: float = roll_value + drm
-	var success: bool = adjusted <= threshold
-
-	var ev = MovementTypes.ResolutionEvent.new(
-		ship_state.ship_id, 0, MovementTypes.ResolutionEventType.IN_IRONS_ESCAPE_ROLL
+## A ship in irons that plotted no turn stays in irons (5.D.7). Getting out takes a plotted turn,
+## which is resolved by the Tacking roll with the in-irons DRM (5.D.6).
+func _remain_in_irons(ship_state: ShipState, result: MovementTypes.ShipResolutionResult) -> void:
+	result.immobilized = true
+	var imm_ev = MovementTypes.ResolutionEvent.new(
+		ship_state.ship_id, 0, MovementTypes.ResolutionEventType.IMMOBILIZED
 	)
-	ev.from_hex = ship_state.hex_position
-	ev.to_hex = ship_state.hex_position
-	ev.facing = ship_state.facing
-	ev.roll = roll_value
-	ev.threshold = threshold
-	ev.success = success
-	ev.detail = "drm=%.2f adjusted=%.2f threshold=%.2f" % [drm, adjusted, threshold]
-	result.events.append(ev)
-
-	if not success:
-		result.immobilized = true
-		var imm_ev = MovementTypes.ResolutionEvent.new(
-			ship_state.ship_id, 0, MovementTypes.ResolutionEventType.IMMOBILIZED
-		)
-		imm_ev.from_hex = ship_state.hex_position
-		imm_ev.to_hex = ship_state.hex_position
-		imm_ev.facing = ship_state.facing
-		imm_ev.detail = "in-irons escape failed"
-		result.events.append(imm_ev)
+	imm_ev.from_hex = ship_state.hex_position
+	imm_ev.to_hex = ship_state.hex_position
+	imm_ev.facing = ship_state.facing
+	imm_ev.detail = "in irons, no turn plotted"
+	result.events.append(imm_ev)
 
 
 func _roll_tacking(
@@ -649,6 +628,10 @@ func _calculate_tacking_drm(ship_state: ShipState) -> float:
 	if wind_facing == "L":
 		drm += 0.1
 
+	# In irons: +1 on the d10 (5.D.6)
+	if ship_state.speed == 0 and wind_facing == "L":
+		drm += 0.1
+
 	if ship_state.towing:
 		drm += 0.1
 
@@ -671,10 +654,6 @@ func _get_ship_wind_facing(ship_state: ShipState) -> String:
 	return hex_grid.get_wind_facing(ship_state.facing, wind_dir)
 
 
-func _get_luffing_facing(_ship_state: ShipState, environment: EnvironmentState) -> int:
-	return environment.wind_direction
-
-
 func _get_plotted_steps(ship_state: ShipState) -> Array:
 	## Fouled and struck ships cannot move: any plot is ignored (defence behind the plotting check).
 	if ship_state.fouled_with != "" or ship_state.is_struck():
@@ -682,24 +661,16 @@ func _get_plotted_steps(ship_state: ShipState) -> Array:
 	return ship_state.plotted_actions.get("movement", [])
 
 
+## Impulse of a turn plotted at MA=0, which must pass a Tacking roll (5.D.1): tacking from WF=L,
+## turning out of irons, or any other turn by a ship whose MA is 0. Such a turn is the ship's first
+## (and only) step. -1 when the plot needs no roll.
 func _find_tacking_impulse(ship_state: ShipState, steps: Array) -> int:
-	if not ship_state.tacking:
+	if steps.is_empty():
 		return -1
-
-	var current_facing: int = ship_state.facing
-	for i in range(steps.size()):
-		var step_facing: int = int(steps[i].get("facing", current_facing))
-		if step_facing != current_facing:
-			var wind_facing: String = hex_grid.get_wind_facing(step_facing, _wind_direction())
-			if wind_facing == "L":
-				return i
-		current_facing = step_facing
-	return -1
-
-
-func _wind_direction() -> int:
-	if game_state and game_state.environment:
-		return game_state.environment.wind_direction
+	if int(steps[0].get("facing", ship_state.facing)) == ship_state.facing:
+		return -1
+	if game_state.ship_controller.get_movement_allowance(ship_state.ship_id) != 0:
+		return -1
 	return 0
 
 

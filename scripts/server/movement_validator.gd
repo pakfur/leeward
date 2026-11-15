@@ -25,6 +25,8 @@ class PlottingState extends RefCounted:
 	var last_pivot_direction: MovementTypes.MoveType = MovementTypes.MoveType.NONE
 	var free_pivot_used: bool = false
 	var luffing_ended: bool = false
+	## True after a turn plotted at MA=0 (tacking or turning out of irons, 5.D): the ship moves no further this g-t.
+	var ma_zero_turn_ended: bool = false
 	var is_tacking_attempt: bool = false
 	var current_facing: int = 0
 	var current_hex: Vector2i = Vector2i.ZERO
@@ -49,13 +51,10 @@ func calculate_valid_moves(
 	result.can_submit = true
 	result.is_tacking_attempt = ps.is_tacking_attempt
 
-	if ps.luffing_ended:
+	if ps.luffing_ended or ps.ma_zero_turn_ended:
 		return result
 
-	if _is_in_irons(ship_state, path_so_far):
-		Trace.trace_log("MovementValidator", "Ship %s in irons — no movement available" % ship_state.ship_id)
-		return result
-
+	# A ship in irons gets the ordinary MA=0 options: one plotted turn, resolved by a Tacking roll (5.D.6).
 	var valid_options = _calculate_real_valid_hexes(ps, ship_state, path_so_far)
 	result.valid_hexes = valid_options
 
@@ -179,21 +178,16 @@ func _build_plotting_state(
 
 	ps.remaining_ma = max(0, ps.max_ma - ma_spent)
 
-	return ps
-
-
-func _is_in_irons(ship_state: ShipState, path_so_far: Array[MovementTypes.PlotStep]) -> bool:
-	"""Ship at wind_facing=L with speed 0 and no path yet = in irons."""
+	# A turn made at MA=0 is the ship's whole move for the g-t (5.D.3 example: "it cannot move any further").
 	if not path_so_far.is_empty():
-		return false
-	if ship_state.speed != 0:
-		return false
-	var wind_dir = game_state.environment.wind_direction if game_state.environment else 0
-	var wf = hex_grid.get_wind_facing(ship_state.facing, wind_dir)
-	if wf == "L":
-		Trace.trace_log("MovementValidator", "Ship %s is in irons (facing L, speed 0)" % ship_state.ship_id)
-		return true
-	return false
+		var first_type = path_so_far[0].move_type
+		var first_is_pivot = first_type == MovementTypes.MoveType.PORT or first_type == MovementTypes.MoveType.STARBOARD
+		var start_wf = hex_grid.get_wind_facing(ship_state.facing, ps.wind_direction)
+		if first_is_pivot and _lookup_ma(ps.speed_type, ps.wind_speed, start_wf, ps.sail_state, ps.rigging_quality) == 0:
+			ps.ma_zero_turn_ended = true
+			ps.remaining_ma = 0
+
+	return ps
 
 
 func _calculate_real_valid_hexes(

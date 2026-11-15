@@ -206,15 +206,32 @@ func test_pivot_into_luffing_ends_movement() -> void:
 # In-irons
 # ============================================================================
 
-func test_in_irons_no_moves() -> void:
-	# Ship facing directly into wind with speed 0
+func test_in_irons_may_plot_one_turn() -> void:
+	# 5.D.6: a ship in irons turns out by plotting a turn (then rolling on the Tacking table)
 	mock_gs.environment.wind_direction = 0  # wind from E
 	var ship = _make_ship("F/F", "b")
-	var ss = _make_ship_state(ship, 0, 0, "MS")  # facing E = into wind = L
+	var ss = _make_ship_state(ship, 0, 0, "MS")  # facing E = into wind = L, speed 0
 
 	var result = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, [])
-	assert_false(result.valid_hexes.has_any_moves(), "In-irons ship should have no moves")
+	assert_true(result.valid_hexes.forward.is_empty(), "No ahead move at MA=0")
+	assert_not_null(result.valid_hexes.port, "Port turn offered")
+	assert_not_null(result.valid_hexes.starboard, "Starboard turn offered")
 	assert_true(result.can_submit, "In-irons ship can submit (no movement)")
+
+
+func test_turn_at_ma_zero_ends_the_move() -> void:
+	# 5.D.3 example: after a turn at MA=0 the ship cannot move any further that g-t
+	mock_gs.environment.wind_direction = 0
+	var ship = _make_ship("F/F", "b")
+	var ss = _make_ship_state(ship, 0, 2, "MS")  # luffing at speed 2
+	var first = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, [])
+	var turn: MovementTypes.ValidMove = first.valid_hexes.starboard
+	var path: Array[MovementTypes.PlotStep] = [
+		MovementTypes.PlotStep.new(turn.hex, turn.metadata.resulting_facing, turn.move)
+	]
+
+	var result = validator.calculate_valid_moves(ss, turn.hex, turn.metadata.resulting_facing, path)
+	assert_false(result.valid_hexes.has_any_moves(), "No moves after a turn made at MA=0")
 
 
 func test_not_in_irons_when_speed_nonzero() -> void:
