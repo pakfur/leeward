@@ -368,6 +368,17 @@ func test_one_battery_bears_gives_half_broadside() -> void:
 	assert_eq(_mod(p, "half_broadside"), -8)
 
 
+func test_half_broadside_at_two_targets_takes_only_two_target_modifier() -> void:
+	# 7.C.12g: a half broadside fired while firing at two targets takes -12, not -20.
+	target.hex_position = Vector2i(0, 3)
+	target.facing = 1
+	var p := calc.preview(_order(), true)
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.batteries, 1)
+	assert_eq(_mod(p, "half_broadside"), 0)
+	assert_eq(_mod(p, "two_targets"), -12)
+
+
 func test_struck_ship_blocks_los_with_both_hexes() -> void:
 	target.hex_position = Vector2i(-2, 4)
 	assert_eq(calc.preview(_order()).batteries, 2, "setup: full broadside without the hulk")

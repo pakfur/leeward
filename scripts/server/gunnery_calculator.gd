@@ -74,7 +74,8 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> Gunner
 	_add_modifier(p, "crew_quality", tables.crew_quality_modifier(firer.crew_quality))
 	_add_modifier(p, "sections_firing", tables.sections_firing_modifier(sections))
 	_add_modifier(p, "guns_dismounted", -int(firer.guns_dismounted[order.side]))
-	if p.batteries == 1:
+	# 7.C.12g: when firing at two targets only the two-target modifier applies, full or half.
+	if p.batteries == 1 and not two_targets:
 		_add_modifier(p, "half_broadside", tables.flat_modifier("half_broadside"))
 	if p.range_hexes <= FireGeometry.RAKE_RANGE:
 		p.rake = geometry.rake_type_ships(target.hex_position, target.facing, firer_hexes)
