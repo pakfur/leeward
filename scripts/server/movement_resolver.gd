@@ -58,6 +58,8 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 	var amended: Dictionary = {}  # ship_id -> steps actually resolved
 	var rollbacks: Dictionary = {}  # ship_id -> the rollback that amended its plot
 	var outcome: Dictionary = {}
+	# All overlaps that fail at the same segment end are rolled back together (they are simultaneous,
+	# 6.B.4); the pass then restarts.
 	for attempt in range(pass_limit):
 		rng.state = rng_start
 		outcome = _resolve_pass(ships, ship_map, plotted, amended, environment)
@@ -76,6 +78,11 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 	var results: Dictionary = outcome.results
 	log.max_impulses = outcome.max_impulses
 	for sid in rollbacks:
+		# A rollback found in an earlier pass can go stale: a later rollback of another ship may stop
+		# this one before it ever reaches the overlap segment. Its amended plot still stands, but the
+		# swing it never made is not logged (or played back).
+		if not _reached_segment(results[sid], rollbacks[sid].segment):
+			continue
 		_record_rollback(results[sid], rollbacks[sid], amended[sid].size())
 		log.max_impulses = maxi(log.max_impulses, rollbacks[sid].segment + 2)
 	for sid in results:
@@ -429,6 +436,7 @@ func _check_overlaps(impulse: int, current_hexes: Dictionary, current_facings: D
 			continue
 		_pending_overlaps.erase(sid)
 		var mine: Array[Vector2i] = _footprint(sid, current_hexes, current_facings)
+		# TODO(6.B, Task 11+): only the first ship still overlapped is named in the rollback.
 		for other_id in overlap.other_ids:
 			var still_overlapped := false
 			for h in _footprint(other_id, current_hexes, current_facings):
@@ -462,6 +470,18 @@ func _deceleration_minimum(ship_state: ShipState) -> int:
 		return 0
 	var maneuverability: String = ship_state.ship.maneuverability if ship_state.ship else "b"
 	return maxi(ship_state.speed - DataManager.get_speed_change("deceleration", maneuverability), 0)
+
+
+## True when the ship executed every step before `segment` in the final pass, so it stood in the
+## rollback's pre-turn pose at that segment.
+func _reached_segment(result: MovementTypes.ShipResolutionResult, segment: int) -> bool:
+	if result.stopped_at_impulse >= 0 and result.stopped_at_impulse < segment:
+		return false
+	var steps_before := 0
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.MOVE and ev.impulse < segment:
+			steps_before += 1
+	return steps_before == segment
 
 
 ## Tell a rolled-back turn in the final result: OVERLAP on the overlap segment (the stern swinging in)
@@ -1017,6 +1037,7 @@ func _calculate_tacking_drm(ship_state: ShipState) -> int:
 
 ## Bearing Off DRMs (6.D.2): MPs plotted this g-t 4-6 = +1, 7+ = +2. Rudder damage and poor
 ## maneuvering need critical hits, which do not exist yet.
+# TODO(6.B): reads the original plot size; after an overlap rollback it should count the amended plot.
 func _bearing_off_drm(ship_state: ShipState) -> int:
 	var mps: int = _get_plotted_steps(ship_state).size()
 	if mps >= 7:
@@ -1156,6 +1177,8 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 				turn_log.add(PhaseEvents.Type.COLLISION, phase, sid, {"hex": {"q": at.x, "r": at.y}},
 					result.collided_with)
 		var planned: int = _get_plotted_steps(ship_state).size()
+		# TODO(6.B): a rollback whose deceleration steps bring the step count back to the plotted length
+		# logs no STOPPED_SHORT, although the course changed.
 		if not result.tacking_failed and planned > 0 and _count_steps_executed(result) < planned:
 			var data := {"moved": _count_steps_executed(result), "planned": planned}
 			var cause := stop_cause(result)

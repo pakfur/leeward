@@ -1817,3 +1817,57 @@ func test_complete_overlap_both_turns_cancelled() -> void:
 	assert_eq(ship_a.facing, 3)
 	assert_eq(ship_b.facing, 0)
 	_assert_no_overlap(ships)
+
+
+## Cascade: X sails ahead into (6,5), the hex W's stern leaves as W turns into (5,5), X's bow hex
+## at the start (an overlap X clears by turning next segment). X's turn swings its stern onto stopped
+## V and is never cleared, so X is rolled back; X's stern then stays on (5,5), so W's overlap is not
+## cleared either and W is rolled back; W keeping (6,5) stops X's first step. X never reaches its
+## turn, so no rollback may be logged for it.
+func _run_cascade(seed_value: int) -> Dictionary:
+	GameState.ships.clear()
+	env.wind_direction = 3
+	rng.seed = seed_value
+	resolver = MovementResolver.new(GameState, rng)
+	var x = _make_ship_state(Vector2i(5, 5), 0, 2, "C", "ship_x")  # bow (5,5), stern (4,5)
+	var w = _make_ship_state(Vector2i(6, 4), 4, 2, "C", "ship_w")  # bow (6,4), stern (6,5)
+	var v = _make_ship_state(Vector2i(5, 6), 3, 0, "C", "ship_v")  # bow (5,6), stern (6,6)
+	assert_eq(HexGrid.stern_of(Vector2i(6, 4), 5), Vector2i(5, 5), "W swings onto X's bow hex")
+	assert_eq(HexGrid.stern_of(Vector2i(6, 5), 5), Vector2i(5, 6), "X's later swing lands on V")
+	GameState.ship_controller.set_plotted_movement("ship_x", [
+		{"hex": {"q": 6, "r": 5}, "facing": 0},
+		{"hex": {"q": 6, "r": 5}, "facing": 5},
+	])
+	GameState.ship_controller.set_plotted_movement("ship_w", [{"hex": {"q": 6, "r": 4}, "facing": 5}])
+	var ships: Array[ShipState] = [x, w, v]
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+	return {"log": log, "ships": ships, "x": x, "w": w}
+
+
+func test_cascaded_rollback_drops_the_stale_one() -> void:
+	var out := _run_cascade(12345)
+	var log = out.log
+	var result_x = log.get_result("ship_x")
+	var result_w = log.get_result("ship_w")
+
+	var w_rollbacks = _events_of(result_w, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
+	assert_eq(w_rollbacks.size(), 1, "W's turn is rolled back")
+	if w_rollbacks.size() == 1:
+		assert_eq(w_rollbacks[0].detail, "already occupied")
+	assert_eq(out.w.facing, 4)
+	assert_false(_has_event(result_x, MovementTypes.ResolutionEventType.OVERLAP),
+		"X never reached its turn: no swing is logged")
+	assert_false(_has_event(result_x, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK))
+	assert_eq(result_x.blocked_by, "ship_w", "W's kept stern stops X's first step")
+	assert_eq(MovementResolver.stop_cause(result_x).get("other", ""), "ship_w")
+	assert_ne(MovementResolver.stop_cause(result_x).get("cause", ""), "overlap")
+	assert_eq(out.x.hex_position, Vector2i(5, 5))
+	assert_eq(out.x.facing, 0)
+	_assert_no_overlap(out.ships)
+
+
+func test_rollback_resolution_is_deterministic() -> void:
+	var first: Dictionary = _run_cascade(777).log.to_dict()
+	var second: Dictionary = _run_cascade(777).log.to_dict()
+	assert_eq(second, first, "Same seed, same log, with chained rollbacks")
