@@ -132,8 +132,10 @@ func show_blocked_hexes(hex_positions: Array[Vector2i], hex_grid: HexGrid) -> vo
 ## Draw one broadside's fire arc (for a two-hex ship the caller passes the union of the bow and
 ## stern battery hexes, GameController.broadside_arc) in that side's colour (BroadsideColors): a faint fill and an
 ## opaque rim, so the arc reads as the same colour as the fire panel's swatch on any water.
+## `highlight` false draws the fill only: the part of a broadside's arc that the chosen battery
+## does not cover (GameController.battery_arc gives the chosen battery's hexes).
 ## Arcs accumulate until clear_arcs().
-func show_arc(hexes: Array[Vector2i], side: int) -> void:
+func show_arc(hexes: Array[Vector2i], side: int, highlight: bool = true) -> void:
 	if arc_grid == null or arcs_node == null:
 		return
 	var fill_mat := _arc_material(BroadsideColors.fill(side))
@@ -141,6 +143,8 @@ func show_arc(hexes: Array[Vector2i], side: int) -> void:
 	for hex_pos in hexes:
 		var world_pos = arc_grid.axial_to_world(hex_pos.x, hex_pos.y)
 		_add_hex_mesh(arcs_node, world_pos, arc_grid.hex_size, fill_mat)
+		if not highlight:
+			continue
 		var rim := MeshInstance3D.new()
 		rim.name = "ArcRim"
 		rim.mesh = _create_hex_ring_mesh(arc_grid.hex_size * HEX_INSET, arc_grid.hex_size * HEX_INSET * 0.86)

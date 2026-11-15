@@ -4,10 +4,15 @@ extends Control
 ## Lists each own ship that has at least one eligible shot; ships without one are listed greyed
 ## underneath with the reason in plain words. Each broadside (port/starboard) gets
 ## an always-visible list of target rows (best target first, "Hold fire" last; only the ship's
-## single best shot is selected by default, the other broadside holds fire), an aim toggle and an ammunition toggle, each with the reason when it is locked. Every
-## change re-queries GunneryCalculator.preview (a pure query) so the displayed numbers and the
-## breakdown are always current. No popups. The panel never mutates game state: pressing the
-## main button only emits the assembled order dictionaries for the controller.
+## single best shot is selected by default, the other broadside holds fire), an aim toggle and an
+## ammunition toggle, each with the reason when it is locked.
+## Each target row names the battery it fires (7.B.1): "Full broadside" when both the bow and the
+## stern battery bear, otherwise "Bow battery" or "Stern battery" (a half broadside). A side may
+## split, bow battery at one target and stern battery at another; a ship names at most two
+## targets. Every change re-queries GunneryCalculator.preview_orders (a pure query) for the
+## ship's whole order set, so the numbers and the breakdown are those the resolver will roll
+## (two targets, half broadside, initial broadside once per broadside). No popups. The panel never
+## mutates game state: pressing the main button only emits the assembled order dictionaries.
 
 signal fire_pressed(orders: Array)
 ## A ship row was chosen (the controller draws that ship's arcs).
@@ -20,6 +25,11 @@ const SEPARATOR := " — "
 const HIGH_ONLY_NOTE := "Range %d+: must fire high"
 const DISMANTLING_NOTE := "Dismantling shot reaches %d hexes"
 const D6_NOTE := "A d6 is added when you fire; higher is better."
+const BATTERY_LABELS := {
+	GunneryTypes.BATTERY_FULL: "Full broadside",
+	GunneryTypes.BATTERY_BOW: "Bow battery",
+	GunneryTypes.BATTERY_STERN: "Stern battery",
+}
 
 ## Calculator refusal reasons (GunneryCalculator.preview) -> plain words for the "Combat" panel.
 const NO_SHOT_ARC := "out of both broadside arcs"
@@ -39,9 +49,10 @@ const NO_SHOT_NO_ENEMY := "no enemy afloat"
 
 const NO_SHOT_COLOR := Color(0.6, 0.62, 0.66)
 
-## ship_id -> {"name": String, "header": Button, "shots": {side: Array[ShotPreview]},
-##             "sides": {side: {"target_id","aim","ammo","want_high","want_dismantling"}},
-##             "widgets": {side: Dictionary}}
+## ship_id -> {"name": String, "header": Button,
+##             "options": {side: {target_id: {battery: ShotPreview}}} (one-target eligible shots),
+##             "sides": {side: {"bow", "stern", "want_high", "want_dismantling"}} (target per battery),
+##             "defaults": {side: {"bow", "stern"}}, "widgets": {side: Dictionary}}
 var _ships: Dictionary = {}
 var _ship_order: Array[String] = []
 var _focused_ship_id: String = ""
@@ -70,9 +81,12 @@ static func target_names(ships: Array) -> Dictionary:
 	return names
 
 
-## "<name> — range N — gunfire M[ — stern rake][ — initial broadside]"
-static func option_text(target_name: String, preview: GunneryTypes.ShotPreview) -> String:
-	var parts: Array[String] = [target_name, "range %d" % preview.range_hexes, "gunfire %d" % preview.mgn]
+## "<name>[ — Bow battery] — range N — gunfire M[ — stern rake][ — initial broadside]"
+static func option_text(target_name: String, preview: GunneryTypes.ShotPreview, battery: String = "") -> String:
+	var parts: Array[String] = [target_name]
+	if battery != "":
+		parts.append(battery_label(battery))
+	parts.append_array(["range %d" % preview.range_hexes, "gunfire %d" % preview.mgn])
 	if preview.rake != "":
 		parts.append("%s rake" % preview.rake)
 	if preview.initial_broadside:
@@ -89,12 +103,173 @@ static func modifier_lines(preview: GunneryTypes.ShotPreview) -> Array[String]:
 
 
 ## "Base 18, initial broadside +4 = 22. A d6 is added when you fire; higher is better."
+## A half broadside leads: "Half broadside −8 on base 18, crew +1 = 11. ..." (only when the
+## calculator applied it: with two targets it does not, 7.C.12g).
 static func breakdown_text(preview: GunneryTypes.ShotPreview) -> String:
-	var lines := modifier_lines(preview)
+	var half := 0
+	var lines: Array[String] = []
+	for m in preview.modifiers:
+		if str(m.get("name", "")) == "half_broadside":
+			half = int(m.get("value", 0))
+		else:
+			lines.append("%s %+d" % [PhaseEvents.modifier_label(str(m.get("name", "?"))), int(m.get("value", 0))])
 	var sum := "Base %d" % preview.bgn
+	if half != 0:
+		sum = "%s on base %d" % [half_broadside_text(half), preview.bgn]
 	if not lines.is_empty():
-		sum += ", %s = %d" % [", ".join(lines), preview.mgn]
+		sum += ", " + ", ".join(lines)
+	if half != 0 or not lines.is_empty():
+		sum += " = %d" % preview.mgn
 	return "%s. %s" % [sum, D6_NOTE]
+
+
+## "Half broadside −8" (true minus sign).
+static func half_broadside_text(value: int) -> String:
+	return "Half broadside %s%d" % ["−" if value < 0 else "+", absi(value)]
+
+
+## "Full broadside", "Bow battery" or "Stern battery".
+static func battery_label(battery: String) -> String:
+	return str(BATTERY_LABELS.get(battery, battery))
+
+
+## The batteries a row may offer for one side and target, from that target's eligible previews:
+## ["full"] when both batteries bear, otherwise the single battery that bears ([] when none).
+static func battery_options(previews: Array) -> Array[String]:
+	var can := {}
+	for p: GunneryTypes.ShotPreview in previews:
+		if p.can_fire and p.order != null:
+			can[p.order.battery] = true
+	if can.has(GunneryTypes.BATTERY_FULL):
+		return [GunneryTypes.BATTERY_FULL] as Array[String]
+	var options: Array[String] = []
+	for battery in [GunneryTypes.BATTERY_BOW, GunneryTypes.BATTERY_STERN]:
+		if can.has(battery):
+			options.append(battery)
+	return options
+
+
+## eligible_shots() output grouped as side -> target_id -> battery -> ShotPreview.
+static func options_by_target(shots: Array[GunneryTypes.ShotPreview]) -> Dictionary:
+	var by_side := {}
+	for shot in shots:
+		var side := shot.order.side
+		if not by_side.has(side):
+			by_side[side] = {}
+		if not by_side[side].has(shot.order.target_id):
+			by_side[side][shot.order.target_id] = {}
+		by_side[side][shot.order.target_id][shot.order.battery] = shot
+	return by_side
+
+
+## The battery a target row fires, given the row's battery_options and the side's current
+## targets per battery. A full-broadside target offers the free battery while the other one
+## fires elsewhere (a split side), else the full broadside (picking it moves both batteries).
+static func row_battery(options: Array[String], target_id: String, bow: String, stern: String) -> String:
+	if options.is_empty():
+		return ""
+	if options[0] != GunneryTypes.BATTERY_FULL:
+		return options[0]
+	var bow_elsewhere := bow != "" and bow != target_id
+	var stern_elsewhere := stern != "" and stern != target_id
+	if bow_elsewhere and not stern_elsewhere:
+		return GunneryTypes.BATTERY_STERN
+	if stern_elsewhere and not bow_elsewhere:
+		return GunneryTypes.BATTERY_BOW
+	return GunneryTypes.BATTERY_FULL
+
+
+## Whether the row (target_id, battery) is what the side currently fires.
+static func row_chosen(bow: String, stern: String, target_id: String, battery: String) -> bool:
+	match battery:
+		GunneryTypes.BATTERY_FULL:
+			return bow == target_id and stern == target_id
+		GunneryTypes.BATTERY_BOW:
+			return bow == target_id and stern != target_id
+		GunneryTypes.BATTERY_STERN:
+			return stern == target_id and bow != target_id
+	return false
+
+
+## A side's targets per battery after picking row (target_id, battery): "" holds fire; picking
+## the chosen row again holds that battery. `state` has "bow" and "stern"; `options` is
+## target_id -> battery_options(). A battery left free joins the other one when both bear on
+## its target (a full broadside instead of a half). Returns {"bow", "stern"}.
+static func choose_battery(state: Dictionary, target_id: String, battery: String, options: Dictionary) -> Dictionary:
+	var bow: String = str(state.get("bow", ""))
+	var stern: String = str(state.get("stern", ""))
+	if target_id == "":
+		return {"bow": "", "stern": ""}
+	var chosen := row_chosen(bow, stern, target_id, battery)
+	match battery:
+		GunneryTypes.BATTERY_FULL:
+			bow = "" if chosen else target_id
+			stern = bow
+		GunneryTypes.BATTERY_BOW:
+			bow = "" if chosen else target_id
+		GunneryTypes.BATTERY_STERN:
+			stern = "" if chosen else target_id
+	return join_free_battery(bow, stern, options)
+
+
+## A free battery joins the other one when both bear on its target (full broadside).
+static func join_free_battery(bow: String, stern: String, options: Dictionary) -> Dictionary:
+	if bow == "" and stern != "" and (options.get(stern, []) as Array).has(GunneryTypes.BATTERY_FULL):
+		bow = stern
+	elif stern == "" and bow != "" and (options.get(bow, []) as Array).has(GunneryTypes.BATTERY_FULL):
+		stern = bow
+	return {"bow": bow, "stern": stern}
+
+
+## A side's shots: one full broadside when both batteries name one target, else one per battery.
+static func side_shots(bow: String, stern: String) -> Array:
+	if bow != "" and bow == stern:
+		return [{"target_id": bow, "battery": GunneryTypes.BATTERY_FULL}]
+	var shots: Array = []
+	if bow != "":
+		shots.append({"target_id": bow, "battery": GunneryTypes.BATTERY_BOW})
+	if stern != "":
+		shots.append({"target_id": stern, "battery": GunneryTypes.BATTERY_STERN})
+	return shots
+
+
+## At most two targets per ship (7.A.4): `sides` is side -> {"bow", "stern", ...}. The side just
+## changed keeps its targets; the other side drops batteries aimed elsewhere, stern first.
+## Returns a deep copy.
+static func limit_targets(sides: Dictionary, changed_side: int) -> Dictionary:
+	var out: Dictionary = sides.duplicate(true)
+	var keep := {}
+	if out.has(changed_side):
+		for key in ["bow", "stern"]:
+			if str(out[changed_side][key]) != "":
+				keep[str(out[changed_side][key])] = true
+	var others := out.keys()
+	others.sort()
+	while _target_set(out).size() > 2:
+		var dropped := false
+		for side in others:
+			if side == changed_side:
+				continue
+			for key in ["stern", "bow"]:
+				var t := str(out[side][key])
+				if t != "" and not keep.has(t):
+					out[side][key] = ""
+					dropped = true
+					break
+			if dropped:
+				break
+		if not dropped:
+			break
+	return out
+
+
+static func _target_set(sides: Dictionary) -> Dictionary:
+	var targets := {}
+	for side in sides:
+		for key in ["bow", "stern"]:
+			if str(sides[side][key]) != "":
+				targets[str(sides[side][key])] = true
+	return targets
 
 
 ## What the main button does: "Fire 1 broadside" / "Fire 2 broadsides" / "Hold all fire".
@@ -238,12 +413,26 @@ static func ship_no_shot_reason(ship: ShipState, all_ships: Array, calculator, g
 	var target := nearest_enemy(ship, all_ships, grid)
 	if target and calculator:
 		for side in [ShipState.PORT, ShipState.STARBOARD]:
-			var order := GunneryTypes.FireOrder.new()
-			order.ship_id = ship.ship_id
-			order.side = side
-			order.target_id = target.ship_id
-			reasons.append(calculator.preview(order).reason)
+			var reason := _no_shot_preview(calculator, ship.ship_id, side, target.ship_id,
+				GunneryTypes.BATTERY_FULL)
+			# Only one battery bears: its own preview gives the real reason (crew, range...).
+			if reason.contains("needs both"):
+				for battery in [GunneryTypes.BATTERY_BOW, GunneryTypes.BATTERY_STERN]:
+					var single := _no_shot_preview(calculator, ship.ship_id, side, target.ship_id, battery)
+					if not single.contains("arc") and not single.contains("line of sight"):
+						reason = single
+						break
+			reasons.append(reason)
 	return no_shot_reason(reasons)
+
+
+static func _no_shot_preview(calculator, ship_id: String, side: int, target_id: String, battery: String) -> String:
+	var order := GunneryTypes.FireOrder.new()
+	order.ship_id = ship_id
+	order.side = side
+	order.target_id = target_id
+	order.battery = battery
+	return str(calculator.preview(order).reason)
 
 
 ## True while part of the list is hidden below the visible area (the "More below" hint shows).
@@ -251,24 +440,24 @@ static func more_below(scroll_value: float, page: float, content_height: float) 
 	return scroll_value + page < content_height - 1.0
 
 
-## Order dictionaries (FireOrder.to_dict()) for one ship, in side order. Sides on hold fire
-## (empty target_id) produce no order. `sides` is side -> {"target_id", "aim", "ammo"}.
+## Order dictionaries (FireOrder.to_dict()) for one ship, in side order. `sides` is
+## side -> Array of {"target_id", "battery", "aim", "ammo"} (an empty array holds fire).
 static func build_orders(ship_id: String, sides: Dictionary) -> Array:
 	var orders: Array = []
 	var keys := sides.keys()
 	keys.sort()
 	for side in keys:
-		var s: Dictionary = sides[side]
-		if str(s.get("target_id", "")) == "":
-			continue
-		var order := GunneryTypes.FireOrder.new()
-		order.ship_id = ship_id
-		order.side = int(side)
-		order.target_id = str(s["target_id"])
-		order.aim = str(s.get("aim", GunneryTypes.AIM_LOW))
-		order.ammo = str(s.get("ammo", GunneryTypes.AMMO_ROUND))
-		order.battery = str(s.get("battery", GunneryTypes.BATTERY_FULL))
-		orders.append(order.to_dict())
+		for s: Dictionary in sides[side]:
+			if str(s.get("target_id", "")) == "":
+				continue
+			var order := GunneryTypes.FireOrder.new()
+			order.ship_id = ship_id
+			order.side = int(side)
+			order.target_id = str(s["target_id"])
+			order.aim = str(s.get("aim", GunneryTypes.AIM_LOW))
+			order.ammo = str(s.get("ammo", GunneryTypes.AMMO_ROUND))
+			order.battery = str(s.get("battery", GunneryTypes.BATTERY_FULL))
+			orders.append(order.to_dict())
 	return orders
 
 
@@ -324,11 +513,11 @@ func setup(ship_ids: Array) -> int:
 		var ship_state: ShipState = GameState.get_ship(ship_id)
 		if ship_state == null:
 			continue
-		var shots_by_side := _one_shot_per_target(calculator.eligible_shots(ship_id))
-		if shots_by_side.is_empty():
+		var options := options_by_target(calculator.eligible_shots(ship_id))
+		if options.is_empty():
 			no_shot.append(ship_state)
 			continue
-		_add_ship(ship_state, shots_by_side)
+		_add_ship(ship_state, options)
 	var grid: HexGrid = GameState.fire_geometry.hex_grid if GameState.fire_geometry else null
 	for ship_state in no_shot:
 		_add_no_shot_row(no_shot_line(ship_state.ship_name,
@@ -340,33 +529,6 @@ func setup(ship_ids: Array) -> int:
 	if not _ship_order.is_empty():
 		focus_ship(_ship_order[0])
 	return _ship_order.size()
-
-
-## Per side, one shot per target: the full broadside when both batteries bear, otherwise the
-## better single battery. Battery choice in the panel is Task 14.
-static func _one_shot_per_target(shots: Array[GunneryTypes.ShotPreview]) -> Dictionary:
-	var best := {}   # side -> target_id -> ShotPreview
-	for shot in shots:
-		var side := shot.order.side
-		if not best.has(side):
-			best[side] = {}
-		var current: GunneryTypes.ShotPreview = best[side].get(shot.order.target_id)
-		var full := shot.order.battery == GunneryTypes.BATTERY_FULL
-		var current_full := current != null and current.order.battery == GunneryTypes.BATTERY_FULL
-		if current == null or (full and not current_full) or (full == current_full and shot.mgn > current.mgn):
-			best[side][shot.order.target_id] = shot
-	var shots_by_side := {}
-	for side in best:
-		shots_by_side[side] = best[side].values()
-	return shots_by_side
-
-
-## The battery the panel fires from `side` at `target_id` (see _one_shot_per_target).
-func _battery_for(ship_id: String, side: int, target_id: String) -> String:
-	for shot: GunneryTypes.ShotPreview in _ships[ship_id]["shots"].get(side, []):
-		if shot.order.target_id == target_id:
-			return shot.order.battery
-	return GunneryTypes.BATTERY_FULL
 
 
 ## The greyed no-shot lines, in list order.
@@ -392,30 +554,49 @@ func focus_ship(ship_id: String) -> void:
 	ship_focused.emit(ship_id)
 
 
-## Target ship ids currently chosen for a ship (hold-fire sides omitted).
+## Target ship ids currently chosen for a ship, each once (holding batteries omitted).
 func get_target_ids(ship_id: String) -> Array[String]:
 	var ids: Array[String] = []
 	if not _ships.has(ship_id):
 		return ids
-	for side in _ships[ship_id]["sides"]:
-		var target_id: String = _ships[ship_id]["sides"][side]["target_id"]
-		if target_id != "":
-			ids.append(target_id)
+	for target_id in _target_set(_ships[ship_id]["sides"]):
+		ids.append(str(target_id))
 	return ids
+
+
+## The single batteries ("bow", "stern") that fire from `side` of a ship; [] while it holds fire.
+func get_batteries(ship_id: String, side: int) -> Array[String]:
+	var batteries: Array[String] = []
+	if not _ships.has(ship_id) or not _ships[ship_id]["sides"].has(side):
+		return batteries
+	var state: Dictionary = _ships[ship_id]["sides"][side]
+	if state["bow"] != "":
+		batteries.append(GunneryTypes.BATTERY_BOW)
+	if state["stern"] != "":
+		batteries.append(GunneryTypes.BATTERY_STERN)
+	return batteries
 
 
 func get_all_orders() -> Array:
 	var orders: Array = []
 	for ship_id in _ship_order:
-		orders.append_array(build_orders(ship_id, _ships[ship_id]["sides"]))
+		orders.append_array(build_orders(ship_id, _shots_by_side(ship_id, _ships[ship_id]["sides"])))
 	return orders
 
 
-## Choose a broadside's target ("" holds fire). Same effect as clicking that row.
-func select_target(ship_id: String, side: int, target_id: String) -> void:
+## Pick a broadside's target row: `target_id` "" holds fire; `battery` "" means the battery the
+## row offers now (row_battery). Picking the chosen row again holds that battery. Same effect as
+## clicking the row.
+func select_target(ship_id: String, side: int, target_id: String, battery: String = "") -> void:
 	if not _ships.has(ship_id) or not _ships[ship_id]["sides"].has(side):
 		return
-	_ships[ship_id]["sides"][side]["target_id"] = target_id
+	if target_id != "" and battery == "":
+		var state: Dictionary = _ships[ship_id]["sides"][side]
+		battery = row_battery(_battery_options_for(ship_id, side, target_id), target_id,
+			state["bow"], state["stern"])
+		if battery == "":
+			return
+	_ships[ship_id]["sides"] = _apply_choice(ship_id, side, target_id, battery)
 	_on_side_changed(ship_id, side)
 	var row: Button = _ships[ship_id]["widgets"][side]["targets"].get(target_id)
 	if row:
@@ -469,7 +650,7 @@ func _clear() -> void:
 	instructions_label.text = footer_text(1, false)
 
 
-func _add_ship(ship_state: ShipState, shots_by_side: Dictionary) -> void:
+func _add_ship(ship_state: ShipState, options: Dictionary) -> void:
 	var ship_id := ship_state.ship_id
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 4)
@@ -484,20 +665,21 @@ func _add_ship(ship_state: ShipState, shots_by_side: Dictionary) -> void:
 	box.add_child(header)
 
 	var entry := {"name": ship_state.ship_name, "header": header,
-		"shots": shots_by_side, "sides": {}, "widgets": {}, "defaults": {}}
+		"options": options, "sides": {}, "widgets": {}, "defaults": {}}
 	_ships[ship_id] = entry
 	_ship_order.append(ship_id)
 
 	var names := target_names(GameState.get_all_ships())
 	var ranked_by_side := {}
 	for side in [ShipState.PORT, ShipState.STARBOARD]:
-		if not shots_by_side.has(side):
+		if not options.has(side):
 			continue
-		# Rank with the defaults the server would preview (low unless forced, roundshot, one target).
+		# Rank by each target's preferred battery (full broadside when both bear), one target.
 		var ranked_entries: Array = []
-		for shot: GunneryTypes.ShotPreview in shots_by_side[side]:
-			var target_id := shot.order.target_id
-			ranked_entries.append({"target_id": target_id, "mgn": shot.mgn,
+		for target_id: String in options[side]:
+			var battery: String = _battery_options_for(ship_id, side, target_id)[0]
+			var shot: GunneryTypes.ShotPreview = options[side][target_id][battery]
+			ranked_entries.append({"target_id": target_id, "mgn": shot.mgn, "battery": battery,
 				"range": shot.range_hexes, "name": str(names.get(target_id, target_id))})
 		ranked_by_side[side] = rank_targets(ranked_entries)
 	var firing_side := default_side(ranked_by_side)
@@ -505,10 +687,13 @@ func _add_ship(ship_state: ShipState, shots_by_side: Dictionary) -> void:
 		if not ranked_by_side.has(side):
 			continue
 		var ranked: Array = ranked_by_side[side]
-		var start_target: String = str(ranked[0]["target_id"]) if side == firing_side else ""
-		entry["defaults"][side] = start_target
-		entry["sides"][side] = {"target_id": start_target, "aim": GunneryTypes.AIM_LOW,
-			"ammo": GunneryTypes.AMMO_ROUND, "want_high": false, "want_dismantling": false}
+		var start := {"bow": "", "stern": ""}
+		if side == firing_side:
+			start = choose_battery(start, str(ranked[0]["target_id"]), str(ranked[0]["battery"]),
+				_side_options(ship_id, side))
+		entry["defaults"][side] = start.duplicate()
+		entry["sides"][side] = {"bow": start["bow"], "stern": start["stern"],
+			"want_high": false, "want_dismantling": false}
 		entry["widgets"][side] = _build_side(box, ship_id, side, ranked)
 	box.add_child(HSeparator.new())
 
@@ -542,11 +727,10 @@ func _build_side(parent: VBoxContainer, ship_id: String, side: int, ranked: Arra
 	var rows := VBoxContainer.new()
 	rows.add_theme_constant_override("separation", 2)
 	parent.add_child(rows)
-	var group := ButtonGroup.new()
 	var targets := {}
 	for row in ranked:
-		targets[str(row["target_id"])] = _target_row(rows, group, ship_id, side, str(row["target_id"]))
-	targets[""] = _target_row(rows, group, ship_id, side, "")
+		targets[str(row["target_id"])] = _target_row(rows, ship_id, side, str(row["target_id"]))
+	targets[""] = _target_row(rows, ship_id, side, "")
 
 	var breakdown := Label.new()
 	breakdown.theme_type_variation = &"SecondaryLabel"
@@ -562,11 +746,10 @@ func _build_side(parent: VBoxContainer, ship_id: String, side: int, ranked: Arra
 		"breakdown": breakdown}
 
 
-func _target_row(parent: VBoxContainer, group: ButtonGroup, ship_id: String, side: int,
-		target_id: String) -> Button:
+## A target row. Not in a ButtonGroup: on a split side two rows (bow and stern) are chosen.
+func _target_row(parent: VBoxContainer, ship_id: String, side: int, target_id: String) -> Button:
 	var button := Button.new()
 	button.toggle_mode = true
-	button.button_group = group
 	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	button.theme_type_variation = &"SecondaryButton"
@@ -592,6 +775,79 @@ func _toggle_row(parent: VBoxContainer, text: String) -> Dictionary:
 	row.add_child(note)
 	parent.add_child(row)
 	return {"button": button, "note": note}
+
+
+# ============================================================================
+# Order assembly (read-only: options from eligible_shots, numbers from preview_orders)
+# ============================================================================
+
+## battery_options() for one side and target of a ship.
+func _battery_options_for(ship_id: String, side: int, target_id: String) -> Array[String]:
+	var by_target: Dictionary = _ships[ship_id]["options"].get(side, {})
+	return battery_options((by_target.get(target_id, {}) as Dictionary).values())
+
+
+## target_id -> battery_options() for one side of a ship.
+func _side_options(ship_id: String, side: int) -> Dictionary:
+	var result := {}
+	for target_id in _ships[ship_id]["options"].get(side, {}):
+		result[target_id] = _battery_options_for(ship_id, side, target_id)
+	return result
+
+
+## The ship's sides after picking row (target_id, battery) on `side`: choose_battery, then at
+## most two targets (limit_targets), then free batteries join full broadsides. A copy.
+func _apply_choice(ship_id: String, side: int, target_id: String, battery: String) -> Dictionary:
+	var sides: Dictionary = _ships[ship_id]["sides"].duplicate(true)
+	var chosen := choose_battery(sides[side], target_id, battery, _side_options(ship_id, side))
+	sides[side]["bow"] = chosen["bow"]
+	sides[side]["stern"] = chosen["stern"]
+	sides = limit_targets(sides, side)
+	for s in sides:
+		var joined := join_free_battery(sides[s]["bow"], sides[s]["stern"], _side_options(ship_id, s))
+		sides[s]["bow"] = joined["bow"]
+		sides[s]["stern"] = joined["stern"]
+	return sides
+
+
+## side -> [{"target_id", "battery", "aim", "ammo"}] for a ship's `sides`, aim and ammunition as
+## the order will carry them at each target's range (forced high, roundshot beyond 7 hexes).
+func _shots_by_side(ship_id: String, sides: Dictionary) -> Dictionary:
+	var result := {}
+	for side in sides:
+		var state: Dictionary = sides[side]
+		var shots: Array = []
+		for shot: Dictionary in side_shots(state["bow"], state["stern"]):
+			var probe := _option_preview(ship_id, side, shot["target_id"], shot["battery"])
+			var range_hexes := probe.range_hexes if probe else 0
+			var high_only := probe.high_only if probe else false
+			var wanted_aim := GunneryTypes.AIM_HIGH if state["want_high"] else GunneryTypes.AIM_LOW
+			shot["aim"] = effective_aim(wanted_aim, high_only)
+			shot["ammo"] = effective_ammo(state["want_dismantling"], range_hexes)
+			shots.append(shot)
+		result[side] = shots
+	return result
+
+
+func _option_preview(ship_id: String, side: int, target_id: String, battery: String) -> GunneryTypes.ShotPreview:
+	var by_target: Dictionary = _ships[ship_id]["options"].get(side, {})
+	return (by_target.get(target_id, {}) as Dictionary).get(battery)
+
+
+## Previews of a ship's whole order set as they will resolve (GunneryCalculator.preview_orders).
+func _preview_sides(ship_id: String, sides: Dictionary) -> Array[GunneryTypes.ShotPreview]:
+	var orders: Array[GunneryTypes.FireOrder] = []
+	for d in build_orders(ship_id, _shots_by_side(ship_id, sides)):
+		orders.append(GunneryTypes.FireOrder.from_dict(d))
+	return GameState.gunnery_calculator.preview_orders(orders)
+
+
+static func _find_preview(previews: Array[GunneryTypes.ShotPreview], side: int, target_id: String,
+		battery: String) -> GunneryTypes.ShotPreview:
+	for p in previews:
+		if p.order.side == side and p.order.target_id == target_id and p.order.battery == battery:
+			return p
+	return null
 
 
 # ============================================================================
@@ -623,55 +879,57 @@ func targets_changed() -> bool:
 	for ship_id in _ship_order:
 		var entry: Dictionary = _ships[ship_id]
 		for side in entry["sides"]:
-			if entry["sides"][side]["target_id"] != entry["defaults"].get(side, ""):
-				return true
+			var default: Dictionary = entry["defaults"].get(side, {"bow": "", "stern": ""})
+			for key in ["bow", "stern"]:
+				if entry["sides"][side][key] != default[key]:
+					return true
 	return false
 
 
-## True while some listed ship has different targets on its two broadsides.
+## True while some listed ship names two different targets (the two-target modifier applies).
 func any_ship_fires_both() -> bool:
 	for ship_id in _ship_order:
-		var ids := get_target_ids(ship_id)
-		if ids.size() > 1 and ids[0] != ids[1]:
+		if get_target_ids(ship_id).size() > 1:
 			return true
 	return false
 
 
-## Re-query previews for every broadside of a ship and refresh rows, toggles, notes and breakdowns.
-## The player's wishes (want_high, want_dismantling) are kept apart from what the order will
-## actually be, so a forced high aim or a roundshot fallback never sticks to another target.
+## Re-query previews for the ship's order set and refresh rows, toggles, notes and breakdowns.
+## Chosen rows show the preview of the current order set; any other row shows the order set
+## that picking it would give. The player's wishes (want_high, want_dismantling) are kept apart
+## from what the orders will be, so a forced high aim or a roundshot fallback never sticks.
 func _refresh_ship(ship_id: String) -> void:
 	var entry: Dictionary = _ships[ship_id]
 	var sides: Dictionary = entry["sides"]
 	var names := target_names(GameState.get_all_ships())
+	var current := _preview_sides(ship_id, sides)
+	var shots := _shots_by_side(ship_id, sides)
 	for side in sides:
 		var state: Dictionary = sides[side]
 		var widgets: Dictionary = entry["widgets"][side]
-		# Firing both broadsides at different targets costs the two-target modifier on each shot.
-		var other_target := ""
-		for other_side in sides:
-			if other_side != side:
-				other_target = sides[other_side]["target_id"]
-		state["battery"] = _battery_for(ship_id, side, state["target_id"])
-
 		for target_id: String in widgets["targets"]:
 			var button: Button = widgets["targets"][target_id]
-			var chosen: bool = target_id == state["target_id"]
+			if target_id == "":
+				var holding: bool = state["bow"] == "" and state["stern"] == ""
+				button.set_pressed_no_signal(holding)
+				button.text = row_marker(holding) + "Hold fire"
+				continue
+			var battery := row_battery(_battery_options_for(ship_id, side, target_id), target_id,
+				state["bow"], state["stern"])
+			var chosen := row_chosen(state["bow"], state["stern"], target_id, battery)
+			var previews := current if chosen else _preview_sides(ship_id, _apply_choice(ship_id, side, target_id, battery))
+			var p := _find_preview(previews, side, target_id, battery)
+			var target_name := str(names.get(target_id, target_id))
+			var text := option_text(target_name, p, battery) if p and p.can_fire \
+				else "%s%s%s" % [target_name, SEPARATOR, p.reason if p else "cannot fire"]
 			button.set_pressed_no_signal(chosen)
-			var text := "Hold fire"
-			if target_id != "":
-				var row_two := other_target != "" and other_target != target_id
-				var row_preview := _preview_for(ship_id, side, target_id, state["want_dismantling"], row_two)
-				text = option_text(str(names.get(target_id, target_id)), row_preview)
 			button.text = row_marker(chosen) + text
 
-		var holding: bool = state["target_id"] == ""
 		var high: CheckButton = widgets["high"]
 		var dismantling: CheckButton = widgets["dismantling"]
 		var breakdown: Label = widgets["breakdown"]
-		if holding:
-			state["aim"] = GunneryTypes.AIM_LOW
-			state["ammo"] = GunneryTypes.AMMO_ROUND
+		var side_shot_list: Array = shots.get(side, [])
+		if side_shot_list.is_empty():
 			high.disabled = true
 			high.set_pressed_no_signal(state["want_high"])
 			dismantling.disabled = true
@@ -681,34 +939,32 @@ func _refresh_ship(ship_id: String) -> void:
 			breakdown.text = "This broadside holds fire."
 			continue
 
-		var two_targets: bool = other_target != "" and other_target != state["target_id"]
-		var p := _preview_for(ship_id, side, state["target_id"], state["want_dismantling"], two_targets)
-		state["ammo"] = effective_ammo(state["want_dismantling"], p.range_hexes)
-		var wanted_aim := GunneryTypes.AIM_HIGH if state["want_high"] else GunneryTypes.AIM_LOW
-		state["aim"] = effective_aim(wanted_aim, p.high_only)
-		high.disabled = p.high_only
-		high.set_pressed_no_signal(state["aim"] == GunneryTypes.AIM_HIGH)
-		widgets["high_note"].text = aim_note(p.high_only)
-		dismantling.disabled = not dismantling_allowed(p.range_hexes)
-		dismantling.set_pressed_no_signal(state["ammo"] == GunneryTypes.AMMO_DISMANTLING)
-		widgets["dismantling_note"].text = dismantling_note(p.range_hexes, state["want_dismantling"])
-		breakdown.text = breakdown_text(p)
-
-
-## Preview a shot with the ammunition the order would actually carry at that target's range.
-func _preview_for(ship_id: String, side: int, target_id: String, want_dismantling: bool,
-		two_targets: bool) -> GunneryTypes.ShotPreview:
-	var order := GunneryTypes.FireOrder.new()
-	order.ship_id = ship_id
-	order.side = side
-	order.target_id = target_id
-	order.ammo = GunneryTypes.AMMO_ROUND
-	order.battery = _battery_for(ship_id, side, target_id)
-	var p: GunneryTypes.ShotPreview = GameState.gunnery_calculator.preview(order, two_targets)
-	if want_dismantling and dismantling_allowed(p.range_hexes):
-		order.ammo = GunneryTypes.AMMO_DISMANTLING
-		p = GameState.gunnery_calculator.preview(order, two_targets)
-	return p
+		var all_high_only := true
+		var any_high_only := false
+		var all_high := true
+		var any_dismantling := false
+		var any_dismantling_allowed := false
+		var max_range := 0
+		var lines: Array[String] = []
+		for shot: Dictionary in side_shot_list:
+			var p := _find_preview(current, side, shot["target_id"], shot["battery"])
+			if p == null:
+				continue
+			all_high_only = all_high_only and p.high_only
+			any_high_only = any_high_only or p.high_only
+			all_high = all_high and shot["aim"] == GunneryTypes.AIM_HIGH
+			any_dismantling = any_dismantling or shot["ammo"] == GunneryTypes.AMMO_DISMANTLING
+			any_dismantling_allowed = any_dismantling_allowed or dismantling_allowed(p.range_hexes)
+			max_range = maxi(max_range, p.range_hexes)
+			var prefix := "%s: " % battery_label(shot["battery"]) if side_shot_list.size() > 1 else ""
+			lines.append(prefix + breakdown_text(p))
+		high.disabled = all_high_only
+		high.set_pressed_no_signal(all_high)
+		widgets["high_note"].text = aim_note(any_high_only)
+		dismantling.disabled = not any_dismantling_allowed
+		dismantling.set_pressed_no_signal(any_dismantling)
+		widgets["dismantling_note"].text = dismantling_note(max_range, state["want_dismantling"])
+		breakdown.text = "\n".join(lines)
 
 
 func _on_fire_pressed() -> void:

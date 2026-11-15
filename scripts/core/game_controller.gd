@@ -1290,7 +1290,19 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 	hex_overlay.clear_arcs()
 	var geometry: FireGeometry = GameState.fire_geometry
 	for side in [ShipState.PORT, ShipState.STARBOARD]:
-		hex_overlay.show_arc(broadside_arc(geometry, ship_state, side), side)
+		# The chosen batteries' arc is highlighted (rim); the rest of the broadside's arc is faint.
+		var whole := broadside_arc(geometry, ship_state, side)
+		var batteries: Array[String] = fire_panel.get_batteries(ship_id, side)
+		if batteries.is_empty():
+			hex_overlay.show_arc(whole, side)
+			continue
+		var chosen := battery_arc(geometry, ship_state, side, batteries)
+		var rest: Array[Vector2i] = []
+		for h in whole:
+			if not chosen.has(h):
+				rest.append(h)
+		hex_overlay.show_arc(chosen, side)
+		hex_overlay.show_arc(rest, side, false)
 	var target_hexes: Array[Vector2i] = []
 	for target_id in fire_panel.get_target_ids(ship_id):
 		var target := GameState.get_ship(target_id)
@@ -1302,10 +1314,19 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 
 ## Union of the bow and stern battery arcs on one side, without the ship's own hexes.
 static func broadside_arc(geometry: FireGeometry, ship_state: ShipState, side: int) -> Array[Vector2i]:
+	return battery_arc(geometry, ship_state, side,
+		[GunneryTypes.BATTERY_BOW, GunneryTypes.BATTERY_STERN] as Array[String])
+
+
+## The arc of the given batteries ("bow" fires from the bow hex, "stern" from the stern hex;
+## both = the full broadside) on one side, without the ship's own hexes.
+static func battery_arc(geometry: FireGeometry, ship_state: ShipState, side: int,
+		batteries: Array[String]) -> Array[Vector2i]:
 	var own := ship_state.occupied_hexes()
 	var result: Array[Vector2i] = []
-	for battery in own:
-		for h in geometry.broadside_hexes(battery, ship_state.facing, side, FireGeometry.MAX_RANGE):
+	for battery in batteries:
+		var battery_hex: Vector2i = own[0] if battery == GunneryTypes.BATTERY_BOW else own[1]
+		for h in geometry.broadside_hexes(battery_hex, ship_state.facing, side, FireGeometry.MAX_RANGE):
 			if not result.has(h) and not own.has(h):
 				result.append(h)
 	return result

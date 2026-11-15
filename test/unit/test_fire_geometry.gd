@@ -211,3 +211,25 @@ func test_arc_hexes_union_of_batteries() -> void:
 	var stern_only := HexGrid.stern_of(Vector2i.ZERO, 0) + _steps(2, 3)
 	assert_true(arc.has(stern_only), "a hex only the stern battery covers is drawn")
 	assert_false(geo.broadside_hexes(Vector2i.ZERO, 0, ShipState.STARBOARD).has(stern_only))
+
+
+func test_battery_arc_is_the_chosen_battery_only() -> void:
+	var ship := ShipState.new()
+	ship.hex_position = Vector2i(0, 0)
+	ship.facing = 0
+	var own := ship.occupied_hexes()
+	var bow: Array[Vector2i] = GameControllerScript.battery_arc(geo, ship, ShipState.STARBOARD, ["bow"] as Array[String])
+	var stern: Array[Vector2i] = GameControllerScript.battery_arc(geo, ship, ShipState.STARBOARD, ["stern"] as Array[String])
+	for h in bow:
+		assert_true(geo.in_battery_arc(own[0], 0, ShipState.STARBOARD, h), "bow arc hex %s bears from the bow" % h)
+		assert_false(own.has(h))
+	for h in stern:
+		assert_true(geo.in_battery_arc(own[1], 0, ShipState.STARBOARD, h), "stern arc hex %s bears from the stern" % h)
+	var stern_only := HexGrid.stern_of(Vector2i.ZERO, 0) + _steps(2, 3)
+	assert_true(stern.has(stern_only))
+	assert_false(bow.has(stern_only), "the bow battery's arc leaves out a stern-only hex")
+	var full: Array[Vector2i] = GameControllerScript.broadside_arc(geo, ship, ShipState.STARBOARD)
+	for h in bow + stern:
+		assert_true(full.has(h), "full = union")
+	assert_eq(full.size(), GameControllerScript.battery_arc(geo, ship, ShipState.STARBOARD,
+		["bow", "stern"] as Array[String]).size())

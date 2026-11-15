@@ -108,6 +108,20 @@ func test_arc_on_the_map_uses_the_swatch_colour() -> void:
 	assert_eq(rim_colors, [BroadsideColors.color(ShipState.PORT)])
 
 
+func test_arc_outside_the_chosen_battery_has_no_rim() -> void:
+	var overlay = load("res://scripts/view/hex_overlay.gd").new()
+	add_child_autofree(overlay)
+	overlay.arc_grid = HexGrid.new()
+	var hexes: Array[Vector2i] = [Vector2i(1, 0), Vector2i(2, 0)]
+	overlay.show_arc(hexes, ShipState.STARBOARD, false)
+	var rims := 0
+	for child in overlay.arcs_node.get_children():
+		if child.name.begins_with("ArcRim"):
+			rims += 1
+	assert_eq(rims, 0, "faint fill only")
+	assert_eq(overlay.arcs_node.get_child_count(), 2, "one fill per hex")
+
+
 func test_modifier_lines_use_labels_and_signed_values() -> void:
 	var p := _preview(3, 9)
 	p.modifiers = [{"name": "rake", "value": 2}, {"name": "two_targets", "value": -12}]
@@ -134,8 +148,8 @@ func test_effective_aim_is_locked_high_when_high_only() -> void:
 
 func test_build_orders_skips_held_sides_and_uses_order_dicts() -> void:
 	var sides := {
-		0: {"target_id": "", "aim": "low", "ammo": "round"},
-		1: {"target_id": "foe", "aim": "high", "ammo": "dismantling"},
+		0: [],
+		1: [{"target_id": "foe", "battery": "full", "aim": "high", "ammo": "dismantling"}],
 	}
 	var orders: Array = FirePanel.build_orders("me", sides)
 	assert_eq(orders.size(), 1)
@@ -145,8 +159,8 @@ func test_build_orders_skips_held_sides_and_uses_order_dicts() -> void:
 
 func test_build_orders_two_sides_in_side_order() -> void:
 	var sides := {
-		1: {"target_id": "b", "aim": "low", "ammo": "round"},
-		0: {"target_id": "a", "aim": "low", "ammo": "round"},
+		1: [{"target_id": "b", "battery": "full", "aim": "low", "ammo": "round"}],
+		0: [{"target_id": "a", "battery": "full", "aim": "low", "ammo": "round"}],
 	}
 	var orders: Array = FirePanel.build_orders("me", sides)
 	assert_eq(orders.size(), 2)
@@ -155,7 +169,7 @@ func test_build_orders_two_sides_in_side_order() -> void:
 
 
 func test_build_orders_all_hold_is_empty() -> void:
-	var sides := {0: {"target_id": "", "aim": "low", "ammo": "round"}}
+	var sides := {0: []}
 	assert_eq(FirePanel.build_orders("me", sides).size(), 0)
 
 
@@ -204,10 +218,11 @@ func test_footer_follows_the_selection() -> void:
 
 class FakeCalculator:
 	extends RefCounted
-	var reasons := {}  # side -> reason
+	var reasons := {}  # side -> reason, or "side:battery" -> reason (takes precedence)
 	func preview(order: GunneryTypes.FireOrder, _two := false) -> GunneryTypes.ShotPreview:
 		var p := GunneryTypes.ShotPreview.new()
-		p.reason = str(reasons.get(order.side, ""))
+		var key := "%d:%s" % [order.side, order.battery]
+		p.reason = str(reasons.get(key, reasons.get(order.side, "")))
 		return p
 
 
@@ -249,3 +264,144 @@ func test_more_below_hint_only_while_content_is_hidden_below() -> void:
 	assert_true(FirePanel.more_below(400, 300, 800))
 	assert_false(FirePanel.more_below(500, 300, 800), "scrolled to the end")
 	assert_false(FirePanel.more_below(0, 300, 280), "everything fits")
+
+
+func test_ship_no_shot_reason_comes_from_the_bearing_battery() -> void:
+	var own := _state("o", "HMS Phoebe", 0, Vector2i(0, 0))
+	var foe := _state("f", "Foe", 1, Vector2i(3, 0))
+	var arc := "target is not in that broadside's arc"
+	var calc := FakeCalculator.new()
+	calc.reasons = {ShipState.PORT: arc,
+		"1:full": "only the bow battery bears: a full broadside needs both",
+		"1:bow": "no sailor sections able to fire",
+		"1:stern": arc}
+	var grid := HexGrid.new(1.0)
+	assert_eq(FirePanel.ship_no_shot_reason(own, [own, foe], calc, grid), "no crew to serve the guns")
+	calc.reasons["1:bow"] = "target is out of range (16 hexes, maximum 15)"
+	assert_eq(FirePanel.ship_no_shot_reason(own, [own, foe], calc, grid), "out of range")
+
+
+# --- Batteries -------------------------------------------------------------------------------
+
+func _shot(side: int, target_id: String, battery: String, mgn: int = 10) -> GunneryTypes.ShotPreview:
+	var p := _preview(3, mgn)
+	p.order = GunneryTypes.FireOrder.new()
+	p.order.side = side
+	p.order.target_id = target_id
+	p.order.battery = battery
+	p.batteries = 2 if battery == "full" else 1
+	return p
+
+
+func test_battery_label_text() -> void:
+	assert_eq(FirePanel.battery_label("full"), "Full broadside")
+	assert_eq(FirePanel.battery_label("bow"), "Bow battery")
+	assert_eq(FirePanel.battery_label("stern"), "Stern battery")
+
+
+func test_options_offer_full_only_when_both_bear() -> void:
+	var both: Array = [_shot(0, "a", "full"), _shot(0, "a", "bow"), _shot(0, "a", "stern")]
+	assert_eq(FirePanel.battery_options(both), ["full"] as Array[String])
+	assert_eq(FirePanel.battery_options([_shot(0, "a", "bow")]), ["bow"] as Array[String])
+	assert_eq(FirePanel.battery_options([_shot(0, "a", "stern")]), ["stern"] as Array[String])
+	var refused := _shot(0, "a", "full")
+	refused.can_fire = false
+	assert_eq(FirePanel.battery_options([refused, _shot(0, "a", "stern")]), ["stern"] as Array[String])
+	assert_eq(FirePanel.battery_options([]), [] as Array[String])
+
+
+func test_breakdown_shows_half_broadside() -> void:
+	var p := _shot(0, "a", "bow", 11)
+	p.bgn = 18
+	p.modifiers = [{"name": "crew_quality", "value": 1}, {"name": "half_broadside", "value": -8}]
+	var text: String = FirePanel.breakdown_text(p)
+	assert_string_contains(text, "Half broadside −8")
+	assert_string_contains(text, "= 11")
+	assert_false(text.contains("half broadside -8"), "shown once")
+
+
+func test_breakdown_without_half_broadside_modifier_does_not_mention_it() -> void:
+	# 7.C.12g: with two targets the calculator gives -12 and no -8; the text follows the modifiers.
+	var p := _shot(0, "a", "bow", 6)
+	p.bgn = 18
+	p.modifiers = [{"name": "two_targets", "value": -12}]
+	assert_false(FirePanel.breakdown_text(p).contains("alf broadside"))
+
+
+func test_option_text_names_the_battery() -> void:
+	assert_eq(FirePanel.option_text("Foe", _preview(3, 9), "bow"), "Foe — Bow battery — range 3 — gunfire 9")
+
+
+func test_options_by_target_groups_shots_per_side_and_target() -> void:
+	var shots: Array[GunneryTypes.ShotPreview] = [_shot(0, "a", "full"), _shot(0, "a", "bow"),
+		_shot(0, "a", "stern"), _shot(1, "b", "stern")]
+	var by: Dictionary = FirePanel.options_by_target(shots)
+	assert_eq(by.keys().size(), 2)
+	assert_eq(by[0]["a"].keys(), ["full", "bow", "stern"])
+	assert_eq(by[1]["b"].keys(), ["stern"])
+
+
+func test_row_battery_full_unless_the_other_battery_fires_elsewhere() -> void:
+	var full: Array[String] = ["full"]
+	assert_eq(FirePanel.row_battery(full, "a", "", ""), "full")
+	assert_eq(FirePanel.row_battery(full, "a", "a", "a"), "full")
+	assert_eq(FirePanel.row_battery(full, "a", "x", ""), "stern", "bow fires at x: the stern is free")
+	assert_eq(FirePanel.row_battery(full, "a", "", "x"), "bow")
+	assert_eq(FirePanel.row_battery(full, "a", "x", "y"), "full", "picking it moves both batteries")
+	assert_eq(FirePanel.row_battery(["bow"] as Array[String], "a", "", "x"), "bow")
+
+
+func test_choose_full_bow_and_split() -> void:
+	var opts := {"a": ["bow"] as Array[String], "b": ["stern"] as Array[String], "c": ["full"] as Array[String]}
+	var s: Dictionary = FirePanel.choose_battery({"bow": "", "stern": ""}, "c", "full", opts)
+	assert_eq(s, {"bow": "c", "stern": "c"})
+	s = FirePanel.choose_battery(s, "a", "bow", opts)
+	assert_eq(s, {"bow": "a", "stern": "c"}, "the bow leaves the full broadside; the stern stays on c")
+	s = FirePanel.choose_battery(s, "b", "stern", opts)
+	assert_eq(s, {"bow": "a", "stern": "b"}, "split: bow at a, stern at b")
+	s = FirePanel.choose_battery(s, "b", "stern", opts)
+	assert_eq(s, {"bow": "a", "stern": ""}, "picking a chosen row again holds that battery")
+	s = FirePanel.choose_battery(s, "", "", opts)
+	assert_eq(s, {"bow": "", "stern": ""}, "hold fire")
+
+
+func test_choose_a_free_battery_joins_a_full_broadside_target() -> void:
+	var opts := {"a": ["bow"] as Array[String], "c": ["full"] as Array[String]}
+	var s: Dictionary = FirePanel.choose_battery({"bow": "a", "stern": ""}, "c", "stern", opts)
+	assert_eq(s, {"bow": "a", "stern": "c"})
+	s = FirePanel.choose_battery(s, "a", "bow", opts)
+	assert_eq(s, {"bow": "c", "stern": "c"}, "with the bow free, both fire at c: a full broadside")
+
+
+func test_side_shots_full_when_both_batteries_name_one_target() -> void:
+	assert_eq(FirePanel.side_shots("a", "a"), [{"target_id": "a", "battery": "full"}])
+	assert_eq(FirePanel.side_shots("a", "b"),
+		[{"target_id": "a", "battery": "bow"}, {"target_id": "b", "battery": "stern"}])
+	assert_eq(FirePanel.side_shots("", "b"), [{"target_id": "b", "battery": "stern"}])
+	assert_eq(FirePanel.side_shots("", ""), [])
+
+
+func test_limit_targets_keeps_at_most_two_per_ship() -> void:
+	var sides := {0: {"bow": "a", "stern": "b"}, 1: {"bow": "c", "stern": "c"}}
+	var limited: Dictionary = FirePanel.limit_targets(sides, 1)
+	assert_eq(limited[1], {"bow": "c", "stern": "c"}, "the side just changed is kept")
+	assert_eq(limited[0], {"bow": "a", "stern": ""}, "the other side drops its stern target first")
+	var fine := {0: {"bow": "a", "stern": "b"}, 1: {"bow": "a", "stern": "a"}}
+	assert_eq(FirePanel.limit_targets(fine, 1), fine)
+
+
+func test_panel_orders_pass_validation() -> void:
+	# Every state choose_battery + limit_targets reach names at most two targets per ship
+	# (side_shots already turns bow+stern at one target into a full broadside).
+	var opts := {"a": ["bow"] as Array[String], "b": ["stern"] as Array[String], "c": ["full"] as Array[String]}
+	var clicks := [["a", "bow"], ["b", "stern"], ["c", "full"], ["c", "stern"], ["a", "bow"], ["b", "stern"]]
+	var sides := {0: {"bow": "", "stern": ""}, 1: {"bow": "", "stern": ""}}
+	for side in [0, 1]:
+		for click in clicks:
+			sides[side] = FirePanel.choose_battery(sides[side], click[0], click[1], opts)
+			sides = FirePanel.limit_targets(sides, side)
+			var targets := {}
+			for s in sides:
+				for shot in FirePanel.side_shots(sides[s]["bow"], sides[s]["stern"]):
+					targets[shot["target_id"]] = true
+			assert_true(targets.size() <= 2, "at most two targets after %s" % [click])
