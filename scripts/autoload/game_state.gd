@@ -44,6 +44,8 @@ var network_sync: NetworkSync = null
 var movement_plotting_controller: MovementPlottingController = null
 var movement_resolver: MovementResolver = null
 var stub_ai: StubAI = null
+## Developer UI requests (server only, debug builds only).
+var dev_commands: DevCommands = null
 
 # State objects (authoritative on server, read-only on client)
 var environment: EnvironmentState = null  # Environmental conditions
@@ -116,6 +118,7 @@ func _initialize_server_controllers() -> void:
 	movement_plotting_controller = MovementPlottingController.new(self)
 	movement_resolver = MovementResolver.new(self)
 	stub_ai = StubAI.new(self)
+	dev_commands = DevCommands.new(self)
 
 	# Add Node-based controllers to the tree so _ready/_process fire and they're freed on exit
 	add_child(phase_controller)

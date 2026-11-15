@@ -373,25 +373,19 @@ func _add_readonly_field(container: Control, label_text: String, value: String) 
 ## Field Change Handlers
 
 func _on_environment_field_changed(property: String, value) -> void:
-	if not game_state or not game_state.environment_controller:
+	if not game_state or not game_state.dev_commands:
+		_log("ERROR: developer commands are only available on the server")
 		return
-	game_state.environment_controller.set_environment_property(property, value)
-	_log("Environment.%s = %s" % [property, value])
+	var reason: String = game_state.dev_commands.set_environment_property(property, value)
+	_log("Environment.%s = %s" % [property, value] if reason == "" else "ERROR: " + reason)
 
 func _on_ship_field_changed(ship: Object, property: String, value) -> void:
-	if not game_state or not game_state.ship_controller:
+	if not game_state or not game_state.dev_commands:
+		_log("ERROR: developer commands are only available on the server")
 		return
 	var sid: String = ship.ship_id
-	match property:
-		"facing":
-			game_state.ship_controller.set_ship_facing(sid, value)
-		"speed":
-			game_state.ship_controller.set_ship_speed(sid, value)
-		"sail_state":
-			game_state.ship_controller.set_sail_state(sid, value)
-		_:
-			push_warning("DeveloperUI: No controller method for ship property '%s'" % property)
-	_log("Ship %s.%s = %s" % [sid, property, value])
+	var reason: String = game_state.dev_commands.set_ship_property(sid, property, value)
+	_log("Ship %s.%s = %s" % [sid, property, value] if reason == "" else "ERROR: " + reason)
 
 ## Controls
 
@@ -422,28 +416,31 @@ func _on_hex_labels_toggled(enabled: bool) -> void:
 	_log("Hex coordinate labels: %s" % ("ON" if enabled else "OFF"))
 
 func _on_advance_phase_pressed() -> void:
-	if not GameState.is_server:
-		_log("ERROR: Cannot advance phase on client")
+	if not game_state or not game_state.dev_commands:
+		_log("ERROR: developer commands are only available on the server")
 		return
-	if game_state and game_state.phase_controller:
-		game_state.phase_controller.advance_phase()
-		_log("Advanced phase")
-	else:
-		_log("ERROR: No phase controller available")
+	var reason: String = game_state.dev_commands.advance_phase()
+	_log("Advanced phase" if reason == "" else "ERROR: " + reason)
 
 func _on_advance_turn_pressed() -> void:
-	if not GameState.is_server:
-		_log("ERROR: Cannot advance turn on client")
+	if not game_state or not game_state.dev_commands:
+		_log("ERROR: developer commands are only available on the server")
 		return
-	if game_state and game_state.phase_controller:
-		# Keep advancing phases until we reach the next turn
-		var start_turn = game_state.current_turn
-		while game_state.current_turn == start_turn:
-			game_state.phase_controller.advance_phase()
-			await get_tree().process_frame  # Allow phase to process
-		_log("Advanced to turn %d" % game_state.current_turn)
+	# Keep advancing phases until we reach the next turn
+	# (bounded: a phase that waits for the player, such as POST_COMBAT, ignores advance_phase)
+	var start_turn = game_state.current_turn
+	for _i in 40:
+		if game_state.current_turn != start_turn:
+			break
+		var reason: String = game_state.dev_commands.advance_phase()
+		if reason != "":
+			_log("ERROR: " + reason)
+			return
+		await get_tree().process_frame  # Allow phase to process
+	if game_state.current_turn == start_turn:
+		_log("Turn did not advance: phase %s is waiting for the player" % game_state.current_phase)
 	else:
-		_log("ERROR: No phase controller available")
+		_log("Advanced to turn %d" % game_state.current_turn)
 
 func _on_reset_pressed() -> void:
 	if not GameState.is_server:

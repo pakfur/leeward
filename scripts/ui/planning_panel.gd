@@ -136,10 +136,13 @@ func _on_clear_pressed() -> void:
 	if not current_ship:
 		return
 
-	if not GameState.is_server:
+	if not GameState.is_server or not GameState.phase_controller:
 		push_warning("PlanningPanel: Cannot clear actions on client")
 		return
-	GameState.ship_controller.clear_plotted_actions(current_ship_id)
+	var reason: String = GameState.phase_controller.player_clear_movement(current_ship.player_id, current_ship_id)
+	if reason != "":
+		push_warning("PlanningPanel: " + reason)
+		return
 
 	if movement_input:
 		movement_input.text = ""

@@ -173,6 +173,30 @@ func player_submit_plan(player_id: int) -> bool:
 
 	return true
 
+## SERVER ONLY: the player withdraws a ship's movement plot to plot it again (other plotted
+## orders, such as a sail change, are kept). Returns "" or the reason it is refused.
+func player_clear_movement(player_id: int, ship_id: String) -> String:
+	if not is_server:
+		push_error("TurnPhaseController: Cannot clear a movement plot on client")
+		return "movement plots are changed on the server only"
+	if not game_result.is_empty():
+		return "the game is over"
+	if current_phase != GamePhase.PLANNING:
+		return "movement can only be re-plotted in the planning phase"
+	if player_id < 0 or player_id >= players_ready.size():
+		return "invalid player %d" % player_id
+	if players_ready[player_id]:
+		return "this player's plan is already submitted"
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null:
+		return "no ship %s" % ship_id
+	if ship.player_id != player_id:
+		return "%s is not this player's ship" % ship_id
+	game_state.ship_controller.set_plotted_movement(ship_id, [])
+	Trace.trace_log("TurnPhase", "Player %d cleared the movement plot of %s" % [player_id, ship_id])
+	return ""
+
+
 func _enter_movement_resolution_phase() -> void:
 	"""SERVER ONLY: Enter movement resolution phase.
 	Runs the resolver and emits resolution_log_ready. Does NOT auto-advance.

@@ -770,10 +770,11 @@ func _on_planning_action_toggled(ship_id: String, action_type: String, active: b
 				# Clear the submitted path overlay
 				if hex_overlay:
 					hex_overlay.clear_submitted_path(ship_id)
-				if GameState.is_server:
-					# Single-player shortcut: clear the old movement plot (keeping any sail order)
-					# under the server guard  SCV:ALLOW
-					GameState.ship_controller.set_plotted_movement(ship_id, [])
+				# Ask the server to withdraw the old movement plot (any sail order is kept).
+				if GameState.is_server and GameState.phase_controller:
+					var reason: String = GameState.phase_controller.player_clear_movement(HUMAN_PLAYER_ID, ship_id)
+					if reason != "":
+						Trace.trace_log("GameController", "Re-plot of %s refused: %s" % [ship_id, reason])
 				Trace.trace_log("GameController", "Re-plotting ship %s — cleared previous submission" % ship_id)
 
 			var ship_state = GameState.get_ship(ship_id)

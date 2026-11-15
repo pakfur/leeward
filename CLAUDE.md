@@ -228,6 +228,7 @@ Wind conditions, map config, ship placements with position (q,r), facing, sail s
 ### Server Authority
 - All mutations guard with `if not is_server: push_error()` — never bypass this
 - Controllers in `scripts/server/` are server-only; clients are read-only observers
+- **Strict for ship state:** view-side code (`scripts/ui/`, `scripts/view/`, `scripts/core/`) never calls a `ShipStateController` or `EnvironmentController` mutator and never writes a `ShipState` field, even under an `is_server` check or an `SCV:ALLOW` comment. It sends a request the server validates and answers with "" or a reason: `player_submit_plan`, `player_clear_movement`, `player_submit_fire_orders`, `player_submit_bear_off`, `sail_controller.plot_sail_change(player_id, …)`, and for the Developer UI `GameState.dev_commands` (`DevCommands`: server and debug builds only). Read-only queries (`get_`/`is_`/`can_`/`has_`) are fine. New player actions get a new server request method. `test_server_authority.gd` scans the view code and fails `make test` on a violation.
 
 ### State History
 - Indexed by turn number: `environment_history[turn]`, `ship_history[ship_id][turn]`
