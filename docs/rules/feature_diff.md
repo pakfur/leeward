@@ -2,7 +2,7 @@
 
 **Scope:** *Close Action: The Age of Fighting Sail, Vol. 1* (1997) rules book, sections 1–14 (`docs/rules/close_action.md`, lines 132–1967). The rating system, tournament rules, designer's notes and scenario book are out of scope.
 
-**Compared against:** the Leeward code on `main` at `30a2c35` (`scripts/`, `data/rules/`, `data/scenarios/`). Rows changed later were re-checked against the code when they were edited; latest: `9d8e8e2` + blocked wind (5.G), collision rigging loss (6.E.3), the fast-tack bonus removal (5.B.3) next-turn wind changes (3.B.6) and bearing off as a decision (6.D).
+**Compared against:** the Leeward code on `main` at `30a2c35` (`scripts/`, `data/rules/`, `data/scenarios/`). Rows changed later were re-checked against the code when they were edited; latest: `9d8e8e2` + blocked wind (5.G), collision rigging loss (6.E.3), the fast-tack bonus removal (5.B.3) next-turn wind changes (3.B.6) and bearing off as a decision (6.D); `c154b1b` + the crew-task engine and Automatic crew (crew-tasks spec phase 1: 4.A.3, 4.B, 8.D.1 marines DRM).
 
 **Purpose:** a feature-level list of what the board game has that Leeward lacks, and of the places where both have a feature but the outcome differs significantly. It is not a play-by-play comparison. UI and presentation differences are ignored.
 
@@ -49,7 +49,7 @@ These are the gaps and differences that most change how a game plays out, in rou
 | Grappling and ungrappling | 8.C | Fouling (from collisions) is the only way ships become entangled. |
 | Boarding, capture, reorganizing, prize crews | 10.A–H | Only the `bcf_sailor` and `bcf_marine` values in `crew_quality_table.json` exist, and nothing reads them. Struck ships never change sides. Captured-ship BGN (1.G.8) is also absent. |
 | Marine fire | 7.G, 4.B.4b | Marines count only as crew boxes. |
-| General crew-task plotting (CS tasks) | 4.A.3c, 4.B | Sail changes are the only crew task. There are no tasks for tacking (T), boarding, repair, firefighting, anchoring or towing. |
+| General crew-task plotting (CS tasks) ✔ | 4.A.3, 4.B | **Partly fixed:** a crew-task engine (`CrewTaskController`, `CrewRules`, `CrewAuto`; codes and lengths in `crew_tasks.json` from the ship log) plots the five sections S1–S4 and M, one task per section per g-t, continued by the same sections or abandoned with its progress (4.A.3), lost with an emptied section (4.B.3), lengths recomputed from the current CQ (9.A.2). Sections plotted to a task do not serve the guns that g-t (4.B.4), and any section, marines included, may alter sail (4.B.1). Every ship is on Automatic crew (see §4). **Still missing:** every task but sail changes: tacking crew (T), reorganization, firefighting, repairs, boarding, anchoring, towing; the player's crew overlay. |
 | Lower-deck guns, freeboard vs. sea state | 7.F, 3.E.1 | `freeboard` and `lower_deck_modifier` are stored but never used. |
 | Anchoring (springs, veering, cutting) | 8.B, 8.A.7, 13.A–F, 7.C.12c | Also missing: the anchored +1 gunfire modifier and the "free turn after cutting" exception to being in irons. |
 | Medium guns, chase guns, class 4 ships | 1.G.7 | `mg` is 0 in the data. |
@@ -105,7 +105,7 @@ These are the gaps and differences that most change how a game plays out, in rou
 | **7.C.12g** Two targets | The rule text says −10. | −12. The chart wins (already decided). | Recorded only. | `gunfire_modifiers.json` |
 | **7.B.1 / 7.C.12f** Battery orders and half broadsides ✔ | Each side fires as a full broadside or as bow/stern half broadsides (−8), possibly at different targets; at most two targets. | **Fixed:** `FireOrder.battery` (`full`/`bow`/`stern`); `validate_orders` refuses a battery fired twice, more than two targets, and bow+stern of one side at one target; `preview_orders` gives two-target −12 (no −8) and the initial broadside once per broadside. The fire panel declares by battery. | Matches. | `gunnery_calculator.gd`, `fire_declaration_panel.gd` |
 | **8.A.1 / 8.A.6** Who may drift ✔? | A stopped ship. A fouled pair that includes a ship that moved does not drift (example 2). | A ship drifts if it did not move, **or** collided, **or** is fouled. | Fouled ships drift in cases where the rules hold them. Depends on reading "stopped". | `drift_resolver.gd:68-72` |
-| **8.D.1** Unfouling DRMs ✔ | Chart: ≤2/≤3/≤4 by attempt. DRMs (all uses): ± SK, +1 if marines not available. Ungrappling-only DRMs don't apply to fouling. | Same thresholds, ± SK. "Marines not available" can't arise because marine tasks don't exist. | Matches. | `fouling_controller.gd` |
+| **8.D.1** Unfouling DRMs ✔ | Chart: ≤2/≤3/≤4 by attempt. DRMs (all uses): ± SK, +1 if marines not available. Ungrappling-only DRMs don't apply to fouling. | **Fixed:** same thresholds, ± SK, and +1 when the marines are plotted to a task this g-t (`ShipState.marines_busy`), on unfouling and on the 8.D.5 fix rolls. A ship whose marine section is wiped out takes no +1 (crew-tasks spec §9 Q5). | Matches. | `fouling_controller.gd` (`_attempt`), `critical_hit_controller.gd` (`resolve_fixes`) |
 | **9.B.1** Morale checks for lost sections ✔ | The ship log shows hull sections 1, 2 and 3 with 1, 1 and 2 MC marks (section 4 strikes), each sailor section and the marines with 1, and dismasting with 1. | The same counts: `HULL_MORALE_CHECKS = [1, 1, 2]`, 1 per emptied crew section including marines, and 1 on dismasting. | Matches. | `damage_controller.gd` |
 | **9.C.3** Firing on struck ships ✔ | Struck ships "cannot do anything". The rules do not say they cannot be fired on. | Struck ships cannot be targeted. | Deliberate (see §4). It removes the option of shooting at a struck ship. | `gunnery_calculator.gd:28-29` |
 
@@ -119,6 +119,7 @@ These are conscious design choices. They are listed because each one removes boa
 - **A separate fire-declaration step after movement** (2.B.2, 7.A.2). Orders stay hidden until both sides have submitted. The outcome is the same as the board game's simultaneous fire.
 - **Two sides, one human against the stub AI.** The multi-player rules (signalling 11.B, limited information 14.C) have nothing to apply to.
 - **Struck ships cannot be targeted** (see the 9.C.3 row in §3).
+- **Automatic crew allocation** (4.B). The player may leave section-by-section plotting to fixed rules (`CrewAuto`, crew-tasks spec §3.3; default on, and always on for the AI and, until the crew overlay exists, for every ship): tasks in progress continue, an ordered sail change takes the marines first (unless a fire, a fixable critical effect, fouling or an adjacent enemy holds them back), then S4, S3, S2, S1. The result is always a legal plot.
 
 ---
 
@@ -129,7 +130,7 @@ Implemented with essentially the same outcome as the rules:
 - Movement allowance lookup with rigging-level caps (5.A.2, 5.F.2–3).
 - No MA gained by turning into a faster WF (5.B.3).
 - Blocked wind: MA −1 (never to 0) when every windward hex (two at WF=C/B, one at WF=R) is held by a ship at FS or above that is not dismasted (5.G.1–3). Checked at the plotted position against the other ships where they stand. `BlockedWind` (`blocked_wind.gd`), used by `ShipStateController.get_movement_allowance` and the movement validator.
-- Sail-change cost, timing and cancellation when a crew section is lost (5.F.6–9, 4.A.3b, 4.B.2–3).
+- Sail-change cost, timing and cancellation when a crew section is lost (5.F.6–9, 4.A.3b, 4.B.2–3), worked by any section, marines included (4.B.1); its sailor sections do not serve the guns (4.B.4).
 - No more than two turns per g-t, pivoting on the bow (5.C.1–2).
 - A turn into WF=L stops the ship (5.B.4).
 - Simultaneous segment-by-segment movement (6.A.1–2).
@@ -141,7 +142,7 @@ Implemented with essentially the same outcome as the rules:
 - Simultaneous fire with stern rakes, then bow rakes, then everything else in order (7.C.2).
 - LOS blocked by ships in between (7.B.7–9).
 - Drift odds, the downwind-first order, the blocked-drift foul roll, and fouled pairs drifting together (8.A.1–4, 8.A.6).
-- Unfouling chances that rise with each attempt, with the SK DRM (8.D.1–3).
+- Unfouling chances that rise with each attempt, with the SK and marines-not-available DRMs (8.D.1–3).
 - Morale-check counts for lost sections, matching the ship log (9.B.1).
 - Two-hex footprint: bow-pivot turns, stern swing blocking, per-battery arcs and LOS, closest-hex range, rake (5.C.1–2, 5.E.2, 7.B.2–6, 7.C.4, 7.E.2).
 - Tacking roll and DRMs at MA 0, apart from the crew-section and reverse-tack DRMs (5.D.1–2, 5.D.6).

@@ -223,7 +223,10 @@ func resolve_fixes(phase: int) -> void:
 					continue
 				var attempt := int(effect.get("attempts", 0)) + 1
 				var roll: int = game_state.dice.d10()
+				# 8.D.5 rolls on the Unfouling table: ± SK, +1 when the marines are busy.
 				var modifier: int = tables.skill_modifier(ship.crew_quality)
+				if ship.marines_busy():
+					modifier += tables.marines_unavailable_modifier()
 				var needed: int = tables.unfouling_success_max(attempt)
 				var success := roll + modifier <= needed
 				if success:

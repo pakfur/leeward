@@ -20,6 +20,7 @@ var _unfouling: Dictionary = {}
 var _crew_quality: Dictionary = {}
 var _critical_hits: Dictionary = {}
 var _poor_maneuvering: Dictionary = {}
+var _crew_tasks: Dictionary = {}
 
 func load_all(dir: String = "res://data/rules/") -> bool:
 	var gf = _load_json(dir + "gunnery_factor_table.json")
@@ -32,8 +33,9 @@ func load_all(dir: String = "res://data/rules/") -> bool:
 	var crew_quality = _load_json(dir + "crew_quality_table.json")
 	var critical_hits = _load_json(dir + "critical_hits_table.json")
 	var poor_maneuvering = _load_json(dir + "poor_maneuvering_table.json")
+	var crew_tasks = _load_json(dir + "crew_tasks.json")
 	for table in [gf, bgn, results, mods, crew_loss, drifting, unfouling, crew_quality,
-			critical_hits, poor_maneuvering]:
+			critical_hits, poor_maneuvering, crew_tasks]:
 		if table == null:
 			return false
 
@@ -46,6 +48,7 @@ func load_all(dir: String = "res://data/rules/") -> bool:
 	_crew_quality = crew_quality
 	_critical_hits = _whole_numbers_to_int(critical_hits)
 	_poor_maneuvering = _whole_numbers_to_int(poor_maneuvering)
+	_crew_tasks = _whole_numbers_to_int(crew_tasks)
 
 	_results.clear()
 	for row in results["rows"]:
@@ -149,6 +152,36 @@ func drift_class_drm(ship_class: int) -> int:
 func unfouling_success_max(attempt: int) -> int:
 	var table: Array = _unfouling["success_max"]
 	return int(table[clampi(attempt, 1, table.size()) - 1])
+
+## The Unfouling table's "Marines not avail.: +1" DRM (All Uses: unfouling, fixing, firefighting).
+func marines_unavailable_modifier() -> int:
+	return int(_unfouling.get("marines_unavailable", 0))
+
+## Crew Task Order Codes (ship log), data/rules/crew_tasks.json. `code` is a row key
+## (SAIL_MAJOR, SAIL_MINOR, T, RO, FF, RR, RH, RS). Deep copy; {} for an unknown code.
+func crew_task(code: String) -> Dictionary:
+	var row = _lookup(_crew_tasks, code, "crew task")
+	return {} if row == null else (row as Dictionary).duplicate(true)
+
+## G-t's the task needs at this crew quality; -1 for an open-ended task (T, FF).
+## {ad, eg}: CQ A-D / E-G. {sk_base: n}: max(1, n + SK mod). {fixed: n}.
+func task_turns(code: String, crew_quality: String) -> int:
+	var row := crew_task(code)
+	if row.is_empty():
+		return -1
+	var turns: Dictionary = row.get("turns", {})
+	if turns.has("ad"):
+		return int(turns["eg"]) if crew_quality in ["E", "F", "G"] else int(turns["ad"])
+	if turns.has("sk_base"):
+		return maxi(1, int(turns["sk_base"]) + skill_modifier(crew_quality))
+	if turns.has("fixed"):
+		return int(turns["fixed"])
+	return -1
+
+## [min, max] crew sections the task takes; [] for an unknown code.
+func task_sections(code: String) -> Array:
+	var row := crew_task(code)
+	return row.get("sections", [])
 
 func skill_modifier(crew_quality: String) -> int:
 	var entry = _lookup(_crew_quality, crew_quality, "crew quality")

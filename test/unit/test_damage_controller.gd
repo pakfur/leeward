@@ -1,4 +1,5 @@
 extends GutTest
+const CrewFixtures = preload("res://test/unit/crew_fixtures.gd")
 ## Tests for DamageController: box allocation, guns dismounted, morale triggers, striking.
 
 var ctrl: DamageController
@@ -118,9 +119,9 @@ func test_dismasting() -> void:
 
 
 func test_dismasting_clears_sail_change() -> void:
-	ship.sail_change = {"target": "FS", "turns_left": 1, "sections": [0]}
+	CrewFixtures.give_sail_change(ship, "FS", [0])
 	_hit(22, 0, 0)
-	assert_eq(ship.sail_change, {})
+	assert_eq(ship.sail_change_info(), {})
 
 
 func test_crew_gunfire_at_hull_rolls() -> void:
@@ -318,10 +319,11 @@ func test_destroy_frees_fouled_partner() -> void:
 
 
 func test_destroy_drops_sail_change_and_morale_checks() -> void:
-	GameState.ship_controller.set_sail_change("hit_ship", {"target": "FS", "turns_left": 1, "sections": [3]})
+	GameState.ship_controller.add_task("hit_ship", {"code": "SAIL", "sections": [3], "params": {"target": "FS"}})
 	GameState.ship_controller.note_morale_check("hit_ship", "hull_0")
 	ctrl.destroy("hit_ship", "explosion", 4)
-	assert_eq(ship.sail_change, {})
+	assert_eq(ship.sail_change_info(), {})
+	assert_eq(ship.crew_tasks[0]["ended"], "destroyed")
 	assert_eq(ship.pending_morale_checks, 0)
 
 
@@ -353,3 +355,17 @@ func test_destroy_on_client_is_refused() -> void:
 	ctrl.destroy("hit_ship", "explosion", 4)
 	assert_push_error("Cannot destroy a ship on client")
 	assert_false(ship.is_destroyed())
+
+
+func test_emptied_crew_section_loses_its_task_at_once() -> void:
+	# 4.B.3: a crew section completely marked out loses its task (the sail change is cancelled
+	# in the Combat Phase, logged with the reason).
+	ship.crew_count = [1, 3, 3, 3] as Array[int]
+	CrewFixtures.give_sail_change(ship, "FS", [0])
+	_dice.queue([1])  # Crew Loss "gunfire at hull": 1 is a sailor
+	_hit(0, 0, 1, "gunfire_at_hull")
+	assert_eq(ship.crew_count[0], 0)
+	assert_false(ship.has_sail_change())
+	var sail := GameState.turn_log.of_type(PhaseEvents.Type.SAIL_CHANGE)
+	assert_eq(sail.size(), 1)
+	assert_eq(sail[0].data["cancelled"], "crew lost")

@@ -1,4 +1,5 @@
 extends GutTest
+const CrewFixtures = preload("res://test/unit/crew_fixtures.gd")
 ## Tests for FoulingController (Close Action 1997 Unfouling table).
 ## Roll d10 + skill modifier <= success number (attempt 1: 2, attempt 2: 3, attempt 3+: 4).
 
@@ -239,3 +240,27 @@ func test_status_adjustment_phase_runs_unfouling() -> void:
 	GameState.phase_controller._enter_status_adjustment_phase()
 	assert_eq(ships[0].fouled_with, "")
 	assert_eq(_events().size(), 1)
+
+
+# --- Marines not available: +1 (Unfouling table, DRMs All Uses; 8.D.1) ---
+
+func test_marines_altering_sail_add_one() -> void:
+	# CQ D, first attempt, d10 2: 2 + 0 + 1 = 3 > 2, still fouled; the partner then rolls 9.
+	var ships := _foul_pair()
+	CrewFixtures.give_sail_change(ships[0], "FS", [ShipState.MARINES])
+	_dice.queue([2, 9])
+	controller.resolve_unfouling(PHASE)
+	assert_eq(ships[0].fouled_with, "b")
+	var events := _events()
+	assert_eq(events[0].data["modifier"], 1)
+	assert_false(events[0].data["success"])
+
+
+func test_sailors_altering_sail_leave_the_marines_available() -> void:
+	# S4 on the sails: the marines are available, no DRM; d10 2 <= 2 frees the pair.
+	var ships := _foul_pair()
+	CrewFixtures.give_sail_change(ships[0], "FS", [3])
+	_dice.queue([2])
+	controller.resolve_unfouling(PHASE)
+	assert_eq(ships[0].fouled_with, "")
+	assert_eq(_events()[0].data["modifier"], 0)

@@ -137,6 +137,7 @@ func test_straight_movement_applies_position() -> void:
 	assert_eq(state.hex_position, Vector2i(7, 5), "Position should update")
 	assert_eq(state.speed, 2, "Speed should equal hexes moved")
 	assert_true(state.plotted_actions.movement.is_empty(), "Plot should be cleared")
+	assert_eq(state.mp_used_this_turn, 2, "8.F.3b / 8.C.1: MPs used this g-t")
 
 
 func test_no_movement_plotted() -> void:
@@ -202,6 +203,18 @@ func test_tack_from_luffing_rolls_and_completes_turn() -> void:
 	assert_eq(result.final_facing, 1, "Ship completes the turn")
 	assert_eq(result.final_hex, turn_hex, "The turn pivots on the bow hex")
 	assert_eq(turn_hex, Vector2i(5, 5))
+
+
+func test_turn_only_counts_as_an_mp_used() -> void:
+	# 8.C.1 example 2 counts turns as MPs (S1P2 = 5): a ship that only turns is stopped (speed 0,
+	# 5.E.2) but has used 1 MP (8.F.3b).
+	var state = _make_ship_state(Vector2i(5, 5), 0, 2, "D")
+	env.wind_speed = 3
+	_plot_turn(state, 1)
+	var ships: Array[ShipState] = [state]
+	resolver.apply_results(resolver.run(ships, env), ships)
+	assert_eq(state.speed, 0)
+	assert_eq(state.mp_used_this_turn, 1)
 
 
 func test_failed_tack_erases_the_turn() -> void:

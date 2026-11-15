@@ -1,4 +1,5 @@
 extends GutTest
+const CrewFixtures = preload("res://test/unit/crew_fixtures.gd")
 ## Tests for the pure presentation helpers of the combat turn_log panel and ship status panel.
 
 const LogPanel = preload("res://scripts/ui/combat_log_panel.gd")
@@ -187,9 +188,10 @@ func test_sail_line_notes_when_it_moves_as_a_lighter_sail() -> void:
 func test_pending_sail_change_line_covers_underway_and_ordered() -> void:
 	var s := _make_ship()
 	assert_eq(StatusPanel.sail_change_line(s), "")
-	s.plotted_actions["sail_change"] = "FS"
+	CrewFixtures.order_sail(s, "FS")
 	assert_eq(StatusPanel.sail_change_line(s), "Sail change ordered: Fighting sail")
-	s.sail_change = {"target": "PS", "turns_left": 2, "sections": [0]}
+	s.crew_quality = "B"
+	CrewFixtures.give_sail_change(s, "PS", [0, 1])  # ship log: MS->PS 2 g-t's at CQ A-D
 	assert_eq(StatusPanel.sail_change_line(s), "Sail change: Plain sail, 2 turns left")
 
 

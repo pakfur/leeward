@@ -1,0 +1,11 @@
+{
+  "_doc": "Crew Task Order Codes (1997 ship log, checked against ship-log-blank-1.png). sections = [min, max] crew sections. turns: {ad, eg} = g-t's at CQ A-D / CQ E-G; {sk_base: n} = max(1, n + SK mod); {fixed: n}; {until: 'out'|'turn'} = open-ended. SAIL_MAJOR is MS<->PS (2 CS), SAIL_MINOR FS<->MS and FS<->Furl (1 CS); both are plotted as code SAIL.",
+  "SAIL_MAJOR": {"name": "Alter sail MS<->PS", "sections": [2, 2], "turns": {"ad": 2, "eg": 3}},
+  "SAIL_MINOR": {"name": "Alter sail FS<->MS, FS<->Furl", "sections": [1, 1], "turns": {"ad": 1, "eg": 2}},
+  "T":  {"name": "Braces (tacking)", "sections": [1, 3], "turns": {"until": "turn"}, "drm_per_section_short": 2, "assumed_sections": 3},
+  "RO": {"name": "Reorganize", "sections": [1, 1], "turns": {"sk_base": 5}},
+  "FF": {"name": "Fight fire", "sections": [1, 1], "turns": {"until": "out"}},
+  "RR": {"name": "Repair rigging", "sections": [1, 1], "turns": {"sk_base": 6}},
+  "RH": {"name": "Repair hull", "sections": [1, 1], "turns": {"sk_base": 10}, "max_mp": 4},
+  "RS": {"name": "Repair shrouds", "sections": [1, 1], "turns": {"sk_base": 5}}
+}

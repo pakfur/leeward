@@ -1,4 +1,5 @@
 extends GutTest
+const CrewFixtures = preload("res://test/unit/crew_fixtures.gd")
 ## Tests for PlanningSailUi: pure presentation logic for the planning sail row and status badges.
 
 
@@ -64,7 +65,7 @@ func test_ordered_mode_keeps_the_choices_in_place_with_the_order_pressed() -> vo
 	var state := _ship("MS")
 	var costs := {"FS": {"turns": 1, "sections": 1}, "PS": {"turns": 2, "sections": 2}}
 	var before := PlanningSailUi.sail_row(state, ["FS", "PS"], costs)
-	state.plotted_actions["sail_change"] = "FS"
+	CrewFixtures.order_sail(state, "FS")
 	var row := PlanningSailUi.sail_row(state, ["FS", "PS"], costs)
 	assert_eq(row["mode"], PlanningSailUi.Mode.ORDERED)
 	assert_eq(row["text"], "Ordered: Fighting sail. Press it again to cancel.")
@@ -78,7 +79,7 @@ func test_ordered_mode_keeps_the_choices_in_place_with_the_order_pressed() -> vo
 
 func test_progress_mode_has_no_buttons() -> void:
 	var state := _ship("MS")
-	state.sail_change = {"target": "PS", "turns_left": 1, "sections": [3, 2]}
+	CrewFixtures.give_sail_change(state, "PS", [3, 2], 1)  # 2 g-t's at CQ A-D, 1 done
 	var row := PlanningSailUi.sail_row(state, [], {})
 	assert_eq(row["mode"], PlanningSailUi.Mode.PROGRESS)
 	assert_eq(row["text"], "Changing to Plain sail — 1 turn left")
@@ -87,7 +88,7 @@ func test_progress_mode_has_no_buttons() -> void:
 
 func test_progress_text_plural_turns() -> void:
 	var state := _ship("MS")
-	state.sail_change = {"target": "PS", "turns_left": 2, "sections": [3, 2]}
+	CrewFixtures.give_sail_change(state, "PS", [3, 2])
 	assert_eq(PlanningSailUi.sail_row(state, [], {})["text"], "Changing to Plain sail — 2 turns left")
 
 

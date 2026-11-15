@@ -19,6 +19,13 @@ enum Type {
 	POOR_MANEUVERING,  # 6.F.3 roll for a plotted turn: {roll, needed, success, outcome}
 	FIRE_STARTED,  # a ship is afire (hull #12; fire is not simulated): {fires, result_id}
 	DESTROYED,  # the ship blew up (hull #12) and is out of play: {reason}; target_id: freed fouling partner
+	CREW_TASK,  # a crew task other than a sail change: {code, sections, params, state, done, needed, reason}
+}
+
+## Crew task names for the log (crew_tasks.json codes).
+const CREW_TASK_NAMES := {
+	"T": "work the braces", "RO": "reorganize", "FF": "fight the fire",
+	"RR": "repair rigging", "RH": "repair the hull", "RS": "repair the shrouds",
 }
 
 const MODIFIER_LABELS := {
@@ -286,6 +293,8 @@ class PhaseEvent extends RefCounted:
 				return _unfoul_text(who, other)
 			Type.SAIL_CHANGE:
 				return _sail_text(who)
+			Type.CREW_TASK:
+				return _crew_task_text(who)
 			Type.VICTORY:
 				return _victory_text()
 		return "%s: event %d" % [who, type]
@@ -611,6 +620,25 @@ class PhaseEvent extends RefCounted:
 			return "%s is now at %s" % [who, PhaseEvents.sail_name(to)]
 		return "%s begins changing sail %s → %s (%s)" % [who, _val("from"), _val("to"),
 			PhaseEvents.plural(turns, "turn")]
+
+	## "Vengeance: S3 begins to repair rigging (4 turns)", "...: S3 stops: abandoned".
+	func _crew_task_text(who: String) -> String:
+		var names: Array = []
+		for section in data.get("sections", []):
+			names.append(ShipState.SECTION_NAMES[int(section)])
+		var crew := " ".join(names) if not names.is_empty() else "the crew"
+		var code := str(data.get("code", ""))
+		var task: String = PhaseEvents.CREW_TASK_NAMES.get(code, code)
+		var needed := int(data.get("needed", -1))
+		match str(data.get("state", "")):
+			"started":
+				var length := " (%s)" % PhaseEvents.plural(needed, "turn") if needed > 0 else ""
+				return "%s: %s begins to %s%s" % [who, crew, task, length]
+			"completed":
+				return "%s: %s finishes: %s" % [who, crew, task]
+			"refused":
+				return "%s: %s cannot %s: %s" % [who, crew, task, str(data.get("reason", ""))]
+		return "%s: %s stops (%s): %s" % [who, crew, task, str(data.get("reason", data.get("state", "")))]
 
 	## "The wind veers to west", "The wind freshens to 3 (fresh)", or both in one line.
 	func _wind_text() -> String:

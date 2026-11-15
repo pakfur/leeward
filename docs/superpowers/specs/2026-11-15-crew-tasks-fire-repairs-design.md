@@ -512,6 +512,16 @@ Every phase: GUT tests with `ScriptedDice` (d10 = 0–9), `make test`, both vali
 5. **Repairs.** `RepairController`; rule A5; `repair_box`, `checked_sections`, the 4-MP check, 8.F.6; the repair stations go live.
 6. **Fonts and finish.** §5; log wording pass; `CONTRIBUTING.md`/CLAUDE.md ("Not implemented" list, the new controllers, the overlay); `scv-reviewer`.
 
+**Phase 1 as built (2026-11-15).** Points where the code settled something this spec left open or got wrong; later phases build on these.
+- **Marines DRM vs `marines_available()`.** §9 Q5 (★ no +1 for wiped-out marines) and §2.2's `marines_available()` ("marines have boxes and …") disagree for a ship with no marines. Both are kept: `marines_available()` is as §2.2 (boxes required; for marine fire and boarding), and the +1 DRM reads the new `ShipState.marines_busy()` (M is in `plotted_sections` on a task whose `marines_available` flag is false). Each task dict carries that flag, copied from its handler when the task is added, so the state layer can answer without the handlers.
+- **Handler interface.** §3.1's `on_start` is split into `prepare(ship, candidate) -> String` ("" starts it; may fill `params`), `on_started` and `on_refused`; `on_cancel(ship, task, reason, phase)` does the logging when a task ends early; `same_task(task, params)` is the continuation test (sail target; later the fire seq); flag `one_turn` (T) ends a task every g-t. `CrewTaskHandler` (`crew_task_handler.gd`) is the base class and default handler (logs `CREW_TASK`, length from `crew_tasks.json`).
+- **Extra controller calls.** `cancel_task(ship_id, seq, reason, phase, log_it)`, `cancel_code` (silent when the ship is dismasted, as before) and `drop_all` (a destroyed ship) sit beside §3.2's API.
+- **SAIL params.** `{"target", "from", "row"}`: `row` (`SAIL_MAJOR` / `SAIL_MINOR`) is the `crew_tasks.json` row, so the length is recomputed from the current CQ every g-t (9.A.2) without the handler.
+- **Automatic with too few free sections** for the ordered change places nobody (no section leaves the guns for a change that cannot start); `begin_turn_tasks` then logs the change "no crew", as before.
+- **4.B.3 at once.** `DamageController` calls `cancel_section(…, "crew lost")` when a crew box empties a section (§3.8's COMBAT row), so a sail change whose section is wiped out is cancelled in the Combat Phase rather than at the next count.
+- **Phase-1 subset of `CrewRules`.** `context`, `plan_of`, `locked_sections`, `marines_held_back`, `worker_order`, `default_plan`, `refusal`, `assign`, `normalize`, `guns_preview` for the stations Guns, Marine fire and Sails. `stations`, `progress_warning`, `summary` and `fire_draft` come with phases 3–4; `ctx.ma0_turn_plotted` is always false until phase 2.
+- `checked_sections` and `ShipStateController.mark_section_checked` exist and are serialized; nothing sets them until phase 5.
+
 The boarding spec's phases follow phase 3 (they need the overlay's Boarders station) and phase 4 (`is_burning`).
 
 ---

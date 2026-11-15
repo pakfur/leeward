@@ -1693,6 +1693,8 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			if ship_state.pending_turn != result.pending_turn:
 				sc.set_pending_turn(sid, result.pending_turn)
 			sc.set_moved_this_turn(sid, moved_ahead)
+			# 8.F.3b / 8.C.1: MPs used this g-t, turns included, whether or not the ship moved ahead.
+			sc.set_mp_used(sid, _count_steps_executed(result))
 			sc.set_ship_position(sid, result.final_hex)
 			sc.set_ship_facing(sid, result.final_facing)
 			if result.immobilized:

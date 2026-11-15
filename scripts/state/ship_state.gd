@@ -24,6 +24,10 @@ const CRITICAL_EFFECT_IDS: Array[String] = [
 const RUDDER_NOT_JAMMED := -2
 ## 7.C.11: gunfire modifier per obscured broadside entry (Rigging #6, #10)
 const OBSCURED_PENALTY := -2
+## Crew sections (4.A.3): 0-3 are the sailor sections S1-S4, MARINES the marine section.
+const SAILOR_SECTIONS := 4
+const MARINES := 4
+const SECTION_NAMES: Array[String] = ["S1", "S2", "S3", "S4", "M"]
 
 # Ship reference (immutable identity + type definition)
 var ship: Ship = null
@@ -72,7 +76,6 @@ var ship_type: String:
 @export var status: Status = Status.ACTIVE
 @export var guns_dismounted: Array[int] = [0, 0]  # per side: PORT, STARBOARD
 @export var initial_broadside_fired: Array[bool] = [false, false]
-@export var sail_change: Dictionary = {}  # {} or {"target": String, "turns_left": int, "sections": Array[int]}
 @export var moved_this_turn: bool = false
 @export var pending_morale_checks: int = 0
 @export var morale_triggers_used: Array[String] = []
@@ -95,15 +98,35 @@ var ship_type: String:
 ## in which it made no step. Rudder Jammed jams in this direction (spec Q15).
 @export var last_step_direction: int = -1
 
-# Plotted actions for this turn
-var plotted_actions: Dictionary = {
-	"movement": [],  # Array of movement commands
-	"sail_change": "",
-	"crew_assignments": {},
-	"gunnery": [],
-	"boarding": false,
-	"repairs": []
-}
+# Crew tasks (4.A.3, 4.B; crew-tasks spec §2.2; mutated only through ShipStateController)
+## Automatic crew allocation (spec §3.3): the server places the sections by CrewAuto's rules.
+@export var crew_auto: bool = true
+## Each: {"seq": int, "code": String ("SAIL", ...), "sections": Array[int], "done": int (g-t's
+## completed), "started_turn": int, "params": Dictionary, "forced": bool,
+## "marines_available": bool (the task leaves the marines available, 10.B.4-5),
+## "ended": String ("" while live, else the reason; kept until the g-t ends)}.
+## SAIL params: {"target": "MS", "from": "FS", "row": "SAIL_MINOR"}.
+@export var crew_tasks: Array[Dictionary] = []
+@export var task_seq: int = 0
+## Sections plotted to a task this g-t: they do not serve the guns, even if the task ends early.
+@export var plotted_sections: Array[int] = []
+## MPs used this g-t: executed steps, turns included (8.F.3b, 8.C.1).
+@export var mp_used_this_turn: int = 0
+## Sections already checked once (8.F.5, 9.B.2): a repaired section lost again is not checked again.
+@export var checked_sections: Dictionary = {"rigging": [false, false, false, false],
+		"hull": [false, false, false, false]}
+
+# Plotted actions for this turn. crew_assignments: {section:int -> {"code", "params"}} (absent =
+# unplotted); crew_orders: the ship's orders to its crew ({"sail_target": ""}).
+var plotted_actions: Dictionary = empty_plot()
+
+static func empty_plot() -> Dictionary:
+	return {
+		"movement": [],  # Array of movement commands
+		"crew_assignments": {},
+		"crew_orders": {"sail_target": ""},
+		"gunnery": [],
+	}
 
 func _init() -> void:
 	# Initialize arrays properly
@@ -169,13 +192,113 @@ func total_crew_boxes() -> int:
 	return total
 
 func sections_able_to_fire() -> int:
-	## Sailor sections that still have boxes and are not busy changing sail
-	var busy: Array = sail_change.get("sections", [])
+	## Sailor sections that still have boxes and are not plotted to a task this g-t (4.B.4)
 	var able := 0
-	for i in range(crew_count.size()):
-		if crew_count[i] > 0 and not busy.has(i):
+	for i in range(mini(crew_count.size(), SAILOR_SECTIONS)):
+		if crew_count[i] > 0 and not plotted_sections.has(i):
 			able += 1
 	return able
+
+## Boxes left in crew section i (0-3 sailors, MARINES).
+func section_boxes(i: int) -> int:
+	if i == MARINES:
+		return marine_count
+	return crew_count[i] if i >= 0 and i < crew_count.size() else 0
+
+func section_alive(i: int) -> bool:
+	return section_boxes(i) > 0
+
+## The live task (ended == "") section i is working on, or {}.
+func task_of(i: int) -> Dictionary:
+	for task in crew_tasks:
+		if task.get("ended", "") == "" and (task.get("sections", []) as Array).has(i):
+			return task
+	return {}
+
+## Live tasks with this code, in seq order.
+func tasks_with(code: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for task in crew_tasks:
+		if task.get("ended", "") == "" and task.get("code", "") == code:
+			result.append(task)
+	return result
+
+func task_by_seq(seq: int) -> Dictionary:
+	for task in crew_tasks:
+		if int(task.get("seq", -1)) == seq:
+			return task
+	return {}
+
+## Section i is in a reorganization forced by Crew Disorganized (hull #4).
+func is_disorganized(i: int) -> bool:
+	var task := task_of(i)
+	return task.get("code", "") == "RO" and (task.get("params", {}) as Dictionary).get("reason", "") == "crew_disorganized"
+
+## The marines are plotted this g-t to a task that takes them away (any task but FB, BR, BD).
+## A wiped-out marine section is not "busy" (spec §9 Q5): it gives no "marines not available" DRM.
+func marines_busy() -> bool:
+	if not plotted_sections.has(MARINES):
+		return false
+	for k in range(crew_tasks.size() - 1, -1, -1):
+		var task: Dictionary = crew_tasks[k]
+		if (task.get("sections", []) as Array).has(MARINES):
+			return not bool(task.get("marines_available", false))
+	return true
+
+## The marines have boxes and are not busy (4.B.4b, 8.C.5).
+func marines_available() -> bool:
+	return section_alive(MARINES) and not marines_busy()
+
+func fire_count() -> int:
+	return fires
+
+func is_burning() -> bool:
+	return fires > 0
+
+## Sections at the braces (the live T task), 0-3.
+func tack_sections() -> int:
+	var tasks := tasks_with("T")
+	return 0 if tasks.is_empty() else (tasks[0].get("sections", []) as Array).size()
+
+## Boxes marked out of "rigging" or "hull" since the start.
+func missing_boxes(kind: String) -> int:
+	var start: Array = []
+	var now: Array = rigging_current_hp if kind == "rigging" else hull_current_hp
+	if ship:
+		start = ship.rigging_hp if kind == "rigging" else ship.hull_hp
+	var missing := 0
+	for i in range(mini(start.size(), now.size())):
+		missing += maxi(0, int(start[i]) - int(now[i]))
+	return missing
+
+## G-t's the task needs at the current crew quality (9.A.2: recomputed every g-t); -1 open-ended.
+func task_turns_required(task: Dictionary) -> int:
+	var params: Dictionary = task.get("params", {})
+	var row: String = params.get("row", task.get("code", ""))
+	if row == "SAIL":  # no row recorded: MS<->PS is the major change (ship log)
+		row = "SAIL_MAJOR" if sail_state.to_upper() == "PS" or params.get("target", "") == "PS" else "SAIL_MINOR"
+	return DataManager.combat_tables.task_turns(row, crew_quality)
+
+## The sail change in progress in the old shape, for the views: {} or
+## {"target": String, "turns_left": int, "sections": Array[int]}.
+func sail_change_info() -> Dictionary:
+	var tasks := tasks_with("SAIL")
+	if tasks.is_empty():
+		return {}
+	var task: Dictionary = tasks[0]
+	return {
+		"target": (task.get("params", {}) as Dictionary).get("target", ""),
+		"turns_left": maxi(0, task_turns_required(task) - int(task.get("done", 0))),
+		"sections": (task.get("sections", []) as Array).duplicate(),
+	}
+
+func has_sail_change() -> bool:
+	return not tasks_with("SAIL").is_empty()
+
+## The sail state ordered this turn (plotted_actions crew_orders), or "".
+func ordered_sail_target() -> String:
+	var orders = plotted_actions.get("crew_orders", {})
+	return str(orders.get("sail_target", "")) if orders is Dictionary else ""
 
 func has_critical(id: String) -> bool:
 	return critical_count(id) > 0
@@ -260,7 +383,12 @@ func serialize() -> Dictionary:
 		"status": int(status),
 		"guns_dismounted": guns_dismounted,
 		"initial_broadside_fired": initial_broadside_fired,
-		"sail_change": sail_change,
+		"crew_auto": crew_auto,
+		"crew_tasks": crew_tasks.duplicate(true),
+		"task_seq": task_seq,
+		"plotted_sections": plotted_sections.duplicate(),
+		"mp_used_this_turn": mp_used_this_turn,
+		"checked_sections": checked_sections.duplicate(true),
 		"moved_this_turn": moved_this_turn,
 		"pending_morale_checks": pending_morale_checks,
 		"morale_triggers_used": morale_triggers_used,
@@ -272,7 +400,7 @@ func serialize() -> Dictionary:
 		"fires": fires,
 		"pending_turn": pending_turn,
 		"last_step_direction": last_step_direction,
-		"plotted_actions": plotted_actions
+		"plotted_actions": plotted_actions.duplicate(true)
 	}
 	return data
 
@@ -328,7 +456,24 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.initial_broadside_fired.clear()
 	for fired in data.get("initial_broadside_fired", [false, false]):
 		state.initial_broadside_fired.append(bool(fired))
-	state.sail_change = (data.get("sail_change", {}) as Dictionary).duplicate(true)
+	state.crew_auto = bool(data.get("crew_auto", true))
+	state.crew_tasks.clear()
+	for task in data.get("crew_tasks", []):
+		state.crew_tasks.append(crew_task_from(task))
+	state.task_seq = int(data.get("task_seq", 0))
+	state.plotted_sections = _int_array(data.get("plotted_sections", []))
+	state.mp_used_this_turn = int(data.get("mp_used_this_turn", 0))
+	var checked: Dictionary = data.get("checked_sections", {})
+	for kind in ["rigging", "hull"]:
+		if checked.has(kind):
+			var flags: Array = []
+			for flag in checked[kind]:
+				flags.append(bool(flag))
+			state.checked_sections[kind] = flags
+	# Saves from before crew tasks: a sail change in progress becomes a SAIL task.
+	var old_change: Dictionary = data.get("sail_change", {})
+	if not old_change.is_empty() and state.tasks_with("SAIL").is_empty():
+		state.crew_tasks.append(_sail_task_from_old(state, old_change))
 	state.moved_this_turn = data.get("moved_this_turn", false)
 	state.pending_morale_checks = int(data.get("pending_morale_checks", 0))
 	state.morale_triggers_used.clear()
@@ -345,16 +490,56 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.pending_turn = int(data.get("pending_turn", -1))
 	state.last_step_direction = int(data.get("last_step_direction", -1))
 	
-	state.plotted_actions = data.get("plotted_actions", {
-		"movement": [],
-		"sail_change": "",
-		"crew_assignments": {},
-		"gunnery": [],
-		"boarding": false,
-		"repairs": []
-	})
+	state.plotted_actions = plot_from(data.get("plotted_actions", {}))
 
 	return state
+
+## A plot dictionary from serialized data: crew_assignments keys back to int (JSON gives
+## strings), an old "sail_change" order moved into crew_orders, missing keys filled in.
+static func plot_from(data: Dictionary) -> Dictionary:
+	var plot := empty_plot()
+	for key in data:
+		if key in ["sail_change", "boarding", "repairs"]:
+			continue
+		plot[key] = data[key].duplicate(true) if (data[key] is Dictionary or data[key] is Array) else data[key]
+	var assignments := {}
+	for section in plot.get("crew_assignments", {}):
+		assignments[int(section)] = (plot["crew_assignments"][section] as Dictionary).duplicate(true)
+	plot["crew_assignments"] = assignments
+	if not plot.get("crew_orders") is Dictionary:
+		plot["crew_orders"] = {"sail_target": ""}
+	if not plot["crew_orders"].has("sail_target"):
+		plot["crew_orders"]["sail_target"] = ""
+	if str(data.get("sail_change", "")) != "" and plot["crew_orders"]["sail_target"] == "":
+		plot["crew_orders"]["sail_target"] = str(data["sail_change"])
+	return plot
+
+## Copy of a serialized crew task with its numeric fields as ints.
+static func crew_task_from(task: Dictionary) -> Dictionary:
+	var copy := task.duplicate(true)
+	for key in ["seq", "done", "started_turn"]:
+		copy[key] = int(copy.get(key, 0))
+	copy["sections"] = _int_array(copy.get("sections", []))
+	copy["params"] = copy.get("params", {})
+	copy["forced"] = bool(copy.get("forced", false))
+	copy["marines_available"] = bool(copy.get("marines_available", false))
+	copy["ended"] = str(copy.get("ended", ""))
+	return copy
+
+## An old-format sail_change {target, turns_left, sections} as a SAIL task (done is inferred from
+## turns_left at the ship's crew quality).
+static func _sail_task_from_old(state: ShipState, change: Dictionary) -> Dictionary:
+	var target := str(change.get("target", ""))
+	var major := state.sail_state.to_upper() == "PS" or target == "PS"
+	var row := "SAIL_MAJOR" if major else "SAIL_MINOR"
+	var needed: int = DataManager.combat_tables.task_turns(row, state.crew_quality)
+	state.task_seq += 1  # SCV:ALLOW deserialization builds a fresh state
+	return crew_task_from({
+		"seq": state.task_seq, "code": "SAIL", "sections": change.get("sections", []),
+		"done": maxi(0, needed - int(change.get("turns_left", needed))), "started_turn": 0,
+		"params": {"target": target, "from": state.sail_state, "row": row},
+		"forced": false, "marines_available": false, "ended": "",
+	})
 
 ## Copy of a serialized effect with its numeric fields as ints (JSON round trips give floats).
 static func _critical_effect_from(effect: Dictionary) -> Dictionary:
@@ -427,11 +612,4 @@ func _clear_turn_flags() -> void:
 	collision_this_turn = false
 
 func _clear_plot() -> void:
-	plotted_actions = {
-		"movement": [],
-		"sail_change": "",
-		"crew_assignments": {},
-		"gunnery": [],
-		"boarding": false,
-		"repairs": []
-	}
+	plotted_actions = empty_plot()

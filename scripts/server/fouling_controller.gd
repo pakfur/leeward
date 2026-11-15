@@ -44,7 +44,10 @@ func _attempt(ship: ShipState, partner: ShipState, phase: int) -> bool:
 	game_state.ship_controller.set_unfoul_attempts(ship_id, attempts)
 	var tables: CombatTables = DataManager.combat_tables
 	var roll: int = game_state.dice.d10()
+	# Chart DRMs (All Uses): ± SK, +1 when the marines are busy on another task.
 	var modifier: int = tables.skill_modifier(ship.crew_quality)
+	if ship.marines_busy():
+		modifier += tables.marines_unavailable_modifier()
 	var needed: int = tables.unfouling_success_max(attempts)
 	var success: bool = roll + modifier <= needed
 	game_state.turn_log.add(PhaseEvents.Type.UNFOUL, phase, ship_id, {

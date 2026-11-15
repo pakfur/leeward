@@ -46,6 +46,20 @@ func plot_all_ai_ships() -> void:
 	for ship_state in ai_ships:
 		var strategy := _get_strategy(ship_state)
 		_plot_ship(ship_state, controller, strategy)
+	assign_crew()
+
+
+## The AI's crew orders (crew-tasks spec §3.3). It gives the orders only (no sail changes today)
+## and leaves Automatic on, so CrewAuto places its sections by the same rules as the player's.
+func assign_crew() -> void:
+	assert(game_state.is_server, "StubAI: Must only run on server")
+	var sc: ShipStateController = game_state.ship_controller
+	for ship_state in _get_ai_ships():
+		if ship_state.is_destroyed():
+			continue
+		if not ship_state.crew_auto:
+			sc.set_crew_auto(ship_state.ship_id, true)
+		sc.set_crew_orders(ship_state.ship_id, {"sail_target": ""})
 
 
 ## A potential collision (6.D) for a ship the AI decides for. It always tries to bear off when a turn

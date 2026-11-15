@@ -1,4 +1,5 @@
 extends GutTest
+const CrewFixtures = preload("res://test/unit/crew_fixtures.gd")
 ## Tests for ShipState combat fields and the ShipStateController mutators added for them.
 
 var state: ShipState
@@ -110,9 +111,16 @@ func test_controller_rigging_quality_is_section_count() -> void:
 
 
 func test_sections_able_to_fire_excludes_sail_change_and_empty() -> void:
+	# 4.B.4: sailor sections plotted to a task, and empty ones, do not serve the guns.
 	state.crew_count = [0, 3, 3, 3] as Array[int]
-	state.sail_change = {"target": "FS", "turns_left": 2, "sections": [3]}
+	CrewFixtures.give_sail_change(state, "FS", [3])
 	assert_eq(state.sections_able_to_fire(), 2)
+
+
+func test_sections_able_to_fire_ignores_marines() -> void:
+	# 4.B.4: only sailor sections serve the guns; marines altering sail cost no gunfire.
+	CrewFixtures.give_sail_change(state, "FS", [ShipState.MARINES])
+	assert_eq(state.sections_able_to_fire(), 4)
 
 
 func test_total_crew_boxes_sums_sailors_and_marines() -> void:
@@ -127,7 +135,10 @@ func test_serialize_round_trip_keeps_new_fields() -> void:
 	state.crew_quality = "E"
 	state.guns_dismounted = [2, 1] as Array[int]
 	state.initial_broadside_fired = [true, false] as Array[bool]
-	state.sail_change = {"target": "PS", "turns_left": 1, "sections": [0, 1]}
+	CrewFixtures.give_sail_change(state, "PS", [0, 1], 1)
+	state.crew_auto = false
+	state.mp_used_this_turn = 5
+	state.plotted_actions["crew_assignments"] = {2: {"code": "SAIL", "params": {"target": "PS"}}}
 	state.moved_this_turn = true
 	state.pending_morale_checks = 2
 	state.morale_triggers_used = ["hull_1"] as Array[String]
@@ -138,9 +149,14 @@ func test_serialize_round_trip_keeps_new_fields() -> void:
 	assert_eq(restored.crew_quality, "E")
 	assert_eq(restored.guns_dismounted, [2, 1] as Array[int])
 	assert_eq(restored.initial_broadside_fired, [true, false] as Array[bool])
-	assert_eq(restored.sail_change.get("target"), "PS")
-	assert_eq(restored.sail_change.get("turns_left"), 1)
-	assert_eq(restored.sail_change.get("sections").size(), 2)
+	assert_eq(restored.sail_change_info().get("target"), "PS")
+	assert_eq(restored.sail_change_info().get("sections").size(), 2)
+	assert_eq(restored.crew_tasks[0]["done"], 1)
+	assert_eq(restored.task_seq, state.task_seq)
+	assert_eq(restored.plotted_sections, [0, 1] as Array[int])
+	assert_false(restored.crew_auto)
+	assert_eq(restored.mp_used_this_turn, 5)
+	assert_eq(restored.plotted_actions["crew_assignments"].keys(), [2], "section keys stay ints")
 	assert_true(restored.moved_this_turn)
 	assert_eq(restored.pending_morale_checks, 2)
 	assert_eq(restored.morale_triggers_used, ["hull_1"] as Array[String])
@@ -168,14 +184,15 @@ func test_out_of_play_covers_struck_and_destroyed() -> void:
 
 func test_deserialize_old_snapshot_uses_defaults() -> void:
 	var data := state.serialize()
-	for key in ["status", "guns_dismounted", "initial_broadside_fired", "sail_change",
+	for key in ["status", "guns_dismounted", "initial_broadside_fired", "crew_tasks",
 			"moved_this_turn", "pending_morale_checks", "morale_triggers_used",
 			"unfoul_attempts", "morale_rating", "crew_quality"]:
 		data.erase(key)
 	var restored := ShipState.deserialize(data)
 	assert_eq(restored.status, ShipState.Status.ACTIVE)
 	assert_eq(restored.guns_dismounted, [0, 0] as Array[int])
-	assert_eq(restored.sail_change, {})
+	assert_eq(restored.sail_change_info(), {})
+	assert_true(restored.crew_auto, "Automatic crew is on by default (spec §3.3)")
 	assert_eq(restored.morale_rating, 4)
 
 
@@ -228,8 +245,10 @@ func test_simple_mutators() -> void:
 	assert_eq(state.guns_dismounted, [2, 2] as Array[int])
 	assert_true(c.set_initial_broadside_fired("ss_ship", ShipState.STARBOARD))
 	assert_eq(state.initial_broadside_fired, [false, true] as Array[bool])
-	assert_true(c.set_sail_change("ss_ship", {"target": "FS", "turns_left": 2, "sections": [0]}))
-	assert_eq(state.sail_change.target, "FS")
+	var seq := c.add_task("ss_ship", {"code": "SAIL", "sections": [0], "params": {"target": "FS"}})
+	assert_eq(state.sail_change_info().target, "FS")
+	assert_true(c.end_task("ss_ship", seq, "test"))
+	assert_eq(state.sail_change_info(), {})
 	assert_true(c.set_moved_this_turn("ss_ship", true))
 	assert_true(state.moved_this_turn)
 	assert_true(c.set_crew_quality("ss_ship", "C"))

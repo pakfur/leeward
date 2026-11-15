@@ -114,11 +114,12 @@ static func morale_line(morale: int) -> String:
 
 ## "" when no sail change is ordered or underway.
 static func sail_change_line(s: ShipState) -> String:
-	if not s.sail_change.is_empty():
-		var turns: int = s.sail_change.get("turns_left", 0)
+	var change := s.sail_change_info()
+	if not change.is_empty():
+		var turns: int = change.get("turns_left", 0)
 		return "Sail change: %s, %d %s left" % [
-			PlanningSailUi.sail_label(s.sail_change.get("target", "?")), turns, "turn" if turns == 1 else "turns"]
-	var ordered: String = s.plotted_actions.get("sail_change", "")
+			PlanningSailUi.sail_label(change.get("target", "?")), turns, "turn" if turns == 1 else "turns"]
+	var ordered: String = s.ordered_sail_target()
 	if ordered != "":
 		return "Sail change ordered: %s" % PlanningSailUi.sail_label(ordered)
 	return ""

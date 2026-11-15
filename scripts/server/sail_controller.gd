@@ -1,27 +1,32 @@
 class_name SailController
-extends RefCounted
-## SailController - Plotted sail changes (Close Action 1997, 8).
-## A change is plotted in PLANNING, starts at the beginning of MOVEMENT_RESOLUTION (occupying
-## sailor sections, which cannot then serve the guns), and completes in STATUS_ADJUSTMENT.
+extends CrewTaskHandler
+## SailController - sail changes (Close Action 1997, 5.F.6-9), the SAIL crew-task handler.
+## The player orders a target sail state in PLANNING (`plot_sail_change`, stored as
+## plotted_actions crew_orders.sail_target); CrewRules / CrewAuto place the sections; the change
+## starts at the beginning of MOVEMENT_RESOLUTION (CrewTaskController.begin_turn_tasks) and is
+## counted and completed in STATUS_ADJUSTMENT (advance_tasks). Its sections do not serve the guns.
+## Ship log costs (crew_tasks.json): MS<->PS 2 CS, 2/3 g-t's; FS<->MS and FS<->Furl 1 CS, 1/2 g-t's
+## (CQ A-D / E-G). Once begun it must be completed (5.F.9): it is not abandonable.
 ## All mutations go through ShipStateController.
 
+const CODE := "SAIL"
 ## Cancellation reason (5.F.9c): a Lines Jammed critical hit (Rigging #5) abandons a change in
 ## progress and forbids new ones until fixed (8.D.5) or the ship is dismasted.
 const CANCEL_LINES_JAMMED := "lines jammed"
-
-var is_server: bool = true
-var game_state: Node = null
+const ROW_MAJOR := "SAIL_MAJOR"
+const ROW_MINOR := "SAIL_MINOR"
 
 
 func _init(p_game_state: Node) -> void:
-	game_state = p_game_state
+	super(p_game_state)
+	abandonable = false
 
 
-func available_targets(ship_id: String) -> Array[String]:
-	## States one step from the carried sail, not above what the rigging can carry.
+## States one step from the carried sail, not above what the rigging can carry; none while a change
+## is in progress, the lines are jammed, or the ship is dismasted or out of play.
+static func targets_for(ship: ShipState) -> Array[String]:
 	var result: Array[String] = []
-	var ship: ShipState = game_state.get_ship(ship_id)
-	if ship == null or ship.is_out_of_play() or ship.is_dismasted() or not ship.sail_change.is_empty() \
+	if ship == null or ship.is_out_of_play() or ship.is_dismasted() or ship.has_sail_change() \
 			or ship.has_critical("lines_jammed"):
 		return result
 	var current := ShipState.SAIL_ORDER.find(ship.sail_state.to_upper())
@@ -34,21 +39,34 @@ func available_targets(ship_id: String) -> Array[String]:
 	return result
 
 
+## The crew_tasks.json row for a change from the carried state to `target`.
+static func cost_row(ship: ShipState, target: String) -> String:
+	return ROW_MAJOR if ship.sail_state.to_upper() == "PS" or target == "PS" else ROW_MINOR
+
+
+## Sections the change to `target` needs (ship log: 2 for MS<->PS, else 1).
+static func sections_needed(ship: ShipState, target: String) -> int:
+	var sections: Array = DataManager.combat_tables.task_sections(cost_row(ship, target))
+	return int(sections[0]) if not sections.is_empty() else 1
+
+
+func available_targets(ship_id: String) -> Array[String]:
+	return targets_for(game_state.get_ship(ship_id))
+
+
 func change_cost(ship_id: String, target: String) -> Dictionary:
-	## FS<->MS and FS<->NS: 1 section, 1 turn. MS<->PS: 2 sections, 2 turns. +1 turn for CQ E-G.
+	## {"turns", "sections"} from the ship log at the ship's crew quality.
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
 		return {"turns": 0, "sections": 0}
-	var involves_ps: bool = ship.sail_state.to_upper() == "PS" or target == "PS"
-	var sections := 2 if involves_ps else 1
-	var turns := sections
-	if ship.crew_quality in ["E", "F", "G"]:
-		turns += 1
-	return {"turns": turns, "sections": sections}
+	var row := cost_row(ship, target)
+	return {"turns": DataManager.combat_tables.task_turns(row, ship.crew_quality),
+		"sections": sections_needed(ship, target)}
 
 
 func plot_sail_change(player_id: int, ship_id: String, target: String) -> String:
-	## Returns "" on success, otherwise the reason it was refused. An empty target clears the plot.
+	## Orders a sail change (crew_orders.sail_target). Returns "" on success, otherwise the reason it
+	## was refused. An empty target clears the order.
 	if not is_server:
 		push_error("SailController: Cannot plot sail change on client")
 		return "Not the server"
@@ -60,7 +78,7 @@ func plot_sail_change(player_id: int, ship_id: String, target: String) -> String
 	if game_state.phase_controller.current_phase != TurnPhaseController.GamePhase.PLANNING:
 		return "Sail changes can only be ordered during planning"
 	if target == "":
-		game_state.ship_controller.set_plotted_sail_change(ship_id, "")
+		game_state.ship_controller.set_crew_orders(ship_id, {"sail_target": ""})
 		return ""
 	if ship.is_destroyed():
 		return "Ship is destroyed"
@@ -70,69 +88,12 @@ func plot_sail_change(player_id: int, ship_id: String, target: String) -> String
 		return "Ship is dismasted"
 	if ship.has_critical("lines_jammed"):
 		return "Lines jammed"
-	if not ship.sail_change.is_empty():
+	if ship.has_sail_change():
 		return "A sail change is already in progress"
 	if not target in available_targets(ship_id):
 		return "Cannot change to %s from %s" % [target, ship.sail_state]
-	game_state.ship_controller.set_plotted_sail_change(ship_id, target)
+	game_state.ship_controller.set_crew_orders(ship_id, {"sail_target": target})
 	return ""
-
-
-func begin_plotted_changes() -> void:
-	## Start of MOVEMENT_RESOLUTION: turn each plotted order into an in-progress change.
-	if not is_server:
-		push_error("SailController: Cannot begin sail changes on client")
-		return
-	var phase: int = game_state.phase_controller.current_phase
-	for ship in game_state.get_all_ships():
-		var target: String = ship.plotted_actions.get("sail_change", "")
-		if target == "":
-			continue
-		var ship_id: String = ship.ship_id
-		game_state.ship_controller.set_plotted_sail_change(ship_id, "")
-		if ship.has_critical("lines_jammed"):
-			_log(ship, target, 0, phase, CANCEL_LINES_JAMMED)
-			continue
-		if not target in available_targets(ship_id):
-			_log(ship, target, 0, phase, "not available")
-			continue
-		var cost: Dictionary = change_cost(ship_id, target)
-		var sections: Array[int] = _free_sections(ship, cost["sections"])
-		if sections.size() < cost["sections"]:
-			_log(ship, target, cost["turns"], phase, "no crew")
-			continue
-		game_state.ship_controller.set_sail_change(ship_id, {
-			"target": target, "turns_left": cost["turns"], "sections": sections})
-		_log(ship, target, cost["turns"], phase)
-
-
-func advance_changes(phase: int) -> void:
-	## STATUS_ADJUSTMENT: count down each change; complete or cancel it.
-	if not is_server:
-		push_error("SailController: Cannot advance sail changes on client")
-		return
-	for ship in game_state.get_all_ships():
-		if ship.sail_change.is_empty():
-			continue
-		var change: Dictionary = ship.sail_change
-		var target: String = change.get("target", "")
-		var turns_left: int = change.get("turns_left", 0)
-		var reason: String = _cancel_reason(ship, change)
-		if reason != "":
-			game_state.ship_controller.set_sail_change(ship.ship_id, {})
-			_log(ship, target, turns_left, phase, reason)
-			continue
-		turns_left -= 1
-		if turns_left > 0:
-			var updated: Dictionary = change.duplicate(true)
-			updated["turns_left"] = turns_left
-			game_state.ship_controller.set_sail_change(ship.ship_id, updated)
-			continue
-		var from_state: String = ship.sail_state
-		game_state.ship_controller.set_sail_state(ship.ship_id, target)
-		game_state.ship_controller.set_sail_change(ship.ship_id, {})
-		game_state.turn_log.add(PhaseEvents.Type.SAIL_CHANGE, phase, ship.ship_id,
-			{"from": from_state, "to": target, "turns_left": 0})
 
 
 ## Abandons the change in progress at once (e.g. Lines Jammed, 5.F.9c) and logs SAIL_CHANGE
@@ -142,15 +103,74 @@ func cancel_change(ship_id: String, reason: String, phase: int) -> bool:
 		push_error("SailController: Cannot cancel sail change on client")
 		return false
 	var ship: ShipState = game_state.get_ship(ship_id)
-	if ship == null or ship.sail_change.is_empty():
+	if ship == null or not ship.has_sail_change():
 		return false
-	var change: Dictionary = ship.sail_change
-	game_state.ship_controller.set_sail_change(ship_id, {})
-	_log(ship, str(change.get("target", "")), int(change.get("turns_left", 0)), phase, reason)
-	return true
+	return game_state.crew_task_controller.cancel_task(ship_id, int(ship.tasks_with(CODE)[0]["seq"]),
+		reason, phase)
 
 
-func _cancel_reason(ship: ShipState, change: Dictionary) -> String:
+# --- CrewTaskHandler ---
+
+func can_plot(ship: ShipState, sections: Array, params: Dictionary, plan: Dictionary) -> String:
+	var target := str(params.get("target", ""))
+	var orders: Dictionary = plan.get("orders", {})
+	if ship.has_critical("lines_jammed"):
+		return "Lines jammed: no sail changes (5.F.9c)"
+	if target == "" or target != str(orders.get("sail_target", "")):
+		return "No sail change is ordered"
+	if sections.size() > sections_needed(ship, target):
+		return "Sails aloft is full (%d %s)" % [sections_needed(ship, target),
+			"section" if sections_needed(ship, target) == 1 else "sections"]
+	return ""
+
+
+func turns_required(ship: ShipState, task: Dictionary) -> int:
+	return ship.task_turns_required(task)
+
+
+func same_task(task: Dictionary, params: Dictionary) -> bool:
+	return str((task.get("params", {}) as Dictionary).get("target", "")) == str(params.get("target", ""))
+
+
+func prepare(ship: ShipState, candidate: Dictionary) -> String:
+	var target := str(candidate["params"].get("target", ""))
+	if ship.has_critical("lines_jammed"):
+		return CANCEL_LINES_JAMMED
+	if not target in targets_for(ship):
+		return "not available"
+	if (candidate.get("sections", []) as Array).size() < sections_needed(ship, target):
+		return "no crew"
+	candidate["params"]["from"] = ship.sail_state
+	candidate["params"]["row"] = cost_row(ship, target)
+	return ""
+
+
+func on_started(ship: ShipState, task: Dictionary, phase: int) -> void:
+	_log_sail(ship, str(task["params"].get("target", "")), turns_required(ship, task), phase)
+
+
+func on_refused(ship: ShipState, candidate: Dictionary, reason: String, phase: int) -> void:
+	var target := str(candidate["params"].get("target", ""))
+	var turns := 0
+	if reason == "no crew":
+		turns = DataManager.combat_tables.task_turns(cost_row(ship, target), ship.crew_quality)
+	_log_sail(ship, target, turns, phase, reason)
+
+
+func on_complete(ship: ShipState, task: Dictionary, phase: int) -> void:
+	var target := str(task["params"].get("target", ""))
+	var from_state: String = ship.sail_state
+	game_state.ship_controller.set_sail_state(ship.ship_id, target)
+	game_state.turn_log.add(PhaseEvents.Type.SAIL_CHANGE, phase, ship.ship_id,
+		{"from": from_state, "to": target, "turns_left": 0})
+
+
+func on_cancel(ship: ShipState, task: Dictionary, reason: String, phase: int) -> void:
+	var turns_left := maxi(0, turns_required(ship, task) - int(task.get("done", 0)))
+	_log_sail(ship, str(task["params"].get("target", "")), turns_left, phase, reason)
+
+
+func cancel_reason(ship: ShipState, task: Dictionary) -> String:
 	if ship.is_destroyed():
 		return "destroyed"
 	if ship.is_struck():
@@ -159,24 +179,13 @@ func _cancel_reason(ship: ShipState, change: Dictionary) -> String:
 		return "dismasted"
 	if ship.has_critical("lines_jammed"):
 		return CANCEL_LINES_JAMMED
-	for section in change.get("sections", []):
-		if ship.crew_count[section] <= 0:
+	for section in task.get("sections", []):
+		if not ship.section_alive(int(section)):
 			return "crew lost"
 	return ""
 
 
-func _free_sections(ship: ShipState, needed: int) -> Array[int]:
-	## Highest-numbered sailor sections that still have boxes (0-based indices, highest first).
-	var result: Array[int] = []
-	for i in range(ship.crew_count.size() - 1, -1, -1):
-		if result.size() >= needed:
-			break
-		if ship.crew_count[i] > 0:
-			result.append(i)
-	return result
-
-
-func _log(ship: ShipState, target: String, turns_left: int, phase: int, cancelled: String = "") -> void:
+func _log_sail(ship: ShipState, target: String, turns_left: int, phase: int, cancelled: String = "") -> void:
 	var data := {"from": ship.sail_state, "to": target, "turns_left": turns_left}
 	if cancelled != "":
 		data["cancelled"] = cancelled

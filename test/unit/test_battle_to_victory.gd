@@ -279,6 +279,8 @@ func test_sail_change_reduces_fire_then_takes_effect() -> void:
 	for m in p0_fire.data["modifiers"]:
 		if m["name"] == "sections_firing":
 			section_modifier = int(m["value"])
+	# Crew-tasks spec §3.3: the enemy is adjacent, so the marines are held back and S4 alters sail;
+	# 4.B.4 / ship log: one sailor section missing is -3.
 	assert_eq(section_modifier, -3, "one sailor section busy: sections_firing -3")
 	var changes: Array = GameState.turn_logs[turn].of_type(PhaseEvents.Type.SAIL_CHANGE)
 	assert_gt(changes.size(), 0, "sail change logged")

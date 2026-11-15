@@ -83,6 +83,9 @@ func apply_crew_boxes(ship_id: String, count: int, marines_first: bool, phase: i
 			break
 		var emptied: int = game_state.ship_controller.remove_crew_box(ship_id, marines_first)
 		applied += 1
+		if emptied >= 0 and game_state.get("crew_task_controller") != null:
+			# 4.B.3: a section completely marked out loses its task and its progress.
+			game_state.crew_task_controller.cancel_section(ship_id, emptied, "crew lost", phase)
 		if emptied >= 0 and not struck_before:
 			_note_morale(ship_id, "crew_%d" % emptied, 1, phase)
 	if applied > 0 and ship.total_crew_boxes() == 0 and not struck_before:
@@ -136,9 +139,8 @@ func destroy(ship_id: String, reason: String, phase: int) -> void:
 		var partner: ShipState = game_state.get_ship(partner_id)
 		if partner != null and partner.fouled_with == ship_id:
 			sc.set_fouled_with(partner_id, "")
-	if not ship.sail_change.is_empty():
-		sc.set_sail_change(ship_id, {})
-	sc.set_plotted_sail_change(ship_id, "")
+	if game_state.get("crew_task_controller") != null:
+		game_state.crew_task_controller.drop_all(ship_id, "destroyed")
 	sc.clear_pending_morale_checks(ship_id)
 	game_state.turn_log.add(PhaseEvents.Type.DESTROYED, phase, ship_id, {"reason": reason}, partner_id)
 	Trace.trace_log("Damage", "Ship %s destroyed: %s" % [ship_id, reason])
@@ -157,7 +159,8 @@ func _apply_rigging(ship: ShipState, ship_id: String, amount: int, phase: int,
 			_queue_check(ship_id, "rigging", section, ctx)
 	if applied > 0 and ship.is_dismasted():
 		game_state.ship_controller.set_sail_state(ship_id, "NS")
-		game_state.ship_controller.set_sail_change(ship_id, {})
+		if game_state.get("crew_task_controller") != null:
+			game_state.crew_task_controller.cancel_code(ship_id, SailController.CODE, "dismasted", phase, false)
 		var crits = game_state.get("critical_hit_controller")
 		if crits != null:
 			crits.clear_lines_jammed_on_dismasting(ship_id, phase)
@@ -201,6 +204,9 @@ func _apply_crew(ship: ShipState, ship_id: String, amount: int, cause: String, p
 		var sailor: bool = DataManager.combat_tables.crew_loss_is_sailor(cause, roll)
 		var emptied: int = game_state.ship_controller.remove_crew_box(ship_id, not sailor)
 		applied += 1
+		if emptied >= 0 and game_state.get("crew_task_controller") != null:
+			# 4.B.3: a section completely marked out loses its task and its progress.
+			game_state.crew_task_controller.cancel_section(ship_id, emptied, "crew lost", phase)
 		if emptied >= 0 and not struck_before:
 			_note_morale(ship_id, "crew_%d" % emptied, 1, phase)
 	if applied > 0 and ship.total_crew_boxes() == 0 and not struck_before:

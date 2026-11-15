@@ -266,6 +266,9 @@ def check_small_tables(tables, r):
         arr = uf.get("success_max")
         if not isinstance(arr, list) or len(arr) != 3 or arr != sorted(arr):
             r.err("unfouling_table.json", "success_max must be 3 non-decreasing ints")
+        mu = uf.get("marines_unavailable")
+        if mu != 1:
+            r.err("unfouling_table.json", "marines_unavailable must be 1 (chart DRM 'Marines not avail.: +1')")
     cq = tables["crew_quality_table.json"]
     if cq is not None:
         letters = sorted(k for k in cq if k != "_doc")
@@ -359,6 +362,50 @@ def check_poor_maneuvering(t, r):
             r.err(f"{name} type {m}", "must not increase from CQ A to G")
 
 
+CREW_TASK_CODES = {"SAIL_MAJOR", "SAIL_MINOR", "T", "RO", "FF", "RR", "RH", "RS",
+                   "FB", "BR", "BA", "BD"}
+TURN_SHAPES = ({"ad", "eg"}, {"sk_base"}, {"fixed"}, {"until"})
+
+
+def check_crew_tasks(t, r):
+    name = "crew_tasks.json"
+    for code, row in t.items():
+        if code == "_doc":
+            continue
+        path = f"{name}.{code}"
+        if code not in CREW_TASK_CODES:
+            r.err(path, "unknown crew task code")
+            continue
+        if not isinstance(row, dict):
+            r.err(path, "must be an object")
+            continue
+        if not isinstance(row.get("name"), str):
+            r.err(path, "needs a name")
+        sec = row.get("sections")
+        if (not isinstance(sec, list) or len(sec) != 2
+                or not all(isinstance(v, int) and not isinstance(v, bool) for v in sec)
+                or not 1 <= sec[0] <= sec[1] <= 3):
+            r.err(path, "sections must be [min, max] with 1 <= min <= max <= 3")
+        turns = row.get("turns")
+        if not isinstance(turns, dict) or set(turns) not in TURN_SHAPES:
+            r.err(path, "turns must be exactly one of {ad, eg}, {sk_base}, {fixed}, {until}")
+            continue
+        if "ad" in turns:
+            if not all(isinstance(turns[k], int) and turns[k] >= 1 for k in ("ad", "eg")) \
+                    or turns["ad"] > turns["eg"]:
+                r.err(path, "ad/eg must be ints >= 1 with ad <= eg (green crews are slower)")
+        elif "until" in turns:
+            if turns["until"] not in ("out", "turn"):
+                r.err(path, "until must be 'out' or 'turn'")
+        else:
+            v = next(iter(turns.values()))
+            if not isinstance(v, int) or v < 1:
+                r.err(path, "turn count must be an int >= 1")
+    for code in ("SAIL_MAJOR", "SAIL_MINOR"):
+        if code not in t:
+            r.err(name, f"missing {code}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     default_dir = Path(__file__).resolve().parents[4] / "data" / "rules"
@@ -372,6 +419,7 @@ def main():
         "crew_loss_table.json", "drifting_table.json",
         "unfouling_table.json", "crew_quality_table.json",
         "critical_hits_table.json", "poor_maneuvering_table.json",
+        "crew_tasks.json",
     ]
     tables = {n: load(args.rules_dir, n, r) for n in names}
     checks = {
@@ -381,6 +429,7 @@ def main():
         "gunfire_modifiers.json": check_modifiers,
         "critical_hits_table.json": check_critical_hits,
         "poor_maneuvering_table.json": check_poor_maneuvering,
+        "crew_tasks.json": check_crew_tasks,
     }
     for n, fn in checks.items():
         if tables[n] is not None:

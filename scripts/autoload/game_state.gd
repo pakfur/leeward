@@ -60,6 +60,7 @@ var damage_controller: DamageController = null
 var critical_hit_controller: CriticalHitController = null
 var gunnery_resolver: GunneryResolver = null
 var sail_controller: SailController = null
+var crew_task_controller: CrewTaskController = null
 var drift_resolver: DriftResolver = null
 var fouling_controller: FoulingController = null
 var morale_controller: MoraleController = null
@@ -98,6 +99,8 @@ func _initialize_server_controllers() -> void:
 	critical_hit_controller = CriticalHitController.new(self)
 	gunnery_resolver = GunneryResolver.new(self)
 	sail_controller = SailController.new(self)
+	crew_task_controller = CrewTaskController.new(self)
+	crew_task_controller.register_handler(SailController.CODE, sail_controller)
 	drift_resolver = DriftResolver.new(self)
 	fouling_controller = FoulingController.new(self)
 	morale_controller = MoraleController.new(self)
@@ -555,7 +558,17 @@ func _update_ship_from_data(ship: ShipState, data: Dictionary) -> void:
 		ship.initial_broadside_fired.clear()
 		for fired in data["initial_broadside_fired"]:
 			ship.initial_broadside_fired.append(bool(fired))
-	ship.sail_change = (data.get("sail_change", ship.sail_change) as Dictionary).duplicate(true)
+	ship.crew_auto = bool(data.get("crew_auto", ship.crew_auto))
+	if data.has("crew_tasks"):
+		ship.crew_tasks.clear()
+		for task in data["crew_tasks"]:
+			ship.crew_tasks.append(ShipState.crew_task_from(task))
+	ship.task_seq = int(data.get("task_seq", ship.task_seq))
+	if data.has("plotted_sections"):
+		ship.plotted_sections = ShipState._int_array(data["plotted_sections"])
+	ship.mp_used_this_turn = int(data.get("mp_used_this_turn", ship.mp_used_this_turn))
+	if data.has("checked_sections"):
+		ship.checked_sections = (data["checked_sections"] as Dictionary).duplicate(true)
 	ship.moved_this_turn = data.get("moved_this_turn", ship.moved_this_turn)
 	ship.pending_morale_checks = int(data.get("pending_morale_checks", ship.pending_morale_checks))
 	if data.has("morale_triggers_used"):
@@ -563,4 +576,5 @@ func _update_ship_from_data(ship: ShipState, data: Dictionary) -> void:
 		for trigger in data["morale_triggers_used"]:
 			ship.morale_triggers_used.append(str(trigger))
 	ship.unfoul_attempts = int(data.get("unfoul_attempts", ship.unfoul_attempts))
-	ship.plotted_actions = data.get("plotted_actions", ship.plotted_actions)
+	if data.has("plotted_actions"):
+		ship.plotted_actions = ShipState.plot_from(data["plotted_actions"])

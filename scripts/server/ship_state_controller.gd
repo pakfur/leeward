@@ -347,14 +347,121 @@ func set_initial_broadside_fired(ship_id: String, side: int) -> bool:
 	ship_state_changed.emit(ship_id)
 	return true
 
-func set_sail_change(ship_id: String, change: Dictionary) -> bool:
+## --- Crew tasks (4.A.3, 4.B; crew-tasks spec §2.2) ---
+
+func set_crew_auto(ship_id: String, on: bool) -> bool:
 	if not is_server:
-		push_error("ShipStateController: Cannot modify sail change on client")
+		push_error("ShipStateController: Cannot modify crew_auto on client")
 		return false
 	var ship = _server_ship(ship_id)
 	if not ship:
 		return false
-	ship.sail_change = change.duplicate(true)
+	ship.crew_auto = on
+	ship_state_changed.emit(ship_id)
+	return true
+
+## The plotted crew sections: {section:int -> {"code": String, "params": Dictionary}}.
+func set_crew_assignments(ship_id: String, assignments: Dictionary) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot plot crew on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	var copy := {}
+	for section in assignments:
+		copy[int(section)] = (assignments[section] as Dictionary).duplicate(true)
+	ship.plotted_actions["crew_assignments"] = copy
+	ship_state_changed.emit(ship_id)
+	return true
+
+## The ship's crew orders this turn ({"sail_target": ""}); keys not given keep their value.
+func set_crew_orders(ship_id: String, orders: Dictionary) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot plot crew orders on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	var current = ship.plotted_actions.get("crew_orders", {})
+	var merged: Dictionary = (current as Dictionary).duplicate(true) if current is Dictionary else {}
+	merged.merge(orders.duplicate(true), true)
+	ship.plotted_actions["crew_orders"] = merged
+	ship_state_changed.emit(ship_id)
+	return true
+
+## Adds a crew task ({code, sections, params, forced, marines_available}; seq, done, started_turn
+## and ended are filled in). Returns its seq, or -1.
+func add_task(ship_id: String, task: Dictionary) -> int:
+	if not is_server:
+		push_error("ShipStateController: Cannot add crew task on client")
+		return -1
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return -1
+	ship.task_seq += 1
+	var entry := ShipState.crew_task_from(task)
+	entry["seq"] = ship.task_seq
+	entry["done"] = int(task.get("done", 0))
+	entry["started_turn"] = int(task.get("started_turn", current_turn()))
+	entry["ended"] = ""
+	ship.crew_tasks.append(entry)
+	ship_state_changed.emit(ship_id)
+	return ship.task_seq
+
+## Merges `fields` into the task with this seq (seq itself is kept).
+func update_task(ship_id: String, seq: int, fields: Dictionary) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify crew task on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	for task in ship.crew_tasks:
+		if int(task["seq"]) == seq:
+			for key in fields:
+				if key != "seq":
+					task[key] = fields[key].duplicate(true) if (fields[key] is Dictionary or fields[key] is Array) else fields[key]
+			ship_state_changed.emit(ship_id)
+			return true
+	push_error("[Server] No crew task %d on %s" % [seq, ship_id])
+	return false
+
+## Ends the task: it stays, with `ended` = reason, until the g-t ends (clear_turn_flags).
+func end_task(ship_id: String, seq: int, reason: String) -> bool:
+	return update_task(ship_id, seq, {"ended": reason if reason != "" else "ended"})
+
+func set_plotted_sections(ship_id: String, sections: Array) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify plotted sections on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.plotted_sections = ShipState._int_array(sections)
+	ship_state_changed.emit(ship_id)
+	return true
+
+## 8.F.5, 9.B.2: kind "rigging" or "hull", section 0-3.
+func mark_section_checked(ship_id: String, kind: String, section: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify checked sections on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship or not ship.checked_sections.has(kind):
+		return false
+	ship.checked_sections[kind][section] = true
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_mp_used(ship_id: String, mps: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify mp_used_this_turn on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.mp_used_this_turn = mps
 	ship_state_changed.emit(ship_id)
 	return true
 
@@ -595,18 +702,6 @@ func set_plotted_movement(ship_id: String, movement_commands: Array) -> bool:
 	Trace.trace_log("ShipState", "Ship %s plotted movement: %s" % [ship_id, movement_commands])
 	return true
 
-func set_plotted_sail_change(ship_id: String, target: String) -> bool:
-	## Plot (or, with "", clear) an optional sail-change order for this turn
-	if not is_server:
-		push_error("ShipStateController: Cannot plot sail change on client")
-		return false
-	var ship = _server_ship(ship_id)
-	if not ship:
-		return false
-	ship.plotted_actions["sail_change"] = target
-	ship_state_changed.emit(ship_id)
-	return true
-
 func clear_plotted_actions(ship_id: String) -> bool:
 	if not is_server:
 		push_error("ShipStateController: Cannot clear plot on client")
@@ -631,6 +726,13 @@ func clear_turn_flags(ship_id: String) -> bool:
 		return false
 
 	ship._clear_turn_flags()
+	ship.plotted_sections.clear()
+	ship.mp_used_this_turn = 0
+	var live: Array[Dictionary] = []
+	for task in ship.crew_tasks:
+		if task.get("ended", "") == "":
+			live.append(task)
+	ship.crew_tasks = live
 	ship_state_changed.emit(ship_id)
 	return true
 

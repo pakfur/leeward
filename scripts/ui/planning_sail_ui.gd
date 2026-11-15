@@ -75,14 +75,15 @@ static func sail_row(ship: ShipState, targets: Array, costs: Dictionary) -> Dict
 	}
 	if ship.is_out_of_play():
 		return row
-	if not ship.sail_change.is_empty():
+	var change := ship.sail_change_info()
+	if not change.is_empty():
 		row["mode"] = Mode.PROGRESS
 		row["text"] = "Changing to %s — %s left" % [
-			sail_label(ship.sail_change.get("target", "?")),
-			plural(ship.sail_change.get("turns_left", 0), "turn")]
+			sail_label(change.get("target", "?")),
+			plural(change.get("turns_left", 0), "turn")]
 		row["hint"] = HINT
 		return row
-	var ordered: String = ship.plotted_actions.get("sail_change", "")
+	var ordered: String = ship.ordered_sail_target()
 	if targets.is_empty() and ordered == "":
 		return row
 	var choices: Array = targets.duplicate()

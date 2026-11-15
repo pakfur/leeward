@@ -166,6 +166,9 @@ func player_submit_plan(player_id: int) -> bool:
 	# Check if all players are ready
 	if players_ready.all(func(is_ready): return is_ready):
 		Trace.trace_log("TurnPhase", "All players ready, advancing phase")
+		# End Planning: every crew plot is made legal against its final movement plot.
+		if game_state.crew_task_controller:
+			game_state.crew_task_controller.finalize_plots()
 		advance_phase()
 
 	return true
@@ -178,9 +181,10 @@ func _enter_movement_resolution_phase() -> void:
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: MOVEMENT_RESOLUTION")
 
-	# Plotted sail changes start now, before movement resolution clears the plots
-	if game_state.sail_controller:
-		game_state.sail_controller.begin_plotted_changes()
+	# Crew plots become tasks now (SoP III; sail changes start), before movement resolution
+	# clears the plots.
+	if game_state.crew_task_controller:
+		game_state.crew_task_controller.begin_turn_tasks(current_phase)
 
 	_bear_off_decisions = {}
 	if game_state.movement_resolver and game_state.environment:
@@ -382,9 +386,10 @@ func _enter_status_adjustment_phase() -> void:
 		game_state.fouling_controller.resolve_unfouling(current_phase)
 	if game_state.critical_hit_controller:
 		game_state.critical_hit_controller.resolve_fixes(current_phase)
-	if game_state.sail_controller:
-		game_state.sail_controller.advance_changes(current_phase)
-	# TODO: Resolve explosions, sinking, repairs, crew reorg, anchors
+	# SoP V.G: crew tasks counted, completed (sail changes take effect, 5.F.8) or cancelled.
+	if game_state.crew_task_controller:
+		game_state.crew_task_controller.advance_tasks(current_phase)
+	# TODO: Resolve explosions, sinking, repairs, anchors
 	advance_phase()
 
 func _enter_morale_check_phase() -> void:

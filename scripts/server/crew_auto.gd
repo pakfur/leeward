@@ -1,0 +1,55 @@
+class_name CrewAuto
+extends RefCounted
+## CrewAuto - the Automatic crew setting (crew-tasks spec §3.3), as pure static functions: the
+## ship's officers place the crew sections by fixed rules, the same every turn, with no dice and
+## no hidden inputs. Applied in order; a section taken by an earlier rule is not available to a
+## later one:
+##   A0 locked tasks stay (a sail change in progress, forced tasks);
+##   A1 fires (phase 4);
+##   A2 other tasks in progress continue with the same sections;
+##   A3 the ordered sail change, 1 or 2 sections in worker order;
+##   A4 tacking crew (phase 2); A5 repairs (phase 5);
+##   A6 everyone else: sailors serve the guns, the marines are at marine fire.
+## Worker order: M (unless held back, CrewRules.marines_held_back), then S4, S3, S2, S1. Marines
+## first because they cost no gunfire; then the highest sailors, which crew losses reach last.
+
+
+## {"assignments": {section -> {"code", "params"}}, "auto": [sections placed off the defaults]}.
+static func allocate(ship: ShipState, orders: Dictionary, ctx: Dictionary) -> Dictionary:
+	var taken := {}
+	# A0: locked tasks.
+	var locked := CrewRules.locked_sections(ship)
+	for section in locked:
+		taken[section] = locked[section]
+	# A2: tasks in progress, while every section still has boxes.
+	for task in ship.crew_tasks:
+		if task.get("ended", "") != "":
+			continue
+		var sections: Array = task.get("sections", [])
+		if sections.is_empty():
+			continue
+		var all_alive := true
+		var any_taken := false
+		for section in sections:
+			all_alive = all_alive and ship.section_alive(int(section))
+			any_taken = any_taken or taken.has(int(section))
+		if not all_alive or any_taken:
+			continue
+		for section in sections:
+			taken[int(section)] = {"code": str(task["code"]),
+				"params": (task.get("params", {}) as Dictionary).duplicate(true)}
+	# A3: the ordered sail change. Placed only when every section it needs is free; otherwise it
+	# does not start ("no crew") and nobody leaves the guns for it.
+	var needed := CrewRules.sail_sections_needed(ship, orders)
+	if needed > 0 and not ship.has_critical("lines_jammed"):
+		var workers := CrewRules.worker_order(ship, ctx, taken)
+		if workers.size() >= needed:
+			for k in range(needed):
+				taken[workers[k]] = {"code": SailController.CODE,
+					"params": {"target": str(orders.get("sail_target", ""))}}
+	# A6: the rest stay unplotted.
+	var auto: Array[int] = []
+	for section in range(ShipState.MARINES + 1):
+		if taken.has(section):
+			auto.append(section)
+	return {"assignments": taken, "auto": auto}

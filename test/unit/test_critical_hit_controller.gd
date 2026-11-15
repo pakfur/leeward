@@ -1,4 +1,5 @@
 extends GutTest
+const CrewFixtures = preload("res://test/unit/crew_fixtures.gd")
 ## Tests for CriticalHitController: the gunfire critical-hit roll (7.D.11), Rigging and Hull
 ## Checks (7.D.7, 7.D.8a), extra boxes and chaining (7.D.12), the chart's flags and notes
 ## (diamond, [D], dismasted), stern/bow rakes (7.E.5b, 7.E.6) and crit MCs (9.B.1e).
@@ -783,7 +784,7 @@ func test_status_adjustment_order_unfoul_fix_sail() -> void:
 	a.fouled_with = "b_ship"
 	b.fouled_with = "a_ship"
 	_add("b_ship", "braces_cut")
-	a.sail_change = {"target": "FS", "turns_left": 1, "sections": [3]}
+	CrewFixtures.give_sail_change(a, "FS", [3])
 	_dice.queue([9, 9, 1])  # a and b fail to unfoul; b fixes its braces
 	GameState.phase_controller._enter_status_adjustment_phase()
 	var types: Array = GameState.turn_log.events.map(func(e): return e.type)
@@ -803,10 +804,10 @@ func test_resolve_fixes_client_refuses() -> void:
 # --- Lines Jammed (Rigging #5, 5.F.9c) ---
 
 func test_row16_lines_jammed_cancels_change_in_progress() -> void:
-	b.sail_change = {"target": "PS", "turns_left": 2, "sections": [3, 2]}
+	CrewFixtures.give_sail_change(b, "PS", [3, 2])
 	_crit([2, 3], _ctx())
 	assert_true(b.has_critical("lines_jammed"))
-	assert_eq(b.sail_change, {})
+	assert_eq(b.sail_change_info(), {})
 	assert_eq(b.sail_state, "MS")
 	var sail := _events(PhaseEvents.Type.SAIL_CHANGE)
 	assert_eq(sail.size(), 1)
@@ -902,3 +903,46 @@ func test_client_refuses() -> void:
 	assert_false(crits.check_gunfire_crit(_ctx(), PHASE))
 	crits.drain(PHASE)
 	assert_push_error(2, "client refusals")
+
+
+# --- Marines not available (Unfouling table DRM "All Uses", 8.D.5; crew-tasks spec §3.6) ---
+
+func test_fix_marines_altering_sail_add_one() -> void:
+	# Spec §8 #7: M altering sail, CQ B, obscured side, fix d10 3: 3 -2 +1 = 2 <= 2: fixed.
+	b.crew_quality = "B"
+	_add("b_ship", "broadside_obscured", STARBOARD)
+	CrewFixtures.give_sail_change(b, "FS", [ShipState.MARINES])
+	_dice.queue([3])
+	crits.resolve_fixes(STATUS)
+	assert_false(b.has_critical("broadside_obscured"))
+	assert_eq(_events(PhaseEvents.Type.CRITICAL_FIXED)[0].data["modifier"], -1, "SK -2, marines busy +1")
+
+
+func test_fix_marines_altering_sail_four_fails() -> void:
+	# 4 -2 +1 = 3 > 2: the busy marines spoil a roll that would otherwise succeed.
+	b.crew_quality = "B"
+	_add("b_ship", "broadside_obscured", STARBOARD)
+	CrewFixtures.give_sail_change(b, "FS", [ShipState.MARINES])
+	_dice.queue([4])
+	crits.resolve_fixes(STATUS)
+	assert_true(b.has_critical("broadside_obscured"))
+
+
+func test_fix_marines_free_four_succeeds() -> void:
+	# Spec §8 #7: M free, d10 4: 4 -2 = 2 <= 2: fixed.
+	b.crew_quality = "B"
+	_add("b_ship", "broadside_obscured", STARBOARD)
+	CrewFixtures.give_sail_change(b, "FS", [3])  # S4 alters sail: the marines stay available
+	_dice.queue([4])
+	crits.resolve_fixes(STATUS)
+	assert_false(b.has_critical("broadside_obscured"))
+
+
+func test_fix_marines_wiped_out_are_not_unavailable() -> void:
+	# Spec §9 Q5: a ship whose marine section is gone does not take the +1.
+	b.crew_quality = "B"
+	b.marine_count = 0
+	_add("b_ship", "broadside_obscured", STARBOARD)
+	_dice.queue([4])
+	crits.resolve_fixes(STATUS)
+	assert_false(b.has_critical("broadside_obscured"))
