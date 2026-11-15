@@ -553,7 +553,7 @@ a. Ships may not turn in calm (WS=0).
 
 b. Dismasted ships may not <mark>voluntarily</mark> turn; they will turn, however, while under tow or when partially <mark>drifting.</mark>
 
-**5.D.2 MA=0 Turning Procedure.** On the <mark>g-t</mark> a ship tries to turn, roll d10 on the Tacking table (red sheet). If the result is < the number required, the turn succeeds.
+**5.D.2 MA=0 Turning Procedure.** On the <mark>g-t</mark> a ship tries to turn, roll d10 on the Tacking table (red sheet). If the result is ≤ the number required, the turn succeeds.
 
 a. Number of CSs plotted. The table assumes that 3 CSs-are plotted to <mark>"T\*</mark> on the g-t that the ship tries to turn at MA=0. For each CS not so plotted, add +2 to the DR, up to a maximum of +6 if no CSs are plotted. Note: one Tacking table DRM reads "(up to +8)". This is a mistake; it should read \*(up to +6)". Change it on your red sheet.
 
@@ -1297,7 +1297,7 @@ Introduction: During the Maintenance Phase, ships perform a variety of actions. 
 
 #### 8.C GRAPPLING AND UNGRAPPLING
 
-**8.C.1 Basic Rules.** At the start of the Grappling sub-phase, ships may attempt to grapple each adjacent ship once, provided that both the grappling ship and the target ship each used < <mark>fvo</mark> MPs in the Movement Phase (the orientation and movement paths of the two ships with respect to one another do not matter). Note: whether ships are fouled with one another does not affect their grappling chance. Friendly ships may grapple each other, but must roll to do so, just like grappling between enemy ships.
+**8.C.1 Basic Rules.** At the start of the Grappling sub-phase, ships may attempt to grapple each adjacent ship once, provided that both the grappling ship and the target ship each used ≤ two MPs in the Movement Phase (the orientation and movement paths of the two ships with respect to one another do not matter). Note: whether ships are fouled with one another does not affect their grappling chance. Friendly ships may grapple each other, but must roll to do so, just like grappling between enemy ships.
 
 **EXAMPLE 1:** A ship which expended 3 MPs cannot attempt to grapple another ship, <mark>regardiess</mark> of the other ship's speed (or even if the enemy ship did not move at all).
 
@@ -2392,7 +2392,7 @@ A. Declaring Boarding. Each ship grappled or fouled to an enemy ship and with at
 
 A. Drifting & Veering. Resolve drifting for each stopped ship, working from leeward to windward <mark>(d10</mark> on Drift table).). <mark>If</mark> a drifting ship collides with another ship, roll d10 for fouling. Simultaneously do all plotted veering. B. Anchoring & Towing. Ships plotted to anchor , cut anchor cable, or cut tow cable do'so. Place/remove counters. C. Grappling. Every ship may attempt to grapple each adjacent ship with which it is not already grappled. D. Ungrappling. Every ship may attempt to throw off any grapples desired. E. Unfouling & Fixing. All actions which require rolling on the Unfouling table are rolled for. Some of these actions do not require CSs to be plotted, and may be rolled for on the same g-t that damage occurs. They are: Braces Cut [BC] | Rudder Jammed [RJ] Lines Jammed [LJ] Signal Halyards [SH] Fouled ships | Obscured Broadsides [-2pb/sb] F. Fire & Explosions.
 
-\1. Firefighting. Each burning ship which has a CS plotted to FF rolls <mark>d10</mark> on the Unfouling table to fight the fire. 2. Fire Damage. Each ship still on fire crosses off 1H and 1R for each fire still burning. 3. Fire Growing & Spreading. For each fire burning for five g-t's, add a new fire counter on the same ship. Each ship grappled or fouled to a burning ship catches fire on a DR of 1-3 on a <mark>d6.</mark> 4. Exploding Ships. Burning ships which have no hull boxes remaining roll to explode. The chance to explode is "< 2" on 2d6, with a -1 to the DR for each previous g-t that explosion was checked. G. Reconciliation.
+\1. Firefighting. Each burning ship which has a CS plotted to FF rolls <mark>d10</mark> on the Unfouling table to fight the fire. 2. Fire Damage. Each ship still on fire crosses off 1H and 1R for each fire still burning. 3. Fire Growing & Spreading. For each fire burning for five g-t's, add a new fire counter on the same ship. Each ship grappled or fouled to a burning ship catches fire on a DR of 1-3 on a <mark>d6.</mark> 4. Exploding Ships. Burning ships which have no hull boxes remaining roll to explode. The chance to explode is "≤ 2" on 2d6, with a -1 to the DR for each previous g-t that explosion was checked. G. Reconciliation.
 
 \1. Record Repairs. Each ship which has completed a repair draws a new rigging or hull box on the ship log. 2. Ship Removal. Remove from the map all ships which have escaped or exploded in the previous g-t. 3. Crew Adjustment. Mark changes in crew status due to prize crew formation and completed reorganization. 4. Morale Checks. Roll all morale checks. Place a strike marker on those ships which strike. 5. Signal Delivery. Deliver all signals written in the Plot Phase of this game-turn. 6. Status Update. Make <mark>ceriain</mark> all status counters correctly reflect their ships' status. Make certain that each ship's gunnery modifiers correctly reflect its condition.
 
