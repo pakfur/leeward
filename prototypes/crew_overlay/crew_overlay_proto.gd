@@ -878,7 +878,11 @@ func _station_header(left: String, right: String, fs_css: float, avail: float) -
 	var fs := Style.px(fs_css)
 	var need := font.get_string_size(left.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x \
 			+ (font.get_string_size(right, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + Style.px(6) if right != "" else 0.0)
-	var h: BoxContainer = _hbox(6) if need <= avail else _vbox(0)
+	var h: BoxContainer
+	if need <= avail:
+		h = _hbox(6)
+	else:
+		h = _vbox(0)
 	var l := Style.label(left.to_upper(), fs_css, Style.CARD_INK, true, true)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD
 	l.size_flags_horizontal = SIZE_EXPAND_FILL
