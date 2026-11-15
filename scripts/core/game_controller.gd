@@ -1213,10 +1213,8 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 		return
 	hex_overlay.clear_arcs()
 	var geometry: FireGeometry = GameState.fire_geometry
-	hex_overlay.show_arc(geometry.broadside_hexes(ship_state.hex_position, ship_state.facing,
-		ShipState.PORT, FireGeometry.MAX_RANGE), ShipState.PORT)
-	hex_overlay.show_arc(geometry.broadside_hexes(ship_state.hex_position, ship_state.facing,
-		ShipState.STARBOARD, FireGeometry.MAX_RANGE), ShipState.STARBOARD)
+	for side in [ShipState.PORT, ShipState.STARBOARD]:
+		hex_overlay.show_arc(_broadside_arc(geometry, ship_state, side), side)
 	var target_hexes: Array[Vector2i] = []
 	for target_id in fire_panel.get_target_ids(ship_id):
 		var target := GameState.get_ship(target_id)
@@ -1224,6 +1222,17 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 			target_hexes.append(target.hex_position)
 	hex_overlay.show_target_highlights(target_hexes)
 	_frame_fire_view(ship_state, target_hexes)
+
+
+## Union of the bow and stern battery arcs on one side, without the ship's own hexes.
+static func _broadside_arc(geometry: FireGeometry, ship_state: ShipState, side: int) -> Array[Vector2i]:
+	var own := ship_state.occupied_hexes()
+	var result: Array[Vector2i] = []
+	for battery in own:
+		for h in geometry.broadside_hexes(battery, ship_state.facing, side, FireGeometry.MAX_RANGE):
+			if not result.has(h) and not own.has(h):
+				result.append(h)
+	return result
 
 
 ## Pan (zooming out only if both cannot fit) so the firing ship and its chosen targets are on

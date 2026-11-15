@@ -1,5 +1,5 @@
 extends GutTest
-## Tests for FireGeometry: broadside arcs, rake wedges, line of sight.
+## Tests for FireGeometry: broadside arcs, battery bearing, range, rakes, line of sight.
 
 var grid: HexGrid
 var geo: FireGeometry
@@ -51,26 +51,101 @@ func test_bearing_side_facing_three() -> void:
 	assert_eq(geo.bearing_side(Vector2i.ZERO, 3, _n(4)), ShipState.STARBOARD)
 
 
-# --- rake_type ---
+# --- range_between ---
 
-func test_rake_stern() -> void:
-	assert_eq(geo.rake_type(Vector2i.ZERO, 0, _n(3)), "stern")
+func test_range_is_closest_hexes() -> void:
+	# Firer bow (6,0) facing W, stern (7,0); target bow (2,0) facing W, stern (3,0).
+	# Firer bow to target stern is 3; every other pair is farther.
+	var firer: Array[Vector2i] = [Vector2i(6, 0), Vector2i(7, 0)]
+	var target: Array[Vector2i] = [Vector2i(2, 0), Vector2i(3, 0)]
+	assert_eq(geo.range_between(firer, target), 3)
+	assert_eq(geo.range_between(target, firer), 3)
 
 
-func test_rake_bow() -> void:
-	assert_eq(geo.rake_type(Vector2i.ZERO, 0, _steps(0, 2)), "bow")
+# --- battery_bears ---
+
+func test_battery_bears_when_both_target_hexes_in_arc_and_clear() -> void:
+	var target: Array[Vector2i] = [_n(1) * 2, _n(1) * 3]
+	assert_true(geo.battery_bears(Vector2i.ZERO, 0, ShipState.STARBOARD, target, {}))
+
+
+func test_battery_does_not_bear_on_other_side() -> void:
+	var target: Array[Vector2i] = [_n(1) * 2, _n(1) * 3]
+	assert_false(geo.battery_bears(Vector2i.ZERO, 0, ShipState.PORT, target, {}))
+
+
+func test_battery_does_not_bear_when_in_arc_hex_blocked() -> void:
+	var target: Array[Vector2i] = [_n(1) * 2, _n(1) * 3]
+	assert_false(geo.battery_bears(Vector2i.ZERO, 0, ShipState.STARBOARD, target, {_n(1): true}))
+
+
+func test_partial_target_only_in_arc_hexes_need_los() -> void:
+	# Diagram 17 ship E: target stern (0,2) is in the starboard bow arc of a battery at the
+	# origin facing E; its bow (1,2) is outside that arc and the LOS to it is blocked at (1,1).
+	var in_arc := Vector2i(0, 2)
+	var out_of_arc := Vector2i(1, 2)
+	var occupied := {Vector2i(1, 1): true}
+	assert_eq(geo.bearing_side(Vector2i.ZERO, 0, in_arc), ShipState.STARBOARD)
+	assert_eq(geo.bearing_side(Vector2i.ZERO, 0, out_of_arc), -1)
+	assert_false(geo.has_line_of_sight(Vector2i.ZERO, out_of_arc, occupied), "setup: far LOS blocked")
+	var target: Array[Vector2i] = [out_of_arc, in_arc]
+	assert_true(geo.battery_bears(Vector2i.ZERO, 0, ShipState.STARBOARD, target, occupied))
+
+
+func test_battery_does_not_bear_beyond_fifteen_hexes() -> void:
+	var target: Array[Vector2i] = [_n(1) * 16, _n(1) * 17]
+	assert_false(geo.battery_bears(Vector2i.ZERO, 0, ShipState.STARBOARD, target, {}))
+
+
+# --- rake_type_ships (target bow at the origin facing E, stern at (-1,0)) ---
+
+func test_rake_stern_adjacent_astern() -> void:
+	# Firer bow directly astern of the target's stern; its own stern is in the target's port stern arc.
+	var firer: Array[Vector2i] = [Vector2i(-2, 0), Vector2i(-2, -1)]
+	assert_eq(geo.rake_type_ships(Vector2i.ZERO, 0, firer), "stern")
+
+
+func test_rake_bow_dead_ahead() -> void:
+	var firer: Array[Vector2i] = [_steps(0, 2), _n(0)]
+	assert_eq(geo.rake_type_ships(Vector2i.ZERO, 0, firer), "bow")
 
 
 func test_rake_beam_is_none() -> void:
-	assert_eq(geo.rake_type(Vector2i.ZERO, 0, _n(2)), "")
+	var firer: Array[Vector2i] = [Vector2i(-1, 1), Vector2i(-2, 1)]
+	assert_eq(geo.rake_type_ships(Vector2i.ZERO, 0, firer), "")
 
 
-func test_rake_exactly_150_degrees_is_none() -> void:
-	assert_eq(geo.rake_type(Vector2i.ZERO, 0, _n(3) + _n(2)), "")
+func test_rake_firer_hex_on_arc_boundary_is_none() -> void:
+	# (2,-2) is exactly 60 degrees off the target's bow: inside the port bow arc.
+	var firer: Array[Vector2i] = [_steps(5, 2), _steps(5, 2) + _n(0)]
+	assert_eq(geo.rake_type_ships(Vector2i.ZERO, 0, firer), "")
 
 
 func test_rake_inside_stern_wedge() -> void:
-	assert_eq(geo.rake_type(Vector2i.ZERO, 0, _steps(3, 3) + _n(2)), "stern")
+	var firer: Array[Vector2i] = [_steps(3, 3) + _n(2), _steps(3, 4) + _n(2)]
+	assert_eq(geo.rake_type_ships(Vector2i.ZERO, 0, firer), "stern")
+
+
+func test_rake_zone_is_outside_all_arcs() -> void:
+	# Firer bow (3,-2) facing SW, stern (4,-3): about 45 degrees off the target's bow line
+	# (bow hex 41 degrees, ship centre 43), range 3, outside all four target arcs.
+	# The old +/-30 degree wedge did not count this as a rake.
+	var firer: Array[Vector2i] = [Vector2i(3, -2), Vector2i(4, -3)]
+	assert_eq(geo.range_between(firer, [Vector2i.ZERO, Vector2i(-1, 0)] as Array[Vector2i]), 3)
+	assert_eq(geo.rake_type_ships(Vector2i.ZERO, 0, firer), "bow")
+
+
+func test_adjacent_dead_ahead_is_rake() -> void:
+	# Firer bow (1,0) adjacent and directly ahead of the target's bow; firer facing SE, so its
+	# stern (1,-1) lies in the target's port bow arc. Clause 7.E.2b still makes it a bow rake.
+	var firer: Array[Vector2i] = [_n(0), HexGrid.stern_of(_n(0), 1)]
+	assert_eq(geo.bearing_side(Vector2i.ZERO, 0, firer[1]), ShipState.PORT, "setup: stern in arc")
+	assert_eq(geo.rake_type_ships(Vector2i.ZERO, 0, firer), "bow")
+
+
+func test_rake_needs_range_five_or_less() -> void:
+	var firer: Array[Vector2i] = [_steps(0, 7), _steps(0, 6)]
+	assert_eq(geo.rake_type_ships(Vector2i.ZERO, 0, firer), "")
 
 
 # --- line of sight ---
@@ -98,6 +173,12 @@ func test_los_edge_case_both_sides_occupied_is_blocked() -> void:
 
 
 # --- broadside_hexes ---
+
+func test_broadside_hexes_from_stern_battery() -> void:
+	var stern := HexGrid.stern_of(Vector2i.ZERO, 0)
+	var hexes := geo.broadside_hexes(stern, 0, ShipState.STARBOARD, 2)
+	assert_true(hexes.has(stern + _n(1)))
+	assert_false(hexes.has(Vector2i.ZERO))
 
 func test_broadside_hexes_starboard_range_two() -> void:
 	var hexes := geo.broadside_hexes(Vector2i.ZERO, 0, ShipState.STARBOARD, 2)

@@ -218,9 +218,10 @@ func test_same_player_cannot_fire() -> void:
 # --- rake ---
 
 func test_stern_rake_at_close_range() -> void:
+	# Target bow (0,0) facing E, stern (-1,0). Firer bow (-2,0) directly astern, facing SE.
 	target.hex_position = Vector2i.ZERO
 	target.facing = 0
-	firer.hex_position = _n(3)
+	firer.hex_position = _steps(3, 2)
 	firer.facing = 1
 	var p := calc.preview(_order(PORT))
 	assert_true(p.can_fire, p.reason)
@@ -231,7 +232,8 @@ func test_stern_rake_at_close_range() -> void:
 func test_no_rake_at_range_six() -> void:
 	target.hex_position = Vector2i.ZERO
 	target.facing = 0
-	firer.hex_position = _steps(3, 6)
+	# Firer bow (-7,0): six hexes from the target's stern (-1,0).
+	firer.hex_position = _steps(3, 7)
 	firer.facing = 1
 	var p := calc.preview(_order(PORT))
 	assert_true(p.can_fire, p.reason)
@@ -317,3 +319,64 @@ func test_validate_bad_aim_and_ammo() -> void:
 	assert_ne(calc.validate_orders(0, orders), "")
 	orders = [_order(STARBOARD, "grape", "low")]
 	assert_ne(calc.validate_orders(0, orders), "")
+
+
+# --- two-hex geometry: batteries, LOS exclusions, half broadside ---
+
+func test_full_broadside_has_two_batteries() -> void:
+	var p := calc.preview(_order())
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.batteries, 2)
+	assert_eq(_mod(p, "half_broadside"), 0)
+
+
+func test_range_uses_closest_hexes() -> void:
+	# Target bow (-2,5) facing SE, stern (-2,4). Bow to bow is 5; firer stern to target stern is 4.
+	target.hex_position = Vector2i(-2, 5)
+	target.facing = 1
+	var p := calc.preview(_order())
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.range_hexes, 4)
+
+
+func test_target_own_stern_does_not_block() -> void:
+	# Target bow (0,3) facing SE, stern (0,2). The bow battery's LOS to the target's bow runs
+	# through the target's own stern hex.
+	target.hex_position = Vector2i(0, 3)
+	target.facing = 1
+	assert_eq(target.stern_hex(), Vector2i(0, 2))
+	var p := calc.preview(_order())
+	assert_true(p.can_fire, p.reason)
+
+
+func test_firers_own_hex_does_not_block() -> void:
+	# Target abeam to starboard at range 4: both batteries trace all four LOS while the firer's
+	# own hexes are on the map.
+	target.hex_position = Vector2i(-2, 4)
+	var p := calc.preview(_order())
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.batteries, 2)
+
+
+func test_one_battery_bears_gives_half_broadside() -> void:
+	# Target bow (0,3) facing SE, stern (0,2): in the bow battery's arc, outside the stern battery's.
+	target.hex_position = Vector2i(0, 3)
+	target.facing = 1
+	var p := calc.preview(_order())
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.batteries, 1)
+	assert_eq(_mod(p, "half_broadside"), -8)
+
+
+func test_struck_ship_blocks_los_with_both_hexes() -> void:
+	target.hex_position = Vector2i(-2, 4)
+	assert_eq(calc.preview(_order()).batteries, 2, "setup: full broadside without the hulk")
+	# A struck ship whose stern (-1,2) sits on the bow battery's LOS to the target's bow.
+	var hulk := _make_ship("hulk", 1, Vector2i(0, 2), 0)
+	hulk.status = ShipState.Status.STRUCK
+	assert_eq(hulk.stern_hex(), Vector2i(-1, 2))
+	var p := calc.preview(_order())
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.batteries, 1)
+	assert_eq(_mod(p, "half_broadside"), -8)
+

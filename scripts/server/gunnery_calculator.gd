@@ -34,16 +34,28 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> Gunner
 
 	var geometry: FireGeometry = game_state.fire_geometry
 	var tables: CombatTables = DataManager.combat_tables
-	p.range_hexes = geometry.hex_grid.hex_distance(
-		firer.hex_position.x, firer.hex_position.y, target.hex_position.x, target.hex_position.y)
+	var firer_hexes := firer.occupied_hexes()
+	var target_hexes := target.occupied_hexes()
+	p.range_hexes = geometry.range_between(firer_hexes, target_hexes)
 	p.high_only = p.range_hexes >= HIGH_ONLY_RANGE
 
-	if geometry.bearing_side(firer.hex_position, firer.facing, target.hex_position) != order.side:
+	var in_arc := false
+	for battery in firer_hexes:
+		for h in target_hexes:
+			if geometry.in_battery_arc(battery, firer.facing, order.side, h):
+				in_arc = true
+	if not in_arc:
 		return _refuse(p, "target is not in that broadside's arc")
 	var max_range := MAX_DISMANTLING_RANGE if order.ammo == GunneryTypes.AMMO_DISMANTLING else MAX_RANGE
 	if p.range_hexes > max_range:
 		return _refuse(p, "target is out of range (%d hexes, maximum %d)" % [p.range_hexes, max_range])
-	if not geometry.has_line_of_sight(firer.hex_position, target.hex_position, _occupied_hexes()):
+	# 7.B.7: neither the firer's nor the target's own hexes block its lines of sight.
+	var occupied := _occupied_hexes([firer.ship_id, target.ship_id])
+	p.batteries = 0
+	for battery in firer_hexes:
+		if geometry.battery_bears(battery, firer.facing, order.side, target_hexes, occupied):
+			p.batteries += 1
+	if p.batteries == 0:
 		return _refuse(p, "no line of sight to target")
 	var sections := firer.sections_able_to_fire()
 	if sections == 0:
@@ -62,8 +74,10 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> Gunner
 	_add_modifier(p, "crew_quality", tables.crew_quality_modifier(firer.crew_quality))
 	_add_modifier(p, "sections_firing", tables.sections_firing_modifier(sections))
 	_add_modifier(p, "guns_dismounted", -int(firer.guns_dismounted[order.side]))
-	if p.range_hexes <= 5:
-		p.rake = geometry.rake_type(target.hex_position, target.facing, firer.hex_position)
+	if p.batteries == 1:
+		_add_modifier(p, "half_broadside", tables.flat_modifier("half_broadside"))
+	if p.range_hexes <= FireGeometry.RAKE_RANGE:
+		p.rake = geometry.rake_type_ships(target.hex_position, target.facing, firer_hexes)
 		if p.rake != "":
 			_add_modifier(p, "rake", tables.range_bonus("rake", p.range_hexes))
 		if not firer.initial_broadside_fired[order.side]:
@@ -151,8 +165,6 @@ func _add_modifier(p: GunneryTypes.ShotPreview, modifier_name: String, value: in
 		p.modifiers.append({"name": modifier_name, "value": value})
 
 
-func _occupied_hexes() -> Dictionary:
-	var occupied: Dictionary = {}
-	for ship in game_state.get_all_ships():
-		occupied[ship.hex_position] = true
-	return occupied
+## Bow and stern hex of every ship (struck ones included), minus `exclude_ids`.
+func _occupied_hexes(exclude_ids: Array = []) -> Dictionary:
+	return Occupancy.build(game_state.get_all_ships(), exclude_ids)

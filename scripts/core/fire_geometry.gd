@@ -1,12 +1,14 @@
 class_name FireGeometry
 extends RefCounted
-## FireGeometry - Pure hex geometry for gunnery: broadside arcs, rake wedges, line of sight.
+## FireGeometry - Pure hex geometry for gunnery: battery arcs, range, rakes, line of sight.
 ##
 ## Angles are measured in world space (HexGrid.axial_to_world) between a ship's heading
 ## vector (towards its neighbour in `facing`) and the vector to another hex.
 ## Holds no game state; callers pass hexes, facings and an `occupied` dictionary.
 
 const MAX_RANGE := 15
+## Rakes need the target within this range (7.E.2).
+const RAKE_RANGE := 5
 ## Angular tolerance (degrees) so hexes lying exactly on an arc boundary are inside it.
 const EPSILON_DEG := 0.5
 const LOS_NUDGE := 1e-6
@@ -18,7 +20,7 @@ func _init(p_hex_grid: HexGrid) -> void:
 	hex_grid = p_hex_grid
 
 
-## Which broadside covers `to_hex` from a ship at `from_hex` facing `facing`.
+## Which broadside of a single battery hex `from_hex` (bow or stern) facing `facing` covers `to_hex`.
 ## Returns ShipState.PORT, ShipState.STARBOARD, or -1 if in neither broadside arc.
 func bearing_side(from_hex: Vector2i, facing: int, to_hex: Vector2i) -> int:
 	if from_hex == to_hex:
@@ -33,19 +35,81 @@ func bearing_side(from_hex: Vector2i, facing: int, to_hex: Vector2i) -> int:
 	return ShipState.STARBOARD if cross > 0.0 else ShipState.PORT
 
 
-## Whether a firer at `firer_hex` rakes a target at `target_hex` facing `target_facing`.
-## Returns "bow" (firer within the target's bow wedge), "stern", or "". Range is the caller's job.
-func rake_type(target_hex: Vector2i, target_facing: int, firer_hex: Vector2i) -> String:
-	if target_hex == firer_hex:
+## Shortest hex distance between any hex of `a` and any hex of `b` (7.C.4: firer to the closest
+## hex of the target). Returns -1 when either list is empty.
+func range_between(a: Array[Vector2i], b: Array[Vector2i]) -> int:
+	var best := -1
+	for x in a:
+		for y in b:
+			var d := hex_grid.hex_distance(x.x, x.y, y.x, y.y)
+			if best < 0 or d < best:
+				best = d
+	return best
+
+
+## Whether one battery (the bow or stern hex of a ship facing `facing`) bears on a target on
+## broadside `side` (7.B.2-7.B.6): at least one target hex lies in the battery's arc within
+## MAX_RANGE, and every target hex in that arc has a clear line of sight. Target hexes outside the
+## arc are ignored (7.B.6). `occupied` must already exclude the firer's and the target's hexes.
+func battery_bears(battery_hex: Vector2i, facing: int, side: int, target_hexes: Array[Vector2i],
+		occupied: Dictionary) -> bool:
+	var any_in_arc := false
+	for h in target_hexes:
+		if not in_battery_arc(battery_hex, facing, side, h):
+			continue
+		any_in_arc = true
+		if not has_line_of_sight(battery_hex, h, occupied):
+			return false
+	return any_in_arc
+
+
+## Whether `hex` lies in the `side` arc of the battery at `battery_hex`, within MAX_RANGE.
+func in_battery_arc(battery_hex: Vector2i, facing: int, side: int, hex: Vector2i) -> bool:
+	return bearing_side(battery_hex, facing, hex) == side \
+		and hex_grid.hex_distance(battery_hex.x, battery_hex.y, hex.x, hex.y) <= MAX_RANGE
+
+
+## Rake by two-hex ships (7.E.2). The target's bow is `target_bow`, its stern is behind it.
+## A rake needs range (closest hexes) <= RAKE_RANGE and either
+##   a. no firer hex lies in any of the target's four battery arcs, or
+##   b. a firer hex is adjacent to the target, directly ahead of its bow or astern of its stern.
+## Returns "stern" when the firer's centre is aft of the target's beam line (through the target's
+## centre, perpendicular to its keel), "bow" otherwise, "" for no rake. Whether the firer can fire
+## at all is the caller's job.
+func rake_type_ships(target_bow: Vector2i, target_facing: int, firer_hexes: Array[Vector2i]) -> String:
+	if firer_hexes.is_empty():
 		return ""
-	var heading := _heading_vector(target_hex, target_facing)
-	var to_firer := _world_xz(firer_hex) - _world_xz(target_hex)
-	var theta := _angle_deg(heading, to_firer)
-	if theta < 30.0 - EPSILON_DEG:
-		return "bow"
-	if theta > 150.0 + EPSILON_DEG:
-		return "stern"
-	return ""
+	var target_stern := HexGrid.stern_of(target_bow, target_facing)
+	var target_hexes: Array[Vector2i] = [target_bow, target_stern]
+	var r := range_between(firer_hexes, target_hexes)
+	if r < 1 or r > RAKE_RANGE:
+		return ""
+	if not _outside_all_arcs(target_hexes, target_facing, firer_hexes) \
+			and not _dead_ahead_or_astern(target_bow, target_stern, target_facing, firer_hexes):
+		return ""
+	var target_centre := (_world_xz(target_bow) + _world_xz(target_stern)) / 2.0
+	var keel := _world_xz(target_bow) - _world_xz(target_stern)
+	var firer_centre := Vector2.ZERO
+	for h in firer_hexes:
+		firer_centre += _world_xz(h)
+	firer_centre /= float(firer_hexes.size())
+	return "stern" if keel.dot(firer_centre - target_centre) < 0.0 else "bow"
+
+
+func _outside_all_arcs(target_hexes: Array[Vector2i], target_facing: int,
+		firer_hexes: Array[Vector2i]) -> bool:
+	for battery in target_hexes:
+		for h in firer_hexes:
+			if bearing_side(battery, target_facing, h) != -1:
+				return false
+	return true
+
+
+func _dead_ahead_or_astern(target_bow: Vector2i, target_stern: Vector2i, target_facing: int,
+		firer_hexes: Array[Vector2i]) -> bool:
+	var ahead := hex_grid.get_neighbor(target_bow.x, target_bow.y, posmod(target_facing, 6))
+	var astern := hex_grid.get_neighbor(target_stern.x, target_stern.y, posmod(target_facing + 3, 6))
+	return firer_hexes.has(ahead) or firer_hexes.has(astern)
 
 
 ## Line of sight between two hexes. `occupied` maps Vector2i -> anything.
@@ -69,11 +133,12 @@ func has_line_of_sight(from_hex: Vector2i, to_hex: Vector2i, occupied: Dictionar
 	return true
 
 
-## All hexes within `max_range` (excluding the ship's own) that lie in the given broadside arc.
-func broadside_hexes(hex: Vector2i, facing: int, side: int, max_range: int = MAX_RANGE) -> Array[Vector2i]:
+## All hexes within `max_range` of `battery_hex` (a ship's bow or stern hex) that lie in that
+## battery's `side` arc. A ship's whole broadside arc is the union for its bow and stern.
+func broadside_hexes(battery_hex: Vector2i, facing: int, side: int, max_range: int = MAX_RANGE) -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
-	for h in hex_grid.hex_range(hex.x, hex.y, max_range):
-		if h != hex and bearing_side(hex, facing, h) == side:
+	for h in hex_grid.hex_range(battery_hex.x, battery_hex.y, max_range):
+		if h != battery_hex and bearing_side(battery_hex, facing, h) == side:
 			result.append(h)
 	return result
 

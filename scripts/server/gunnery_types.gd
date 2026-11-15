@@ -40,7 +40,8 @@ class ShotPreview extends RefCounted:
 	var order: FireOrder = null
 	var can_fire: bool = false
 	var reason: String = ""            # set when can_fire is false
-	var range_hexes: int = 0
+	var range_hexes: int = 0           # closest firer hex to closest target hex (7.C.4)
+	var batteries: int = 0             # batteries that bear: 2 full broadside, 1 half (-8)
 	var rake: String = ""              # "", "bow" or "stern"
 	var initial_broadside: bool = false
 	var high_only: bool = false
