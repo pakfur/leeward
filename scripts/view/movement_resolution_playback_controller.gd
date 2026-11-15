@@ -16,6 +16,7 @@ var _log: MovementTypes.ResolutionLog = null
 var _playing: bool = false
 var _aborted: bool = false  # the game is being left: stop and never report completion
 var _player_id: int = 0
+var _swung_out: Dictionary = {}  # ship_id -> true while a rolled-back turn is shown swung out
 
 
 func _init(p_hex_grid: HexGrid = null, p_ship_views: Dictionary = {}, p_player_id: int = 0) -> void:
@@ -29,6 +30,7 @@ func play(log: MovementTypes.ResolutionLog) -> void:
 	if _playing:
 		return
 	_log = log
+	_swung_out = {}
 	_playing = true
 	Trace.trace_log("Playback", "start", {"turn": log.turn, "max_impulses": log.max_impulses, "ships": log.ship_results.size()})
 	# Yield one frame so callers can set up signal listeners before we emit
@@ -75,13 +77,11 @@ func _play_all_impulses() -> void:
 		if impulse_events.is_empty():
 			continue
 
-		# Separate move events from special events for this impulse
-		var move_events: Array = []
+		# Separate the events that pose a ship from special events for this impulse
+		var move_events: Array = _posed_events(impulse_events)
 		var special_events: Array = []
 		for ev in impulse_events:
-			if ev.event_type == MovementTypes.ResolutionEventType.MOVE:
-				move_events.append(ev)
-			else:
+			if ev.event_type != MovementTypes.ResolutionEventType.MOVE:
 				special_events.append(ev)
 
 		# Animate all moves for this impulse simultaneously
@@ -95,6 +95,41 @@ func _play_all_impulses() -> void:
 		# Brief gap between impulses
 		if impulse < _log.max_impulses - 1:
 			await _wait_ms(IMPULSE_GAP_MS)
+
+
+## The events of one impulse that move a ship view: every MOVE, and a rolled-back turn (6.B.4) shown
+## as the stern swinging out (OVERLAP) and, on the next impulse, back (OVERLAP_ROLLBACK). The swing is
+## shown only when the ship makes no step on the overlap impulse; a ship that moves ahead instead (to
+## meet its deceleration) just plays its moves, which start from the pose before the turn.
+func _posed_events(impulse_events: Array) -> Array:
+	var moving: Dictionary = {}
+	for ev in impulse_events:
+		if ev.event_type == MovementTypes.ResolutionEventType.MOVE:
+			moving[ev.ship_id] = true
+	var posed: Array = []
+	for ev in impulse_events:
+		match ev.event_type:
+			MovementTypes.ResolutionEventType.MOVE:
+				posed.append(ev)
+			MovementTypes.ResolutionEventType.OVERLAP:
+				if not moving.has(ev.ship_id) and _was_rolled_back(ev.ship_id):
+					_swung_out[ev.ship_id] = true
+					posed.append(ev)
+			MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK:
+				if _swung_out.has(ev.ship_id):
+					_swung_out.erase(ev.ship_id)
+					posed.append(ev)
+	return posed
+
+
+func _was_rolled_back(ship_id: String) -> bool:
+	var result: MovementTypes.ShipResolutionResult = _log.get_result(ship_id) if _log else null
+	if result == null:
+		return false
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK:
+			return true
+	return false
 
 
 ## ============================================================================
@@ -130,8 +165,8 @@ func _collect_pre_movement_events() -> Array:
 ## Animation
 ## ============================================================================
 
-## Each MOVE step is one tween per ship: an ahead step slides the ship one hex along its keel; a
-## turn keeps the bow hex and swings the stern round it. The ship view is placed by its centre,
+## Each posed event is one tween per ship: an ahead step slides the ship one hex along its keel; a
+## turn (or an overlap swing out or back) keeps the bow hex and swings the stern round it. The ship view is placed by its centre,
 ## midway between bow and stern (HexGrid.ship_center_world), so both are driven from the bow.
 func _animate_moves(move_events: Array) -> void:
 	if _aborted:
@@ -205,7 +240,8 @@ func _play_event_batch(events: Array) -> void:
 		match ev.event_type:
 			MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL:
 				has_contest = true
-			MovementTypes.ResolutionEventType.BEARING_OFF_ROLL, MovementTypes.ResolutionEventType.STERN_BLOCKED:
+			MovementTypes.ResolutionEventType.BEARING_OFF_ROLL, MovementTypes.ResolutionEventType.STERN_BLOCKED, \
+					MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK:
 				has_bearing_off = true
 			MovementTypes.ResolutionEventType.COLLISION:
 				has_collision = true

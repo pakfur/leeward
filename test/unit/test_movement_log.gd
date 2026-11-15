@@ -284,3 +284,18 @@ func test_stop_cause_for_stern_blocked() -> void:
 	a.events.append(MovementTypes.ResolutionEvent.new("a", 0, T.STERN_BLOCKED))
 	a.blocked_by = "b"
 	assert_eq(MovementResolver.stop_cause(a), {"cause": "stern_blocked", "other": "b"})
+
+
+func test_stop_cause_for_overlap_rollback() -> void:
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	var rollback := MovementTypes.ResolutionEvent.new("a", 1, T.OVERLAP_ROLLBACK)
+	rollback.detail = "already occupied"
+	a.events.append(rollback)
+	a.blocked_by = "b"
+	assert_eq(MovementResolver.stop_cause(a), {"cause": "overlap", "other": "b"})
+
+
+func test_stop_short_after_overlap_rollback_names_the_other_ship() -> void:
+	var ev := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.STOPPED_SHORT, MOVE, "a", {"cause": "overlap"}, "b")
+	assert_eq(ev.to_text({"a": "Alpha", "b": "Bravo"}),
+		"Alpha stops short of its plotted course — its stern swung into Bravo and had to swing back")

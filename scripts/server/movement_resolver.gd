@@ -4,10 +4,20 @@ extends RefCounted
 ## Multi-ship resolution: contested hexes, bearing off, collisions, fouling.
 ## Ships move simultaneously; contests checked per impulse. Every ship holds two hexes, bow and
 ## stern; each step enters one hex: an ahead step its new bow hex, a turn its new stern hex.
+## A swinging stern may overlap another ship for one segment (6.B); an overlap left uncleared amends
+## the turning ship's plot and the resolution is run again (see run()).
 
 var game_state: Node = null
 var hex_grid: HexGrid = null
 var _explicit_rng: RandomNumberGenerator = null
+
+# Per-segment overlap bookkeeping (6.B), reset for every resolution pass.
+var _seg_start_bows: Dictionary = {}  # ship_id -> bow hex at the start of the segment
+var _seg_start_facings: Dictionary = {}  # ship_id -> facing at the start of the segment
+var _swings: Dictionary = {}  # ship_id -> {hex, pre_bow, pre_facing, facing}: sterns swung this segment
+## ship_id -> {hex, other_id, other_ids, segment, pre_bow, pre_facing, facing, reason}: overlaps made on
+## `segment`, checked at the end of the next one.
+var _pending_overlaps: Dictionary = {}
 
 var rng: RandomNumberGenerator:
 	get:
@@ -34,6 +44,56 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 	@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 	var log = MovementTypes.ResolutionLog.new(game_state.current_turn if game_state else 0)
 
+	# An overlap that is not cleared on the next segment amends the turning ship's plot (6.B.4: "change
+	# all ship logs to reflect the actual moves"), and the whole resolution is run again with the amended
+	# plots from the same dice. Every rollback removes a plotted turn, so this ends.
+	var ship_map: Dictionary = {}
+	var plotted: Dictionary = {}
+	var pass_limit: int = 1
+	for ship_state in ships:
+		ship_map[ship_state.ship_id] = ship_state
+		plotted[ship_state.ship_id] = _get_plotted_steps(ship_state)
+		pass_limit += plotted[ship_state.ship_id].size()
+	var rng_start: int = rng.state
+	var amended: Dictionary = {}  # ship_id -> steps actually resolved
+	var rollbacks: Dictionary = {}  # ship_id -> the rollback that amended its plot
+	var outcome: Dictionary = {}
+	for attempt in range(pass_limit):
+		rng.state = rng_start
+		outcome = _resolve_pass(ships, ship_map, plotted, amended, environment)
+		if outcome.rollbacks.is_empty():
+			break
+		if attempt == pass_limit - 1:
+			push_error("MovementResolver: overlap rollbacks did not settle")
+			break
+		for rb in outcome.rollbacks:
+			var sid: String = rb.ship_id
+			amended[sid] = _amended_steps(ship_map[sid], amended.get(sid, plotted[sid]), rb)
+			rollbacks[sid] = rb
+			Trace.trace_log("MovementResolver", "overlap rollback", {"ship": sid, "segment": rb.segment,
+				"other": rb.other_id, "reason": rb.reason, "steps": amended[sid].size()})
+
+	var results: Dictionary = outcome.results
+	log.max_impulses = outcome.max_impulses
+	for sid in rollbacks:
+		_record_rollback(results[sid], rollbacks[sid], amended[sid].size())
+		log.max_impulses = maxi(log.max_impulses, rollbacks[sid].segment + 2)
+	for sid in results:
+		log.add_result(results[sid])
+
+	return log
+
+
+## One resolution of every ship's steps (`amended` overrides a ship's plot). Returns {"results",
+## "max_impulses", "rollbacks"}; when an overlap fails its check the pass stops there and "rollbacks"
+## lists the turns to undo.
+func _resolve_pass(
+	ships: Array[ShipState],
+	ship_map: Dictionary,
+	plotted: Dictionary,
+	amended: Dictionary,
+	environment: EnvironmentState
+) -> Dictionary:
 	var results: Dictionary = {}
 	var current_hexes: Dictionary = {}  # ship_id -> bow hex
 	var current_facings: Dictionary = {}  # ship_id -> facing
@@ -41,6 +101,7 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 	var steps_by_ship: Dictionary = {}
 	var forward_since_turn: Dictionary = {}
 	var pivots_this_turn: Dictionary = {}
+	_pending_overlaps = {}
 
 	for ship_state in ships:
 		var result = MovementTypes.ShipResolutionResult.new(ship_state.ship_id)
@@ -53,11 +114,11 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 		forward_since_turn[ship_state.ship_id] = 0
 		pivots_this_turn[ship_state.ship_id] = 0
 
-		var ship_steps = _get_plotted_steps(ship_state)
+		var ship_steps: Array = amended.get(ship_state.ship_id, plotted[ship_state.ship_id])
 		if ship_steps.is_empty():
 			if _is_in_irons(ship_state, environment):
 				_remain_in_irons(ship_state, result)
-			else:
+			elif not amended.has(ship_state.ship_id):  # a plot amended to nothing is told by its rollback
 				var ev = MovementTypes.ResolutionEvent.new(
 					ship_state.ship_id, 0, MovementTypes.ResolutionEventType.SKIP_NO_PLOT
 				)
@@ -74,19 +135,16 @@ func run(ships: Array[ShipState], environment: EnvironmentState) -> MovementType
 		var count: int = steps_by_ship[sid].size()
 		if count > max_impulses:
 			max_impulses = count
-	log.max_impulses = max_impulses
 
-	var ship_map: Dictionary = {}
-	for ship_state in ships:
-		ship_map[ship_state.ship_id] = ship_state
-
-	for impulse in range(max_impulses):
+	# One segment past the last step: an overlap made on the last step is checked when nobody moves.
+	for impulse in range(max_impulses + 1):
 		_resolve_impulse(impulse, ships, ship_map, steps_by_ship, results, current_hexes, current_facings, stopped, environment, forward_since_turn, pivots_this_turn)
+		var failed: Array = _check_overlaps(impulse, current_hexes, current_facings)
+		if not failed.is_empty():
+			return {"results": results, "max_impulses": max_impulses, "rollbacks": failed}
+		_note_overlaps(impulse, results, current_hexes, current_facings)
 
-	for sid in results:
-		log.add_result(results[sid])
-
-	return log
+	return {"results": results, "max_impulses": max_impulses, "rollbacks": []}
 
 
 ## ============================================================================
@@ -107,6 +165,9 @@ func _resolve_impulse(
 	pivots_this_turn: Dictionary
 ) -> void:
 	var intended_moves: Dictionary = {}
+	_swings = {}
+	_seg_start_bows = current_hexes.duplicate()
+	_seg_start_facings = current_facings.duplicate()
 
 	for ship_state in ships:
 		var sid = ship_state.ship_id
@@ -192,7 +253,7 @@ func _resolve_impulse(
 		var group: Dictionary = pending[pick]
 		pending.remove_at(pick)
 		if group.stern:
-			_resolve_stern_entries(group.ids, group.hex, impulse, held, bow_targets, stern_targets, intended_moves,
+			_resolve_stern_entries(group.ids, group.hex, impulse, held, stern_targets, intended_moves,
 				results, current_hexes, current_facings, stopped, forward_since_turn, pivots_this_turn)
 		else:
 			_resolve_bow_entries(group.ids, group.hex, impulse, held, intended_moves, ship_map, results,
@@ -212,15 +273,14 @@ func _group_ready(group: Dictionary, start_bow_owner: Dictionary, old_stern_owne
 	return true
 
 
-## Stern-entries into `entered` (6.B.4a/b outcome, no overlap allowance yet): a swinging stern may
-## only enter a hex nobody holds or enters. A bow entering the same hex goes ahead as if the stern
-## were not there.
+## Stern-entries into `entered`. A swinging stern may enter a hex another ship holds or a bow enters
+## in the same segment (6.B.2): the overlap is noted at the end of the segment and must be cleared on
+## the next one. A bow entering the same hex goes ahead as if the stern were not there (6.B.4b).
 func _resolve_stern_entries(
 	ids: Array,
 	entered: Vector2i,
 	impulse: int,
 	held: Dictionary,
-	bow_targets: Dictionary,
 	stern_targets: Dictionary,
 	intended_moves: Dictionary,
 	results: Dictionary,
@@ -233,11 +293,13 @@ func _resolve_stern_entries(
 	for sid in ids:
 		if stopped[sid]:  # a collision earlier in this segment already stopped it
 			continue
-		var blocker_id: String = _stern_blocker(sid, entered, held, bow_targets, stern_targets)
+		var blocker_id: String = _stern_blocker(sid, entered, held, stern_targets, intended_moves)
 		if blocker_id != "":
 			_cancel_turn(sid, blocker_id, impulse, results, current_hexes, current_facings, stopped)
 			continue
 		var prev_facing: int = current_facings[sid]
+		_swings[sid] = {"hex": entered, "pre_bow": current_hexes[sid], "pre_facing": prev_facing,
+			"facing": intended_moves[sid].facing}
 		_apply_move(sid, intended_moves[sid].hex, intended_moves[sid].facing, impulse, results, current_hexes, current_facings)
 		_update_turn_tracking(sid, prev_facing, intended_moves[sid].facing, forward_since_turn, pivots_this_turn)
 
@@ -298,18 +360,140 @@ func _is_stern_entry(bow: Vector2i, facing: int, step_hex: Vector2i, step_facing
 	return step_hex == bow and step_facing != facing
 
 
-## Who stops a stern swinging into `entered`: the ship holding the hex, else a bow entering it, else
-## another stern entering it. "" when the hex is free.
-func _stern_blocker(sid: String, entered: Vector2i, held: Dictionary, bow_targets: Dictionary, stern_targets: Dictionary) -> String:
-	if held.has(entered) and held[entered] != sid:
-		return held[entered]
-	for other_id in bow_targets.get(entered, []):
-		if other_id != sid:
-			return other_id
+## Who stops a stern swinging into `entered` outright (STERN_BLOCKED), where no 6.B overlap applies
+## yet: another stern swinging into the same hex (6.B.4c), or the ship holding the hex swinging its own
+## stern onto this ship's bow (complete overlap, 6.B.5). Both are Task 11. "" when the swing may go
+## ahead, overlap or not.
+func _stern_blocker(sid: String, entered: Vector2i, held: Dictionary, stern_targets: Dictionary, intended_moves: Dictionary) -> String:
 	for other_id in stern_targets.get(entered, []):
 		if other_id != sid:
 			return other_id
+	var holder: String = held.get(entered, "")
+	if holder != "" and holder != sid and intended_moves.has(holder):
+		var bow: Vector2i = _seg_start_bows[holder]
+		var facing: int = _seg_start_facings[holder]
+		var move: Dictionary = intended_moves[holder]
+		if _is_stern_entry(bow, facing, move.hex, move.facing) \
+				and _entered_hex(bow, facing, move.hex, move.facing) == _seg_start_bows[sid]:
+			return holder
 	return ""
+
+
+## ============================================================================
+## Temporary overlap (6.B.2-6.B.4)
+## ============================================================================
+
+## The two hexes of `sid` in the given bow and facing maps.
+func _footprint(sid: String, bows: Dictionary, facings: Dictionary) -> Array[Vector2i]:
+	return [bows[sid], HexGrid.stern_of(bows[sid], int(facings[sid]))]
+
+
+## End of a segment: a stern that swung into a hex another ship now covers too is overlapping it
+## (6.B.2). Logs OVERLAP and keeps the overlap pending until the end of the next segment. It is "already
+## occupied" (6.B.4a) when the other ship held the hex at the start of the segment, else a bow sailed
+## into it ("bow precedence", 6.B.4b).
+func _note_overlaps(impulse: int, results: Dictionary, current_hexes: Dictionary, current_facings: Dictionary) -> void:
+	for sid in _swings:
+		var swing: Dictionary = _swings[sid]
+		var other_ids: Array = []
+		var occupied_before := false
+		for other_id in current_hexes:
+			if other_id == sid or not swing.hex in _footprint(other_id, current_hexes, current_facings):
+				continue
+			other_ids.append(other_id)
+			occupied_before = occupied_before or swing.hex in _footprint(other_id, _seg_start_bows, _seg_start_facings)
+			var ev = MovementTypes.ResolutionEvent.new(sid, impulse, MovementTypes.ResolutionEventType.OVERLAP)
+			ev.from_hex = swing.pre_bow
+			ev.to_hex = swing.pre_bow
+			ev.from_facing = swing.pre_facing
+			ev.facing = swing.facing
+			ev.detail = "overlaps %s" % other_id
+			(results[sid] as MovementTypes.ShipResolutionResult).events.append(ev)
+		if other_ids.is_empty():
+			continue
+		_pending_overlaps[sid] = {
+			"hex": swing.hex, "other_id": other_ids[0], "other_ids": other_ids, "segment": impulse,
+			"pre_bow": swing.pre_bow, "pre_facing": swing.pre_facing, "facing": swing.facing,
+			"reason": "already occupied" if occupied_before else "bow precedence",
+		}
+
+
+## End of a segment: overlaps made on the previous segment that are still there (the two ships still
+## share a hex, 6.B.4). Returns them as rollbacks ({ship_id} added to the pending record); the others
+## were cleared and are dropped.
+func _check_overlaps(impulse: int, current_hexes: Dictionary, current_facings: Dictionary) -> Array:
+	var failed: Array = []
+	for sid in _pending_overlaps.keys():
+		var overlap: Dictionary = _pending_overlaps[sid]
+		if overlap.segment != impulse - 1:
+			continue
+		_pending_overlaps.erase(sid)
+		var mine: Array[Vector2i] = _footprint(sid, current_hexes, current_facings)
+		for other_id in overlap.other_ids:
+			var still_overlapped := false
+			for h in _footprint(other_id, current_hexes, current_facings):
+				still_overlapped = still_overlapped or h in mine
+			if still_overlapped:
+				var rollback: Dictionary = overlap.duplicate()
+				rollback["ship_id"] = sid
+				rollback["other_id"] = other_id
+				failed.append(rollback)
+				break
+	return failed
+
+
+## The turning ship's plot after a rollback (6.B.4a/b): the steps before the overlap, then as many
+## steps ahead on the old heading as its deceleration limit still requires. Those steps are resolved
+## like any other, so they may meet a ship and bear off or collide.
+func _amended_steps(ship_state: ShipState, steps: Array, rollback: Dictionary) -> Array:
+	var kept: Array = steps.slice(0, rollback.segment)
+	var minimum: int = _deceleration_minimum(ship_state)
+	var bow: Vector2i = rollback.pre_bow
+	while kept.size() < minimum:
+		bow += HexGrid.DIRECTIONS[rollback.pre_facing]
+		kept.append({"hex": {"q": bow.x, "r": bow.y}, "facing": rollback.pre_facing})
+	return kept
+
+
+## The fewest MPs the ship may use this turn, as the plotting validator computes it: last turn's speed
+## less its deceleration, 0 when its movement allowance is 0.
+func _deceleration_minimum(ship_state: ShipState) -> int:
+	if game_state.ship_controller.get_movement_allowance(ship_state.ship_id) == 0:
+		return 0
+	var maneuverability: String = ship_state.ship.maneuverability if ship_state.ship else "b"
+	return maxi(ship_state.speed - DataManager.get_speed_change("deceleration", maneuverability), 0)
+
+
+## Tell a rolled-back turn in the final result: OVERLAP on the overlap segment (the stern swinging in)
+## and OVERLAP_ROLLBACK on the next (swinging back to `pre_facing`). Neither is an executed step.
+func _record_rollback(result: MovementTypes.ShipResolutionResult, rollback: Dictionary, steps_resolved: int) -> void:
+	var overlap = MovementTypes.ResolutionEvent.new(result.ship_id, rollback.segment, MovementTypes.ResolutionEventType.OVERLAP)
+	overlap.from_hex = rollback.pre_bow
+	overlap.to_hex = rollback.pre_bow
+	overlap.from_facing = rollback.pre_facing
+	overlap.facing = rollback.facing
+	overlap.detail = "overlaps %s" % rollback.other_id
+	_insert_event(result, overlap)
+	var back = MovementTypes.ResolutionEvent.new(result.ship_id, rollback.segment + 1, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
+	back.from_hex = rollback.pre_bow
+	back.to_hex = rollback.pre_bow
+	back.from_facing = rollback.facing
+	back.facing = rollback.pre_facing
+	back.success = false
+	back.detail = rollback.reason
+	_insert_event(result, back)
+	if result.blocked_by == "":
+		result.blocked_by = rollback.other_id
+	if result.stopped_at_impulse < 0 and steps_resolved <= rollback.segment:
+		result.stopped_at_impulse = rollback.segment
+
+
+## Insert `ev` after the result's last event of the same or an earlier impulse.
+func _insert_event(result: MovementTypes.ShipResolutionResult, ev: MovementTypes.ResolutionEvent) -> void:
+	var at: int = result.events.size()
+	while at > 0 and result.events[at - 1].impulse > ev.impulse:
+		at -= 1
+	result.events.insert(at, ev)
 
 
 ## The turn is cancelled: the ship keeps its bow hex and facing and stops for the rest of the turn.
@@ -987,9 +1171,12 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 ## Why a ship's movement ended before its plot did, from its resolution result alone:
 ## {"cause": "collision", "other": id} when it collided (either ship), {"cause": "bore_off",
 ## "other": id} when it bore off to avoid the ship in its way, {"cause": "stern_blocked", "other": id}
-## when its turn was cancelled because its stern would swing into that ship, {} when the result names
-## no cause.
+## when its turn was cancelled because its stern would swing into that ship, {"cause": "overlap",
+## "other": id} when its stern swung into that ship and the turn was rolled back (6.B.4), {} when the
+## result names no cause.
 static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary:
+	if _rollback_ended_movement(result):
+		return {"cause": "overlap", "other": result.blocked_by}
 	if result.collided_with != "":
 		return {"cause": "collision", "other": result.collided_with}
 	for ev in result.events:
@@ -997,7 +1184,25 @@ static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary
 			return {"cause": "bore_off", "other": result.blocked_by}
 		if ev.event_type == MovementTypes.ResolutionEventType.STERN_BLOCKED:
 			return {"cause": "stern_blocked", "other": result.blocked_by}
+		if ev.event_type == MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK:
+			return {"cause": "overlap", "other": result.blocked_by}
 	return {}
+
+
+## True when the ship's movement ended with a rolled-back turn: it made no step from the overlap
+## segment on (no deceleration steps ahead), so anything that happened to it later (another ship
+## running into it) is not why it stopped.
+static func _rollback_ended_movement(result: MovementTypes.ShipResolutionResult) -> bool:
+	var overlap_segment: int = -1
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK:
+			overlap_segment = ev.impulse - 1
+	if overlap_segment < 0:
+		return false
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.MOVE and ev.impulse >= overlap_segment:
+			return false
+	return true
 
 
 ## The hex this ship ran into: the one ahead of its bow (a collision only ever comes from an ahead

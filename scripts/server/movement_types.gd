@@ -379,7 +379,9 @@ enum ResolutionEventType {
 	FOULING,
 	COLLISION_RIGGING_LOSS,
 	STOPPED,
-	STERN_BLOCKED,  # a turn whose swinging stern would enter a held or entered hex is cancelled
+	STERN_BLOCKED,  # a turn cancelled outright: two sterns swinging into one hex, or a complete overlap
+	OVERLAP,  # a swinging stern entered a hex another ship holds or enters (6.B.2); detail "overlaps <id>"
+	OVERLAP_ROLLBACK,  # the overlap was not cleared on the next segment: the turn is undone (6.B.4)
 }
 
 class ResolutionEvent extends RefCounted:

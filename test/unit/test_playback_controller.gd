@@ -412,6 +412,82 @@ func test_playback_turn_keeps_bow_hex() -> void:
 	assert_almost_eq(view.model_node.rotation_degrees.y, -1 * 60.0 - 90.0, 1.0, "now facing SE")
 
 
+func _overlap_rollback_log(with_ahead_move: bool) -> MovementTypes.ResolutionLog:
+	# The resolver's record of a rolled-back turn: OVERLAP (the swing out) at the overlap segment,
+	# OVERLAP_ROLLBACK (the swing back) at the next one. With a deceleration step the ship moves
+	# ahead at the overlap segment instead.
+	var log = MovementTypes.ResolutionLog.new(1)
+	log.max_impulses = 2
+	var result = MovementTypes.ShipResolutionResult.new("swinging_ship")
+	var overlap = MovementTypes.ResolutionEvent.new("swinging_ship", 0, MovementTypes.ResolutionEventType.OVERLAP)
+	overlap.from_hex = Vector2i(5, 5)
+	overlap.to_hex = Vector2i(5, 5)
+	overlap.from_facing = 0
+	overlap.facing = 1
+	overlap.detail = "overlaps other"
+	if with_ahead_move:
+		var mv = MovementTypes.ResolutionEvent.new("swinging_ship", 0, MovementTypes.ResolutionEventType.MOVE)
+		mv.from_hex = Vector2i(5, 5)
+		mv.to_hex = Vector2i(6, 5)
+		mv.from_facing = 0
+		mv.facing = 0
+		result.events.append(mv)
+	result.events.append(overlap)
+	var rollback = MovementTypes.ResolutionEvent.new("swinging_ship", 1, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
+	rollback.from_hex = Vector2i(5, 5)
+	rollback.to_hex = Vector2i(5, 5)
+	rollback.from_facing = 1
+	rollback.facing = 0
+	rollback.success = false
+	rollback.detail = "already occupied"
+	result.events.append(rollback)
+	result.final_hex = Vector2i(6, 5) if with_ahead_move else Vector2i(5, 5)
+	result.final_facing = 0
+	log.add_result(result)
+	return log
+
+
+func test_rolled_back_turn_swings_out_and_back() -> void:
+	var pb = MovementResolutionPlaybackController.new(hex_grid, {}, 0)
+	add_child_autofree(pb)
+	var log := _overlap_rollback_log(false)
+	pb._log = log
+	var events: Array = log.get_result("swinging_ship").events
+	var out: Array = pb._posed_events([events[0]])
+	assert_eq(out.size(), 1, "The swing out is animated")
+	var back: Array = pb._posed_events([events[1]])
+	assert_eq(back.size(), 1, "The swing back is animated")
+
+
+func test_rolled_back_turn_with_ahead_move_animates_only_the_move() -> void:
+	var pb = MovementResolutionPlaybackController.new(hex_grid, {}, 0)
+	add_child_autofree(pb)
+	var log := _overlap_rollback_log(true)
+	pb._log = log
+	var events: Array = log.get_result("swinging_ship").events
+	var posed: Array = pb._posed_events([events[0], events[1]])
+	assert_eq(posed.size(), 1)
+	assert_eq(posed[0].event_type, MovementTypes.ResolutionEventType.MOVE)
+	assert_eq(pb._posed_events([events[2]]).size(), 0, "Nothing swung out, so nothing swings back")
+
+
+func test_playback_rolled_back_turn_ends_in_the_old_pose() -> void:
+	var ship_state := _two_hex_state("swinging_ship", Vector2i(5, 5), 0)
+	var view := ShipView.new()
+	add_child_autofree(view)
+	view.initialize(ship_state, hex_grid)
+	var pb = MovementResolutionPlaybackController.new(hex_grid, {"swinging_ship": view}, 0)
+	add_child_autofree(pb)
+
+	pb.play(_overlap_rollback_log(false))
+	await wait_for_signal(pb.playback_completed, 5.0)
+
+	var expected := hex_grid.ship_center_world(Vector2i(5, 5), 0)
+	assert_almost_eq(view.base_position.x, expected.x, 0.01, "back where it started")
+	assert_almost_eq(view.base_position.z, expected.z, 0.01)
+	assert_almost_eq(view.model_node.rotation_degrees.y, -90.0, 1.0, "facing E again")
+
+
 func _two_hex_state(ship_id: String, bow: Vector2i, facing: int) -> ShipState:
 	var ship_state = ShipState.new()
 	ship_state.ship = Ship.from_dict({

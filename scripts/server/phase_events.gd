@@ -196,6 +196,9 @@ class PhaseEvent extends RefCounted:
 			"stern_blocked":
 				if target_id != "":
 					text += " — its stern was blocked by %s" % other
+			"overlap":
+				if target_id != "":
+					text += " — its stern swung into %s and had to swing back" % other
 		return text
 
 	func _fire_text(who: String, other: String) -> String:
