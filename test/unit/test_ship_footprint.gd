@@ -69,3 +69,12 @@ func test_overlap_detected() -> void:
 func test_no_overlap() -> void:
 	var ships: Array[ShipState] = [_make("a", Vector2i(5, 5), 0), _make("b", Vector2i(2, 2), 1)]
 	assert_eq(Occupancy.overlapping_ids(ships).size(), 0)
+
+
+func test_scenario_without_map_bounds_is_unbounded() -> void:
+	# Test mocks rely on this: an empty active_scenario leaves every hex on the map.
+	for hex in [Vector2i(0, 0), Vector2i(-500, 0), Vector2i(0, 900), Vector2i(10000, -10000)]:
+		assert_true(Occupancy.in_bounds(hex, {}), "No scenario: %s is in bounds" % hex)
+		assert_true(Occupancy.in_bounds(hex, {"name": "no bounds"}), "No map_bounds: %s is in bounds" % hex)
+	assert_false(Occupancy.in_bounds(Vector2i(5, 0), {"map_bounds": {"width": 10, "height": 10}}),
+		"With map_bounds the edge applies (q -5..4)")

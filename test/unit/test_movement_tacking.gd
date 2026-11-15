@@ -14,6 +14,7 @@ class MockGameState extends Node:
 	var environment: EnvironmentState = null
 	var ship_controller: ShipStateController = null
 	var ships: Dictionary = {}
+	# No map_bounds: every hex is in bounds (Occupancy.in_bounds), so the mock map is unbounded.
 	var active_scenario: Dictionary = {}
 	func _init() -> void:
 		environment = EnvironmentState.new()
@@ -187,7 +188,7 @@ func test_session_recompute_clears_tacking_on_undo() -> void:
 
 	var vnh = MovementTypes.ValidNextHexes.new()
 	var port_facing1 = (5 + 5) % 6  # = 4
-	var hex1 = hex_grid.get_neighbor(5, 5, port_facing1)
+	var hex1 = Vector2i(5, 5)  # a turn pivots on the bow hex (5.C.2)
 	session.select_hex(hex1, port_facing1, vnh, true, MovementTypes.MoveType.PORT)
 
 	var hex2 = hex_grid.get_neighbor(hex1.x, hex1.y, port_facing1)  # forward in the new facing
@@ -219,7 +220,7 @@ func test_session_tracking_fields_after_undo() -> void:
 	session.select_hex(hex1, 0, vnh, true, MovementTypes.MoveType.FORWARD)
 	var hex2 = hex_grid.get_neighbor(hex1.x, hex1.y, 0)
 	session.select_hex(hex2, 0, vnh, true, MovementTypes.MoveType.FORWARD)
-	var hex3 = hex_grid.get_neighbor(hex2.x, hex2.y, 1)
+	var hex3 = hex2  # a turn pivots on the bow hex (5.C.2)
 	session.select_hex(hex3, 1, vnh, true, MovementTypes.MoveType.STARBOARD)
 
 	assert_eq(session.pivots_used, 1, "One pivot used")
