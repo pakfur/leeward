@@ -65,17 +65,13 @@ func choose_fire_orders() -> Array[Dictionary]:
 		var shots := calculator.eligible_shots(ship_state.ship_id)
 		var best_per_side: Array[GunneryTypes.ShotPreview] = []
 		for side in GunneryCalculator.SIDES:
-			var best_full: GunneryTypes.ShotPreview = null
-			var best_single: GunneryTypes.ShotPreview = null
+			var best: GunneryTypes.ShotPreview = null
 			for shot in shots:
 				if shot.order.side != side:
 					continue
-				if shot.order.battery == GunneryTypes.BATTERY_FULL:
-					if best_full == null or _shot_beats(shot, best_full):
-						best_full = shot
-				elif best_single == null or _shot_beats(shot, best_single):
-					best_single = shot
-			var best := best_full if best_full != null else best_single
+				# A full broadside before any half broadside (FireRules.battery_rank), then mgn.
+				if best == null or _preferred(shot, best):
+					best = shot
 			if best != null:
 				best_per_side.append(best)
 
@@ -90,6 +86,14 @@ func choose_fire_orders() -> Array[Dictionary]:
 		for shot in kept:
 			result.append(shot.order.to_dict())
 	return result
+
+
+func _preferred(a: GunneryTypes.ShotPreview, b: GunneryTypes.ShotPreview) -> bool:
+	var rank_a := FireRules.battery_rank(a.order.battery)
+	var rank_b := FireRules.battery_rank(b.order.battery)
+	if rank_a != rank_b:
+		return rank_a < rank_b
+	return _shot_beats(a, b)
 
 
 func _shot_beats(a: GunneryTypes.ShotPreview, b: GunneryTypes.ShotPreview) -> bool:

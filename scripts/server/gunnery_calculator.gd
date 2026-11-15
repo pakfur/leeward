@@ -4,9 +4,9 @@ extends RefCounted
 ## Which broadsides can fire at which targets, and each shot's modified gunfire number.
 ## Never mutates state and never rolls dice.
 
-const MAX_RANGE := 15
-const MAX_DISMANTLING_RANGE := 7
-const HIGH_ONLY_RANGE := 10
+const MAX_RANGE := FireRules.MAX_RANGE
+const MAX_DISMANTLING_RANGE := FireRules.MAX_DISMANTLING_RANGE
+const HIGH_ONLY_RANGE := FireRules.HIGH_ONLY_RANGE
 const SIDES: Array[int] = [ShipState.PORT, ShipState.STARBOARD]
 const GUN_TYPES: Array[String] = ["lg", "mg", "cr"]
 
@@ -46,7 +46,7 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 	var battery_hexes := _battery_hexes(firer_hexes, order.battery)
 	var target_hexes := target.occupied_hexes()
 	p.range_hexes = geometry.range_between(firer_hexes, target_hexes)
-	p.high_only = p.range_hexes >= HIGH_ONLY_RANGE
+	p.high_only = FireRules.high_only(p.range_hexes)
 
 	var in_arc := false
 	for battery in battery_hexes:
@@ -55,7 +55,7 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 				in_arc = true
 	if not in_arc:
 		return _refuse(p, "target is not in that broadside's arc")
-	var max_range := MAX_DISMANTLING_RANGE if order.ammo == GunneryTypes.AMMO_DISMANTLING else MAX_RANGE
+	var max_range := FireRules.max_range(order.ammo)
 	if p.range_hexes > max_range:
 		return _refuse(p, "target is out of range (%d hexes, maximum %d)" % [p.range_hexes, max_range])
 	# 7.B.7: neither the firer's nor the target's own hexes block its lines of sight.
@@ -168,13 +168,9 @@ func preview_orders(orders: Array[GunneryTypes.FireOrder]) -> Array[GunneryTypes
 	return previews
 
 
-## Number of different targets the orders of `ship_id` name (7.A.4, 7.C.12g).
+## Number of different targets the orders of `ship_id` name (FireRules.target_count).
 static func target_count(ship_id: String, orders: Array) -> int:
-	var targets: Dictionary = {}
-	for order: GunneryTypes.FireOrder in orders:
-		if order.ship_id == ship_id:
-			targets[order.target_id] = true
-	return targets.size()
+	return FireRules.target_count(ship_id, orders)
 
 
 func any_eligible_shot() -> bool:
@@ -185,31 +181,19 @@ func any_eligible_shot() -> bool:
 
 
 ## "" when the orders are legal for `player_id`, otherwise a message naming the first problem.
-## Each battery fires at most once ("battery fired twice"; "full" uses both of its side), a ship
-## names at most two targets ("more than two targets", 7.A.4), and the bow and stern batteries
-## of one side may not name the same target: that is a full broadside and must be declared so.
+## Declaration rules (FireRules.declaration_error): each battery fires at most once ("battery fired
+## twice"), at most two targets per ship ("more than two targets", 7.A.4), and bow and stern of one
+## side may not name the same target (that is a full broadside and must be declared so). Then each
+## order must be able to fire, and range 10+ must aim high.
 func validate_orders(player_id: int, orders: Array[GunneryTypes.FireOrder]) -> String:
-	var used: Dictionary = {}       # "ship:side:bow|stern" -> target_id
 	for order in orders:
 		var firer: ShipState = game_state.get_ship(order.ship_id)
 		if firer == null or firer.player_id != player_id:
 			return "ship %s is not yours to command" % order.ship_id
-		if not GunneryTypes.BATTERIES.has(order.battery):
-			return "unknown battery '%s'" % order.battery
-		for battery in _battery_names(order.battery):
-			var key := "%s:%d:%s" % [order.ship_id, order.side, battery]
-			if used.has(key):
-				return "battery fired twice"
-			used[key] = order.target_id
-		if order.battery != GunneryTypes.BATTERY_FULL:
-			var other := GunneryTypes.BATTERY_STERN if order.battery == GunneryTypes.BATTERY_BOW \
-					else GunneryTypes.BATTERY_BOW
-			var other_key := "%s:%d:%s" % [order.ship_id, order.side, other]
-			if used.get(other_key, "") == order.target_id:
-				return "ship %s fires both batteries of one side at %s: declare a full broadside" \
-						% [order.ship_id, order.target_id]
-		if target_count(order.ship_id, orders) > 2:
-			return "more than two targets"
+	var declaration := FireRules.declaration_error(orders)
+	if declaration != "":
+		return declaration
+	for order in orders:
 		if order.aim != GunneryTypes.AIM_LOW and order.aim != GunneryTypes.AIM_HIGH:
 			return "unknown aim '%s'" % order.aim
 		if order.ammo != GunneryTypes.AMMO_ROUND and order.ammo != GunneryTypes.AMMO_DISMANTLING:
@@ -253,13 +237,6 @@ static func _battery_name(battery: String, i: int) -> String:
 	if battery == GunneryTypes.BATTERY_FULL:
 		return GunneryTypes.BATTERY_BOW if i == 0 else GunneryTypes.BATTERY_STERN
 	return battery
-
-
-## The single batteries an order uses.
-static func _battery_names(battery: String) -> Array[String]:
-	if battery == GunneryTypes.BATTERY_FULL:
-		return [GunneryTypes.BATTERY_BOW, GunneryTypes.BATTERY_STERN]
-	return [battery]
 
 
 ## True when shot `a` has the better claim on its side's initial-broadside bonus than `b`.
