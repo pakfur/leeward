@@ -1444,6 +1444,43 @@ func test_failed_ahead_move_keeps_its_old_stern_hex() -> void:
 	assert_eq(ship_b.hex_position, Vector2i(4, 6), "B does not enter A's stern hex")
 	assert_eq(Occupancy.overlapping_ids(ships), [] as Array[String], "No two ships overlap")
 
+## Run A (bow (5,5) E, plots ahead to (6,5)) and B (bow (6,5) SE, stern (6,4), plots ahead to (6,6))
+## with the ships listed in `order`; returns {id: [final_hex, final_facing, speed, moved, events]}.
+func _run_crossing(order: Array) -> Dictionary:
+	GameState.ships.clear()
+	rng.seed = 4242
+	resolver = MovementResolver.new(GameState, rng)
+	var by_id := {
+		"ship_a": _make_ship_state(Vector2i(5, 5), 0, 1, "C", "ship_a"),
+		"ship_b": _make_ship_state(Vector2i(6, 5), 1, 1, "C", "ship_b"),
+	}
+	by_id["ship_a"].plotted_actions.movement = [{"hex": {"q": 6, "r": 5}, "facing": 0}]
+	by_id["ship_b"].plotted_actions.movement = [{"hex": {"q": 6, "r": 6}, "facing": 1}]
+	var ships: Array[ShipState] = []
+	for id in order:
+		ships.append(by_id[id])
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+	var out := {}
+	for id in by_id:
+		var events: Array = []
+		for ev in log.get_result(id).events:
+			events.append(ev.to_dict())
+		var s: ShipState = by_id[id]
+		out[id] = [s.hex_position, s.facing, s.speed, s.moved_this_turn, events]
+	return out
+
+
+func test_collision_with_a_moving_ship_does_not_depend_on_ship_order() -> void:
+	# 6.A.5: B's own step completes before conflicts are checked, so A runs into B's new stern on
+	# (6,5) and B still ends on (6,6), whichever ship is listed first.
+	var ab := _run_crossing(["ship_a", "ship_b"])
+	var ba := _run_crossing(["ship_b", "ship_a"])
+	assert_eq(ab, ba, "Same outcome in both ship orders")
+	assert_eq(ab["ship_b"][0], Vector2i(6, 6), "B completes its move")
+	assert_true(ab["ship_b"][3], "B moved ahead")
+	assert_eq(ab["ship_a"][0], Vector2i(5, 5), "A does not enter B's stern hex")
+
 func test_struck_ship_both_hexes_block() -> void:
 	# A struck ship lying E with bow (7, 5), stern (6, 5): A sailing E runs into its stern hex.
 	var struck = _make_ship_state(Vector2i(7, 5), 0, 0, "C", "struck")

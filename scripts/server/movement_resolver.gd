@@ -150,8 +150,10 @@ func _resolve_impulse(
 	var start_bows: Dictionary = {}
 	var start_facings: Dictionary = {}
 	var old_stern_owner: Dictionary = {}  # old stern hex -> moving ship id
+	var start_bow_owner: Dictionary = {}  # bow hex at the start of the segment -> moving ship id
 	for sid in intended_moves:
 		held[current_hexes[sid]] = sid
+		start_bow_owner[current_hexes[sid]] = sid
 		start_bows[sid] = current_hexes[sid]
 		start_facings[sid] = current_facings[sid]
 		old_stern_owner[HexGrid.stern_of(current_hexes[sid], current_facings[sid])] = sid
@@ -169,9 +171,12 @@ func _resolve_impulse(
 			targets[entered] = []
 		targets[entered].append(sid)
 
-	# Resolve the groups (stern-entries first, then bow-entries), but a group entering a moving ship's
-	# old stern hex waits until that ship's own group is resolved: only then is it known whether the
-	# hex was vacated. In a cycle (each ship entering the next one's old stern) all vacate together.
+	# Resolve the groups (stern-entries first, then bow-entries), but a group entering a hex of a moving
+	# ship (its bow, or its old stern) waits until that ship's own group is resolved. All of a segment's
+	# movement is done before conflicts are checked (6.A.5): a ship in the way collides with the ship
+	# only after that ship's own step, so the result does not depend on ship order, and an old stern is
+	# known to be vacated or kept. In a cycle (head-on bows, or each ship entering the next one's old
+	# stern) no group is ready and the first pending one goes.
 	var pending: Array = []
 	for entered in stern_targets:
 		pending.append({"stern": true, "hex": entered, "ids": stern_targets[entered]})
@@ -181,8 +186,7 @@ func _resolve_impulse(
 	while not pending.is_empty():
 		var pick: int = 0
 		for i in range(pending.size()):
-			var owner_id: String = old_stern_owner.get(pending[i].hex, "")
-			if owner_id == "" or resolved.has(owner_id) or owner_id in pending[i].ids:
+			if _group_ready(pending[i], start_bow_owner, old_stern_owner, resolved):
 				pick = i
 				break
 		var group: Dictionary = pending[pick]
@@ -197,6 +201,15 @@ func _resolve_impulse(
 			resolved[sid] = true
 			if current_hexes[sid] == start_bows[sid] and current_facings[sid] == start_facings[sid]:
 				held[HexGrid.stern_of(start_bows[sid], start_facings[sid])] = sid  # it keeps its stern
+
+
+## True when no moving ship whose bow or old stern lies on the group's hex is still unresolved.
+func _group_ready(group: Dictionary, start_bow_owner: Dictionary, old_stern_owner: Dictionary, resolved: Dictionary) -> bool:
+	for owners in [start_bow_owner, old_stern_owner]:
+		var owner_id: String = owners.get(group.hex, "")
+		if owner_id != "" and not resolved.has(owner_id) and not owner_id in group.ids:
+			return false
+	return true
 
 
 ## Stern-entries into `entered` (6.B.4a/b outcome, no overlap allowance yet): a swinging stern may
