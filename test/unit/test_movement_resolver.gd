@@ -1243,3 +1243,33 @@ func test_turn_step_keeps_bow_hex_and_applies_new_facing() -> void:
 	assert_eq(result.final_hex, Vector2i(5, 5), "The bow stays put")
 	assert_eq(result.final_facing, 1, "The new facing is applied in place")
 	assert_false(result.immobilized)
+
+
+func test_speed_counts_turn_steps_when_ship_moved_ahead() -> void:
+	# 5.E.2: turn + 2 forward uses 3 MPs.
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3)
+	GameState.ship_controller.set_plotted_movement(state.ship_id, [
+		{"hex": {"q": 5, "r": 5}, "facing": 1},
+		{"hex": {"q": 5, "r": 6}, "facing": 1},
+		{"hex": {"q": 5, "r": 7}, "facing": 1},
+	])
+	var ships: Array[ShipState] = [state]
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+	assert_eq(state.speed, 3, "Turn and two forward steps are 3 MPs")
+	assert_true(state.moved_this_turn)
+	assert_eq(state.hex_position, Vector2i(5, 7))
+
+
+func test_turn_only_ship_is_stopped() -> void:
+	var state = _make_ship_state(Vector2i(5, 5), 0, 3)
+	GameState.ship_controller.set_plotted_movement(state.ship_id, [
+		{"hex": {"q": 5, "r": 5}, "facing": 1},
+	])
+	var ships: Array[ShipState] = [state]
+	var log = resolver.run(ships, env)
+	resolver.apply_results(log, ships)
+	assert_eq(state.facing, 1)
+	assert_eq(state.speed, 0, "A ship that only turns is stopped")
+	assert_false(state.moved_this_turn)
+	assert_eq(GameState.turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT).size(), 0)

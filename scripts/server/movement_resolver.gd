@@ -726,12 +726,15 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			continue
 		var sid = ship_state.ship_id
 		if sc:
-			sc.set_moved_this_turn(sid, _count_hexes_moved(result) > 0)
+			# 5.E.2: speed is the MPs used (turns included) once the ship has moved ahead; a ship that
+			# only turns, or does not move, is stopped.
+			var moved_ahead: bool = _count_hexes_moved(result) > 0
+			sc.set_moved_this_turn(sid, moved_ahead)
 			sc.set_ship_position(sid, result.final_hex)
 			sc.set_ship_facing(sid, result.final_facing)
 			if result.immobilized:
 				sc.set_immobilized(sid, true)
-			sc.set_ship_speed(sid, _count_hexes_moved(result))
+			sc.set_ship_speed(sid, _count_steps_executed(result) if moved_ahead else 0)
 			if result.collided_with != "":
 				sc.set_collision_this_turn(sid, true)
 			if result.fouled_with != "":
@@ -771,6 +774,15 @@ func _count_hexes_moved(result: MovementTypes.ShipResolutionResult) -> int:
 	return count
 
 
+## Every executed MOVE step, turns (which stay in their hex) included.
+func _count_steps_executed(result: MovementTypes.ShipResolutionResult) -> int:
+	var count: int = 0
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.MOVE:
+			count += 1
+	return count
+
+
 ## Name what happened to each ship in the turn log, in ship order: a failed tack or a ship left in
 ## irons, a collision (logged for the ship that ran into the other), movement cut short of the plot,
 ## and fouling (once per pair). Reads each ship's plot, so call it before the plots are cleared.
@@ -793,8 +805,8 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 				turn_log.add(PhaseEvents.Type.COLLISION, phase, sid, {"hex": {"q": at.x, "r": at.y}},
 					result.collided_with)
 		var planned: int = _get_plotted_steps(ship_state).size()
-		if not result.tacking_failed and planned > 0 and _count_hexes_moved(result) < planned:
-			var data := {"moved": _count_hexes_moved(result), "planned": planned}
+		if not result.tacking_failed and planned > 0 and _count_steps_executed(result) < planned:
+			var data := {"moved": _count_steps_executed(result), "planned": planned}
 			var cause := stop_cause(result)
 			if not cause.is_empty():
 				data["cause"] = cause["cause"]

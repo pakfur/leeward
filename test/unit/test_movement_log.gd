@@ -206,3 +206,40 @@ func test_resolver_records_which_ship_was_in_the_way() -> void:
 	var r: MovementTypes.ShipResolutionResult = log.get_result("m")
 	assert_true(r.blocked_by == "s" or r.collided_with == "s", "the blocker is named")
 	assert_eq(r.blocked_by, "s")
+
+
+func test_turn_steps_count_as_executed_steps() -> void:
+	# A plot of turn + 2 forward that completes is not stopped short (5.E.2).
+	var log := MovementTypes.ResolutionLog.new(1)
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	_move(a, 0, Vector2i(0, 0), Vector2i(0, 0))  # the turn stays in its hex
+	_move(a, 1, Vector2i(0, 0), Vector2i(1, 0))
+	_move(a, 2, Vector2i(1, 0), Vector2i(2, 0))
+	log.add_result(a)
+	var ships: Array[ShipState] = [_ship("a", 3)]
+	resolver.log_outcomes(log, ships, turn_log)
+	assert_eq(turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT).size(), 0)
+
+
+func test_turn_only_plot_is_not_stopped_short() -> void:
+	var log := MovementTypes.ResolutionLog.new(1)
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	_move(a, 0, Vector2i(0, 0), Vector2i(0, 0))
+	log.add_result(a)
+	var ships: Array[ShipState] = [_ship("a", 1)]
+	resolver.log_outcomes(log, ships, turn_log)
+	assert_eq(turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT).size(), 0)
+
+
+func test_stopped_short_counts_executed_turns_and_moves() -> void:
+	var log := MovementTypes.ResolutionLog.new(1)
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	_move(a, 0, Vector2i(0, 0), Vector2i(0, 0))
+	_move(a, 1, Vector2i(0, 0), Vector2i(1, 0))
+	log.add_result(a)
+	var ships: Array[ShipState] = [_ship("a", 3)]
+	resolver.log_outcomes(log, ships, turn_log)
+	var stops := turn_log.of_type(PhaseEvents.Type.STOPPED_SHORT)
+	assert_eq(stops.size(), 1)
+	assert_eq(stops[0].data["moved"], 2)
+	assert_eq(stops[0].data["planned"], 3)
