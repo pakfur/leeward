@@ -99,7 +99,8 @@ func _make_ship(id: String, player: int, hex: Vector2i, facing: int) -> ShipStat
 ## a (player 0) at the origin facing east; b (player 1) adjacent to its starboard side.
 func _setup_adjacent() -> void:
 	a = _make_ship("a_ship", 0, Vector2i.ZERO, 0)
-	b = _make_ship("b_ship", 1, HexGrid.DIRECTIONS[1], 3)
+	# B bow (-1,1) facing W, stern (0,1): abeam, so both batteries of each side bear.
+	b = _make_ship("b_ship", 1, Vector2i(-1, 1), 3)
 
 
 func _setup_far_apart() -> void:

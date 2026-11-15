@@ -8,6 +8,7 @@ const SAIL_NS := "NS"
 const SAIL_MS := "MS"
 const SAIL_PS := "PS"
 const RAKE_RANK := {"stern": 0, "bow": 1, "": 2}
+const BATTERY_RANK := {"full": 0, "bow": 1, "stern": 2}
 
 var is_server: bool = true
 var game_state: Node = null
@@ -20,7 +21,8 @@ func _init(p_game_state: Node) -> void:
 ## Resolve `orders` for `phase`. Orders that cannot fire are skipped (no event, broadside not spent).
 ##
 ## Dice order is part of the contract (tests script dice by position). For each shot, in
-## resolution order (by target_id, stern rakes, bow rakes, others, then firer ship_id, then side):
+## resolution order (by target_id, stern rakes, bow rakes, others, then firer ship_id, then side,
+## then battery full, bow, stern):
 ##   1. the gunnery d6 (fgn = mgn + d6)
 ##   2. one d6 per slashed token, columns in order fs, ms, ps, tokens left to right
 ##   3. the half-box d6, only when a furled target's rigging is odd
@@ -32,13 +34,11 @@ func resolve(orders: Array[GunneryTypes.FireOrder], phase: int) -> void:
 		return
 
 	# Step 1: capture every shot (and target condition) before any damage is applied.
-	var shots_per_ship := {}
-	for order in orders:
-		shots_per_ship[order.ship_id] = int(shots_per_ship.get(order.ship_id, 0)) + 1
+	# 7.C.12g: the two-target modifier applies when a ship's orders name two different targets.
 	var shots: Array[Dictionary] = []
 	for order in orders:
-		var preview: GunneryTypes.ShotPreview = game_state.gunnery_calculator.preview(
-				order, shots_per_ship[order.ship_id] > 1)
+		var two_targets := GunneryCalculator.target_count(order.ship_id, orders) > 1
+		var preview: GunneryTypes.ShotPreview = game_state.gunnery_calculator.preview(order, two_targets)
 		if not preview.can_fire:
 			continue
 		var target: ShipState = game_state.get_ship(order.target_id)
@@ -67,7 +67,9 @@ func _shot_before(x: Dictionary, y: Dictionary) -> bool:
 		return RAKE_RANK[px.rake] < RAKE_RANK[py.rake]
 	if ox.ship_id != oy.ship_id:
 		return ox.ship_id < oy.ship_id
-	return ox.side < oy.side
+	if ox.side != oy.side:
+		return ox.side < oy.side
+	return BATTERY_RANK.get(ox.battery, 3) < BATTERY_RANK.get(oy.battery, 3)
 
 
 func _resolve_shot(shot: Dictionary, phase: int) -> void:
@@ -117,6 +119,7 @@ func _resolve_shot(shot: Dictionary, phase: int) -> void:
 
 	game_state.turn_log.add(PhaseEvents.Type.FIRE, phase, order.ship_id, {
 		"side": order.side,
+		"battery": order.battery,
 		"range": preview.range_hexes,
 		"aim": order.aim,
 		"ammo": order.ammo,

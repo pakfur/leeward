@@ -54,24 +54,33 @@ func submit_fire_orders() -> void:
 		push_error("StubAI: fire orders rejected: %s" % reason)
 
 
-## FireOrder dictionaries for every AI ship: per broadside the highest-mgn shot (ties: nearest,
-## then target_id), roundshot. When both broadsides have a target both fire only if each shot
-## still has mgn >= 1 under the two-target penalty; otherwise only the better one fires.
+## FireOrder dictionaries for every AI ship. Per side: the highest-mgn full broadside (ties:
+## nearest, then target_id), or, when no full broadside bears, the best single battery; roundshot.
+## When the two sides pick different targets both fire only if each shot still has mgn >= 1 under
+## the two-target penalty; otherwise only the better one fires. At most two targets per ship.
 func choose_fire_orders() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	var calculator: GunneryCalculator = game_state.gunnery_calculator
 	for ship_state in _get_ai_ships():
+		var shots := calculator.eligible_shots(ship_state.ship_id)
 		var best_per_side: Array[GunneryTypes.ShotPreview] = []
 		for side in GunneryCalculator.SIDES:
-			var best: GunneryTypes.ShotPreview = null
-			for shot in calculator.eligible_shots(ship_state.ship_id):
-				if shot.order.side == side and (best == null or _shot_beats(shot, best)):
-					best = shot
+			var best_full: GunneryTypes.ShotPreview = null
+			var best_single: GunneryTypes.ShotPreview = null
+			for shot in shots:
+				if shot.order.side != side:
+					continue
+				if shot.order.battery == GunneryTypes.BATTERY_FULL:
+					if best_full == null or _shot_beats(shot, best_full):
+						best_full = shot
+				elif best_single == null or _shot_beats(shot, best_single):
+					best_single = shot
+			var best := best_full if best_full != null else best_single
 			if best != null:
 				best_per_side.append(best)
 
 		var kept: Array[GunneryTypes.ShotPreview] = best_per_side
-		if best_per_side.size() == 2:
+		if best_per_side.size() == 2 and best_per_side[0].order.target_id != best_per_side[1].order.target_id:
 			var both_worthwhile := true
 			for shot in best_per_side:
 				if calculator.preview(shot.order, true).mgn < 1:

@@ -17,7 +17,10 @@ func _init(p_game_state: Node) -> void:
 	game_state = p_game_state
 
 
-## What `order` would do right now. `two_targets` is true when the same broadside is split.
+## What `order` would do right now. `two_targets` is true when the firing ship's orders this turn
+## name two different targets (7.C.12g: then every shot takes -12 and no half-broadside -8).
+## The battery decides which of the firer's hexes fire: "full" needs both to bear (7.B.1),
+## "bow"/"stern" is a half broadside (-8, 7.C.12f). Range, rake and gun factors stay the ship's.
 func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> GunneryTypes.ShotPreview:
 	var p := GunneryTypes.ShotPreview.new()
 	p.order = order
@@ -31,16 +34,19 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> Gunner
 		return _refuse(p, "cannot fire on a ship of the same side")
 	if order.side != ShipState.PORT and order.side != ShipState.STARBOARD:
 		return _refuse(p, "invalid broadside")
+	if not GunneryTypes.BATTERIES.has(order.battery):
+		return _refuse(p, "unknown battery '%s'" % order.battery)
 
 	var geometry: FireGeometry = game_state.fire_geometry
 	var tables: CombatTables = DataManager.combat_tables
 	var firer_hexes := firer.occupied_hexes()
+	var battery_hexes := _battery_hexes(firer_hexes, order.battery)
 	var target_hexes := target.occupied_hexes()
 	p.range_hexes = geometry.range_between(firer_hexes, target_hexes)
 	p.high_only = p.range_hexes >= HIGH_ONLY_RANGE
 
 	var in_arc := false
-	for battery in firer_hexes:
+	for battery in battery_hexes:
 		for h in target_hexes:
 			if geometry.in_battery_arc(battery, firer.facing, order.side, h):
 				in_arc = true
@@ -51,12 +57,15 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> Gunner
 		return _refuse(p, "target is out of range (%d hexes, maximum %d)" % [p.range_hexes, max_range])
 	# 7.B.7: neither the firer's nor the target's own hexes block its lines of sight.
 	var occupied := _occupied_hexes([firer.ship_id, target.ship_id])
-	p.batteries = 0
-	for battery in firer_hexes:
-		if geometry.battery_bears(battery, firer.facing, order.side, target_hexes, occupied):
-			p.batteries += 1
-	if p.batteries == 0:
+	var bearing: Array[String] = []
+	for i in battery_hexes.size():
+		if geometry.battery_bears(battery_hexes[i], firer.facing, order.side, target_hexes, occupied):
+			bearing.append(_battery_name(order.battery, i))
+	if bearing.is_empty():
 		return _refuse(p, "no line of sight to target")
+	if bearing.size() < battery_hexes.size():
+		return _refuse(p, "only the %s battery bears: a full broadside needs both" % bearing[0])
+	p.batteries = bearing.size()
 	var sections := firer.sections_able_to_fire()
 	if sections == 0:
 		return _refuse(p, "no sailor sections able to fire")
@@ -75,7 +84,7 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> Gunner
 	_add_modifier(p, "sections_firing", tables.sections_firing_modifier(sections))
 	_add_modifier(p, "guns_dismounted", -int(firer.guns_dismounted[order.side]))
 	# 7.C.12g: when firing at two targets only the two-target modifier applies, full or half.
-	if p.batteries == 1 and not two_targets:
+	if order.battery != GunneryTypes.BATTERY_FULL and not two_targets:
 		_add_modifier(p, "half_broadside", tables.flat_modifier("half_broadside"))
 	if p.range_hexes <= FireGeometry.RAKE_RANGE:
 		p.rake = geometry.rake_type_ships(target.hex_position, target.facing, firer_hexes)
@@ -104,7 +113,9 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false) -> Gunner
 	return p
 
 
-## One preview per (side, target) that can fire roundshot. Aim is "high" when only high fire is allowed.
+## One preview per (side, target, battery) that can fire roundshot, battery in BATTERIES order:
+## "full" when both batteries bear, and each battery that bears on its own. Previews assume one
+## target. Aim is "high" when only high fire is allowed.
 func eligible_shots(ship_id: String) -> Array[GunneryTypes.ShotPreview]:
 	var shots: Array[GunneryTypes.ShotPreview] = []
 	var firer: ShipState = game_state.get_ship(ship_id)
@@ -114,15 +125,26 @@ func eligible_shots(ship_id: String) -> Array[GunneryTypes.ShotPreview]:
 		if target.ship_id == ship_id:
 			continue
 		for side in SIDES:
-			var order := GunneryTypes.FireOrder.new()
-			order.ship_id = ship_id
-			order.side = side
-			order.target_id = target.ship_id
-			var probe := preview(order)
-			if probe.can_fire:
-				order.aim = GunneryTypes.AIM_HIGH if probe.high_only else GunneryTypes.AIM_LOW
-				shots.append(probe)
+			for battery in GunneryTypes.BATTERIES:
+				var order := GunneryTypes.FireOrder.new()
+				order.ship_id = ship_id
+				order.side = side
+				order.target_id = target.ship_id
+				order.battery = battery
+				var probe := preview(order)
+				if probe.can_fire:
+					order.aim = GunneryTypes.AIM_HIGH if probe.high_only else GunneryTypes.AIM_LOW
+					shots.append(probe)
 	return shots
+
+
+## Number of different targets the orders of `ship_id` name (7.A.4, 7.C.12g).
+static func target_count(ship_id: String, orders: Array) -> int:
+	var targets: Dictionary = {}
+	for order: GunneryTypes.FireOrder in orders:
+		if order.ship_id == ship_id:
+			targets[order.target_id] = true
+	return targets.size()
 
 
 func any_eligible_shot() -> bool:
@@ -133,16 +155,31 @@ func any_eligible_shot() -> bool:
 
 
 ## "" when the orders are legal for `player_id`, otherwise a message naming the first problem.
+## Each battery fires at most once ("battery fired twice"; "full" uses both of its side), a ship
+## names at most two targets ("more than two targets", 7.A.4), and the bow and stern batteries
+## of one side may not name the same target: that is a full broadside and must be declared so.
 func validate_orders(player_id: int, orders: Array[GunneryTypes.FireOrder]) -> String:
-	var seen: Dictionary = {}
+	var used: Dictionary = {}       # "ship:side:bow|stern" -> target_id
 	for order in orders:
 		var firer: ShipState = game_state.get_ship(order.ship_id)
 		if firer == null or firer.player_id != player_id:
 			return "ship %s is not yours to command" % order.ship_id
-		var key := "%s:%d" % [order.ship_id, order.side]
-		if seen.has(key):
-			return "ship %s has two orders for one broadside" % order.ship_id
-		seen[key] = true
+		if not GunneryTypes.BATTERIES.has(order.battery):
+			return "unknown battery '%s'" % order.battery
+		for battery in _battery_names(order.battery):
+			var key := "%s:%d:%s" % [order.ship_id, order.side, battery]
+			if used.has(key):
+				return "battery fired twice"
+			used[key] = order.target_id
+		if order.battery != GunneryTypes.BATTERY_FULL:
+			var other := GunneryTypes.BATTERY_STERN if order.battery == GunneryTypes.BATTERY_BOW \
+					else GunneryTypes.BATTERY_BOW
+			var other_key := "%s:%d:%s" % [order.ship_id, order.side, other]
+			if used.get(other_key, "") == order.target_id:
+				return "ship %s fires both batteries of one side at %s: declare a full broadside" \
+						% [order.ship_id, order.target_id]
+		if target_count(order.ship_id, orders) > 2:
+			return "more than two targets"
 		if order.aim != GunneryTypes.AIM_LOW and order.aim != GunneryTypes.AIM_HIGH:
 			return "unknown aim '%s'" % order.aim
 		if order.ammo != GunneryTypes.AMMO_ROUND and order.ammo != GunneryTypes.AMMO_DISMANTLING:
@@ -169,3 +206,27 @@ func _add_modifier(p: GunneryTypes.ShotPreview, modifier_name: String, value: in
 ## Bow and stern hex of every ship (struck ones included), minus `exclude_ids`.
 func _occupied_hexes(exclude_ids: Array = []) -> Dictionary:
 	return Occupancy.build(game_state.get_all_ships(), exclude_ids)
+
+
+## The firer hexes a battery fires from: `ship_hexes` is [bow, stern].
+static func _battery_hexes(ship_hexes: Array[Vector2i], battery: String) -> Array[Vector2i]:
+	match battery:
+		GunneryTypes.BATTERY_BOW:
+			return [ship_hexes[0]]
+		GunneryTypes.BATTERY_STERN:
+			return [ship_hexes[1]]
+	return ship_hexes
+
+
+## The single battery behind index `i` of `_battery_hexes(..., battery)`.
+static func _battery_name(battery: String, i: int) -> String:
+	if battery == GunneryTypes.BATTERY_FULL:
+		return GunneryTypes.BATTERY_BOW if i == 0 else GunneryTypes.BATTERY_STERN
+	return battery
+
+
+## The single batteries an order uses.
+static func _battery_names(battery: String) -> Array[String]:
+	if battery == GunneryTypes.BATTERY_FULL:
+		return [GunneryTypes.BATTERY_BOW, GunneryTypes.BATTERY_STERN]
+	return [battery]

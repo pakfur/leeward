@@ -6,15 +6,21 @@ const AIM_LOW := "low"
 const AIM_HIGH := "high"
 const AMMO_ROUND := "round"
 const AMMO_DISMANTLING := "dismantling"
+## Which batteries of the side fire (7.B.1): both at one target, or one as a half broadside.
+const BATTERY_FULL := "full"
+const BATTERY_BOW := "bow"
+const BATTERY_STERN := "stern"
+const BATTERIES: Array[String] = [BATTERY_FULL, BATTERY_BOW, BATTERY_STERN]
 
 
-## One broadside fired by one ship at one target.
+## One side's bow battery, stern battery or both (full broadside) fired by one ship at one target.
 class FireOrder extends RefCounted:
 	var ship_id: String = ""
 	var side: int = 0
 	var target_id: String = ""
 	var aim: String = "low"      # "low" | "high"
 	var ammo: String = "round"   # "round" | "dismantling"
+	var battery: String = "full" # "full" | "bow" | "stern"
 
 	static func from_dict(d: Dictionary) -> FireOrder:
 		var order := FireOrder.new()
@@ -23,6 +29,7 @@ class FireOrder extends RefCounted:
 		order.target_id = String(d.get("target_id", ""))
 		order.aim = String(d.get("aim", "low"))
 		order.ammo = String(d.get("ammo", "round"))
+		order.battery = String(d.get("battery", BATTERY_FULL))
 		return order
 
 	func to_dict() -> Dictionary:
@@ -32,6 +39,7 @@ class FireOrder extends RefCounted:
 			"target_id": target_id,
 			"aim": aim,
 			"ammo": ammo,
+			"battery": battery,
 		}
 
 
@@ -41,7 +49,7 @@ class ShotPreview extends RefCounted:
 	var can_fire: bool = false
 	var reason: String = ""            # set when can_fire is false
 	var range_hexes: int = 0           # closest firer hex to closest target hex (7.C.4)
-	var batteries: int = 0             # batteries that bear: 2 full broadside, 1 half (-8)
+	var batteries: int = 0             # batteries firing: 2 full broadside, 1 half broadside
 	var rake: String = ""              # "", "bow" or "stern"
 	var initial_broadside: bool = false
 	var high_only: bool = false

@@ -140,7 +140,7 @@ func test_build_orders_skips_held_sides_and_uses_order_dicts() -> void:
 	var orders: Array = FirePanel.build_orders("me", sides)
 	assert_eq(orders.size(), 1)
 	assert_eq(orders[0], {"ship_id": "me", "side": 1, "target_id": "foe",
-		"aim": "high", "ammo": "dismantling"})
+		"aim": "high", "ammo": "dismantling", "battery": "full"})
 
 
 func test_build_orders_two_sides_in_side_order() -> void:

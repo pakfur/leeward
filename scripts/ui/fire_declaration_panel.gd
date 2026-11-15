@@ -267,6 +267,7 @@ static func build_orders(ship_id: String, sides: Dictionary) -> Array:
 		order.target_id = str(s["target_id"])
 		order.aim = str(s.get("aim", GunneryTypes.AIM_LOW))
 		order.ammo = str(s.get("ammo", GunneryTypes.AMMO_ROUND))
+		order.battery = str(s.get("battery", GunneryTypes.BATTERY_FULL))
 		orders.append(order.to_dict())
 	return orders
 
@@ -323,12 +324,7 @@ func setup(ship_ids: Array) -> int:
 		var ship_state: ShipState = GameState.get_ship(ship_id)
 		if ship_state == null:
 			continue
-		var shots_by_side := {}
-		for shot in calculator.eligible_shots(ship_id):
-			var side := shot.order.side
-			if not shots_by_side.has(side):
-				shots_by_side[side] = []
-			shots_by_side[side].append(shot)
+		var shots_by_side := _one_shot_per_target(calculator.eligible_shots(ship_id))
 		if shots_by_side.is_empty():
 			no_shot.append(ship_state)
 			continue
@@ -344,6 +340,33 @@ func setup(ship_ids: Array) -> int:
 	if not _ship_order.is_empty():
 		focus_ship(_ship_order[0])
 	return _ship_order.size()
+
+
+## Per side, one shot per target: the full broadside when both batteries bear, otherwise the
+## better single battery. Battery choice in the panel is Task 14.
+static func _one_shot_per_target(shots: Array[GunneryTypes.ShotPreview]) -> Dictionary:
+	var best := {}   # side -> target_id -> ShotPreview
+	for shot in shots:
+		var side := shot.order.side
+		if not best.has(side):
+			best[side] = {}
+		var current: GunneryTypes.ShotPreview = best[side].get(shot.order.target_id)
+		var full := shot.order.battery == GunneryTypes.BATTERY_FULL
+		var current_full := current != null and current.order.battery == GunneryTypes.BATTERY_FULL
+		if current == null or (full and not current_full) or (full == current_full and shot.mgn > current.mgn):
+			best[side][shot.order.target_id] = shot
+	var shots_by_side := {}
+	for side in best:
+		shots_by_side[side] = best[side].values()
+	return shots_by_side
+
+
+## The battery the panel fires from `side` at `target_id` (see _one_shot_per_target).
+func _battery_for(ship_id: String, side: int, target_id: String) -> String:
+	for shot: GunneryTypes.ShotPreview in _ships[ship_id]["shots"].get(side, []):
+		if shot.order.target_id == target_id:
+			return shot.order.battery
+	return GunneryTypes.BATTERY_FULL
 
 
 ## The greyed no-shot lines, in list order.
@@ -605,10 +628,11 @@ func targets_changed() -> bool:
 	return false
 
 
-## True while some listed ship has a target on both broadsides.
+## True while some listed ship has different targets on its two broadsides.
 func any_ship_fires_both() -> bool:
 	for ship_id in _ship_order:
-		if get_target_ids(ship_id).size() > 1:
+		var ids := get_target_ids(ship_id)
+		if ids.size() > 1 and ids[0] != ids[1]:
 			return true
 	return false
 
@@ -623,11 +647,12 @@ func _refresh_ship(ship_id: String) -> void:
 	for side in sides:
 		var state: Dictionary = sides[side]
 		var widgets: Dictionary = entry["widgets"][side]
-		# Firing both broadsides costs the two-target modifier on each shot.
-		var two_targets := false
+		# Firing both broadsides at different targets costs the two-target modifier on each shot.
+		var other_target := ""
 		for other_side in sides:
-			if other_side != side and sides[other_side]["target_id"] != "":
-				two_targets = true
+			if other_side != side:
+				other_target = sides[other_side]["target_id"]
+		state["battery"] = _battery_for(ship_id, side, state["target_id"])
 
 		for target_id: String in widgets["targets"]:
 			var button: Button = widgets["targets"][target_id]
@@ -635,7 +660,8 @@ func _refresh_ship(ship_id: String) -> void:
 			button.set_pressed_no_signal(chosen)
 			var text := "Hold fire"
 			if target_id != "":
-				var row_preview := _preview_for(ship_id, side, target_id, state["want_dismantling"], two_targets)
+				var row_two := other_target != "" and other_target != target_id
+				var row_preview := _preview_for(ship_id, side, target_id, state["want_dismantling"], row_two)
 				text = option_text(str(names.get(target_id, target_id)), row_preview)
 			button.text = row_marker(chosen) + text
 
@@ -655,6 +681,7 @@ func _refresh_ship(ship_id: String) -> void:
 			breakdown.text = "This broadside holds fire."
 			continue
 
+		var two_targets: bool = other_target != "" and other_target != state["target_id"]
 		var p := _preview_for(ship_id, side, state["target_id"], state["want_dismantling"], two_targets)
 		state["ammo"] = effective_ammo(state["want_dismantling"], p.range_hexes)
 		var wanted_aim := GunneryTypes.AIM_HIGH if state["want_high"] else GunneryTypes.AIM_LOW
@@ -676,6 +703,7 @@ func _preview_for(ship_id: String, side: int, target_id: String, want_dismantlin
 	order.side = side
 	order.target_id = target_id
 	order.ammo = GunneryTypes.AMMO_ROUND
+	order.battery = _battery_for(ship_id, side, target_id)
 	var p: GunneryTypes.ShotPreview = GameState.gunnery_calculator.preview(order, two_targets)
 	if want_dismantling and dismantling_allowed(p.range_hexes):
 		order.ammo = GunneryTypes.AMMO_DISMANTLING

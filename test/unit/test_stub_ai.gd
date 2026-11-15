@@ -576,3 +576,26 @@ func test_ai_never_plots_stern_into_occupied_hex() -> void:
 		var bow := Vector2i(int(step["hex"]["q"]), int(step["hex"]["r"]))
 		var stern := HexGrid.stern_of(bow, int(step["facing"]))
 		assert_false(stern in blocked, "step %s facing %d swings the stern into the friend" % [bow, step["facing"]])
+
+
+func test_ai_prefers_full_broadside() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 0)
+	var s = _make_ship("s", 0, Vector2i(-1, 2), 0, 0)  # abeam: both starboard batteries bear
+	_add_ship(ai)
+	_add_ship(s)
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+	assert_eq(orders.size(), 1)
+	assert_eq(orders[0]["battery"], "full")
+
+
+func test_ai_falls_back_to_bearing_battery() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 0)
+	var s = _make_ship("s", 0, Vector2i(0, 3), 1, 0)  # bow (0,3) facing SE: only the bow battery bears
+	_add_ship(ai)
+	_add_ship(s)
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+	assert_eq(orders.size(), 1)
+	assert_eq(orders[0]["side"], ShipState.STARBOARD)
+	assert_eq(orders[0]["battery"], "bow")
+	var typed: Array[GunneryTypes.FireOrder] = [GunneryTypes.FireOrder.from_dict(orders[0])]
+	assert_eq(GameState.gunnery_calculator.validate_orders(1, typed), "")

@@ -82,13 +82,14 @@ func _make_ship(id: String, player: int, hex: Vector2i, facing: int,
 
 
 func _order(ship_id: String, target_id: String, ammo: String = "round",
-		aim: String = "low") -> GunneryTypes.FireOrder:
+		aim: String = "low", battery: String = "full", side: int = STARBOARD) -> GunneryTypes.FireOrder:
 	var order := GunneryTypes.FireOrder.new()
 	order.ship_id = ship_id
-	order.side = STARBOARD
+	order.side = side
 	order.target_id = target_id
 	order.ammo = ammo
 	order.aim = aim
+	order.battery = battery
 	return order
 
 
@@ -219,7 +220,7 @@ func test_dismantling_shot_ignores_hull() -> void:
 func test_stern_rake_doubles_crew() -> void:
 	_setup_ships(1, STERN_RAKE_B_HEX)  # B faces SE, A's bow sits directly astern of B's stern
 	_sixes()
-	_fire([_order("a_ship", "b_ship")])
+	_fire([_order("a_ship", "b_ship", "round", "low", "bow")])  # only A's bow battery bears
 	var ev := _fire_event_for("a_ship")
 	assert_eq(ev.data["rake"], "stern")
 	var expected := _table_amounts(ev.data["fgn"], "low", ["fs", "ms"])
@@ -251,7 +252,7 @@ func test_raked_dismasted_target_notes_morale() -> void:
 	b.rigging_current_hp = [0, 0, 0, 0] as Array[int]
 	b.sail_state = "NS"
 	_sixes()
-	_fire([_order("a_ship", "b_ship")])
+	_fire([_order("a_ship", "b_ship", "round", "low", "bow")])
 	var turn: int = GameState.phase_controller.current_turn
 	var trigger := "raked_dismasted_t%d" % turn
 	var noted := GameState.turn_log.events.filter(func(e):
@@ -348,3 +349,42 @@ func _seeded_rng(seed_value: int) -> RandomNumberGenerator:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	return rng
+
+
+# --- battery fire orders (7.B.1, 7.C.12f/g) ---
+
+func test_split_side_fires_each_battery_with_two_target_modifier() -> void:
+	# A's starboard bow battery covers only B (bow (0,3) facing SE); its stern battery only C.
+	_setup_ships(1, Vector2i(0, 3))
+	_make_ship("c_ship", 1, Vector2i(-4, 3), 2)
+	_sixes()
+	_fire([_order("a_ship", "c_ship", "round", "low", "stern"),
+			_order("a_ship", "b_ship", "round", "low", "bow")])
+	var events := _fire_events()
+	assert_eq(events.size(), 2)
+	assert_eq(events.map(func(e): return e.target_id), ["b_ship", "c_ship"])
+	assert_eq(events.map(func(e): return e.data["battery"]), ["bow", "stern"])
+	for e in events:
+		var names: Array = e.data["modifiers"].map(func(m): return m["name"])
+		assert_true(names.has("two_targets"), str(names))
+		assert_false(names.has("half_broadside"), "two targets: only the two-target modifier")
+	assert_true(a.initial_broadside_fired[STARBOARD])
+
+
+func test_both_batteries_at_one_target_are_one_target() -> void:
+	# The resolver does not count one target twice: each half broadside takes -8, no -12.
+	_sixes()
+	_fire([_order("a_ship", "b_ship", "round", "low", "stern"),
+			_order("a_ship", "b_ship", "round", "low", "bow")])
+	var events := _fire_events()
+	assert_eq(events.map(func(e): return e.data["battery"]), ["bow", "stern"], "bow before stern")
+	for e in events:
+		var names: Array = e.data["modifiers"].map(func(m): return m["name"])
+		assert_true(names.has("half_broadside"))
+		assert_false(names.has("two_targets"))
+
+
+func test_fire_event_records_full_battery() -> void:
+	_sixes()
+	_fire([_order("a_ship", "b_ship")])
+	assert_eq(_fire_event_for("a_ship").data["battery"], "full")
