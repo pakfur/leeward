@@ -372,17 +372,21 @@ func test_split_side_fires_each_battery_with_two_target_modifier() -> void:
 	assert_true(a.initial_broadside_fired[STARBOARD])
 
 
-func test_both_batteries_at_one_target_are_one_target() -> void:
-	# The resolver does not count one target twice: each half broadside takes -8, no -12.
+func test_both_sides_at_one_target_are_one_target() -> void:
+	# Port and starboard both naming B is a legal declaration (bow and stern of one side at one target
+	# is not: that must be declared a full broadside). The resolver does not count one target twice:
+	# no -12. B lies off A's starboard beam, so only the starboard broadside bears; no ship can lie in
+	# both broadside arcs of another, so the port order is skipped.
 	_sixes()
-	_fire([_order("a_ship", "b_ship", "round", "low", "stern"),
-			_order("a_ship", "b_ship", "round", "low", "bow")])
+	_fire([_order("a_ship", "b_ship", "round", "low", "full", PORT),
+			_order("a_ship", "b_ship", "round", "low", "full", STARBOARD)])
 	var events := _fire_events()
-	assert_eq(events.map(func(e): return e.data["battery"]), ["bow", "stern"], "bow before stern")
+	assert_eq(events.size(), 1, "Only the starboard broadside bears")
 	for e in events:
+		assert_eq(e.data["battery"], "full")
 		var names: Array = e.data["modifiers"].map(func(m): return m["name"])
-		assert_true(names.has("half_broadside"))
-		assert_false(names.has("two_targets"))
+		assert_false(names.has("two_targets"), "one target: no two-target modifier")
+		assert_false(names.has("half_broadside"))
 
 
 func test_fire_event_records_full_battery() -> void:
