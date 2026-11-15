@@ -3,17 +3,19 @@ extends Control
 ##
 ## Lists each own ship that has at least one eligible shot; ships without one are listed greyed
 ## underneath with the reason in plain words. Each broadside (port/starboard) gets
-## an always-visible list of target rows (best target first, "Hold fire" last; only the ship's
+## an always-visible list of target rows (nearest target first, "Hold fire" last; only the ship's
 ## single best shot is selected by default, the other broadside holds fire), an aim toggle and an
 ## ammunition toggle, each with the reason when it is locked.
 ## Each target row names the battery it fires (7.B.1): "Full broadside" (only when both the bow
 ## and the stern battery bear), "Bow battery" and "Stern battery" (half broadsides), one row per
-## battery that bears. A side may split, bow battery at one target and stern battery at another.
+## battery that bears, in that order. A side may split, bow battery at one target and stern
+## battery at another.
 ## The firing rules themselves (full vs half, target cap, forced aim, ammunition range) live in
-## FireRules on the server side; this panel only keeps widget state and text. Every change re-queries GunneryCalculator.preview_orders (a pure query) for the
-## ship's whole order set, so the numbers and the breakdown are those the resolver will roll
-## (two targets, half broadside, initial broadside once per broadside). No popups. The panel never
-## mutates game state: pressing the main button only emits the assembled order dictionaries.
+## FireRules on the server side; this panel only keeps widget state and text.
+## Every change re-queries GunneryCalculator.preview_orders (a pure query) for the ship's whole
+## order set, so the numbers and the breakdown are those the resolver will roll (two targets, half
+## broadside, initial broadside once per broadside). No popups. The panel never mutates game
+## state: pressing the main button only emits the assembled order dictionaries.
 
 signal fire_pressed(orders: Array)
 ## A ship row was chosen (the controller draws that ship's arcs).
@@ -59,6 +61,10 @@ var _ship_order: Array[String] = []
 var _focused_ship_id: String = ""
 var _group := ButtonGroup.new()
 var _building: bool = false
+## Order-set key -> preview_orders() result, for this setup(). Game state does not change while the
+## panel is open (fire is declared, not resolved), so a set's previews never go stale; _clear()
+## empties it. Saves re-previewing every unchosen row's order set on each refresh.
+var _preview_cache: Dictionary = {}
 
 
 # ============================================================================
@@ -250,7 +256,7 @@ static func row_marker(chosen: bool) -> String:
 
 ## Why "High fire" is locked on, "" when the player may choose.
 static func aim_note(high_only: bool) -> String:
-	return HIGH_ONLY_NOTE % GunneryCalculator.HIGH_ONLY_RANGE if high_only else ""
+	return HIGH_ONLY_NOTE % FireRules.HIGH_ONLY_RANGE if high_only else ""
 
 
 ## Why "Dismantling" is unavailable, "" when it may be chosen. Says so when the player's choice
@@ -258,7 +264,7 @@ static func aim_note(high_only: bool) -> String:
 static func dismantling_note(range_hexes: int, want_dismantling: bool) -> String:
 	if FireRules.dismantling_allowed(range_hexes):
 		return ""
-	var note := DISMANTLING_NOTE % GunneryCalculator.MAX_DISMANTLING_RANGE
+	var note := DISMANTLING_NOTE % FireRules.MAX_DISMANTLING_RANGE
 	return note + " — roundshot this time" if want_dismantling else note
 
 
@@ -267,6 +273,20 @@ static func dismantling_note(range_hexes: int, want_dismantling: bool) -> String
 static func rank_targets(entries: Array) -> Array:
 	var sorted := entries.duplicate()
 	sorted.sort_custom(func(x: Dictionary, y: Dictionary) -> bool: return _better_row(x, y))
+	return sorted
+
+
+## Target rows in list order: nearest first, then name, then target id (the default choice is
+## still the best shot, rank_targets). Each entry has "target_id", "range" and "name"; returns a
+## sorted copy. Within a target the rows go Full, Bow, Stern (battery_options).
+static func display_order(entries: Array) -> Array:
+	var sorted := entries.duplicate()
+	sorted.sort_custom(func(x: Dictionary, y: Dictionary) -> bool:
+		if int(x["range"]) != int(y["range"]):
+			return int(x["range"]) < int(y["range"])
+		if str(x["name"]) != str(y["name"]):
+			return str(x["name"]) < str(y["name"])
+		return str(x["target_id"]) < str(y["target_id"]))
 	return sorted
 
 
@@ -572,6 +592,7 @@ func _clear() -> void:
 		child.queue_free()
 	_ships.clear()
 	_ship_order.clear()
+	_preview_cache.clear()
 	_focused_ship_id = ""
 	_group = ButtonGroup.new()
 	error_label.visible = false
@@ -623,7 +644,7 @@ func _add_ship(ship_state: ShipState, options: Dictionary) -> void:
 		entry["defaults"][side] = start.duplicate()
 		entry["sides"][side] = {"bow": start["bow"], "stern": start["stern"],
 			"want_high": false, "want_dismantling": false}
-		entry["widgets"][side] = _build_side(box, ship_id, side, ranked)
+		entry["widgets"][side] = _build_side(box, ship_id, side, display_order(ranked))
 	box.add_child(HSeparator.new())
 
 
@@ -639,7 +660,7 @@ func _add_no_shot_row(text: String) -> void:
 	ship_list_container.add_child(label)
 
 
-func _build_side(parent: VBoxContainer, ship_id: String, side: int, ranked: Array) -> Dictionary:
+func _build_side(parent: VBoxContainer, ship_id: String, side: int, rows_in_order: Array) -> Dictionary:
 	var title := HBoxContainer.new()
 	title.add_theme_constant_override("separation", 6)
 	var swatch := ColorRect.new()
@@ -657,7 +678,7 @@ func _build_side(parent: VBoxContainer, ship_id: String, side: int, ranked: Arra
 	rows.add_theme_constant_override("separation", 2)
 	parent.add_child(rows)
 	var targets := {}
-	for row in ranked:
+	for row in rows_in_order:
 		var target_id := str(row["target_id"])
 		for battery in _battery_options_for(ship_id, side, target_id):
 			targets[row_key(target_id, battery)] = _target_row(rows, ship_id, side, target_id, battery)
@@ -672,7 +693,7 @@ func _build_side(parent: VBoxContainer, ship_id: String, side: int, ranked: Arra
 	var dismantling := _toggle_row(parent, "Dismantling")
 	high["button"].toggled.connect(func(on: bool): set_want_high(ship_id, side, on))
 	dismantling["button"].toggled.connect(func(on: bool): set_want_dismantling(ship_id, side, on))
-	return {"targets": targets, "rows": ranked, "high": high["button"], "high_note": high["note"],
+	return {"targets": targets, "rows": rows_in_order, "high": high["button"], "high_note": high["note"],
 		"dismantling": dismantling["button"], "dismantling_note": dismantling["note"],
 		"breakdown": breakdown}
 
@@ -741,9 +762,14 @@ func _orders(ship_id: String, sides: Dictionary) -> Array[GunneryTypes.FireOrder
 	return panel_orders(ship_id, sides, ranges)
 
 
-## Previews of a ship's whole order set as they will resolve (GunneryCalculator.preview_orders).
+## Previews of a ship's whole order set as they will resolve (GunneryCalculator.preview_orders),
+## computed once per order set (_preview_cache).
 func _preview_sides(ship_id: String, sides: Dictionary) -> Array[GunneryTypes.ShotPreview]:
-	return GameState.gunnery_calculator.preview_orders(_orders(ship_id, sides))
+	var orders := _orders(ship_id, sides)
+	var key := JSON.stringify(orders.map(func(o: GunneryTypes.FireOrder) -> Dictionary: return o.to_dict()))
+	if not _preview_cache.has(key):
+		_preview_cache[key] = GameState.gunnery_calculator.preview_orders(orders)
+	return _preview_cache[key]
 
 
 static func _find_preview(previews: Array[GunneryTypes.ShotPreview], side: int, target_id: String,

@@ -4,9 +4,6 @@ extends RefCounted
 ## Which broadsides can fire at which targets, and each shot's modified gunfire number.
 ## Never mutates state and never rolls dice.
 
-const MAX_RANGE := FireRules.MAX_RANGE
-const MAX_DISMANTLING_RANGE := FireRules.MAX_DISMANTLING_RANGE
-const HIGH_ONLY_RANGE := FireRules.HIGH_ONLY_RANGE
 const SIDES: Array[int] = [ShipState.PORT, ShipState.STARBOARD]
 const GUN_TYPES: Array[String] = ["lg", "mg", "cr"]
 

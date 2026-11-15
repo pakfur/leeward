@@ -1259,8 +1259,14 @@ func _on_fire_pressed(orders: Array) -> void:
 		return
 	# Accepted: the declare step is over, so the panel must not stay interactive.
 	_close_fire_panel()
-	var lines: Array[String] = ["Your orders: %s." % FirePanelScript.fire_button_text(orders.size())]
+	var lines: Array[String] = [orders_summary_line(orders)]
 	_show_combat_panel(lines)
+
+
+## "Your orders: Fire 2 half broadsides." for the accepted order dictionaries (a split side is two
+## half broadsides, not two broadsides).
+static func orders_summary_line(orders: Array) -> String:
+	return "Your orders: %s." % FirePanelScript.fire_button_text_for(orders)
 
 
 ## Remove the fire panel (if any) and its arcs. Safe to call on any path out of the declare step.
