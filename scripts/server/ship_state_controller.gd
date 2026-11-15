@@ -20,14 +20,14 @@ func get_rigging_quality(ship_id: String) -> int:
 		return 4
 	return ship.rigging_level()
 
-func get_movement_allowance(ship_id: String) -> int:
+func get_movement_allowance(ship_id: String, facing: int = -1) -> int:
 	var ship = game_state.get_ship(ship_id)
 	if not ship:
 		return 0
 
 	var wind_dir = game_state.environment.wind_direction if game_state.environment else 0
 	var hex_grid = HexGrid.new()
-	var wind_facing = hex_grid.get_wind_facing(ship.facing, wind_dir)
+	var wind_facing = hex_grid.get_wind_facing(ship.facing if facing < 0 else facing, wind_dir)
 
 	var rigging_quality = get_rigging_quality(ship_id)
 	if rigging_quality == 0:

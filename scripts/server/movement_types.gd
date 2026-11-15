@@ -381,7 +381,7 @@ enum ResolutionEventType {
 	COLLISION_RIGGING_LOSS,
 	STOPPED,
 	STERN_BLOCKED,  # a turn cancelled outright; detail "lost stern contest to <id>" (6.B.4c, 6.B.5, 6.C.5)
-	OVERLAP,  # a swinging stern entered a hex another ship holds or enters (6.B.2); detail "overlaps <id>"
+	OVERLAP,  # a swinging stern entered a hex another ship holds or enters (6.B.2); detail "overlaps <id>[, <id>]"
 	OVERLAP_ROLLBACK,  # the overlap was not cleared on the next segment: the turn is undone (6.B.4)
 }
 
