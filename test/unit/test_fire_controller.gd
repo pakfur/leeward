@@ -232,6 +232,7 @@ func test_row32_a_new_section_starts_in_column_one() -> void:
 	_fight(b, seq, 0, 1)
 	b.plotted_sections.clear()
 	b.plotted_actions["crew_assignments"] = {2: {"code": "FF", "params": {"fire": seq}}}
+	b.plotted_actions["crew_plotted"] = true
 	GameState.crew_task_controller.begin_turn_tasks(MOVE)
 	assert_eq(b.fire_task(seq)["sections"], [2])
 	_dice.queue([3])
@@ -546,6 +547,7 @@ func test_row20_automatic_with_a_real_fire() -> void:
 	# sailor); S1 keeps RR; T: S4, S3 only (M held back: fire aboard); nothing left for a third.
 	var b := _ship("b", 0, "B")
 	var seq := _fire(b)
+	CrewFixtures.allow_rigging_repair(b)
 	_task(b, "RR", [0], {}, 2)
 	b.plotted_sections.clear()
 	var ctx := CrewRules.context(GameState, b)

@@ -33,10 +33,13 @@ func apply_hits(ship_id: String, rigging: int, hull: int, crew: int, crew_cause:
 	if ship.is_destroyed():
 		return  # a wreck takes no damage
 	var struck_before := ship.is_struck()
+	var dismasted_before := ship.is_dismasted()
 	# The DAMAGE line is the cause; guns dismounted, morale checks and a strike logged while the
 	# hits are applied are its consequences, so it goes in ahead of them.
 	var damage_index: int = game_state.turn_log.events.size()
 
+	if rigging > 0 and dismasted_before:
+		rigging_hit_while_dismasted(ship_id, phase)  # 8.F.6 (a fire's 1R, a critical's rigging loss)
 	var rigging_applied := _apply_rigging(ship, ship_id, rigging, phase, struck_before, ctx)
 	var hull_applied := _apply_hull(ship, ship_id, hull, phase, struck_before, ctx)
 	var crew_rolls: Array = []
@@ -102,6 +105,22 @@ func apply_crew_boxes(ship_id: String, count: int, marines_first: bool, phase: i
 	return applied
 
 
+## 8.F.6: a dismasted ship that suffers a rigging hit (a gunfire or blast result with an r, a
+## fire's 1R, a critical hit's rigging loss; spec 0.3 #6) loses all its rigging-repair progress;
+## the repair goes on from 0. Gunfire and blast call this themselves, since they mark no rigging
+## on a dismasted ship.
+func rigging_hit_while_dismasted(ship_id: String, phase: int) -> void:
+	if not is_server:
+		push_error("DamageController: Cannot cancel repairs on client")
+		return
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null or not ship.is_dismasted():
+		return
+	if game_state.get("crew_task_controller") != null:
+		game_state.crew_task_controller.reset_progress(ship_id, RepairController.CODE_RR,
+			RepairController.RESET_DISMASTED, phase)
+
+
 func strike(ship_id: String, reason: String, phase: int) -> void:
 	if not is_server:
 		push_error("DamageController: Cannot strike a ship on client")
@@ -159,8 +178,11 @@ func _apply_rigging(ship: ShipState, ship_id: String, amount: int, phase: int,
 			game_state.ship_controller.apply_rigging_damage(ship_id, section, 1)
 			applied += 1
 			emptied = ship.rigging_current_hp[section] == 0
-		if emptied and not struck_before:
-			_queue_check(ship_id, "rigging", section, ctx)
+		# 8.F.5, 9.B.2: a section restored by a repair and lost again is not checked again.
+		if emptied and not ship.checked_sections["rigging"][section]:
+			game_state.ship_controller.mark_section_checked(ship_id, "rigging", section)
+			if not struck_before:
+				_queue_check(ship_id, "rigging", section, ctx)
 	if applied > 0 and ship.is_dismasted():
 		game_state.ship_controller.set_sail_state(ship_id, "NS")
 		if game_state.get("crew_task_controller") != null:
@@ -185,6 +207,11 @@ func _apply_hull(ship: ShipState, ship_id: String, amount: int, phase: int,
 		if not emptied:
 			continue
 		if section < HULL_MORALE_CHECKS.size():
+			# 8.F.5, 9.B.2, spec 0.3 #7: a hull section repaired and lost again dismounts no guns
+			# and gives no Hull Check or morale check.
+			if ship.checked_sections["hull"][section]:
+				continue
+			game_state.ship_controller.mark_section_checked(ship_id, "hull", section)
 			var guns := section + 1
 			game_state.ship_controller.add_guns_dismounted(ship_id, guns)
 			game_state.turn_log.add(PhaseEvents.Type.GUNS_DISMOUNTED, phase, ship_id, {"amount": guns})

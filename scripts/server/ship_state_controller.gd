@@ -372,6 +372,22 @@ func set_crew_assignments(ship_id: String, assignments: Dictionary) -> bool:
 	for section in assignments:
 		copy[int(section)] = (assignments[section] as Dictionary).duplicate(true)
 	ship.plotted_actions["crew_assignments"] = copy
+	ship.plotted_actions["crew_plotted"] = true
+	ship_state_changed.emit(ship_id)
+	return true
+
+## Clears the crew plot (assignments and orders) after it became tasks: next turn's plan starts from
+## the carry-over defaults again (crew_plotted false; CrewRules.plan_of).
+func clear_crew_plot(ship_id: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot clear crew plot on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.plotted_actions["crew_assignments"] = {}
+	ship.plotted_actions["crew_orders"] = {"sail_target": ""}
+	ship.plotted_actions["crew_plotted"] = false
 	ship_state_changed.emit(ship_id)
 	return true
 
@@ -441,6 +457,42 @@ func set_plotted_sections(ship_id: String, sections: Array) -> bool:
 	ship.plotted_sections = ShipState._int_array(sections)
 	ship_state_changed.emit(ship_id)
 	return true
+
+## 8.F.5: a completed repair regains one box of `kind` ("rigging" or "hull"). It goes to the
+## section currently taking damage (the lowest-numbered one with boxes) if that section is below
+## its starting size, else to the section before it (the one emptied last); with no section left
+## (dismasted) to section 4. Guns dismounted are not restored. Returns the section (0-3) or -1.
+func repair_box(ship_id: String, kind: String) -> int:
+	if not is_server:
+		push_error("ShipStateController: Cannot repair boxes on client")
+		return -1
+	var ship = _server_ship(ship_id)
+	if not ship or ship.ship == null or not kind in ["rigging", "hull"]:
+		return -1
+	var now: Array[int] = ship.rigging_current_hp if kind == "rigging" else ship.hull_current_hp
+	var start: Array = ship.ship.rigging_hp if kind == "rigging" else ship.ship.hull_hp
+	var current := -1
+	for i in range(now.size()):
+		if now[i] > 0:
+			current = i
+			break
+	var target := -1
+	if current < 0:
+		target = now.size() - 1
+	elif now[current] < int(start[current]):
+		target = current
+	elif current > 0:
+		target = current - 1
+	else:
+		for i in range(now.size()):
+			if now[i] < int(start[i]):
+				target = i
+				break
+	if target < 0 or now[target] >= int(start[target]):
+		return -1
+	now[target] += 1
+	ship_state_changed.emit(ship_id)
+	return target
 
 ## 8.F.5, 9.B.2: kind "rigging" or "hull", section 0-3.
 func mark_section_checked(ship_id: String, kind: String, section: int) -> bool:

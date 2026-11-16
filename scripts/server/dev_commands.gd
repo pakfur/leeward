@@ -74,6 +74,25 @@ func start_fire(ship_id: String) -> String:
 	return ""
 
 
+## Marks out `rigging` rigging and `hull` hull boxes on the ship (DamageController.apply_hits,
+## lowest section first, with the usual checks), for trying out repairs in a running game.
+func damage_ship(ship_id: String, rigging: int, hull: int) -> String:
+	var reason := _refusal()
+	if reason != "":
+		return reason
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null:
+		return "no ship %s" % ship_id
+	if ship.is_out_of_play():
+		return "%s is out of play" % ship_id
+	if rigging < 0 or hull < 0 or rigging + hull == 0:
+		return "nothing to mark out"
+	game_state.damage_controller.apply_hits(ship_id, rigging, hull, 0, "other",
+		game_state.phase_controller.current_phase)
+	Trace.trace_log("DevCommands", "Damaged %s: %d rigging, %d hull" % [ship_id, rigging, hull])
+	return ""
+
+
 ## Skips to the next phase.
 func advance_phase() -> String:
 	var reason := _refusal()

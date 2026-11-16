@@ -280,6 +280,13 @@ func _on_ship_selected(index: int) -> void:
 	fire_btn.pressed.connect(func(): _on_start_fire_pressed(sid))
 	ship_fields_container.add_child(fire_btn)
 
+	var damage_btn := Button.new()
+	damage_btn.name = "DamageShipButton"
+	damage_btn.text = "Mark out 2 rigging, 2 hull"
+	damage_btn.tooltip_text = "Server request: 2 rigging and 2 hull boxes are marked out (for trying repairs, 8.F)"
+	damage_btn.pressed.connect(func(): _on_damage_pressed(sid))
+	ship_fields_container.add_child(damage_btn)
+
 ## Field Creation
 
 func _add_field(container: Control, object: Object, property: String, min_val, max_val, type: String) -> void:
@@ -398,6 +405,15 @@ func _on_ship_field_changed(ship: Object, property: String, value) -> void:
 	_log("Ship %s.%s = %s" % [sid, property, value] if reason == "" else "ERROR: " + reason)
 
 ## Controls
+
+func _on_damage_pressed(ship_id: String) -> void:
+	if not game_state or not game_state.dev_commands:
+		return
+	var reason: String = game_state.dev_commands.damage_ship(ship_id, 2, 2)
+	_log("Damage %s: %s" % [ship_id, "ok" if reason == "" else reason])
+	if reason == "":
+		ship_changed.emit(ship_id)
+
 
 func _on_start_fire_pressed(ship_id: String) -> void:
 	if not game_state or not game_state.dev_commands:

@@ -120,6 +120,7 @@ func test_a0_change_in_progress_keeps_its_sections() -> void:
 
 func test_a2_task_in_progress_continues() -> void:
 	# Spec §3.3 A2: tasks in progress continue with the same sections.
+	CrewFixtures.allow_rigging_repair(ship)
 	GameState.ship_controller.add_task("own", {"code": "RR", "sections": [2], "params": {}})
 	var result := CrewAuto.allocate(ship, _orders(""), _ctx())
 	assert_eq(result["assignments"], {2: {"code": "RR", "params": {}}})
@@ -260,6 +261,7 @@ func test_a4_after_tasks_in_progress_and_held_back_marines() -> void:
 	# Spec §8 #20 (no fire yet: phase 4): S1 on RR in progress keeps it (A2); an adjacent enemy
 	# holds the marines back; T gets S4, S3, S2.
 	_make_ship("enemy", 1, Vector2i(0, 1))
+	CrewFixtures.allow_rigging_repair(ship)
 	GameState.ship_controller.add_task("own", {"code": "RR", "sections": [0], "params": {}})
 	var result := CrewAuto.allocate(ship, _orders(""), _ma0_ctx())
 	assert_eq(result["assignments"][0]["code"], "RR")

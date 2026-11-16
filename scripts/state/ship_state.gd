@@ -131,6 +131,9 @@ static func empty_plot() -> Dictionary:
 		"movement": [],  # Array of movement commands
 		"crew_assignments": {},
 		"crew_orders": {"sail_target": ""},
+		# true once the crew plan was stored this turn; until then the plan is the carry-over
+		# defaults (tasks in progress stay, CrewRules.plan_of)
+		"crew_plotted": false,
 		"gunnery": [],
 	}
 

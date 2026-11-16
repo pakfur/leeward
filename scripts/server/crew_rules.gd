@@ -25,6 +25,11 @@ const STATION_FIRE_PREFIX := "fire_"
 const STATION_FIRE_WATCH := "fire_-1"
 const CODE_FF := "FF"
 const CODE_RO := "RO"
+## Repair stations (8.F): station id = the code in lower case (station_of).
+const STATION_RR := "rr"
+const STATION_RH := "rh"
+const STATION_RS := "rs"
+const REPAIR_STATIONS := {"rr": "RR", "rh": "RH", "rs": "RS"}
 ## Codes a fire never calls a section away from (8.E.2: RO, engaged boarding). Forced tasks too.
 const FIRE_EXEMPT_CODES: Array[String] = ["RO"]
 ## One-g-t tasks the fire draft takes before multi-g-t ones (spec §3.4 step 4).
@@ -36,9 +41,10 @@ const SUMMARY_WORDS := {"guns": "guns", "marine_fire": "fire", "sails": "sails",
 	"reorganizing": "RO"}
 ## Station labels and short codes (small deck cards), spec §4.3.
 const STATION_LABELS := {"guns": "Serve the guns", "marine_fire": "Marine fire", "sails": "Sails aloft",
-	"braces": "Braces (tacking)", "reorganizing": "Reorganizing"}
+	"braces": "Braces (tacking)", "reorganizing": "Reorganizing", "rr": "Rigging repair",
+	"rh": "Hull repair", "rs": "Shroud repair"}
 const STATION_SHORT := {"guns": "Guns", "marine_fire": "Marines", "sails": "Sails", "braces": "T",
-	"reorganizing": "RO"}
+	"reorganizing": "RO", "rr": "RR", "rh": "RH", "rs": "RS"}
 ## Codes whose sections are locked once begun (5.F.9: a sail change must be completed).
 const LOCKED_CODES: Array[String] = ["SAIL"]
 ## Critical effects whose 8.D.5 fix roll the marines would spoil if busy (+1, "marines not avail.").
@@ -86,10 +92,14 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 	}
 
 
-## The plan stored on the ship (plotted_actions), as a plan dictionary (copies).
+## The plan stored on the ship (plotted_actions), as a plan dictionary (copies). Before anything
+## is stored this turn (crew_plotted false) the assignments are the carry-over defaults: tasks in
+## progress stay with their sections (spec §0.1 Q-UX2; 4.A.3).
 static func plan_of(ship: ShipState) -> Dictionary:
 	var assignments := {}
 	var stored = ship.plotted_actions.get("crew_assignments", {})
+	if not bool(ship.plotted_actions.get("crew_plotted", false)):
+		stored = default_plan(ship, {}).get("assignments", {})
 	if stored is Dictionary:
 		for section in stored:
 			assignments[int(section)] = (stored[section] as Dictionary).duplicate(true)
@@ -226,6 +236,16 @@ static func refusal(ship: ShipState, plan: Dictionary, ctx: Dictionary, section:
 			return ""
 		STATION_REORGANIZING:
 			return "Sections reorganize only after Crew Disorganized (hull critical #4); it cannot be plotted."
+		STATION_RR, STATION_RH, STATION_RS:
+			var code: String = REPAIR_STATIONS[station_id]
+			var why := RepairController.refusal(ship, code)
+			if why != "":
+				return why
+			for other in plan.get("assignments", {}):
+				if int(other) != section and str(plan["assignments"][other].get("code", "")) == code:
+					return "%s already has %s on it. One section per repair type (8.F.4)." % [
+						STATION_LABELS[station_id], ShipState.SECTION_NAMES[int(other)]]
+			return ""
 	if station_id == STATION_FIRE_WATCH:
 		return ""
 	if station_id.begins_with(STATION_FIRE_PREFIX):
@@ -260,6 +280,8 @@ static func assign(ship: ShipState, plan: Dictionary, ctx: Dictionary, section: 
 				"params": {"target": str(result["orders"].get("sail_target", ""))}}
 		STATION_BRACES:
 			result["assignments"][section] = {"code": TackCrewHandler.CODE, "params": {}}
+		STATION_RR, STATION_RH, STATION_RS:
+			result["assignments"][section] = {"code": REPAIR_STATIONS[station_id], "params": {}}
 		_:
 			if station_id.begins_with(STATION_FIRE_PREFIX):
 				result["assignments"][section] = {"code": CODE_FF,
@@ -307,6 +329,7 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 	var sail_target := str(orders.get("sail_target", ""))
 	var on_sails := 0
 	var at_braces := 0
+	var repairs := {}
 	var sections: Array = assignments.keys()
 	sections.sort()
 	for section in sections:
@@ -344,6 +367,17 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 				why = "That fire is out"
 			else:
 				entry["params"] = ff_params(fire, section)
+		elif RepairController.is_repair(code):
+			# 8.F.3, 8.F.4: only when there is something to repair, one section per type.
+			why = RepairController.refusal(ship, code)
+			if why == "" and repairs.has(code):
+				why = "one section per repair type (8.F.4)"
+			if why == "":
+				repairs[code] = section
+				entry["params"] = {}
+				var mp := RepairController.mp_warning(code, ctx)
+				if mp != "":
+					result["warnings"].append("%s: %s" % [ShipState.SECTION_NAMES[section], mp])
 		else:
 			var live := ship.task_of(section)
 			if live.is_empty() or str(live.get("code", "")) != code:
@@ -436,8 +470,8 @@ static func sail_choices(ship: ShipState) -> Array[Dictionary]:
 ## Every station the overlay draws for the ship, in drawing order (spec §4.3). Each:
 ## {id, code, label, short, capacity, turns, accepts ("sailor"/"marine"/"any"/"none"), note,
 ##  warning, disabled_reason, occupants: [sections], locked: [sections], fire: {} or {seq, number}}.
-## Sails also carries "choices" (sail_choices) and "target". Fire and repair stations come with
-## phases 4 and 5 (fires are listed from ctx.fires, empty until then).
+## Sails also carries "choices" (sail_choices) and "target". Fire stations come from ctx.fires; the
+## repair stations (rs, rr, rh) are listed while there is something to repair (8.F.3).
 static func stations(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Array[Dictionary]:
 	var assignments: Dictionary = plan.get("assignments", {})
 	var orders: Dictionary = plan.get("orders", {})
@@ -525,6 +559,30 @@ static func stations(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Arra
 		if not bool(ctx.get("ma0_turn_plotted", false)):
 			braces["warning"] = "No turn at MA 0 is plotted: these sections go back at End Planning unless one is (5.D.1)."
 		out.append(braces)
+	# Repairs (8.F): shown when there is something to repair, or while a section is on one.
+	for st_id in [STATION_RS, STATION_RR, STATION_RH]:
+		var code: String = REPAIR_STATIONS[st_id]
+		var occupied: Array = by_station.get(st_id, [])
+		var why := RepairController.refusal(ship, code)
+		var nothing := false
+		match code:
+			"RR": nothing = ship.missing_boxes("rigging") <= 0
+			"RH": nothing = ship.missing_boxes("hull") <= 0
+			"RS": nothing = not ship.has_critical(RepairController.SHROUDS)
+		if (nothing or ship.is_out_of_play()) and occupied.is_empty():
+			continue
+		var note := ""
+		match code:
+			"RR": note = "One rigging box per repair, added to the section taking damage (8.F.5). Only at fighting sail, furled or dismasted (8.F.3a)."
+			"RH": note = "Cancelled if the ship moves more than %d MPs (8.F.3b)." % RepairController.max_mp()
+			"RS": note = "Splices the severed shrouds: the −1 MP ends (8.F.1)."
+		var rep_st: Dictionary = make.call(st_id, code, 1,
+			DataManager.combat_tables.task_turns(code, ship.crew_quality), "any", note)
+		rep_st["disabled_reason"] = why
+		var mp := RepairController.mp_warning(code, ctx)
+		if mp != "" and why == "":
+			rep_st["warning"] = mp
+		out.append(rep_st)
 	if by_station.has(STATION_REORGANIZING):
 		var ro: Dictionary = make.call(STATION_REORGANIZING, CODE_RO, 0, 0, "none",
 			"Crew disorganized (hull critical #4): reorganizing, cannot be moved.")

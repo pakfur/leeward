@@ -26,6 +26,7 @@ enum Type {
 	EXPLOSION_CHECK,  # 8.E.8 a burning hulk rolls to explode: {roll, needed, explodes}
 	BLAST,  # 8.E.10 blast from ship_id on target_id: {range, mgn, d6, fgn, rigging, hull, crew}
 	DEBRIS,  # 8.E.11 flaming debris from ship_id on target_id: {range, roll | attached, afire}
+	REPAIR,  # 8.F.5 a repair completed: {code, kind: rigging/hull/shrouds, section (0-3, rigging/hull), sections}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -293,6 +294,8 @@ class PhaseEvent extends RefCounted:
 				if data.get("afire", false):
 					return "Flaming debris from %s sets %s afire (d6 %d, range %d)" % [who, other, roll, r]
 				return "Flaming debris from %s falls clear of %s (d6 %d, range %d)" % [who, other, roll, r]
+			Type.REPAIR:
+				return _repair_text(who)
 			Type.DESTROYED:
 				var text := "%s explodes and is destroyed" % who
 				if target_id != "":
@@ -709,6 +712,21 @@ class PhaseEvent extends RefCounted:
 		return "%s's %s fails to master fire %d (%s > %d, %s turn)" % [who, crew, number, sum, needed,
 			PhaseEvents._ordinal(int(data.get("attempt", 1)) - 1)]
 
+	## "Vengeance repairs a rigging box (section 2)", "Vengeance splices the severed shrouds" (8.F.5).
+	func _repair_text(who: String) -> String:
+		var names: Array = []
+		for section in data.get("sections", []):
+			names.append(ShipState.SECTION_NAMES[int(section)])
+		var by := " (%s)" % " ".join(names) if not names.is_empty() else ""
+		match str(data.get("kind", "")):
+			"shrouds":
+				return "%s splices the severed shrouds%s" % [who, by]
+			"rigging", "hull":
+				var section := int(data.get("section", -1))
+				var where := " in section %d" % (section + 1) if section >= 0 else ""
+				return "%s repairs a %s box%s%s" % [who, str(data["kind"]), where, by]
+		return "%s completes a repair%s" % [who, by]
+
 	## "Vengeance: S3 begins to repair rigging (4 turns)", "...: S3 stops: abandoned".
 	func _crew_task_text(who: String) -> String:
 		var names: Array = []
@@ -730,6 +748,10 @@ class PhaseEvent extends RefCounted:
 				return "%s: %s finishes: %s" % [who, crew, task]
 			"refused":
 				return "%s: %s cannot %s: %s" % [who, crew, task, str(data.get("reason", ""))]
+			"reset":
+				return "%s: %s's work to %s is lost (%d %s done): %s" % [who, crew, task,
+					int(data.get("done", 0)), "turn" if int(data.get("done", 0)) == 1 else "turns",
+					str(data.get("reason", ""))]
 		return "%s: %s stops (%s): %s" % [who, crew, task, str(data.get("reason", data.get("state", "")))]
 
 	## "The wind veers to west", "The wind freshens to 3 (fresh)", or both in one line.

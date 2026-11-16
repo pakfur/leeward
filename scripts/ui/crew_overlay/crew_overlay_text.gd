@@ -14,7 +14,7 @@ const AUTO_RULES := [
 	"A2  Tasks in progress continue with the same sections while still legal.",
 	"A3  The ordered sail change: 1 or 2 sections in worker order.",
 	"A4  Tacking: with a turn at MA 0 plotted, up to 3 free sections at the braces.",
-	"A5  Repairs (not yet in play).",
+	"A5  Repairs, one section each, shrouds, then rigging, then hull: the marines if free; sailors only with no enemy within 15 hexes.",
 	"A6  Everyone else: sailors serve the guns, marines at marine fire.",
 	"Worker order: M, then S4, S3, S2, S1. The marines are held back while there is a fire aboard, damage to fix, the ship is fouled or an enemy is alongside.",
 ]
@@ -152,9 +152,9 @@ static func damage_lines(ship: ShipState, turn: int = -1, plan: Dictionary = {})
 			continue  # each fire has its own line above
 		out.append({"text": line, "repairable": false})
 	if ship.missing_boxes("rigging") > 0:
-		out.append({"text": "Rigging boxes lost: %d (repairs are not yet in play)" % ship.missing_boxes("rigging"), "repairable": true})
+		out.append({"text": "Rigging boxes lost: %d, repairable (RR)" % ship.missing_boxes("rigging"), "repairable": true})
 	if ship.missing_boxes("hull") > 0:
-		out.append({"text": "Hull boxes lost: %d (repairs are not yet in play)" % ship.missing_boxes("hull"), "repairable": true})
+		out.append({"text": "Hull boxes lost: %d, repairable (RH)" % ship.missing_boxes("hull"), "repairable": true})
 	return out
 
 

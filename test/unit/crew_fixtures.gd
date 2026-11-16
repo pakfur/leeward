@@ -46,3 +46,15 @@ static func give_tack_crew(ship: ShipState, count: int = 3) -> void:
 	for section in sections:
 		if not ship.plotted_sections.has(int(section)):
 			ship.plotted_sections.append(int(section))
+
+
+## Makes a rigging repair legal (8.F.3, 8.F.3a): `boxes` rigging boxes marked out of section 1
+## and the ship at fighting sail.
+static func allow_rigging_repair(ship: ShipState, boxes: int = 1) -> void:
+	ship.sail_state = "FS"
+	ship.rigging_current_hp[0] = maxi(0, ship.rigging_current_hp[0] - boxes)
+
+
+## Marks out `boxes` hull boxes of section 1 (8.F.3: hull repair becomes legal).
+static func allow_hull_repair(ship: ShipState, boxes: int = 1) -> void:
+	ship.hull_current_hp[0] = maxi(0, ship.hull_current_hp[0] - boxes)

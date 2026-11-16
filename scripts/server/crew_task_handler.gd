@@ -75,6 +75,17 @@ func on_fire_breaks_out(_ship_id: String) -> void:
 	pass
 
 
+## After movement (CrewTaskController.after_movement): a reason the task ends because of the
+## movement just made (8.F.3b: hull repair and more than 4 MPs), or "".
+func after_movement_reason(_ship: ShipState, _task: Dictionary) -> String:
+	return ""
+
+
+## The task's progress went back to 0 (8.F.6). Logs CREW_TASK with state "reset".
+func on_reset(ship: ShipState, task: Dictionary, reason: String, phase: int) -> void:
+	_log(ship, task, "reset", reason, phase)
+
+
 ## A reason the task ends now (checked in advance_tasks), or "".
 func cancel_reason(ship: ShipState, task: Dictionary) -> String:
 	if ship.is_destroyed():

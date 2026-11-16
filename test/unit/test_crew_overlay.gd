@@ -231,6 +231,8 @@ func test_automatic_fire_first_then_tasks_then_braces() -> void:
 	# Spec §8 #20: fire aboard, S1 on RR in progress, MA-0 turn plotted: fire S2, S1 keeps RR,
 	# braces S4 and S3 (M held back: fire), nothing left for a third.
 	ship.fire_list = [{"seq": 1, "created_turn": 1, "started_turn": 1, "cause": "crit"}] as Array[Dictionary]
+	ship.sail_state = "FS"
+	ship.rigging_current_hp[0] -= 1  # a rigging box to repair (8.F.3)
 	_task("RR", [0], 2)
 	var ctx := _ctx()
 	ctx["ma0_turn_plotted"] = true

@@ -7,10 +7,15 @@ extends RefCounted
 ##   A0 locked tasks stay (a sail change in progress, forced tasks);
 ##   A1 fires, lowest seq first: the section already fighting it, else the fire draft
 ##      (CrewRules.fire_draft; ctx.fires, the fires burning);
-##   A2 other tasks in progress continue with the same sections;
+##   A2 other tasks in progress continue with the same sections while still legal (RR is dropped
+##      above FS, RH when the movement plot uses more than 4 MPs);
 ##   A3 the ordered sail change, 1 or 2 sections in worker order;
 ##   A4 tacking crew: when the movement plot holds a turn at MA 0, as many of 3 sections as are
-##      free, in worker order (5.D.2a); A5 repairs (phase 5);
+##      free, in worker order (5.D.2a);
+##   A5 repairs, one section each, in the order RS, RR, RH, each only where 8.F.3 allows it (RR at
+##      FS, furled or dismasted; RH when the movement plot uses <= 4 MPs): the marines if they are
+##      free under the worker order, a sailor section only when no enemy ship in play is within
+##      15 hexes (spec §9 Q3);
 ##   A6 everyone else: sailors serve the guns, the marines are at marine fire.
 ## Worker order: M (unless held back, CrewRules.marines_held_back), then S4, S3, S2, S1. Marines
 ## first because they cost no gunfire; then the highest sailors, which crew losses reach last.
@@ -39,6 +44,8 @@ static func allocate(ship: ShipState, orders: Dictionary, ctx: Dictionary) -> Di
 			any_taken = any_taken or taken.has(int(section))
 		if not all_alive or any_taken:
 			continue
+		if not repair_allowed(ship, str(task["code"]), ctx):
+			continue
 		for section in sections:
 			taken[int(section)] = {"code": str(task["code"]),
 				"params": (task.get("params", {}) as Dictionary).duplicate(true)}
@@ -56,6 +63,23 @@ static func allocate(ship: ShipState, orders: Dictionary, ctx: Dictionary) -> Di
 		var hands := CrewRules.worker_order(ship, ctx, taken)
 		for k in range(mini(TackCrewHandler.max_sections(), hands.size())):
 			taken[hands[k]] = {"code": TackCrewHandler.CODE, "params": {}}
+	# A5: repairs (8.F), one section each: the marines if free, sailors only out of gun range.
+	for code in RepairController.CODES:
+		if not repair_allowed(ship, code, ctx):
+			continue
+		var busy := false
+		for section in taken:
+			busy = busy or str(taken[section].get("code", "")) == code
+		if busy:
+			continue
+		var hands := CrewRules.worker_order(ship, ctx, taken)
+		var pick := -1
+		if hands.has(ShipState.MARINES):
+			pick = ShipState.MARINES
+		elif not hands.is_empty() and not enemy_within_gun_range(ctx):
+			pick = hands[0]
+		if pick >= 0:
+			taken[pick] = {"code": code, "params": {}}
 	# A6: the rest stay unplotted.
 	var auto: Array[int] = []
 	for section in range(ShipState.MARINES + 1):
@@ -96,3 +120,17 @@ static func fire_assignments(ship: ShipState, ctx: Dictionary, taken_in: Diction
 		else:
 			taken[keeper] = {"code": CrewRules.CODE_FF, "params": {"fire": int(seq)}}
 	return taken
+
+
+## Whether a repair (RR, RH, RS) may be plotted now under 8.F.3 (always true for other codes):
+## something to repair, RR at FS/furled/dismasted, RH with the movement plot at <= 4 MPs.
+static func repair_allowed(ship: ShipState, code: String, ctx: Dictionary) -> bool:
+	if not RepairController.is_repair(code):
+		return true
+	return RepairController.refusal(ship, code) == "" and RepairController.mp_warning(code, ctx) == ""
+
+
+## An enemy ship in play within 15 hexes (spec §9 Q3: sailors repair only when there is none).
+static func enemy_within_gun_range(ctx: Dictionary) -> bool:
+	var nearest := int(ctx.get("nearest_enemy", -1))
+	return nearest >= 0 and nearest <= FireRules.MAX_RANGE

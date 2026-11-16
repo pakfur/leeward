@@ -195,8 +195,7 @@ func begin_turn_tasks(phase: int) -> void:
 				plotted.append(int(section))
 		plotted.sort()
 		sc.set_plotted_sections(ship_id, plotted)
-		sc.set_crew_assignments(ship_id, {})
-		sc.set_crew_orders(ship_id, {"sail_target": ""})
+		sc.clear_crew_plot(ship_id)
 
 
 ## STATUS_ADJUSTMENT (SoP V.G): ships in id order, tasks in seq order. A task with a cancel reason
@@ -231,6 +230,22 @@ func advance_tasks(phase: int) -> void:
 				sc.end_task(ship_id, seq, COMPLETED)
 			elif h.one_turn:
 				sc.end_task(ship_id, seq, COMPLETED)
+
+
+## MOVEMENT_RESOLUTION, after the results are applied (mp_used_this_turn set): tasks the movement
+## ends (8.F.3b: a hull repair on a ship that moved more than 4 MPs). Ships in id order.
+func after_movement(phase: int) -> void:
+	if not is_server:
+		push_error("CrewTaskController: Cannot check crew tasks after movement on client")
+		return
+	for ship_id in _sorted_ids():
+		var ship: ShipState = game_state.get_ship(ship_id)
+		if ship == null:
+			continue
+		for task in _live_tasks(ship):
+			var reason := handler(str(task["code"])).after_movement_reason(ship, task)
+			if reason != "":
+				cancel_task(ship_id, int(task["seq"]), reason, phase)
 
 
 # --- Cancelling and forcing ---
@@ -304,8 +319,7 @@ func drop_all(ship_id: String, reason: String) -> void:
 		return
 	for task in _live_tasks(ship):
 		game_state.ship_controller.end_task(ship_id, int(task["seq"]), reason)
-	game_state.ship_controller.set_crew_assignments(ship_id, {})
-	game_state.ship_controller.set_crew_orders(ship_id, {"sail_target": ""})
+	game_state.ship_controller.clear_crew_plot(ship_id)
 
 
 ## Puts `sections` on a forced task now (RO; the boarding spec's FB), ending what they were doing.
@@ -335,7 +349,9 @@ func force_task(ship_id: String, sections: Array, code: String, params: Dictiona
 	return seq
 
 
-## Progress on every live task with this code goes back to 0 (8.F.6); the tasks go on.
+## Progress on every live task with this code goes back to 0 (8.F.6); the tasks go on. The task
+## records `reset_turn` (this g-t), which its handler may use to leave this g-t uncounted. Logged
+## (CREW_TASK "reset") when progress was lost.
 func reset_progress(ship_id: String, code: String, reason: String, phase: int) -> void:
 	if not is_server:
 		push_error("CrewTaskController: Cannot reset crew task progress on client")
@@ -343,11 +359,16 @@ func reset_progress(ship_id: String, code: String, reason: String, phase: int) -
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
 		return
+	var turn = game_state.get("current_turn")
 	for task in ship.tasks_with(code):
-		if int(task.get("done", 0)) == 0:
-			continue
-		game_state.ship_controller.update_task(ship_id, int(task["seq"]), {"done": 0})
-		Trace.trace_log("CrewTasks", "%s %s progress reset: %s" % [ship_id, code, reason], {"phase": phase})
+		var done := int(task.get("done", 0))
+		var seq := int(task["seq"])
+		game_state.ship_controller.update_task(ship_id, seq, {"done": 0, "reset_turn": int(turn) if turn != null else 0})
+		if done > 0:
+			var before := task.duplicate(true)
+			before["done"] = done
+			handler(code).on_reset(ship, before, reason, phase)
+		Trace.trace_log("CrewTasks", "%s %s progress reset: %s" % [ship_id, code, reason], {"phase": phase, "done": done})
 
 
 # --- Internals ---

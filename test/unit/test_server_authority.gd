@@ -2,7 +2,8 @@ extends GutTest
 ## Server authority over game state (CLAUDE.md "Server Authority"): view-side code
 ## (scripts/ui, scripts/view, scripts/core) reads state and sends requests that the server
 ## validates (player_submit_*, player_clear_movement, player_plot_crew, player_set_crew_auto,
-## player_plot_sail_change, dev_commands.*, including dev_commands.start_fire). It never calls a state mutator or writes a ShipState field itself.
+## player_plot_sail_change, dev_commands.*, including dev_commands.start_fire and
+## dev_commands.damage_ship). It never calls a state mutator or writes a ShipState field itself.
 ## This test scans the source so a violation fails `make test`.
 
 const VIEW_DIRS := ["res://scripts/ui", "res://scripts/view", "res://scripts/core"]
@@ -23,6 +24,14 @@ const FORBIDDEN := [
 	["(?<!player_)\\b(plot_crew|set_auto|set_crew_auto|set_crew_assignments|set_crew_orders|add_task|update_task|end_task|set_plotted_sections)\\(",
 			"a crew plot or task mutator called from view code (use player_plot_crew / player_set_crew_auto)"],
 	["\\bphase_controller\\.advance_phase\\(", "phase advanced from view code (use dev_commands)"],
+	# repairs (8.F): the view reads crew_tasks / checked_sections; RepairController's statics
+	# (refusal, mp_warning, is_repair, max_mp) are pure queries; the only request is
+	# dev_commands.damage_ship (Developer UI)
+	["\\brepair_controller\\.", "a RepairController call from view code"],
+	["\\bRepairController\\.new\\b", "a RepairController made in view code"],
+	["(?<!dev_commands\\.)\\b(repair_box|mark_section_checked|set_mp_used|clear_crew_plot|after_movement|rigging_hit_while_dismasted|apply_hits|on_complete|on_reset)\\(",
+			"a repair or damage mutator called from view code"],
+	["\\.checked_sections\\s*\\[[^\\]]*\\]\\s*\\[[^\\]]*\\]\\s*=[^=]", "checked_sections changed in place from view code"],
 	# fires (8.E): the view reads fire_list / fire_count() / is_burning(); the only request is
 	# dev_commands.start_fire (Developer UI)
 	["\\bfire_controller\\.(?!skill\\()", "a FireController mutator called from view code (use dev_commands.start_fire)"],
@@ -31,7 +40,7 @@ const FORBIDDEN := [
 			"a fire mutator called from view code"],
 	["\\.(fire_list|crew_tasks|critical_effects|plotted_sections)\\.(append|append_array|clear|erase|remove_at|push_back|push_front|pop_back|pop_front|insert|resize|sort|sort_custom|fill)\\(",
 			"a ShipState array changed in place from view code"],
-	["\\b(_?ship|ship_state|ss|state|s)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots|crew_auto|plotted_sections|task_seq|fire_list|fire_seq|explosion_checks)\\s*(=|\\+=|-=)[^=]",
+	["\\b(_?ship|ship_state|ss|state|s)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots|crew_auto|plotted_sections|task_seq|fire_list|fire_seq|explosion_checks|checked_sections|mp_used_this_turn)\\s*(=|\\+=|-=)[^=]",
 			"a ShipState field written from view code"],
 ]
 

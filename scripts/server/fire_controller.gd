@@ -327,6 +327,7 @@ func _blast(source_id: String, target: ShipState, range_hexes: int, mgn: int, ph
 			if alternative.has("type"):
 				totals[alternative["type"]] += int(alternative["count"])
 	var rigging: int = totals["r"]
+	var dismasted_hit := target.is_dismasted() and rigging > 0
 	if target.is_dismasted():
 		rigging = 0
 	elif sail == "NS":
@@ -341,6 +342,8 @@ func _blast(source_id: String, target: ShipState, range_hexes: int, mgn: int, ph
 	}, target.ship_id)
 	game_state.damage_controller.apply_hits(target.ship_id, rigging, totals["h"], totals["c"], "other",
 		phase, source_id, {}, DAMAGE_BLAST)
+	if dismasted_hit:
+		game_state.damage_controller.rigging_hit_while_dismasted(target.ship_id, phase)  # 8.F.6
 
 
 # --- helpers ---

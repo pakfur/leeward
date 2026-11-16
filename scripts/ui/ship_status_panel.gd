@@ -143,6 +143,10 @@ static func crew_task_lines(s: ShipState) -> Array[String]:
 					s.task_turns_required(task)])
 			TackCrewHandler.CODE:
 				lines.append("%s at the braces (tacking)" % crew)
+			RepairController.CODE_RR, RepairController.CODE_RH, RepairController.CODE_RS:
+				var what: String = {"RR": "rigging", "RH": "the hull", "RS": "the shrouds"}[str(task["code"])]
+				lines.append("%s repairing %s, %d of %d turns" % [crew, what, int(task.get("done", 0)),
+					s.task_turns_required(task)])
 	return lines
 
 

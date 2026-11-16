@@ -88,6 +88,7 @@ func _resolve_shot(shot: Dictionary, phase: int) -> void:
 	var d6: int = game_state.dice.d6()
 	var fgn := preview.mgn + d6
 	var rigging := 0
+	var rigging_hit := false
 	var hull := 0
 	var crew := 0
 	if fgn >= 1:
@@ -105,6 +106,7 @@ func _resolve_shot(shot: Dictionary, phase: int) -> void:
 				if alternative.has("type"):
 					totals[alternative["type"]] += int(alternative["count"])
 		rigging = totals["r"]
+		rigging_hit = rigging > 0
 		hull = totals["h"]
 		crew = totals["c"]
 
@@ -153,6 +155,9 @@ func _resolve_shot(shot: Dictionary, phase: int) -> void:
 	var cause := "gunfire_at_hull" if hull_fire else "other"
 	game_state.damage_controller.apply_hits(order.target_id, rigging, hull, crew, cause, phase,
 			order.ship_id, ctx)
+	if target_dismasted and rigging_hit:
+		# 8.F.6: the r marks nothing on a dismasted ship but cancels its rigging repairs.
+		game_state.damage_controller.rigging_hit_while_dismasted(order.target_id, phase)
 
 	if preview.rake != "" and target_dismasted:
 		var turn: int = game_state.phase_controller.current_turn

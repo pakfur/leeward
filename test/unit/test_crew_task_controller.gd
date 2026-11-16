@@ -150,6 +150,7 @@ func test_shared_change_cancelled_for_both_sections() -> void:
 # --- Continuation, abandonment, progress (4.A.3, 4.B.3, 9.A.2) ---
 
 func _start_rr(section: int) -> int:
+	CrewFixtures.allow_rigging_repair(ship, 2)
 	return GameState.ship_controller.add_task("crew_ship", {"code": "RR", "sections": [section], "params": {}})
 
 
@@ -170,6 +171,7 @@ func test_task_not_plotted_again_is_abandoned() -> void:
 	var seq := _start_rr(2)
 	GameState.ship_controller.update_task("crew_ship", seq, {"done": 1})
 	ship.plotted_actions["crew_assignments"] = {}
+	ship.plotted_actions["crew_plotted"] = true  # the player plotted S3 back to the guns
 	ctrl.begin_turn_tasks(MOVE)
 	assert_eq(ship.task_by_seq(seq)["ended"], CrewTaskController.ABANDONED)
 	var events := _crew_events()
@@ -191,7 +193,7 @@ func test_crew_quality_change_extends_the_task() -> void:
 	assert_eq(ship.task_by_seq(seq)["ended"], "", "4 of 5")
 	ctrl.advance_tasks(STATUS)
 	assert_eq(ship.task_by_seq(seq)["ended"], CrewTaskController.COMPLETED)
-	assert_eq(_crew_events()[-1].data["state"], "completed")
+	assert_eq(GameState.turn_log.of_type(PhaseEvents.Type.REPAIR).size(), 1, "8.F.5: the repair is recorded")
 
 
 func test_crew_loss_ends_the_task() -> void:

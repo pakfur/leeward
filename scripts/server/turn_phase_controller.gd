@@ -348,6 +348,9 @@ func on_playback_completed() -> void:
 		var all_ships = game_state.get_all_ships()
 		game_state.movement_resolver.apply_results(_pending_resolution_log, all_ships)
 		Trace.trace_log("TurnPhase", "MOVEMENT_RESOLUTION results applied", _pending_resolution_log.to_dict())
+		# 8.F.3b: a hull repair ends on a ship that moved more than 4 MPs.
+		if game_state.crew_task_controller:
+			game_state.crew_task_controller.after_movement(current_phase)
 		_pending_resolution_log = null
 	advance_phase()
 
@@ -466,10 +469,11 @@ func _enter_status_adjustment_phase() -> void:
 	# explosions, unfought fires).
 	if game_state.get("fire_controller") != null:
 		game_state.fire_controller.resolve(current_phase)
-	# SoP V.G: crew tasks counted, completed (sail changes take effect, 5.F.8) or cancelled.
+	# SoP V.G: crew tasks counted, completed (repairs recorded, 8.F.5; RO completed; sail changes
+	# take effect, 5.F.8) or cancelled.
 	if game_state.crew_task_controller:
 		game_state.crew_task_controller.advance_tasks(current_phase)
-	# TODO: sinking, repairs, anchors
+	# TODO: sinking, anchors
 	advance_phase()
 
 func _enter_morale_check_phase() -> void:
