@@ -9,7 +9,6 @@ signal submit_pressed()
 signal cancel_pressed()
 signal end_planning_pressed()
 signal sail_change_requested(ship_id: String, target: String)  ## target "" cancels the plotted order
-signal status_requested(ship_id: String)  ## a card's Status button: show that ship's status panel
 signal crew_overlay_requested(ship_id: String)  ## a card's "Crew & damage" button
 
 const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
@@ -123,7 +122,6 @@ func _add_ship_to_list(ship_state: ShipState) -> void:
 	# Connect signals
 	list_item.selected.connect(func(): _on_ship_item_selected(ship_state.ship_id))
 	list_item.action_button_pressed.connect(func(action_type): _on_action_button_pressed(ship_state.ship_id, action_type))
-	list_item.status_pressed.connect(func(): status_requested.emit(ship_state.ship_id))
 	list_item.crew_pressed.connect(func(): crew_overlay_requested.emit(ship_state.ship_id))
 
 	# Track the item

@@ -19,6 +19,8 @@ const ENEMY_COLOR := Color(1.0, 0.3, 0.3)
 const HUMAN_PLAYER_ID := 0
 ## Above the fire arcs and the target outline drawn by HexOverlay, so the owner always shows.
 const OWNER_RING_RENDER_PRIORITY := 3
+const OWNER_RING_ALPHA := 0.75
+const OWNER_RING_SHADER := preload("res://assets/shaders/owner_ring.gdshader")
 const OWNER_RING_MID_RADIUS := 0.75  # torus centre line (inner 0.68, outer 0.82), before stretching
 const OWNER_RING_CLEARANCE := 0.2    # water between the bow or stern and the ring
 var _owner_ring: MeshInstance3D = null   # coloured ring on the water around the ship
@@ -139,14 +141,14 @@ func _update_owner_marker(player_id: int) -> void:
 		var keel_reach := (_spec.length * 0.5 + OWNER_RING_CLEARANCE) if _spec else OWNER_RING_MID_RADIUS
 		_owner_ring.scale = Vector3(1.0, 0.15, maxf(1.0, keel_reach / OWNER_RING_MID_RADIUS))
 		_owner_ring.position = Vector3(0, 0.12, 0)
-		var ring_material := StandardMaterial3D.new()
-		ring_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		ring_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		ring_material.no_depth_test = true  # stays visible over wave crests at any zoom
+		# Over wave crests at any zoom, but hidden behind the hull and rigging (owner_ring.gdshader).
+		var ring_material := ShaderMaterial.new()
+		ring_material.shader = OWNER_RING_SHADER
 		ring_material.render_priority = OWNER_RING_RENDER_PRIORITY
 		_owner_ring.material_override = ring_material
 		add_child(_owner_ring)  # on the ship root, not the model: it does not tilt with the hull
-	(_owner_ring.material_override as StandardMaterial3D).albedo_color = Color(color.r, color.g, color.b, 0.9)
+	(_owner_ring.material_override as ShaderMaterial).set_shader_parameter("ring_color",
+		Color(color.r, color.g, color.b, OWNER_RING_ALPHA))
 	if _owner_pennant == null:
 		_owner_pennant = MeshInstance3D.new()
 		_owner_pennant.name = "OwnerPennant"

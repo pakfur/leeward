@@ -117,9 +117,3 @@ func test_model_carries_facing_and_the_six_neighbour_centres() -> void:
 	for d in range(6):
 		var n := hex_grid.get_neighbor(2, 1, d)
 		assert_eq(m.neighbor_anchors[d], hex_grid.axial_to_world(n.x, n.y))
-
-
-func test_model_carries_the_hex_astern_of_the_stern() -> void:
-	# Bow (2,1) facing NW (4): stern (2,2), and the hex astern of the stern (2,3).
-	var m = Model.build_selected(Vector2i(2, 1), 4, 3, 0, 2, hex_grid)
-	assert_eq(m.beyond_stern_anchor, hex_grid.axial_to_world(2, 3))

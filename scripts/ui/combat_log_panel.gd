@@ -13,12 +13,7 @@ const EXPANDED_HEIGHT := 260.0
 const BAR_HEIGHT := 42.0
 const MAX_TURNS_SHOWN := 10  # most recent turns kept in the list
 const LEFT_OFFSET := 480.0  # clear of the context panel (24% of 1920)
-const DEFAULT_RIGHT_OFFSET := -480.0  # clear of the ship status panel at its scene size
-const STATUS_GAP := 12.0  # space kept between the bar's right edge and the status panel
-const MIN_BAR_WIDTH := 240.0
-
-## The ship status panel (bottom right); while it is visible the bar stops short of it.
-var status_panel: Control = null
+const DEFAULT_RIGHT_OFFSET := -20.0  # the margin kept from the window's right edge
 
 var _toggle_button: Button
 var _latest_label: Label
@@ -45,17 +40,6 @@ const PHASE_HEADINGS := {
 	TurnPhaseController.GamePhase.ENVIRONMENT: "Weather",
 	TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION: "Movement",
 }
-
-
-## offset_right for the bar in a parent `parent_width` wide: the default margin, pulled further left
-## when the visible status panel (left edge at `status_left`, parent coordinates) reaches past it.
-## Height plays no part, so the bar clears the panel collapsed and expanded alike.
-static func bar_right_offset(parent_width: float, status_left: float, status_visible: bool) -> float:
-	var right_edge := parent_width + DEFAULT_RIGHT_OFFSET
-	if status_visible:
-		right_edge = minf(right_edge, status_left - STATUS_GAP)
-	right_edge = maxf(right_edge, LEFT_OFFSET + MIN_BAR_WIDTH)
-	return right_edge - parent_width
 
 
 ## "Turn 3 — Combat Resolution", "Turn 3 — Movement"
@@ -259,18 +243,9 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	_fit_beside_status_panel()
 	# Events are appended by server controllers without a signal; catch any change cheaply.
 	if _signature_now() != _signature:
 		refresh()
-
-
-func _fit_beside_status_panel() -> void:
-	var shown := status_panel != null and is_instance_valid(status_panel) and status_panel.visible
-	var left := status_panel.position.x if shown else 0.0
-	var wanted := bar_right_offset(get_parent_area_size().x, left, shown)
-	if not is_equal_approx(offset_right, wanted):
-		offset_right = wanted
 
 
 func _gui_input(event: InputEvent) -> void:

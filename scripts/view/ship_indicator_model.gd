@@ -14,7 +14,6 @@ var direction_dir: Vector3 = Vector3.ZERO      # outward face normal (world, XZ 
 var center_anchor: Vector3 = Vector3.ZERO      # bow hex center (world) — for the info icon
 var label_anchor: Vector3 = Vector3.ZERO       # world point to project the label near
 var neighbor_anchors: Array[Vector3] = []      # the six neighbouring hex centres, by direction 0..5
-var beyond_stern_anchor: Vector3 = Vector3.ZERO  # centre of the hex astern of the stern hex — for the info icon
 var heading: int = 0                           # heading the indicators show (0=E .. 5=NE)
 var speed: int = 0
 var point_of_sail: String = ""
@@ -51,8 +50,6 @@ static func _build(hex_position: Vector2i, facing: int, ship_speed: int, wind_di
 	for d in range(6):
 		var n := hex_grid.get_neighbor(q, r, d)
 		m.neighbor_anchors.append(hex_grid.axial_to_world(n.x, n.y))
-	var beyond := HexGrid.stern_of(HexGrid.stern_of(hex_position, facing), facing)
-	m.beyond_stern_anchor = hex_grid.axial_to_world(beyond.x, beyond.y)
 
 	# Direction indicator anchored on the bow face (= facing / resulting_facing)
 	m.direction_anchor = hex_grid.axial_to_edge_world(q, r, facing)

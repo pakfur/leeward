@@ -6,7 +6,6 @@ extends Node
 @onready var ships_container: Node3D = $Ships
 @onready var ui: Control = $UI
 @onready var context_panel = $UI/ContextPanel
-@onready var ship_status_panel = $UI/ShipStatusPanel
 @onready var developer_ui: Window = $DeveloperUI
 
 # Planning phase UI
@@ -151,7 +150,6 @@ func _setup_combat_log_panel() -> void:
 	combat_log_panel = CombatLogPanelScene.instantiate()
 	if ui:
 		ui.add_child(combat_log_panel)
-		combat_log_panel.status_panel = ship_status_panel  # the bar stops short of it
 		combat_log_panel.skip_requested.connect(_skip_combat_playback)
 
 func _setup_hex_overlay() -> void:
@@ -175,7 +173,6 @@ func _setup_indicators() -> void:
 		ui.add_child(indicator_overlay)
 	indicator_overlay.setup(camera)
 	indicator_overlay.map_rect_provider = _map_safe_rect  # labels stay clear of the side panel
-	indicator_overlay.info_toggled.connect(_on_info_toggled)
 
 	status_overlay = ShipStatusOverlay.new()
 	status_overlay.name = "ShipStatusOverlay"
@@ -616,7 +613,7 @@ func _handle_ship_selection(screen_pos: Vector2) -> void:
 		return
 
 	if ship_state.player_id == HUMAN_PLAYER_ID:
-		# Own ship: full selected-ship UI; status dialog stays hidden until info icon.
+		# Own ship: full selected-ship UI.
 		# The camera does not move: the player clicked what they can already see.
 		# While planning, the orders panel follows (one selected ship everywhere); a ship being
 		# plotted keeps the selection until its plot is submitted or cancelled.
@@ -683,21 +680,13 @@ func _find_ship_view_from_collider(collider: Node) -> ShipView:
 	return null
 
 func _select_ship(ship_id: String) -> void:
-	# Clear any previous selection visuals (dialog starts hidden on a new selection)
+	# Clear any previous selection visuals
 	if ship_indicators:
 		ship_indicators.clear_selected()
-	if ship_status_panel:
-		ship_status_panel.visible = false
 
 	selected_ship_id = ship_id
 	_show_selected_indicators(ship_id)
 	_pin_status(ship_id)
-
-func _on_info_toggled(ship_id: String) -> void:
-	if ship_status_panel and not ship_id.is_empty():
-		var ship_state = GameState.get_ship(ship_id)
-		if ship_state:
-			ship_status_panel.toggle(ship_state)
 
 func _show_selected_indicators(ship_id: String) -> void:
 	var ship_state = GameState.get_ship(ship_id)
@@ -720,8 +709,6 @@ func _deselect_ship() -> void:
 		indicator_overlay.clear_selected()
 	if status_overlay:
 		status_overlay.unpin()
-	if ship_status_panel:
-		ship_status_panel.visible = false
 
 func _center_camera_on_all_ships() -> void:
 	var all_ships = GameState.get_all_ships()
@@ -741,8 +728,6 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 	# Selection is a planning-time affordance — clear it (and any hover) on every phase change
 	# so the one-shot indicator snapshot can't go stale across resolution/turn boundaries.
 	_deselect_ship()
-	if indicator_overlay:
-		indicator_overlay.set_info_enabled(true)
 	_hover_candidates.clear()
 	_clear_hover()
 	_close_fire_panel()
@@ -798,7 +783,6 @@ func _enter_planning_phase() -> void:
 		current_planning_ui.cancel_pressed.connect(_on_plotting_cancel_pressed)
 		current_planning_ui.end_planning_pressed.connect(_on_end_planning_pressed)
 		current_planning_ui.sail_change_requested.connect(_on_sail_change_requested)
-		current_planning_ui.status_requested.connect(_on_info_toggled)
 		current_planning_ui.crew_overlay_requested.connect(_open_crew_overlay)
 
 	# Load into context panel (must be done before setup to ensure @onready nodes are available)
@@ -930,12 +914,6 @@ func _on_plotting_cancel_pressed() -> void:
 
 func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_val: int, is_tacking: bool = false) -> void:
 	Trace.trace_log("GameController", "Plotting started for ship %s" % ship_id)
-	# Plotting one of our ships: a status panel left open for another ship would compete with it.
-	if ship_status_panel:
-		ship_status_panel.hide_unless_showing(ship_id)
-	# Nothing clickable may sit over the hexes while a course is being plotted.
-	if indicator_overlay:
-		indicator_overlay.set_info_enabled(false)
 	_ma_by_len = {0: remaining_ma_val}
 	_allowance_notes.clear()
 	var vnh = valid_hexes as MovementTypes.ValidNextHexes
@@ -1122,8 +1100,6 @@ func _rebuild_hover_candidates(valid_hexes: MovementTypes.ValidNextHexes) -> voi
 		_hover_candidates[vm.hex] = vm.metadata
 
 func _on_plotting_cancelled(ship_id: String) -> void:
-	if indicator_overlay:
-		indicator_overlay.set_info_enabled(true)
 	_hover_candidates.clear()
 	_collision_warnings.clear()
 	_collision_marks.clear()
@@ -1137,8 +1113,6 @@ func _on_plotting_cancelled(ship_id: String) -> void:
 		current_planning_ui.hide_plotting_controls()
 
 func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
-	if indicator_overlay:
-		indicator_overlay.set_info_enabled(true)
 	_hover_candidates.clear()
 	_collision_warnings.clear()
 	_collision_marks.clear()
@@ -1818,8 +1792,6 @@ func _sync_all_views() -> void:
 			grapple_lines = GrappleLines.new()
 			add_child(grapple_lines)
 		grapple_lines.refresh(GameState.get_all_ships(), hex_map.get_hex_grid())
-	if ship_status_panel:
-		ship_status_panel.refresh()
 
 func _toggle_developer_ui() -> void:
 	if developer_ui:

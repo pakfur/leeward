@@ -509,17 +509,6 @@ func test_a_prize_sails_under_her_captors_navy_and_back() -> void:
 	assert_false(b.is_french_gunned(), "back under her own navy")
 
 
-func test_status_lines_for_a_prize() -> void:
-	var b := _prize("b", "a", [0, 0, 0, 1], 0, [4, 0, 0, 0])
-	_ship("a", 1, Vector2i(5, 5), "B", 2, [4, 5, 6, 6], 2)
-	b.fire_list.append({"seq": 1, "created_turn": 5, "started_turn": 5, "cause": "crit"})
-	var text := "\n".join(ShipStatusPanel.crew_task_lines(b))
-	assert_string_contains(text, "Prize of a · prize crew 1 (B3) · original crew 4 below")
-	assert_string_contains(text, "board and repair")
-	assert_string_contains(text, "retake her at the start of next turn (10.H.4)")
-	assert_string_contains(text, "original crew locked below (10.H.3)")
-
-
 func test_maintenance_panel_prize_stepper() -> void:
 	var option := {"action_id": 3, "prize_id": "b", "captor_id": "a", "minimum": 2, "maximum": 4, "size": 2,
 		"previews": [{"size": 2, "prize": "0-0-0-2:0", "parent": "2-5-6-6:2"},

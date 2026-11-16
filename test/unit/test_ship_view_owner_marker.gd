@@ -46,7 +46,18 @@ func _make_view(ship_state: ShipState) -> ShipView:
 
 func _ring_color(view: ShipView) -> Color:
 	var ring := view.get_node("OwnerRing") as MeshInstance3D
-	return (ring.material_override as StandardMaterial3D).albedo_color
+	return (ring.material_override as ShaderMaterial).get_shader_parameter("ring_color")
+
+
+func test_owner_ring_is_hidden_behind_the_ship() -> void:
+	# Physical on the water: the shader tests the opaque depth (hull, rigging), not the waves.
+	var view := _make_view(_make_state("p", 0, Vector2i(2, 2)))
+	var material := (view.get_node("OwnerRing") as MeshInstance3D).material_override as ShaderMaterial
+	assert_not_null(material, "a shader material")
+	var code := material.shader.code
+	assert_string_contains(code, "hint_depth_texture")
+	assert_string_contains(code, "discard")
+	assert_eq(material.render_priority, ShipView.OWNER_RING_RENDER_PRIORITY)
 
 
 func test_player_ship_has_green_ring_and_pennant() -> void:

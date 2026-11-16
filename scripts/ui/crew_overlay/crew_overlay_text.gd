@@ -222,6 +222,38 @@ static func _doing(code: String) -> String:
 	return CrewRules.task_name(code)
 
 
+## One line per lasting critical-hit effect (7.D.11-12), in the order they happened, then the
+## permanent steering damage and fires.
+static func critical_lines(s: ShipState) -> Array[String]:
+	var lines: Array[String] = []
+	for effect in s.critical_effects:
+		var side := int(effect.get("side", -1))
+		match str(effect.get("id", "")):
+			"braces_cut":
+				lines.append("Braces cut: speed changes by 1 at most (fix roll in maintenance)")
+			"lines_jammed":
+				lines.append("Lines jammed: no sail changes (fix roll in maintenance)")
+			"broadside_obscured":
+				lines.append("%s broadside −2: obscured by fallen rigging (fix roll in maintenance)"
+					% ("Port" if side == ShipState.PORT else "Starboard"))
+			"sheets_cut":
+				lines.append("Sheets cut: −1 MP and −1 acceleration next turn")
+			"shrouds_severed":
+				lines.append("Shrouds severed: −1 MP")
+			"signal_halyards_cut":
+				lines.append("Signal halyards cut: no new signals (fix roll in maintenance)")
+			"rudder_jammed":
+				var way := "straight" if side < 0 else ("to port" if side == ShipState.PORT else "to starboard")
+				lines.append("Rudder jammed %s (fix roll in maintenance)" % way)
+	if s.rudder_destroyed:
+		lines.append("Rudder destroyed: one turn per turn, poor maneuvering")
+	if s.wheel_shot_away:
+		lines.append("Wheel shot away: one turn per turn, poor maneuvering")
+	if s.is_burning():
+		lines.append("Afire ×%d: 1 hull and 1 rigging box a turn per fire (8.E.8)" % s.fire_count())
+	return lines
+
+
 ## DAMAGE (N) lines (spec §4.6): [{"text", "repairable"}]: fires, lasting critical effects, then
 ## the boxes lost that repairs could restore.
 static func damage_lines(ship: ShipState, turn: int = -1, plan: Dictionary = {}) -> Array[Dictionary]:
@@ -229,7 +261,7 @@ static func damage_lines(ship: ShipState, turn: int = -1, plan: Dictionary = {})
 	var seqs := ship.fire_seqs()
 	for k in seqs.size():
 		out.append({"text": fire_line(ship, seqs[k], k + 1, turn, plan), "repairable": false, "fire": true})
-	for line in ShipStatusPanel.critical_lines(ship):
+	for line in critical_lines(ship):
 		if line.begins_with("Afire"):
 			continue  # each fire has its own line above
 		out.append({"text": line, "repairable": false})

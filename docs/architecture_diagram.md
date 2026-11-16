@@ -209,8 +209,7 @@ scripts/
 │   └── hex_grid.gd
 │
 └── ui/
-	├── planning_panel.gd      # Player input
-	└── ship_status_panel.gd  # Ship info display
+	└── planning_panel.gd      # Player input
 ```
 
 ## Key Principles

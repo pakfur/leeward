@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://c7vk3p2xmxfq8"]
+[gd_scene load_steps=10 format=3 uid="uid://c7vk3p2xmxfq8"]
 
 [ext_resource type="Script" uid="uid://t6fop8pw7x2s" path="res://scripts/core/game_controller.gd" id="1_controller"]
 [ext_resource type="Script" uid="uid://drpxitgfk6sd3" path="res://scripts/core/hex_map.gd" id="2_hex_map"]
@@ -6,7 +6,6 @@
 [ext_resource type="Script" uid="uid://bnfe26l2snu6l" path="res://scripts/core/isometric_camera.gd" id="3_camera"]
 [ext_resource type="PackedScene" path="res://scenes/ui/minimap.tscn" id="4_minimap"]
 [ext_resource type="PackedScene" path="res://scenes/ui/context_panel.tscn" id="5_context"]
-[ext_resource type="Script" uid="uid://s0ckjki5xttb" path="res://scripts/ui/ship_status_panel.gd" id="6_status"]
 [ext_resource type="PackedScene" path="res://scenes/ui/developer_ui.tscn" id="8_dev_ui"]
 
 [sub_resource type="Environment" id="env"]
@@ -57,103 +56,5 @@ layout_mode = 1
 [node name="MiniMap" parent="UI" instance=ExtResource("4_minimap")]
 z_index = 10
 layout_mode = 0
-
-[node name="ShipStatusPanel" type="PanelContainer" parent="UI"]
-layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -460.0
-offset_top = -520.0
-offset_right = -20.0
-offset_bottom = -20.0
-grow_horizontal = 0
-grow_vertical = 0
-theme_type_variation = &"OpaquePanel"
-script = ExtResource("6_status")
-
-[node name="VBox" type="VBoxContainer" parent="UI/ShipStatusPanel"]
-layout_mode = 2
-
-[node name="Header" type="HBoxContainer" parent="UI/ShipStatusPanel/VBox"]
-layout_mode = 2
-
-[node name="Title" type="Label" parent="UI/ShipStatusPanel/VBox/Header"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Ship Status"
-horizontal_alignment = 1
-
-[node name="CloseButton" type="Button" parent="UI/ShipStatusPanel/VBox/Header"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "X"
-
-[node name="HSeparator" type="HSeparator" parent="UI/ShipStatusPanel/VBox"]
-layout_mode = 2
-
-[node name="ShipNameLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"HeaderLabel"
-text = "Ship Name"
-
-[node name="ShipTypeLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Type"
-
-[node name="HSeparator2" type="HSeparator" parent="UI/ShipStatusPanel/VBox"]
-layout_mode = 2
-
-[node name="PositionLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Position: (0, 0)"
-
-[node name="FacingLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Facing: E (0)"
-
-[node name="SpeedLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Speed: 0"
-
-[node name="SailStateLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Sail: Maneuvering Sail"
-
-[node name="HSeparator3" type="HSeparator" parent="UI/ShipStatusPanel/VBox"]
-layout_mode = 2
-
-[node name="HullLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Hull: 8/8, 8/8, 8/8"
-
-[node name="CrewLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Crew: 280 (Trained)"
-
-[node name="MoraleLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Morale: Good (4)"
-
-[node name="RiggingLabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Rigging: 4/4"
-
-[node name="MALabel" type="Label" parent="UI/ShipStatusPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Movement Allowance: 4"
 
 [node name="DeveloperUI" parent="." instance=ExtResource("8_dev_ui")]

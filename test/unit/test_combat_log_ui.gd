@@ -3,7 +3,6 @@ const CrewFixtures = preload("res://test/unit/crew_fixtures.gd")
 ## Tests for the pure presentation helpers of the combat turn_log panel and ship status panel.
 
 const LogPanel = preload("res://scripts/ui/combat_log_panel.gd")
-const StatusPanel = preload("res://scripts/ui/ship_status_panel.gd")
 
 const COMBAT := TurnPhaseController.GamePhase.COMBAT_RESOLUTION
 const DRIFT := TurnPhaseController.GamePhase.DRIFT_CALCULATION
@@ -149,119 +148,9 @@ func test_latest_line_is_last_event_text_or_placeholder() -> void:
 
 # --- Status helpers ---------------------------------------------------------
 
-func test_box_line_formats_current_over_max_per_section() -> void:
-	assert_eq(StatusPanel.box_line("Hull", [5, 4, 5, 6] as Array[int], [5, 5, 5, 6] as Array[int]),
-		"Hull 5/5 4/5 5/5 6/6")
-
-
-func test_box_line_tolerates_short_max_array() -> void:
-	assert_eq(StatusPanel.box_line("Hull", [2, 3] as Array[int], [4] as Array[int]), "Hull 2/4 3/0")
-
-
-func test_status_lines_show_boxes_marines_quality_and_morale() -> void:
-	var s := _make_ship()
-	s.hull_current_hp = [5, 4, 5, 6] as Array[int]
-	var lines: Array = StatusPanel.status_lines(s)
-	assert_has(lines, "Hull 5/5 4/5 5/5 6/6")
-	assert_has(lines, "Rigging 5/5 5/5 6/6 6/6")
-	assert_has(lines, "Crew 3/3 3/3 3/3 3/3")
-	assert_has(lines, "Marines 4/4")
-	assert_has(lines, "Crew quality B (of A–G)")
-	assert_has(lines, "Morale rating %d (2 best – 6 worst)" % s.morale_rating)
-
-
-func test_guns_dismounted_only_shown_when_non_zero() -> void:
-	var s := _make_ship()
-	assert_false(StatusPanel.status_lines(s).any(func(l): return l.begins_with("Guns")))
-	s.guns_dismounted = [2, 0] as Array[int]
-	assert_has(StatusPanel.status_lines(s), "Guns dismounted: port 2, starboard 0")
-
-
-func test_sail_line_notes_when_it_moves_as_a_lighter_sail() -> void:
-	var s := _make_ship()
-	assert_eq(StatusPanel.sail_line(s), "Sail: Manoeuvring sail")
-	s.sail_state = "PS"
-	s.rigging_current_hp = [0, 5, 6, 6] as Array[int]  # 3 sections -> max MS
-	assert_eq(StatusPanel.sail_line(s), "Sail: Plain sail (moves as manoeuvring sail)")
-
-
-func test_pending_sail_change_line_covers_underway_and_ordered() -> void:
-	var s := _make_ship()
-	assert_eq(StatusPanel.sail_change_line(s), "")
-	CrewFixtures.order_sail(s, "FS")
-	assert_eq(StatusPanel.sail_change_line(s), "Sail change ordered: Fighting sail")
-	s.crew_quality = "B"
-	CrewFixtures.give_sail_change(s, "PS", [0, 1])  # ship log: MS->PS 2 g-t's at CQ A-D
-	assert_eq(StatusPanel.sail_change_line(s), "Sail change: Plain sail, 2 turns left")
-
-
-func test_badges_for_fouled_struck_and_dismasted() -> void:
-	var s := _make_ship()
-	assert_eq(StatusPanel.badges(s), [])
-	s.fouled_with = "other"
-	s.status = ShipState.Status.STRUCK
-	s.rigging_current_hp = [0, 0, 0, 0] as Array[int]
-	assert_eq(StatusPanel.badges(s), ["FOULED", "STRUCK", "DISMASTED"])
-
-
-func test_destroyed_ship_badge_and_movement_line() -> void:
-	var s := _make_ship()
-	s.status = ShipState.Status.DESTROYED
-	assert_eq(StatusPanel.badges(s), ["DESTROYED"])
-	assert_eq(StatusPanel.movement_line(s, 4), "Cannot move (destroyed)")
-
-
 func test_explosion_resyncs_ship_views() -> void:
 	var ev := PhaseEvents.PhaseLog.new().add(PhaseEvents.Type.DESTROYED, 4, "s1", {"reason": "explosion"})
 	assert_true(CombatLogPanel.syncs_views(ev))
-
-
-func test_identity_line_shows_owner_and_type_only_when_it_differs() -> void:
-	var s := _make_ship()
-	assert_eq(StatusPanel.identity_line(s), "Yours · 38-gun Frigate")
-	s.ship.player_id = 1
-	s.ship.ship_name = "38-gun frigate"  # unnamed: the scenario fell back to the type name
-	assert_eq(StatusPanel.identity_line(s), "Enemy")
-
-
-func test_heading_and_speed_lines_in_words() -> void:
-	assert_eq(StatusPanel.heading_line(0), "Heading: east")
-	assert_eq(StatusPanel.heading_line(4), "Heading: north-west")
-	assert_eq(StatusPanel.speed_line(0), "Speed last turn: 0 hexes")
-	assert_eq(StatusPanel.speed_line(1), "Speed last turn: 1 hex")
-
-
-func test_crew_quality_and_morale_lines_carry_their_scales_without_adjectives() -> void:
-	assert_eq(StatusPanel.crew_quality_line("G"), "Crew quality G (of A–G)")
-	assert_eq(StatusPanel.morale_line(4), "Morale rating 4 (2 best – 6 worst)")
-
-
-func test_movement_line_says_why_a_ship_cannot_move() -> void:
-	var s := _make_ship()
-	assert_eq(StatusPanel.movement_line(s, 5), "Movement allowance this turn: 5")
-	s.fouled_with = "s2"
-	assert_eq(StatusPanel.movement_line(s, 5, "Foe"), "Cannot move (fouled with Foe)")
-	s.rigging_current_hp = [0, 0, 0, 0] as Array[int]
-	assert_eq(StatusPanel.movement_line(s, 0), "Cannot move (dismasted)")
-	s.status = ShipState.Status.STRUCK
-	assert_eq(StatusPanel.movement_line(s, 5), "Cannot move (struck)")
-
-
-func test_movement_line_after_movement_says_how_far_the_ship_moved() -> void:
-	var s := _make_ship()
-	assert_eq(StatusPanel.movement_line(s, 0, "", 4), "Moved 4 hexes this turn")
-	assert_eq(StatusPanel.movement_line(s, 0, "", 1), "Moved 1 hex this turn")
-	assert_eq(StatusPanel.movement_line(s, 0, "", 0), "Moved 0 hexes this turn")
-
-
-func test_movement_has_resolved_from_combat_until_the_turn_ends() -> void:
-	var P := TurnPhaseController.GamePhase
-	assert_false(StatusPanel.movement_resolved(P.PLANNING))
-	assert_false(StatusPanel.movement_resolved(P.MOVEMENT_RESOLUTION))
-	assert_false(StatusPanel.movement_resolved(P.ENVIRONMENT))
-	assert_true(StatusPanel.movement_resolved(P.COMBAT_RESOLUTION))
-	assert_true(StatusPanel.movement_resolved(P.POST_COMBAT))
-	assert_true(StatusPanel.movement_resolved(P.END_TURN))
 
 
 # --- Ship names in log lines -------------------------------------------------------
@@ -420,7 +309,7 @@ func test_earlier_turns_label_hidden_on_turn_one_even_with_logs_left_from_anothe
 
 func test_critical_lines_one_per_lasting_effect() -> void:
 	var s := _make_ship()
-	assert_eq(StatusPanel.critical_lines(s), [] as Array[String], "No crits, no lines")
+	assert_eq(CrewOverlayText.critical_lines(s), [] as Array[String], "No crits, no lines")
 	s.critical_effects = [
 		{"seq": 0, "id": "broadside_obscured", "side": ShipState.STARBOARD},
 		{"seq": 1, "id": "rudder_jammed", "side": ShipState.PORT},
@@ -428,7 +317,7 @@ func test_critical_lines_one_per_lasting_effect() -> void:
 	] as Array[Dictionary]
 	s.wheel_shot_away = true
 	s.fire_list = [{"seq": 1, "created_turn": 1, "started_turn": 1, "cause": "crit"}] as Array[Dictionary]
-	assert_eq(StatusPanel.critical_lines(s), [
+	assert_eq(CrewOverlayText.critical_lines(s), [
 		"Starboard broadside −2: obscured by fallen rigging (fix roll in maintenance)",
 		"Rudder jammed to port (fix roll in maintenance)",
 		"Signal halyards cut: no new signals (fix roll in maintenance)",
@@ -437,17 +326,3 @@ func test_critical_lines_one_per_lasting_effect() -> void:
 	] as Array[String])
 
 
-func test_crew_task_lines_reorganizing_and_braces() -> void:
-	# Hull #4: a section in RO shows its progress (CQ B: 5 - 2 = 3 g-t's); T sections this turn.
-	var s := _make_ship()
-	s.crew_quality = "B"
-	assert_eq(StatusPanel.crew_task_lines(s), [] as Array[String])
-	s.crew_tasks = [
-		{"seq": 1, "code": "RO", "sections": [3], "done": 2, "params": {"reason": "crew_disorganized"}, "ended": ""},
-		{"seq": 2, "code": "T", "sections": [4, 2], "done": 0, "params": {}, "ended": ""},
-		{"seq": 3, "code": "RO", "sections": [1], "done": 1, "params": {}, "ended": "completed"},
-	] as Array[Dictionary]
-	assert_eq(StatusPanel.crew_task_lines(s), [
-		"S4 reorganizing, 2 of 3 turns",
-		"M S3 at the braces (tacking)",
-	] as Array[String])

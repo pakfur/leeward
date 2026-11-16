@@ -1,12 +1,11 @@
 extends PanelContainer
 ## ShipListItem - A ship's card in the planning panel. The cards are an accordion (planning panel
 ## rework C2, prototypes/planning_panel/planning_panel.html): the selected card is expanded (title,
-## crew chips, Movement / Crew & damage / Status, then the ShipCardStatus box: hull, rigging, crew,
-## marines and guns); every other card is one row: health icon, name, badge, speed.
+## crew chips, Movement / Crew & damage, then the ShipCardStatus box: hull, rigging, crew,
+## marines and guns); every other card is one row: health icon, name, badge, speed / MA.
 
 signal selected()
 signal action_button_pressed(action_type: String)
-signal status_pressed()  ## the Status button: open this ship's status panel
 signal crew_pressed()  ## the "Crew & damage" button: open the crew overlay for this ship
 
 @onready var ship_name_label: Label = %ShipNameLabel
@@ -15,7 +14,6 @@ signal crew_pressed()  ## the "Crew & damage" button: open the crew overlay for 
 @onready var movement_button: Button = %MovementButton
 @onready var crew_button: Button = %CrewButton
 @onready var maintenance_button: Button = %MaintenanceButton
-@onready var status_button: Button = %StatusButton
 
 var ship_state: ShipState = null
 var crew_summary_row: HFlowContainer = null  ## the crew summary chips (CrewRules.summary)
@@ -96,10 +94,6 @@ func _ready() -> void:
 	if maintenance_button:
 		maintenance_button.pressed.connect(_on_maintenance_pressed)
 
-	if status_button:
-		status_button.focus_mode = Control.FOCUS_NONE
-		status_button.pressed.connect(func(): status_pressed.emit())
-
 	# Make the panel clickable
 	gui_input.connect(_on_gui_input)
 	_apply_expanded()
@@ -118,8 +112,8 @@ func _update_display() -> void:
 
 	# Speed
 	if speed_label:
-		speed_label.text = "Speed %d" % ship_state.speed
-		speed_label.tooltip_text = "Speed last turn"
+		speed_label.text = speed_text(ship_state.speed, _movement_allowance())
+		speed_label.tooltip_text = "Speed last turn / movement allowance this turn"
 
 	# Status badge (fouled / struck / dismasted) locks out movement plotting
 	var badge := PlanningSailUi.card_badge(ship_state)
@@ -140,6 +134,18 @@ func _update_display() -> void:
 	if health_icon:
 		health_icon.show_ship(ship_state)
 	_render_status()
+
+## "Speed 3/5": speed last turn over this turn's movement allowance; no MA (< 0), "Speed 3".
+static func speed_text(speed: int, ma: int) -> String:
+	return "Speed %d/%d" % [speed, ma] if ma >= 0 else "Speed %d" % speed
+
+
+## This turn's movement allowance (a read-only query), or -1 with no ship controller.
+func _movement_allowance() -> int:
+	if ship_state == null or GameState.ship_controller == null:
+		return -1
+	return GameState.ship_controller.get_movement_allowance(ship_state.ship_id)
+
 
 ## Selected = expanded (C2): only one card is open at a time; the panel selects one card.
 func set_selected_state(selected_state: bool) -> void:
