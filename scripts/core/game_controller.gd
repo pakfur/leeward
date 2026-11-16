@@ -51,20 +51,12 @@ var grapple_lines: GrappleLines = null  # the grapples between ships (8.C), redr
 var _mouse_pos: Vector2 = Vector2(-1, -1)  # last mouse position seen (viewport coordinates)
 const HUMAN_PLAYER_ID := 0
 
-# Planning phase state (client-side)
-var selected_actions: Dictionary = {}  # ship_id -> {action_type -> bool}
-
-# Movement plotting
-var movement_client: MovementPlottingClient = null
+# Courses (PLANNING): every own ship's stored course is drawn and edited on the map at once.
 var hex_overlay: Node3D = null  # HexOverlay instance
-var submitted_paths: Dictionary = {}  # ship_id -> Array[PlotStep]
-var _hover_candidates: Dictionary = {}  # Vector2i click target -> MoveMetadata (resulting bow hex and facing, server-provided)
-var _last_hover_hex: Vector2i = Vector2i(-99, -99)  # avoids re-raycasting when the hovered hex is unchanged
-var _collision_warnings: Dictionary = {}  # offered click target -> hover warning (it runs into another ship)
-var _collision_marks: Array[Vector2i] = []  # hexes drawn in the collision colour: risky click targets and swung-into hexes
-var _path_collision_text: String = ""  # warning when the plotted path enters another ship's hex
-var _ma_by_len: Dictionary = {}  # plotted path length -> server's remaining movement at that length
-var _allowance_notes: Dictionary = {}  # plotted path length -> allowance-change note for that step
+var _courses: Dictionary = {}  # ship_id -> CourseClicks entry {path_hexes, next_hexes, end_hex}
+var _hover_candidates: Dictionary = {}  # ship_id -> {Vector2i click target -> MoveMetadata} (server-provided)
+var _click_refusals: Dictionary = {}  # ship_id -> reason the server gave for the last click on its course
+var _last_hover_hex: Vector2i = Vector2i(-99, -99)  # avoids re-routing when the hovered hex is unchanged
 
 # Resolution playback
 var playback_controller: MovementResolutionPlaybackController = null
@@ -126,11 +118,6 @@ func _ready() -> void:
 	# Initialize hex overlay
 	_setup_hex_overlay()
 	_setup_indicators()
-
-	# Initialize movement plotting client
-	if GameState.movement_plotting_controller:
-		movement_client = MovementPlottingClient.new(GameState.movement_plotting_controller)
-		_connect_movement_signals()
 
 	_setup_pause_menu()
 	_setup_crew_overlay()
@@ -257,6 +244,7 @@ func _on_crew_changed() -> void:
 	if current_planning_ui and is_instance_valid(current_planning_ui):
 		current_planning_ui.crew_overlay_open = crew_client.is_open
 		current_planning_ui.refresh_crew_orders()
+	_refresh_courses()  # a sail order can change the movement allowance
 
 
 ## C: open or close the crew overlay for the selected own ship (spec §4.1, §9 Q4).
@@ -282,9 +270,6 @@ func _open_crew_overlay(ship_id: String) -> void:
 	var ship := GameState.get_ship(ship_id)
 	if ship == null or ship.player_id != HUMAN_PLAYER_ID:
 		return  # enemy plots are secret
-	# Movement plotting needs the map: a plot in progress is cancelled.
-	if movement_client and movement_client.is_plotting():
-		movement_client.cancel()
 	_clear_hover()
 	crew_client.open_for(ship_id)
 
@@ -321,8 +306,6 @@ func _leave_game() -> void:
 		return
 	_leaving = true
 	Trace.trace_log("GameController", "Leaving the game in progress")
-	if movement_client and movement_client.is_plotting():
-		movement_client.cancel()
 	_combat_playback_active = false
 	_combat_playback_skip = true
 	if playback_controller:
@@ -405,14 +388,6 @@ func _process(_delta: float) -> void:
 	hex_coord_label.text = "[q:%d, r:%d]" % [hex.x, hex.y]
 	hex_coord_label.visible = true
 	hex_coord_label.position = mouse_pos + Vector2(16, -8)
-
-func _connect_movement_signals() -> void:
-	movement_client.plotting_started.connect(_on_plotting_started)
-	movement_client.hex_selected.connect(_on_hex_selected)
-	movement_client.undo_complete.connect(_on_undo_complete)
-	movement_client.plotting_cancelled.connect(_on_plotting_cancelled)
-	movement_client.movement_submitted.connect(_on_movement_submitted)
-	movement_client.plotting_error.connect(_on_plotting_error)
 
 func _setup_scenario(scenario: Dictionary) -> void:
 	Trace.trace_log("GameController", "Setting up scenario: %s" % scenario.get("name", "Unknown"))
@@ -504,25 +479,128 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# Handle mouse click
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		# If plotting, try hex selection first
-		if movement_client and movement_client.is_plotting():
-			var hex = _get_hex_from_screen_pos(event.position)
-			if hex != Vector2i(-99, -99):
-				movement_client.select_hex(hex)
-				get_viewport().set_input_as_handled()
-				return
-
-		# Fall through to ship selection
+		# A hex some own ship's course claims goes to that course, even over a ship (spec: course
+		# wins over ships); anything else selects as usual.
+		if _handle_course_click(_course_hex_at(event.position)):
+			get_viewport().set_input_as_handled()
+			return
 		_handle_ship_selection(event.position)
 		get_viewport().set_input_as_handled()
 
-func _get_hex_from_screen_pos(screen_pos: Vector2) -> Vector2i:
+## The hex under `screen_pos` for course routing, or (-99, -99).
+func _course_hex_at(screen_pos: Vector2) -> Vector2i:
 	if not camera or not hex_overlay or not hex_map:
 		return Vector2i(-99, -99)
 	var world_pos = _water_point_at(screen_pos)
 	if world_pos == null:
 		return Vector2i(-99, -99)
-	return hex_overlay.get_valid_hex_at_world_pos(world_pos, hex_map.get_hex_grid())
+	return hex_overlay.hex_at_world_pos(world_pos, hex_map.get_hex_grid())
+
+## The ship whose course is drawn at full strength and wins overlapping clicks: the planning
+## panel's selected card, else the map selection.
+func _course_selected_id() -> String:
+	if current_planning_ui and is_instance_valid(current_planning_ui) and current_planning_ui.selected_ship_id != "":
+		return current_planning_ui.selected_ship_id
+	return selected_ship_id
+
+## A click on `hex` in PLANNING: when a course claims it (CourseClicks.route), extend or cut that
+## ship's course through the server, select the ship and redraw. False when no course claims it.
+func _handle_course_click(hex: Vector2i) -> bool:
+	if GameState.current_phase != GameState.GamePhase.PLANNING or _courses.is_empty():
+		return false
+	if hex == Vector2i(-99, -99) or GameState.phase_controller == null:
+		return false
+	var route := CourseClicks.route(hex, _courses, _course_selected_id())
+	if route.is_empty():
+		return false
+	var ship_id: String = route["ship_id"]
+	var reason: String
+	if route["kind"] == "extend":
+		reason = GameState.phase_controller.player_extend_course(HUMAN_PLAYER_ID, ship_id, hex)
+	else:
+		reason = GameState.phase_controller.player_cut_course(HUMAN_PLAYER_ID, ship_id, int(route["step_index"]))
+	if reason == "":
+		_click_refusals.erase(ship_id)
+	else:
+		Trace.trace_log("GameController", "Course %s of %s at %s refused: %s" % [route["kind"], ship_id, hex, reason])
+		_click_refusals[ship_id] = reason
+	# The card shows the course readout (and any refusal) of the selected ship only.
+	if current_planning_ui and is_instance_valid(current_planning_ui) and current_planning_ui.selected_ship_id != ship_id:
+		current_planning_ui.select_ship(ship_id)
+	_last_hover_hex = Vector2i(-99, -99)  # the hovered hex may now mean something else
+	_refresh_courses()
+	if crew_client:
+		crew_client.refresh()  # a turn at MA 0 opens the braces
+	if current_planning_ui and is_instance_valid(current_planning_ui):
+		current_planning_ui.refresh_crew_summaries()
+	return true
+
+## Draw every own ship's stored course and the hexes it may extend to (the panel's selected ship at
+## full strength), and rebuild the click routing, the hover candidates and each card's course readout.
+func _refresh_courses() -> void:
+	_courses.clear()
+	_hover_candidates.clear()
+	if hex_overlay:
+		hex_overlay.clear_courses()
+		hex_overlay.clear_blocked_hexes()
+	if GameState.current_phase != GameState.GamePhase.PLANNING or GameState.phase_controller == null:
+		return
+	var selected := _course_selected_id()
+	var grid: HexGrid = hex_map.get_hex_grid() if hex_map else null
+	var ships: Array = GameState.get_all_ships()
+	for ship: ShipState in GameState.get_player_ships(HUMAN_PLAYER_ID):
+		var id := ship.ship_id
+		var options: Dictionary = GameState.phase_controller.course_options(id)  # read-only query
+		if options.is_empty():
+			continue
+		var input := CourseView.course_input(options, ship)
+		_courses[id] = input
+		var vnh: MovementTypes.ValidNextHexes = options["valid_next"]
+		_hover_candidates[id] = CourseView.hover_candidates(vnh)
+		var marks: Array[Vector2i] = offered_collisions(vnh, ships, id)["marks"]
+		if hex_overlay and grid:
+			hex_overlay.show_course(id, input["path_hexes"], input["next_hexes"], marks, grid, id == selected)
+			if id == selected:
+				var path: Array = options["path"]
+				var end_facing: int = path[-1].facing if not path.is_empty() else ship.facing
+				hex_overlay.show_blocked_hexes(blocked_hexes_for(vnh, input["end_hex"], end_facing, grid), grid)
+		if current_planning_ui and is_instance_valid(current_planning_ui):
+			current_planning_ui.set_course_info(id, _course_info(ship, options, ships))
+
+## The card's course readout for `ship`: MP used of the allowance, the tacking and steering notes
+## and the warning line (a refused click, else the path's collision, then a jammed rudder).
+func _course_info(ship: ShipState, options: Dictionary, ships: Array) -> Dictionary:
+	# Read-only query: this turn's movement allowance  SCV:ALLOW
+	var allowance: int = GameState.ship_controller.get_movement_allowance(ship.ship_id) if GameState.ship_controller else 0
+	var info := CourseView.course_info(options, ship, allowance)
+	info["tacking"] = _tacking_text(ship, bool(options.get("is_tacking_attempt", false)))
+	info["steering"] = _steering_text(ship)
+	var path: Array = options.get("path", [])
+	var collision := path_collision_text(path, ship.hex_position, ship.facing, ships, ship.ship_id)
+	info["collision"] = CourseView.warning_text(str(_click_refusals.get(ship.ship_id, "")), collision,
+		str(options.get("rudder_error", "")))
+	return info
+
+## The tacking note for a course that turns at MA 0 ("" otherwise): the chance with the sections
+## the crew plan puts at the braces and with a full crew (5.D.2a).
+func _tacking_text(ship: ShipState, is_tacking: bool) -> String:
+	if not is_tacking or ship.ship == null or GameState.crew_task_controller == null or GameState.movement_resolver == null:
+		return ""
+	# Read-only queries: the sections at the braces and the Tacking chart with this ship's DRMs.
+	var sections: int = GameState.crew_task_controller.planned_tack_sections(ship.ship_id)
+	var probability: float = GameState.movement_resolver.tacking_chance(ship, sections)
+	var full: float = GameState.movement_resolver.tacking_chance(ship, TackCrewHandler.max_sections())
+	return PlanningText.tacking_note(probability, sections, full, TackCrewHandler.max_sections())
+
+## Steering damage (hull #2, #3; 6.F): the Poor Maneuvering chance for a turn, a turn left over from
+## last g-t, or the direction a jammed rudder holds ("" for a ship with sound steering).
+func _steering_text(ship: ShipState) -> String:
+	if ship.ship == null or GameState.movement_resolver == null:
+		return ""
+	# Read-only query: the Poor Maneuvering chart, as the resolver will roll it  SCV:ALLOW
+	var chance: float = GameState.movement_resolver.poor_maneuvering_chance(ship)
+	return PlanningText.steering_note(ship.is_poor_maneuvering(), chance, ship.pending_turn,
+		ship.rudder_jam_direction(), ship.rudder_destroyed)
 
 ## Where the camera ray through `screen_pos` meets the water plane (y = 0), or null.
 func _water_point_at(screen_pos: Vector2) -> Variant:
@@ -551,25 +629,26 @@ static func ship_at_hex(hex: Vector2i, ships: Array) -> String:
 	typed.assign(ships)
 	return str(Occupancy.build(typed).get(hex, ""))
 
+## The speed and point-of-sail preview for the ship the hovered hex would extend (CourseClicks.route).
 func _update_plotting_hover(screen_pos: Vector2) -> void:
-	if not movement_client or not movement_client.is_plotting():
+	if _courses.is_empty() or GameState.current_phase != GameState.GamePhase.PLANNING:
 		if _last_hover_hex != Vector2i(-99, -99):
 			_clear_hover()
 		return
-	var hex = _get_hex_from_screen_pos(screen_pos)  # valid hex or (-99,-99)
+	var hex := _course_hex_at(screen_pos)
 	if hex == _last_hover_hex:
 		return  # same hex — nothing to update
 	_last_hover_hex = hex
-	_show_collision_warning(hex)
-	if hex == Vector2i(-99, -99) or not _hover_candidates.has(hex):
-		_clear_hover()
-		return
-	var ship_state = GameState.get_ship(movement_client.active_ship_id)
-	if not ship_state or not hex_map or not GameState.environment:
-		_clear_hover()
+	var route := CourseClicks.route(hex, _courses, _course_selected_id()) if hex != Vector2i(-99, -99) else {}
+	var ship_id: String = route.get("ship_id", "")
+	var cands: Dictionary = _hover_candidates.get(ship_id, {})
+	var ship_state: ShipState = GameState.get_ship(ship_id)
+	if route.get("kind", "") != "extend" or not cands.has(hex) or ship_state == null \
+			or not hex_map or not GameState.environment:
+		_hide_hover()
 		return
 	var env = GameState.environment
-	var meta: MovementTypes.MoveMetadata = _hover_candidates[hex]
+	var meta: MovementTypes.MoveMetadata = cands[hex]
 	var model = ShipIndicatorModel.build_hover(
 		meta.resulting_hex, meta.resulting_facing, ship_state.speed,
 		env.wind_direction, env.wind_speed, hex_map.get_hex_grid())
@@ -580,6 +659,10 @@ func _update_plotting_hover(screen_pos: Vector2) -> void:
 
 func _clear_hover() -> void:
 	_last_hover_hex = Vector2i(-99, -99)
+	_hide_hover()
+
+## Hide the hover preview, keeping the last hovered hex.
+func _hide_hover() -> void:
 	if ship_indicators:
 		ship_indicators.clear_hover()
 	if indicator_overlay:
@@ -612,12 +695,9 @@ func _handle_ship_selection(screen_pos: Vector2) -> void:
 	if ship_state.player_id == HUMAN_PLAYER_ID:
 		# Own ship: full selected-ship UI.
 		# The camera does not move: the player clicked what they can already see.
-		# While planning, the orders panel follows (one selected ship everywhere); a ship being
-		# plotted keeps the selection until its plot is submitted or cancelled.
+		# While planning, the orders panel follows (one selected ship everywhere).
 		if current_planning_ui and is_instance_valid(current_planning_ui) \
 				and GameState.current_phase == GameState.GamePhase.PLANNING:
-			if movement_client and movement_client.is_plotting():
-				return
 			current_planning_ui.select_ship(ship_view.state_id)
 			return
 		_select_ship(ship_view.state_id)
@@ -643,17 +723,18 @@ func _ship_view_at(screen_pos: Vector2) -> ShipView:
 func _update_status_hover() -> void:
 	if not status_overlay:
 		return
-	# No status on the water while a course is being plotted or broadside arcs are shown (it
-	# would cover those hexes), or while ships are moving (it is placed from where they stand).
-	status_overlay.set_suppressed((movement_client != null and movement_client.is_plotting())
-		or fire_panel != null
+	# No status on the water while broadside arcs are shown (it would cover those hexes), or while
+	# ships are moving (it is placed from where they stand).
+	status_overlay.set_suppressed(fire_panel != null
 		or (crew_client != null and crew_client.is_open)
 		or GameState.current_phase == GameState.GamePhase.MOVEMENT_RESOLUTION)
 	# The plate carries speed and point of sail; the floating label stands in only while it is hidden.
 	if indicator_overlay:
 		indicator_overlay.set_selected_label_enabled(status_overlay.is_suppressed())
 	var ship_view: ShipView = null
+	# While planning the plate shows on click only (it would pop up over the course hexes).
 	if not game_over_panel and not is_pause_menu_open() \
+			and GameState.current_phase != GameState.GamePhase.PLANNING \
 			and get_viewport().gui_get_hovered_control() == null:
 		ship_view = _ship_view_at(_mouse_pos)
 	var ship_state: ShipState = GameState.get_ship(ship_view.state_id) if ship_view else null
@@ -729,7 +810,12 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 	# Selection is a planning-time affordance — clear it (and any hover) on every phase change
 	# so the one-shot indicator snapshot can't go stale across resolution/turn boundaries.
 	_deselect_ship()
-	_hover_candidates.clear()
+	if phase != GameState.GamePhase.PLANNING:
+		_courses.clear()
+		_hover_candidates.clear()
+		if hex_overlay:
+			hex_overlay.clear_courses()
+			hex_overlay.clear_blocked_hexes()
 	_clear_hover()
 	_close_fire_panel()
 	if phase != GameState.GamePhase.POST_COMBAT:
@@ -760,7 +846,7 @@ func _enter_planning_phase() -> void:
 	# Clear any leftover overlays from previous turn
 	if hex_overlay:
 		hex_overlay.clear_everything()
-	submitted_paths.clear()
+	_click_refusals.clear()
 	combat_panel = null  # freed below when the planning UI takes the context panel
 	if combat_log_panel:
 		combat_log_panel.auto_expand(false)  # the map is what matters while plotting
@@ -779,6 +865,8 @@ func _enter_planning_phase() -> void:
 		current_planning_ui.ship_selected.connect(_on_planning_ship_selected)
 		current_planning_ui.end_planning_pressed.connect(_on_end_planning_pressed)
 		current_planning_ui.crew_overlay_requested.connect(_open_crew_overlay)
+		current_planning_ui.reset_planning_confirmed.connect(_on_reset_planning_confirmed)
+		current_planning_ui.reset_course_requested.connect(_on_reset_course_requested)
 
 	# Load into context panel (must be done before setup to ensure @onready nodes are available)
 	if context_panel:
@@ -789,6 +877,9 @@ func _enter_planning_phase() -> void:
 	current_planning_ui.setup_for_player(player_0_ships)
 	if crew_client:
 		crew_client.follow_ship(current_planning_ui.selected_ship_id)
+	# Every own ship's default course is on the map at once. The server announces PLANNING before it
+	# stores the default courses (TurnPhaseController._enter_planning_phase), so draw them once it is done.
+	_refresh_courses.call_deferred()
 
 func _on_planning_ship_selected(ship_id: String) -> void:
 	Trace.trace_log("GameController", "Planning UI: Ship selected - %s" % ship_id)
@@ -801,10 +892,6 @@ func _on_planning_ship_selected(ship_id: String) -> void:
 		Trace.trace_log("GameController", "Warning: Ship not found: %s" % ship_id)
 		return
 
-	# The plotting controls belong to the selected ship: a plot left open for another ship ends.
-	if movement_client and movement_client.is_plotting() and movement_client.get_active_ship_id() != ship_id:
-		movement_client.cancel()
-
 	# Bring the ship into view only if it is off-screen or near the edge: a smooth pan,
 	# never a rotation or zoom change (north stays up unless the player turns the camera).
 	if camera and camera.has_method("pan_to_if_needed"):
@@ -814,13 +901,36 @@ func _on_planning_ship_selected(ship_id: String) -> void:
 	_select_ship(ship_id)
 	if crew_client:
 		crew_client.follow_ship(ship_id)
+	_refresh_courses()  # the selected ship's course is drawn at full strength
+
+## Cancel, confirmed: every order of the turn back to the planning start, then redraw it all.
+func _on_reset_planning_confirmed() -> void:
+	if not GameState.phase_controller:
+		return
+	var reason: String = GameState.phase_controller.player_reset_planning(HUMAN_PLAYER_ID)
+	if reason != "":
+		Trace.trace_log("GameController", "Planning reset refused: %s" % reason)
+	_click_refusals.clear()
+	_refresh_courses()
+	if current_planning_ui and is_instance_valid(current_planning_ui):
+		current_planning_ui.refresh_crew_summaries()
+	if crew_client:
+		crew_client.refresh()
+
+## A card's Reset course: that ship back to its planning start course.
+func _on_reset_course_requested(ship_id: String) -> void:
+	if not GameState.phase_controller:
+		return
+	var reason: String = GameState.phase_controller.player_reset_course(HUMAN_PLAYER_ID, ship_id)
+	if reason != "":
+		Trace.trace_log("GameController", "Course reset of %s refused: %s" % [ship_id, reason])
+	_click_refusals.erase(ship_id)
+	_refresh_courses()
+	if crew_client:
+		crew_client.refresh()  # an MA-0 turn may no longer need the braces
 
 func _on_end_planning_pressed() -> void:
 	Trace.trace_log("GameController", "End Planning pressed")
-
-	# Cancel any stale plotting session
-	if movement_client and movement_client.is_plotting():
-		movement_client.cancel()
 
 	# The AI's plan is in already (TurnPhaseController.ai_player_ids); only the human's is sent.
 	if GameState.is_server and GameState.phase_controller:
@@ -829,102 +939,8 @@ func _on_end_planning_pressed() -> void:
 		push_warning("Client plan submission not yet implemented — needs network layer")
 
 # ============================================================================
-# Movement Plotting Response Handlers
+# Course collision warnings (pure)
 # ============================================================================
-
-func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_val: int, is_tacking: bool = false) -> void:
-	Trace.trace_log("GameController", "Plotting started for ship %s" % ship_id)
-	_ma_by_len = {0: remaining_ma_val}
-	_allowance_notes.clear()
-	var vnh = valid_hexes as MovementTypes.ValidNextHexes
-	_update_collision_hexes(vnh, [])
-	var ship_state = GameState.get_ship(ship_id)
-	if hex_overlay and hex_map:
-		var hex_grid = hex_map.get_hex_grid()
-		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid, _collision_marks)
-
-		# Show blocked directions as red overlays
-		if ship_state:
-			var blocked = blocked_hexes_for(vnh, ship_state.hex_position, ship_state.facing, hex_grid)
-			hex_overlay.show_blocked_hexes(blocked, hex_grid)
-
-	_rebuild_hover_candidates(vnh)
-	_show_collision_warning(_last_hover_hex)
-
-func _on_hex_selected(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int, is_tacking: bool = false) -> void:
-	_show_plot_step(plotted_path, valid_hexes as MovementTypes.ValidNextHexes, can_submit_val, remaining_ma_val, is_tacking)
-
-func _on_undo_complete(plotted_path: Array, valid_hexes: Variant, can_submit_val: bool, remaining_ma_val: int, is_tacking: bool = false) -> void:
-	_show_plot_step(plotted_path, valid_hexes as MovementTypes.ValidNextHexes, can_submit_val, remaining_ma_val, is_tacking)
-
-## Redraw the offered hexes, the plotted path and the readout after a step or an undo.
-func _show_plot_step(plotted_path: Array, vnh: MovementTypes.ValidNextHexes, can_submit_val: bool, remaining_ma_val: int, is_tacking: bool) -> void:
-	_update_collision_hexes(vnh, plotted_path)
-	if hex_overlay and hex_map:
-		var hex_grid = hex_map.get_hex_grid()
-		hex_overlay.show_valid_hexes(vnh.get_all_valid_moves(), hex_grid, _collision_marks)
-		hex_overlay.show_plotted_path(plotted_path, hex_grid)
-
-		# Show blocked directions from current position
-		var current_hex: Vector2i
-		var current_facing: int
-		if plotted_path.size() > 0:
-			var last_step = plotted_path[-1]
-			current_hex = last_step.hex
-			current_facing = last_step.facing
-		else:
-			var ship_state = GameState.get_ship(movement_client.active_ship_id)
-			current_hex = ship_state.hex_position
-			current_facing = ship_state.facing
-		var blocked = blocked_hexes_for(vnh, current_hex, current_facing, hex_grid)
-		hex_overlay.show_blocked_hexes(blocked, hex_grid)
-
-	_rebuild_hover_candidates(vnh)
-	_show_collision_warning(_last_hover_hex)
-
-## Record the server's remaining movement for this path length and return the note to show: the
-## latest step whose pivot changed the allowance (not just spent a point), "" when none did.
-func _track_allowance_change(plotted_path: Array, remaining_ma_val: int) -> String:
-	var n := plotted_path.size()
-	for length in _ma_by_len.keys():
-		if length > n:
-			_ma_by_len.erase(length)
-			_allowance_notes.erase(length)
-	if n > 0 and _ma_by_len.has(n - 1) and not _ma_by_len.has(n):
-		var ship_state: ShipState = GameState.get_ship(movement_client.active_ship_id) if movement_client else null
-		if ship_state and hex_map and GameState.environment:
-			var grid: HexGrid = hex_map.get_hex_grid()
-			var wind: int = GameState.environment.wind_direction
-			var old_facing: int = plotted_path[n - 2].facing if n >= 2 else ship_state.facing
-			_allowance_notes[n] = PlanningText.allowance_change_note(_ma_by_len[n - 1], remaining_ma_val,
-				grid.get_wind_facing(old_facing, wind), grid.get_wind_facing(plotted_path[n - 1].facing, wind))
-	_ma_by_len[n] = remaining_ma_val
-	for length in range(n, 0, -1):
-		if str(_allowance_notes.get(length, "")) != "":
-			return _allowance_notes[length]
-	return ""
-
-
-## Wind-facing code (L, C, B, R) of the heading at the end of the plotted path ("" if unknown).
-func _plotted_heading_code(plotted_path: Array) -> String:
-	if plotted_path.is_empty() or not hex_map or not GameState.environment:
-		return ""
-	return hex_map.get_hex_grid().get_wind_facing(plotted_path[-1].facing, GameState.environment.wind_direction)
-
-
-## Which offered moves run into another ship (keyed by click target), and whether the plotted
-## path already enters one.
-func _update_collision_hexes(vnh: MovementTypes.ValidNextHexes, plotted_path: Array) -> void:
-	var active_id: String = movement_client.active_ship_id if movement_client else ""
-	var ships: Array = GameState.get_all_ships()
-	var found := offered_collisions(vnh, ships, active_id)
-	_collision_warnings = found["warnings"]
-	_collision_marks = found["marks"]
-	_path_collision_text = ""
-	var ship_state: ShipState = GameState.get_ship(active_id)
-	if ship_state:
-		_path_collision_text = path_collision_text(plotted_path, ship_state.hex_position, ship_state.facing,
-			ships, active_id)
 
 ## The one hex an offered move enters: an ahead move its new bow hex (the click target), a turn
 ## the hex its stern swings into.
@@ -984,50 +1000,6 @@ static func path_entered_hexes(plotted_path: Array, start_bow: Vector2i, start_f
 		bow = step.hex
 		facing = step.facing
 	return result
-
-## The plotting area's warning (Task 6 shows it on the card's Course block).
-func _show_collision_warning(_hover_hex: Vector2i) -> void:
-	pass
-
-func _rebuild_hover_candidates(valid_hexes: MovementTypes.ValidNextHexes) -> void:
-	_hover_candidates.clear()
-	if valid_hexes == null:
-		return
-	for vm in valid_hexes.get_all_valid_moves():
-		_hover_candidates[vm.hex] = vm.metadata
-
-func _on_plotting_cancelled(ship_id: String) -> void:
-	_hover_candidates.clear()
-	_collision_warnings.clear()
-	_collision_marks.clear()
-	_path_collision_text = ""
-	_clear_hover()
-	Trace.trace_log("GameController", "Plotting cancelled for ship %s" % ship_id)
-	if hex_overlay:
-		hex_overlay.clear_all()
-
-func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
-	_hover_candidates.clear()
-	_collision_warnings.clear()
-	_collision_marks.clear()
-	_path_collision_text = ""
-	_clear_hover()
-	Trace.trace_log("GameController", "Movement submitted for ship %s: %d steps" % [ship_id, final_path.size()])
-
-	# Store submitted path
-	submitted_paths[ship_id] = final_path
-
-	if hex_overlay and hex_map:
-		hex_overlay.clear_valid_hexes()
-		hex_overlay.clear_plotted_path()
-		hex_overlay.show_submitted_path(ship_id, final_path, hex_map.get_hex_grid())
-
-	if crew_client:
-		crew_client.refresh()  # an MA-0 turn opens the braces
-
-func _on_plotting_error(error_code: String, message: String) -> void:
-	Trace.trace_log("GameController", "Plotting error: %s - %s" % [error_code, message])
-
 
 ## Hexes to mark as blocked around the plotting ship: the forward / port / starboard neighbours the
 ## server refuses. When the server offers no move at all (head to wind ended the move, in irons, or
@@ -1113,11 +1085,11 @@ func _on_bear_off_decision_requested(situation: MovementTypes.BearOffSituation) 
 		add_child(panel)
 	current_planning_ui = null
 	if hex_overlay and hex_map:
+		var none: Array[Vector2i] = []
 		for other_id in situation.other_plots:
-			var steps: Array = []
-			for hex: Vector2i in situation.other_plots[other_id]:
-				steps.append(MovementTypes.PlotStep.new(hex))
-			hex_overlay.show_submitted_path(other_id, steps, hex_map.get_hex_grid())
+			var hexes: Array[Vector2i] = []
+			hexes.assign(situation.other_plots[other_id])
+			hex_overlay.show_course(other_id, hexes, none, none, hex_map.get_hex_grid(), false)
 
 
 func _on_bear_off_chosen(ship_id: String, choice: String, panel: BearOffPanel) -> void:
@@ -1587,8 +1559,7 @@ func _on_game_over(result: Dictionary) -> void:
 	_clear_end_turn_ui()
 	_deselect_ship()
 	_sync_all_views()
-	if movement_client and movement_client.is_plotting():
-		movement_client.cancel()
+	_courses.clear()
 	if hex_overlay:
 		hex_overlay.clear_everything()
 	current_planning_ui = null

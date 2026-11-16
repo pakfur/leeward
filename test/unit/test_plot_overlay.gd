@@ -130,40 +130,27 @@ func test_plotted_turn_enters_its_swung_stern_hex() -> void:
 		[Vector2i(1, 0), HexGrid.stern_of(Vector2i(1, 0), 1)] as Array[Vector2i])
 
 
-func test_overlay_paints_the_swung_into_hex_but_does_not_offer_it() -> void:
+func test_course_layer_paints_the_swung_into_hex() -> void:
 	var overlay: Node3D = preload("res://scripts/view/hex_overlay.gd").new()
 	add_child_autofree(overlay)
 	var vnh := _offer(Vector2i(0, 0), 0)
 	var swung := Vector2i(0, -1)
-	overlay.show_valid_hexes(vnh.get_all_valid_moves(), grid, [vnh.starboard.hex, swung])
-	assert_eq(overlay.valid_hexes_node.get_child_count(), 4, "three offered hexes and the swung-into hex")
+	var next: Array[Vector2i] = []
+	for vm in vnh.get_all_valid_moves():
+		next.append(vm.hex)
+	overlay.show_course("me", [] as Array[Vector2i], next, [vnh.starboard.hex, swung] as Array[Vector2i], grid, true)
+	var layer: Node3D = overlay.get_node("Courses/Course_me")
+	assert_eq(layer.get_child_count(), 4, "three offered hexes and the swung-into hex")
 	var collision_meshes := 0
-	for child in overlay.valid_hexes_node.get_children():
+	for child in layer.get_children():
 		if (child as MeshInstance3D).material_override == overlay._collision_material:
 			collision_meshes += 1
 	assert_eq(collision_meshes, 2, "the risky click target and the swung-into hex")
-	var swung_world := grid.axial_to_world(swung.x, swung.y)
-	assert_eq(overlay.get_valid_hex_at_world_pos(swung_world, grid), Vector2i(-99, -99), "not clickable")
 
 
-# --- hover candidates and fire-target outlines ------------------------------------
+# --- fire-target outlines ------------------------------------
 
-func test_hover_candidates_hold_the_move_metadata() -> void:
-	# A turn's click target is the neighbour the bow turns towards; the hover must show the ship on
-	# its resulting bow hex (unchanged by a turn) and facing, which only the metadata carries.
-	var gc: Node = GameControllerScript.new()
-	autofree(gc)
-	var vnh := _offer(Vector2i(0, 0), 0)
-	gc._rebuild_hover_candidates(vnh)
-	assert_eq(gc._hover_candidates.size(), 3)
-	var meta = gc._hover_candidates[vnh.starboard.hex]
-	assert_true(meta is MovementTypes.MoveMetadata)
-	assert_same(meta, vnh.starboard.metadata)
-	assert_eq(meta.resulting_hex, Vector2i(0, 0), "a turn keeps the bow hex")
-	assert_eq(meta.resulting_facing, 1)
-	assert_eq(gc._hover_candidates[vnh.forward[0].hex].resulting_hex, vnh.forward[0].hex)
-	gc._rebuild_hover_candidates(null)
-	assert_eq(gc._hover_candidates.size(), 0)
+# The hover candidates are CourseView.hover_candidates (test_course_view.gd).
 
 
 func test_fire_target_outline_covers_bow_and_stern() -> void:
