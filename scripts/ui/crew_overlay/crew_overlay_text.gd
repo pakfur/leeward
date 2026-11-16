@@ -64,6 +64,14 @@ static func task_title(section: int, entry: Dictionary) -> String:
 			return "Reorganizing"
 		CrewRules.CODE_FF:
 			return "Fire watch" if int(params.get("fire", -1)) < 0 else "Fighting a fire"
+		"FB":
+			return "Forming boarders"
+		"BR":
+			return "Boarders ready"
+		"BA":
+			return "Boarders away"
+		"BD":
+			return "Standing down"
 	return CrewRules.task_name(code, params).capitalize()
 
 
@@ -89,6 +97,14 @@ static func progress_of(ship: ShipState, section: int, entry: Dictionary) -> Dic
 
 ## The counter's band tag: "T2/4" for multi-g-t tasks ("" otherwise).
 static func progress_tag(ship: ShipState, section: int, entry: Dictionary) -> String:
+	var code := str(entry.get("code", ""))
+	if BoardingRules.is_code(code):
+		# Boarders (boarding spec §4.1): FB forming, BR ready, BA away, BD standing down; engaged
+		# sections are fighting and locked.
+		return "fighting" if ship.boarding_action_of(section) >= 0 else code
+	if code == CrewRules.CODE_RO and str(entry.get("params", {}).get("reason", "")) == "boarding":
+		var p_ro := progress_of(ship, section, entry)
+		return "RO" if p_ro.is_empty() else "RO %d/%d" % [p_ro["now"], p_ro["total"]]
 	if str(entry.get("code", "")) == CrewRules.CODE_FF:
 		# Fire parties show the Unfouling column they roll in: g-t's this section has fought it (0.2 Q5).
 		var fire := int(entry.get("params", {}).get("fire", -1))
@@ -137,6 +153,10 @@ static func _doing(code: String) -> String:
 			return "reorganizing"
 		CrewRules.CODE_FF:
 			return "fighting fire"
+		"FB", "BR", "BA":
+			return "with the boarders"
+		"BD":
+			return "standing down"
 	return CrewRules.task_name(code)
 
 

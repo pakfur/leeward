@@ -22,7 +22,7 @@ const FIRING_RANGE_WEIGHT := 2
 const SECOND_BATTERY_BONUS := 3
 
 ## Plotting errors for ships that legitimately cannot move; the AI skips them without error.
-const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_GRAPPLED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED"]
+const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_GRAPPLED", "SHIP_CAPTURED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED"]
 
 var game_state: Node = null
 var _request_counter: int = 0
@@ -60,7 +60,69 @@ func assign_crew() -> void:
 			continue
 		if not ship_state.crew_auto:
 			sc.set_crew_auto(ship_state.ship_id, true)
-		sc.set_crew_orders(ship_state.ship_id, {"sail_target": ""})
+		sc.set_crew_orders(ship_state.ship_id, {"sail_target": "", "boarding": boarding_order(ship_state)})
+
+
+## The AI's boarding order (boarding spec §3.6), placed by rule A2b: "board:<id>" at an enemy linked
+## at the start of the g-t that it would board (struck, or its readied boarders' TBCF against the
+## enemy's visible defence gives at least +1 after the class DRM, i.e. 3:2 for an equal class);
+## "ready" while linked to an enemy or alongside one that has boarders; else "" (readied sections
+## stand down; the spec's two-g-t wait is not kept).
+func boarding_order(ship_state: ShipState) -> String:
+	if ship_state.is_out_of_play():
+		return ""
+	var linked: Array = game_state.linked_at_plot.get(ship_state.ship_id, [])
+	var readied: Array[int] = []
+	for s in range(ShipState.MARINES + 1):
+		if ship_state.is_readied(s) and s != BoardingRules.MINIMUM_CREW_SECTION:
+			readied.append(s)
+	var ids := linked.duplicate()
+	ids.sort()
+	var any_enemy_linked := false
+	for other_id in ids:
+		var other: ShipState = game_state.get_ship(str(other_id))
+		if other == null or other.player_id == ship_state.player_id:
+			continue
+		any_enemy_linked = true
+		if BoardingRules.boardable_error(ship_state, other, linked) != "":
+			continue
+		if other.is_struck() and not readied.is_empty():
+			return "board:%s" % other.ship_id
+		if not readied.is_empty() and _odds_favour(ship_state, readied.slice(0, 2), other):
+			return "board:%s" % other.ship_id
+	if any_enemy_linked:
+		return "ready"
+	var grappling = game_state.get("grappling_controller")
+	for other: ShipState in game_state.get_all_ships():
+		if other.player_id != ship_state.player_id and not other.is_out_of_play() and other.has_boarders() \
+				and grappling != null and grappling.adjacent(ship_state, other):
+			return "ready"
+	return ""
+
+
+## The odds of `sections` of the ship against the enemy's visible defence (its boarders and marines)
+## give at least +1 after the class DRM (boarding spec §3.6).
+func _odds_favour(ship_state: ShipState, sections: Array, enemy: ShipState) -> bool:
+	var boarding: BoardingController = game_state.boarding_controller
+	var p := boarding.preview(ship_state.ship_id, enemy.ship_id, sections)
+	return int(p["tbcf"]) > 0 and int(p["drm"]) >= 1
+
+
+## Whether the ship would board `enemy` with what it would send (the marines and its lowest sailor
+## section): an enemy that has struck, or odds of at least +1 after the class DRM (boarding spec §3.6).
+func would_board(ship_state: ShipState, enemy: ShipState) -> bool:
+	if enemy == null or enemy.player_id == ship_state.player_id:
+		return false
+	if enemy.is_struck():
+		return true
+	var goers: Array = []
+	if ship_state.section_alive(ShipState.MARINES):
+		goers.append(ShipState.MARINES)
+	for k in range(BoardingRules.MINIMUM_CREW_SECTION):
+		if ship_state.section_alive(k):
+			goers.append(k)
+			break
+	return _odds_favour(ship_state, goers, enemy)
 
 
 ## Grapple orders (8.C.1) for the ships of `player_ids`, as [ship_id, target_id] pairs: every
@@ -76,15 +138,20 @@ func grapple_orders(player_ids: Array[int]) -> Array:
 	return orders
 
 
-## Ungrapple orders (8.C.4) for the ships of `player_ids`: every grapple to a ship it would not
-## grapple (a friendly ship, or an enemy it would not take on).
+## Ungrapple orders (8.C.4) for the ships of `player_ids`: every grapple to a ship it would neither
+## board nor grapple (a friendly ship, or an enemy it would not take on).
 func ungrapple_orders(player_ids: Array[int]) -> Array:
 	var grappling: GrapplingController = game_state.grappling_controller
 	var orders: Array = []
 	for ship_state in _ships_of(player_ids):
 		for partner_id in grappling.ungrapple_options(ship_state.ship_id):
-			if not _wants_grapple(ship_state, game_state.get_ship(partner_id)):
-				orders.append([ship_state.ship_id, partner_id])
+			var partner: ShipState = game_state.get_ship(partner_id)
+			# Boarding spec §3.6: keep a grapple to an enemy it would board or grapple; never cut
+			# loose from a struck enemy; cut every other (friends included).
+			if partner != null and partner.player_id != ship_state.player_id \
+					and (partner.is_struck() or would_board(ship_state, partner) or _wants_grapple(ship_state, partner)):
+				continue
+			orders.append([ship_state.ship_id, partner_id])
 	return orders
 
 

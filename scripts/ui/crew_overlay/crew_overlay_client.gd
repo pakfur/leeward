@@ -204,7 +204,11 @@ func assign(section: int, station_id: String, confirmed: bool = false) -> bool:
 			changed.emit()
 			return false
 	var next := CrewRules.assign(s, current, ctx(), section, station_id)
-	return _send(next, "%s to %s" % [CrewOverlayText.section_name(section), station_id])
+	var ok := _send(next, "%s to %s" % [CrewOverlayText.section_name(section), station_id])
+	if ok and s.is_readied(section) and station_id != CrewRules.STATION_BOARDERS:
+		# 10.B.5: a readied section cannot simply leave the boarders.
+		message.emit("%s stands down this turn and is free next turn (10.B.5)." % CrewOverlayText.section_name(section), "info", [])
+	return ok
 
 
 func confirm_pending() -> void:
@@ -227,6 +231,33 @@ func set_sail_target(target: String) -> bool:
 		return false
 	var next := CrewRules.with_sail_order(s, plan(), ctx(), target)
 	return _send(next, "sail target %s" % target)
+
+
+## The boarding order from the Boarders station's picker (boarding spec §4.2): "", "ready",
+## "board:<ship_id>" or "stand_down". With Automatic on, rule A2b places the sections.
+func set_boarding_order(order: String) -> bool:
+	var s := ship()
+	if s == null:
+		return false
+	return _send(BoardingRules.with_order(s, plan(), ctx(), order), "boarding order %s" % order)
+
+
+## A readied counter on the Boarders station clicked under a "Board" order: it toggles between going
+## away (BA) and staying ready (BR); a refusal quotes the rule (10.C.1, 10.B.2).
+func toggle_away(section: int) -> bool:
+	var s := ship()
+	if s == null or not editable():
+		return false
+	if s.crew_auto:
+		message.emit("Automatic crew is on: the marines and the lowest sailor section go. Turn it off to choose.", "bad",
+			[{"label": "Turn off", "id": "turn_off_auto", "primary": true}, {"label": "OK", "id": "ok"}])
+		return false
+	var r := BoardingRules.toggle_away(s, plan(), ctx(), section)
+	if str(r["error"]) != "":
+		message.emit(str(r["error"]), "bad", [])
+		changed.emit()
+		return false
+	return _send(r["plan"], "%s board toggle" % CrewOverlayText.section_name(section))
 
 
 ## Reset to defaults (spec §4.1): tasks in progress stay, everyone else at the default stations;

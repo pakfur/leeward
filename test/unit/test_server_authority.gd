@@ -2,8 +2,9 @@ extends GutTest
 ## Server authority over game state (CLAUDE.md "Server Authority"): view-side code
 ## (scripts/ui, scripts/view, scripts/core) reads state and sends requests that the server
 ## validates (player_submit_*, including player_submit_fire_orders with its marine fire orders, player_clear_movement, player_plot_crew, player_set_crew_auto,
-## player_plot_sail_change, player_submit_maintenance_orders (grapple and ungrapple orders), dev_commands.*, including dev_commands.start_fire and
-## dev_commands.damage_ship). It never calls a state mutator or writes a ShipState field itself.
+## player_plot_sail_change, player_submit_maintenance_orders (grapple and ungrapple orders), dev_commands.*, including dev_commands.start_fire,
+## dev_commands.damage_ship and dev_commands.grapple_ships). Boarding orders are crew orders
+## (player_plot_crew); the boarding controller and capture fields are never touched by view code. It never calls a state mutator or writes a ShipState field itself.
 ## This test scans the source so a violation fails `make test`.
 
 const VIEW_DIRS := ["res://scripts/ui", "res://scripts/view", "res://scripts/core"]
@@ -58,6 +59,18 @@ const FORBIDDEN := [
 	["\\.(grappled_with|ungrapple_attempts)\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "a grapple field written from view code"],
 	["\\.(grappled_with|ungrapple_attempts)\\.(append|append_array|clear|erase|remove_at|push_back|push_front|pop_back|pop_front|insert|resize|sort|sort_custom|fill|merge)\\(",
 			"a grapple field changed in place from view code"],
+	# boarding (10.A-10.H): the view reads boarding_actions, linked_at_plot and the ShipState
+	# boarding helpers; BoardingRules' statics and BoardingController's queries are pure; orders go
+	# through phase_controller.player_plot_crew (the boarding order is a crew order)
+	["\\bboarding_controller\\.(?!preview\\(|tbcf\\(|live_action_of\\(|live_action_between\\(|locked_in_boarding\\(|counter_board\\(|action_by_id\\(|actions\\(|has_actions_to_resolve\\(|drms_for\\(|marines_in_boarding\\()",
+			"a BoardingController mutator called from view code (use player_plot_crew)"],
+	["\\b(BoardingController|BoardingTaskHandler)\\.new\\b", "a boarding controller made in view code"],
+	["(?<!dev_commands\\.)\\b(declare|capture|advance_reorganizing|end_of_turn|take_link_snapshot|transfer_control|set_controller|set_prize|set_crew|add_detached_box|remove_crew_box_from|apply_boarding_losses|detach_prize_crew|grapple_ships)\\(",
+			"a boarding or capture mutator called from view code"],
+	["\\.(controller_id|prize|detached_boxes|boarding_actions|linked_at_plot|boarding_seq|boarding_history)\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "a boarding or capture field written from view code"],
+	["\\.(prize|detached_boxes|boarding_actions|linked_at_plot|boarding_history)\\.(append|append_array|clear|erase|remove_at|push_back|push_front|pop_back|pop_front|insert|resize|sort|sort_custom|fill|merge)\\(",
+			"a boarding or capture field changed in place from view code"],
+	["\\b(_?action|a)\\.(state|attacker_sections|defender_sections|rounds|outcome|prize_aboard|finished_turn|prize_size)\\s*(=|\\+=|-=)[^=]", "a BoardingAction field written from view code"],
 	["\\.(fire_list|crew_tasks|critical_effects|plotted_sections)\\.(append|append_array|clear|erase|remove_at|push_back|push_front|pop_back|pop_front|insert|resize|sort|sort_custom|fill)\\(",
 			"a ShipState array changed in place from view code"],
 	["\\b(_?ship|ship_state|ss|state|s)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots|crew_auto|plotted_sections|task_seq|fire_list|fire_seq|explosion_checks|checked_sections|mp_used_this_turn)\\s*(=|\\+=|-=)[^=]",
@@ -117,6 +130,50 @@ func test_grapple_patterns_catch_mutations() -> void:
 		"if s.grappled_with.has(other_id):",
 		"var n := ship.grappled_with.size()",
 		"GameState.phase_controller.player_submit_maintenance_orders(0, {\"grapple\": pairs})",
+	]
+	var checks: Array = []
+	for f in FORBIDDEN:
+		var re := RegEx.new()
+		re.compile(f[0])
+		checks.append(re)
+	for line in bad:
+		var hit := false
+		for re in checks:
+			if re.search(line) != null:
+				hit = true
+		assert_true(hit, "caught: %s" % line)
+	for line in good:
+		for re in checks:
+			assert_null(re.search(line), "allowed: %s" % line)
+
+
+## The boarding patterns (boarding spec B4) catch the violations they are meant to, and let the
+## queries through.
+func test_boarding_patterns_catch_mutations() -> void:
+	var bad := [
+		"GameState.boarding_controller.resolve(6)",
+		"GameState.boarding_controller.capture(action, false, 4)",
+		"GameState.transfer_control(\"b\", 0)",
+		"GameState.ship_controller.set_controller(\"b\", 0)",
+		"set_prize(\"b\", {})",
+		"ship.controller_id = 1",
+		"s.prize[\"captor_id\"] = \"a\"",
+		"GameState.boarding_actions.append(x)",
+		"GameState.linked_at_plot = {}",
+		"action.state = \"engaged\"",
+		"a.defender_sections = []",
+		"var c = BoardingController.new(GameState)",
+		"damage_controller.apply_boarding_losses(\"b\", 5, [0], \"C\", 4)",
+	]
+	var good := [
+		"var p = GameState.boarding_controller.preview(ship_id, enemy_id, [4, 0])",
+		"var plan := BoardingRules.with_order(s, plan(), ctx(), order)",
+		"if ship.is_captured():",
+		"var captor := str(ship.prize.get(\"captor_id\", \"\"))",
+		"for a in GameState.boarding_actions:",
+		"if action.state == BoardingAction.ENGAGED:",
+		"GameState.phase_controller.player_plot_crew(0, ship_id, request)",
+		"GameState.dev_commands.grapple_ships(\"a\", \"b\")",
 	]
 	var checks: Array = []
 	for f in FORBIDDEN:

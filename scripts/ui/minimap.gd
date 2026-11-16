@@ -212,10 +212,8 @@ func _create_ship_icon(ship_id: String) -> void:
 	icon.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 
-	# Create placeholder texture (simple colored square)
-	var img = Image.create(16, 16, false, Image.FORMAT_RGB8)
-	img.fill(Color.WHITE)
-	icon.texture = ImageTexture.create_from_image(img)
+	# Placeholder texture: a solid square, hollow for a prize (boarding spec §4.5)
+	icon.texture = icon_texture(ship.is_captured())
 
 	# Owner colour, shared with the main-map ring/pennant (green = player, red = enemy)
 	icon.modulate = icon_color(ship)
@@ -227,6 +225,31 @@ func _create_ship_icon(ship_id: String) -> void:
 
 ## Grey for a destroyed ship (the wreck), else the owner colour.
 const DESTROYED_ICON_COLOR := Color(0.45, 0.45, 0.45)
+
+static var _solid_texture: ImageTexture = null
+static var _hollow_texture: ImageTexture = null
+
+
+## The icon's square: solid, or hollow (a 3-pixel frame) for a prize in the captor's colour.
+static func icon_texture(hollow: bool) -> ImageTexture:
+	if hollow and _hollow_texture != null:
+		return _hollow_texture
+	if not hollow and _solid_texture != null:
+		return _solid_texture
+	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	img.fill(Color.WHITE if not hollow else Color(1, 1, 1, 0))
+	if hollow:
+		for x in 16:
+			for y in 16:
+				if x < 3 or y < 3 or x > 12 or y > 12:
+					img.set_pixel(x, y, Color.WHITE)
+	var tex := ImageTexture.create_from_image(img)
+	if hollow:
+		_hollow_texture = tex
+	else:
+		_solid_texture = tex
+	return tex
+
 
 static func icon_color(ship: ShipState) -> Color:
 	return DESTROYED_ICON_COLOR if ship.is_destroyed() else ShipView.owner_color(ship.player_id)
@@ -247,6 +270,9 @@ func _update_ship_positions() -> void:
 
 		var icon = ship_icons[ship_id]
 		icon.modulate = icon_color(ship)
+		if bool(icon.get_meta("hollow", false)) != ship.is_captured():
+			icon.texture = icon_texture(ship.is_captured())
+			icon.set_meta("hollow", ship.is_captured())
 
 		# Same hex -> world mapping as the main map (pointy-top axial; x east, z south),
 		# and the minimap draws +X right and +Z down, i.e. north up like the main camera.

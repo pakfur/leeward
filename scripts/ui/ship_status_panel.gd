@@ -91,6 +91,8 @@ static func movement_line(s: ShipState, allowance: int, partner_name: String = "
 		return "Cannot move (destroyed)"
 	if s.is_struck():
 		return "Cannot move (struck)"
+	if s.is_captured():
+		return "Cannot move (a prize cannot sail, 10.H.2)"
 	if s.is_dismasted():
 		return "Cannot move (dismasted)"
 	if s.fouled_with != "":
@@ -139,6 +141,17 @@ static func sail_change_line(s: ShipState) -> String:
 ## reorganization (hull #4) with their progress, the sections at the braces this turn.
 static func crew_task_lines(s: ShipState) -> Array[String]:
 	var lines: Array[String] = []
+	if s.is_captured():
+		# Boarding spec §4.5: "Prize of Vengeance · prize crew 3 (B3) · original crew 18 below".
+		var captor: ShipState = GameState.get_ship(str(s.prize.get("captor_id", "")))
+		var original: Dictionary = s.prize.get("original_crew", {})
+		var below := int(original.get("marine_count", 0))
+		for b in original.get("crew_count", []):
+			below += int(b)
+		var crew_text := "prize crew coming aboard"
+		if bool(s.prize.get("prize_crew_aboard", false)):
+			crew_text = "prize crew %d (%s%d)" % [s.total_crew_boxes(), s.crew_quality, s.morale_rating]
+		lines.append("Prize of %s · %s · original crew %d below" % [captor.ship_name if captor else "the enemy", crew_text, below])
 	for task in s.crew_tasks:
 		if task.get("ended", "") != "":
 			continue
@@ -149,8 +162,20 @@ static func crew_task_lines(s: ShipState) -> Array[String]:
 		var crew := " ".join(names)
 		match str(task.get("code", "")):
 			ReorganizeHandler.CODE:
-				lines.append("%s reorganizing, %d of %d turns" % [crew, int(task.get("done", 0)),
+				var aboard := ""
+				if str(task.get("params", {}).get("reason", "")) == "boarding":
+					var prize: ShipState = GameState.get_ship(str(task.get("params", {}).get("prize", "")))
+					aboard = " aboard %s" % (prize.ship_name if prize else "the prize")
+				lines.append("%s reorganizing%s, %d of %d turns" % [crew, aboard, int(task.get("done", 0)),
 					s.task_turns_required(task)])
+			"FB":
+				lines.append("%s forming boarders" % crew)
+			"BR":
+				lines.append("%s boarders ready%s" % [crew, " (fighting)" if int(task.get("params", {}).get("action", -1)) >= 0 else ""])
+			"BA":
+				lines.append("%s boarding%s" % [crew, " (fighting)" if int(task.get("params", {}).get("action", -1)) >= 0 else ""])
+			"BD":
+				lines.append("%s standing down" % crew)
 			TackCrewHandler.CODE:
 				lines.append("%s at the braces (tacking)" % crew)
 			RepairController.CODE_RR, RepairController.CODE_RH, RepairController.CODE_RS:
@@ -170,6 +195,10 @@ static func badges(s: ShipState) -> Array[String]:
 		result.append("DESTROYED")
 	if s.is_struck():
 		result.append("STRUCK")
+	if s.is_captured():
+		result.append("PRIZE")
+	if s.has_boarders():
+		result.append("BOARDERS")
 	if s.is_dismasted():
 		result.append("DISMASTED")
 	return result

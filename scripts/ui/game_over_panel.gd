@@ -11,7 +11,7 @@ const PLAYER_ID := 0
 const ENEMY_ID := 1
 const PANEL_SIZE := Vector2(460, 0)
 const TOP_MARGIN := 24.0  # gap above the card: it sits at the upper centre, clear of the ships
-const POINTS_NOTE := "Points: full value for each enemy ship struck or destroyed, part value for sections destroyed."
+const POINTS_NOTE := "Points: full value for each enemy ship struck, destroyed or captured, part value for sections destroyed."
 
 var _headline_label: Label
 var _reason_label: Label
@@ -48,10 +48,10 @@ static func struck_counts(ships: Array, player_id: int) -> Dictionary:
 	var struck := 0
 	var total := 0
 	for ship in ships:
-		if ship.player_id != player_id:
+		if ship.original_player_id != player_id:  # a prize counts for the side that lost it (VI.B.2-3)
 			continue
 		total += 1
-		if ship.is_out_of_play():  # struck or destroyed
+		if ship.is_out_of_play():  # struck, destroyed or captured
 			struck += 1
 	return {"struck": struck, "total": total}
 

@@ -123,6 +123,30 @@ func place_ship(ship_id: String, bow: Vector2i, facing: int) -> String:
 	return ""
 
 
+## Grapples two adjacent ships at once (ShipStateController.add_grapple, no roll), for setting up a
+## boarding in a running game. The link counts for boarding from the next PLANNING (10.A.2:
+## linked at the start of the g-t), or at once when `count_now` (GameState.linked_at_plot is
+## retaken). Refused unless both ships exist, are in play or struck, and are adjacent.
+func grapple_ships(ship_id: String, other_id: String, count_now: bool = false) -> String:
+	var reason := _refusal()
+	if reason != "":
+		return reason
+	var a: ShipState = game_state.get_ship(ship_id)
+	var b: ShipState = game_state.get_ship(other_id)
+	if a == null or b == null or ship_id == other_id:
+		return "two different ships are needed"
+	if a.is_destroyed() or b.is_destroyed() or a.is_captured() or b.is_captured():
+		return "a destroyed ship or a prize cannot be grappled from the Developer UI"
+	if not game_state.grappling_controller.adjacent(a, b):
+		return "%s and %s are not adjacent" % [ship_id, other_id]
+	if not game_state.ship_controller.add_grapple(ship_id, other_id):
+		return "the server refused the grapple"
+	if count_now:
+		game_state.boarding_controller.take_link_snapshot()
+	Trace.trace_log("DevCommands", "Grappled %s and %s" % [ship_id, other_id])
+	return ""
+
+
 ## Skips to the next phase.
 func advance_phase() -> String:
 	var reason := _refusal()

@@ -9,6 +9,7 @@ extends RefCounted
 ##      (CrewRules.fire_draft; ctx.fires, the fires burning);
 ##   A2 other tasks in progress continue with the same sections while still legal (RR is dropped
 ##      above FS, RH when the movement plot uses more than 4 MPs);
+##   A2b the boarding order (BoardingRules.auto_assign, boarding spec §2.4 #6);
 ##   A3 the ordered sail change, 1 or 2 sections in worker order;
 ##   A4 tacking crew: when the movement plot holds a turn at MA 0, as many of 3 sections as are
 ##      free, in worker order (5.D.2a);
@@ -46,9 +47,15 @@ static func allocate(ship: ShipState, orders: Dictionary, ctx: Dictionary) -> Di
 			continue
 		if not repair_allowed(ship, str(task["code"]), ctx):
 			continue
+		if BoardingRules.is_code(str(task["code"])):
+			continue  # boarders follow the boarding order (A2b)
 		for section in sections:
 			taken[int(section)] = {"code": str(task["code"]),
 				"params": (task.get("params", {}) as Dictionary).duplicate(true)}
+	# A2b: the boarding order (boarding spec §2.4 #6): "ready" forms or keeps the marines and the
+	# lowest sailor section as boarders, "board:<id>" also sends the readied ones away, no order or
+	# "stand_down" disbands readied sections.
+	taken = BoardingRules.auto_assign(ship, orders, ctx, taken)
 	# A3: the ordered sail change. Placed only when every section it needs is free; otherwise it
 	# does not start ("no crew") and nobody leaves the guns for it.
 	var needed := CrewRules.sail_sections_needed(ship, orders)

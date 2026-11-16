@@ -477,10 +477,26 @@ func _build_deck(deck: Dictionary, small: bool, portrait: bool) -> Control:
 		panel.content.add_child(_station_header(title, right, fs_label, _rect_width_px(rect, small, portrait)))
 		if id == CrewRules.STATION_SAILS and not small:
 			panel.content.add_child(_sail_picker(st))
+		if id == CrewRules.STATION_BOARDERS and not small:
+			panel.content.add_child(_boarding_picker(st))
 		var slots := _slots(small)
 		for s in occ:
 			slots.add_child(_mini(int(s)) if small else _counter(int(s), csize))
 		panel.content.add_child(slots)
+		var standing: Array = st.get("standing_down", [])
+		if id == CrewRules.STATION_BOARDERS and not standing.is_empty():
+			# 10.B.5: readied sections taken off the boarders stand down (BD). They show as compact
+			# "M · BD" tags in the station's "Standing down" strip (here: after its counters, so the
+			# small station never clips them).
+			var strip := HBoxContainer.new()
+			strip.name = "StandingDownStrip"
+			strip.mouse_filter = MOUSE_FILTER_IGNORE
+			strip.add_theme_constant_override("separation", 2)
+			for s in standing:
+				var tag := _mini(int(s))
+				tag.text = "%s · BD" % CrewOverlayText.section_name(int(s))
+				strip.add_child(tag)
+			slots.add_child(strip)
 		if not small:
 			var warn: String = st.get("warning", "")
 			if why != "":
@@ -539,6 +555,45 @@ func _sail_picker(st: Dictionary) -> Control:
 	sel.tooltip_text = "The sail change ordered (an order: it stays live with Automatic on)"
 	sel.item_selected.connect(func(i): client.set_sail_target(targets[i]))
 	return sel
+
+
+## The Boarders station's order picker (boarding spec §4.2): No boarders · Stand ready · Board
+## ‹enemy›! (one per enemy that may be boarded, with the odds) · Stand down. Sends the order through
+## the client (player_plot_crew).
+func _boarding_picker(st: Dictionary) -> Control:
+	var box := _vbox(1)
+	var sel := OptionButton.new()
+	sel.name = "BoardingOrderPicker"
+	sel.focus_mode = FOCUS_NONE
+	sel.fit_to_longest_item = false
+	sel.clip_text = true
+	sel.add_theme_font_size_override("font_size", Style.px(12))
+	var orders: Array = []
+	var current: String = st.get("order", "")
+	var odds := ""
+	for c in st.get("choices", []):
+		sel.add_item(str(c["text"]))
+		var idx := sel.get_item_count() - 1
+		if str(c.get("odds", "")) != "":
+			sel.set_item_tooltip(idx, str(c["odds"]))
+		orders.append(str(c["order"]))
+		if str(c["order"]) == current:
+			odds = str(c.get("odds", ""))
+	var at := orders.find(current)
+	if at < 0 and current != "":
+		sel.add_item(current.replace("board:", "Board ") + " (not possible now)")
+		orders.append(current)
+		at = orders.size() - 1
+	sel.select(maxi(0, at))
+	sel.disabled = not client.editable() or str(st.get("disabled_reason", "")) != ""
+	sel.tooltip_text = "The boarding order (it stands until changed; with Automatic on the marines and the lowest sailor section are placed for you)"
+	sel.item_selected.connect(func(i): client.set_boarding_order(orders[i]))
+	box.add_child(sel)
+	if odds != "":
+		var l := Style.label(odds, 10.5, Color("#3a2a17"), true)
+		l.name = "BoardingOdds"
+		box.add_child(l)
+	return box
 
 
 func _add_markers(dv: CrewDeckView, deck: Dictionary) -> void:
@@ -757,6 +812,11 @@ func deck_card_clicked(deck_id: String) -> void:
 
 func _on_counter_clicked(section: int) -> void:
 	if not client.editable():
+		return
+	# A readied boarder under a "Board" order: the click toggles BA / BR (boarding spec §4.2).
+	if client.selected < 0 and client.station_of(section) == CrewRules.STATION_BOARDERS and _ship != null \
+			and _ship.is_readied(section) and str(_plan.get("orders", {}).get("boarding", "")).begins_with("board:"):
+		client.toggle_away(section)
 		return
 	client.pick(section)
 

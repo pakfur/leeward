@@ -12,9 +12,9 @@ extends RefCounted
 ## Marine orders are {"ship_id", "target_id"} dictionaries, a second list in the fire submission
 ## (TurnPhaseController.player_submit_fire_orders).
 ##
-## Not yet modelled (boarding spec B4):
-## 10.D.7's Crew Loss row while boarders are formed (B4). The "target has boarders preparing or
-## prepared" -1 reads live FB/BR/BA tasks, which exist from B4.
+## Boarding (boarding spec B4): the "target has boarders preparing or prepared" -1 reads
+## ShipState.has_boarders(); while boarders are formed the Crew Loss row follows 10.D.7
+## (BoardingRules.crew_loss_cause).
 
 ## Live tasks that put boarders on the target ("preparing or prepared", 10.B.6).
 const BOARDER_CODES: Array[String] = ["FB", "BR", "BA"]
@@ -152,7 +152,8 @@ func resolve(shots: Array[Dictionary], phase: int) -> void:
 			"crew": hits,
 		}, str(shot["target_id"]))
 		if hits > 0:
-			game_state.damage_controller.apply_crew_losses(str(shot["target_id"]), hits, CREW_LOSS_CAUSE,
+			var cause := BoardingRules.crew_loss_cause(game_state.get_ship(str(shot["target_id"])), CREW_LOSS_CAUSE)  # 10.D.7
+			game_state.damage_controller.apply_crew_losses(str(shot["target_id"]), hits, cause,
 				phase, str(shot["ship_id"]), DAMAGE_CAUSE)
 		Trace.trace_log("MarineFire", "%s -> %s: d6 %d %+d = %d, %d box(es)" % [
 			shot["ship_id"], shot["target_id"], d6, int(shot["modifier"]), total, hits])
@@ -165,10 +166,7 @@ static func linked(firer: ShipState, target_id: String) -> bool:
 
 ## The ship has boarders preparing or prepared (a live FB, BR or BA task, 10.B.6).
 static func has_boarders(ship: ShipState) -> bool:
-	for code in BOARDER_CODES:
-		if not ship.tasks_with(code).is_empty():
-			return true
-	return false
+	return ship != null and ship.has_boarders()
 
 
 static func _ship_class(ship: ShipState) -> int:

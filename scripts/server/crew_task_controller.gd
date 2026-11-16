@@ -62,6 +62,16 @@ func plot_crew(player_id: int, ship_id: String, plan: Dictionary) -> String:
 	var target := str(plan.get("orders", {}).get("sail_target", ""))
 	if target != "" and target != ship.ordered_sail_target() and not target in SailController.targets_for(ship):
 		return "Cannot change to %s from %s" % [target, ship.sail_state]
+	# The boarding order (boarding spec §2.4 #6): "", "ready", "stand_down" or "board:<enemy>".
+	var boarding := str(plan.get("orders", {}).get("boarding", ""))
+	if boarding != "" and boarding != "ready" and boarding != "stand_down":
+		if not boarding.begins_with("board:"):
+			return "Unknown boarding order %s" % boarding
+		var board_target := boarding.trim_prefix("board:")
+		if board_target != ship.boarding_order().trim_prefix("board:"):
+			var why := BoardingRules.target_error(ship, CrewRules.context(game_state, ship), board_target)
+			if why != "":
+				return why
 	_store(ship, CrewRules.normalize(ship, plan, CrewRules.context(game_state, ship)))
 	return ""
 

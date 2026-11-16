@@ -148,6 +148,9 @@ func _play_turn(fire: Callable) -> bool:
 	if pc.current_phase != PHASES.MOVEMENT_RESOLUTION:
 		return _stall(turn, "plans did not reach MOVEMENT_RESOLUTION (%s)" % pc.get_phase_name())
 	pc.on_playback_completed()
+	if pc.current_phase == PHASES.COMBAT_RESOLUTION and pc.combat_step == TurnPhaseController.CombatStep.RESOLVE:
+		# Boarding with no shot to fire: RESOLVE runs the boarding alone (boarding spec §3.1).
+		pc.on_combat_playback_completed()
 	if pc.current_phase == PHASES.COMBAT_RESOLUTION:
 		if pc.combat_step != TurnPhaseController.CombatStep.DECLARE:
 			return _stall(turn, "combat not waiting in DECLARE")

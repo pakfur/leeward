@@ -28,6 +28,7 @@ var combat_log_panel: CombatLogPanel = null
 var end_turn_panel: Control = null  # context-panel content while waiting in POST_COMBAT
 var end_turn_button: Button = null
 var game_over_panel: GameOverPanel = null  # modal result card; non-null once the game has ended
+var _boarding_card: BoardingCard = null  # the last boarding round, over the map (boarding spec §4.5)
 var _combat_playback_active: bool = false  # true from combat_log_ready until playback finishes
 var _combat_playback_skip: bool = false
 var pause_menu: Control = null  # PauseMenu: Escape / the corner Menu button
@@ -764,6 +765,8 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 	_close_fire_panel()
 	if phase != GameState.GamePhase.POST_COMBAT:
 		_clear_end_turn_ui()
+	if phase == GameState.GamePhase.PLANNING:
+		_clear_boarding_card()
 	if crew_client:
 		if phase != GameState.GamePhase.PLANNING and crew_client.is_open:
 			crew_client.close()  # the map plays the turn; C reopens the overlay read-only
@@ -1614,11 +1617,17 @@ func _play_combat_log(combat_log: PhaseEvents.PhaseLog) -> void:
 	if combat_log_panel:
 		combat_log_panel.auto_expand(true)
 		combat_log_panel.set_skip_hint(not instant)
+	if instant:
+		for ev in combat_log.events:
+			if ev.type == PhaseEvents.Type.BOARDING_ROUND:
+				_show_boarding_card(combat_log, ev)
 	if not instant:
 		for ev in CombatLogPanel.playback_events(combat_log):
 			if _combat_playback_skip or _leaving:
 				break
 			combat_log_panel.set_reveal_limit(combat_log.events.find(ev) + 1)
+			if ev.type == PhaseEvents.Type.BOARDING_ROUND:
+				_show_boarding_card(combat_log, ev)
 			if CombatLogPanel.syncs_views(ev):
 				_sync_all_views()
 			var waited := 0.0
@@ -1637,6 +1646,38 @@ func _play_combat_log(combat_log: PhaseEvents.PhaseLog) -> void:
 		combat_log_panel.set_skip_hint(false)
 	_sync_all_views()
 	_finish_combat_playback()
+
+
+## The boarding card for a BOARDING_ROUND event (boarding spec §4.5): shown over the map until the
+## player closes it or the next turn's planning begins.
+func _show_boarding_card(combat_log: PhaseEvents.PhaseLog, ev: PhaseEvents.PhaseEvent) -> void:
+	_clear_boarding_card()
+	var result := {}
+	var start := combat_log.events.find(ev)
+	for k in range(start + 1, combat_log.events.size()):
+		var later: PhaseEvents.PhaseEvent = combat_log.events[k]
+		if later.type == PhaseEvents.Type.BOARDING_RESULT and later.ship_id == ev.ship_id:
+			result = later.data
+			break
+	var names := {}
+	for s in GameState.get_all_ships():
+		names[s.ship_id] = s.ship_name
+	var card := BoardingCard.new()
+	card.setup(ev.ship_id, ev.target_id, ev.data, result, names)
+	if ui:
+		ui.add_child(card)
+	else:
+		add_child(card)
+	card.reset_size()
+	var area := get_viewport().get_visible_rect()
+	card.position = Vector2(area.size.x * 0.5 - card.size.x * 0.5, 70.0)
+	_boarding_card = card
+
+
+func _clear_boarding_card() -> void:
+	if _boarding_card != null and is_instance_valid(_boarding_card):
+		_boarding_card.queue_free()
+	_boarding_card = null
 
 
 func _skip_combat_playback() -> void:
@@ -1759,6 +1800,7 @@ func _on_game_over(result: Dictionary) -> void:
 		done.text = "The battle is over."
 		context_panel.set_context_title("Game over")
 		context_panel.set_context_content(done)  # also frees any leftover planning controls
+	_clear_boarding_card()
 	game_over_panel = GameOverPanelScene.instantiate()
 	if ui:
 		ui.add_child(game_over_panel)

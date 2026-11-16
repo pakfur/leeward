@@ -30,12 +30,20 @@ enum Type {
 	MARINE_FIRE,  # 7.G marine fire from ship_id at target_id: {boxes, column, modifiers, modifier, d6, total, crew}
 	GRAPPLE,  # 8.C.2 grappling roll by ship_id at target_id: {roll, modifiers, modifier, total, needed, success, in_irons?}
 	UNGRAPPLE,  # 8.C.4 ungrappling roll by ship_id from target_id: {roll, modifiers, modifier, total, needed, attempt, success}
+	BOARDERS,  # 10.B.6 ship_id forms (FB) or disbands (BD) boarders, public: {sections, task}
+	BOARDERS_AWAY,  # 10.C.1 ship_id's boarders go away onto target_id: {sections, action | joins}
+	MARINES_DEFEND,  # 10.C.3 ship_id's marines replotted to FB against boarders from target_id: {cancelled_task, done}
+	BOARDING_ROUND,  # 10.D one round, ship_id (attacker) onto target_id: {action, round, attacker: {...}, defender: {...}}
+	BOARDING_RESULT,  # 10.D.5 the round's outcome: {special, side, d10, mr, mcs, result: fight_on/captured/repulsed/driven_off}
+	SHIP_CAPTURED,  # 10.E.2 ship_id is taken by target_id: {captor_id, struck_before, action}
+	PRIZE_CREW,  # 10.G.7 a prize crew from target_id goes aboard ship_id: {sailors, marines, cq, mr, crew_count, marine_count}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
 const CREW_TASK_NAMES := {
 	"T": "work the braces", "RO": "reorganize", "FF": "fight the fire",
 	"RR": "repair rigging", "RH": "repair the hull", "RS": "repair the shrouds",
+	"FB": "form boarders", "BR": "stand ready to board", "BA": "board", "BD": "disband the boarders",
 }
 
 const MODIFIER_LABELS := {
@@ -189,6 +197,14 @@ static func times_text(count: int) -> String:
 	return "%d times" % count
 
 
+## "S1, marines" for crew section indices (4 = marines).
+static func sections_text(sections: Array) -> String:
+	var names := PackedStringArray()
+	for s in sections:
+		names.append("marines" if int(s) == ShipState.MARINES else ShipState.SECTION_NAMES[clampi(int(s), 0, 4)])
+	return ", ".join(names)
+
+
 ## "fighting sail (FS)" for a sail-state code; unknown codes are shown as given.
 static func sail_name(code: String) -> String:
 	var key := code.to_upper()
@@ -207,6 +223,8 @@ static func morale_trigger_text(trigger: String) -> String:
 		return "critical hit"
 	if trigger.begins_with("fire_"):
 		return "fire breaks out"
+	if trigger.begins_with("boarding_"):
+		return "boarders repulsed"
 	if trigger.begins_with("unfought_"):
 		return "a fire with no one to fight it"
 	if trigger.begins_with("hull_") and trigger.substr(5).is_valid_int():
@@ -319,6 +337,31 @@ class PhaseEvent extends RefCounted:
 				return _grapple_text(who, other)
 			Type.UNGRAPPLE:
 				return _ungrapple_text(who, other)
+			Type.BOARDERS:
+				var secs := PhaseEvents.sections_text(data.get("sections", []))
+				if str(data.get("task", "")) == "BD":
+					return "%s stands down its boarders (%s)" % [who, secs]
+				return "%s forms boarders (%s)" % [who, secs]
+			Type.BOARDERS_AWAY:
+				if data.get("joins", false):
+					return "%s sends more boarders (%s) into the fight on %s" % [who,
+						PhaseEvents.sections_text(data.get("sections", [])), other]
+				return "%s: boarders away! (%s) onto %s" % [who, PhaseEvents.sections_text(data.get("sections", [])), other]
+			Type.MARINES_DEFEND:
+				var old := str(data.get("cancelled_task", ""))
+				if old == "" or old == "BD":
+					return "%s's marines turn out to repel boarders" % who
+				return "%s's marines drop their work (%s) to repel boarders" % [who,
+					PhaseEvents.CREW_TASK_NAMES.get(old, old.to_lower())]
+			Type.BOARDING_ROUND:
+				return _boarding_round_text(who, other)
+			Type.BOARDING_RESULT:
+				return _boarding_result_text(who, other)
+			Type.SHIP_CAPTURED:
+				return "%s is taken by %s%s" % [who, other, " (she had struck)" if data.get("struck_before", false) else ""]
+			Type.PRIZE_CREW:
+				var n := int(data.get("sailors", 0)) + int(data.get("marines", 0))
+				return "Prize crew of %d (%s%s) from %s put aboard %s" % [n, _val("cq"), _val("mr"), other, who]
 			Type.DESTROYED:
 				var text := "%s explodes and is destroyed" % who
 				if target_id != "":
@@ -607,6 +650,8 @@ class PhaseEvent extends RefCounted:
 			return "%s loses %s to fire" % [who, hits]
 		if data.get("cause", "") == "marine_fire":
 			return "%s loses %s to musketry" % [who, hits]
+		if data.get("cause", "") == "boarding":
+			return "%s loses %s in the boarding (%s BCF needed)" % [who, hits, _val("bcf_needed")]
 		return "%s loses %s" % [who, hits]
 
 	## "X's marines fire on Y (7 boxes, column 7-8) — d6 5, alongside −1 → 4: 1 crew box" (7.G).
@@ -633,6 +678,34 @@ class PhaseEvent extends RefCounted:
 				names.append(who if sid == ship_id else other)
 			text += "; %s %s in irons, head to wind" % [" and ".join(names), "is" if names.size() == 1 else "are"]
 		return text
+
+	## "Boarding, X onto Y: 62 v 44; attacker 9 −2 = 7, defender 9 −1 = 8" (10.D.1-3).
+	func _boarding_round_text(who: String, other: String) -> String:
+		var a: Dictionary = data.get("attacker", {})
+		var d: Dictionary = data.get("defender", {})
+		var side := func(x: Dictionary) -> String:
+			var drm := int(x.get("drm", 0))
+			return "%d %s%d = %d" % [int(x.get("roll", 0)), "−" if drm < 0 else "+", absi(drm), int(x.get("total", 0))]
+		return "Boarding, %s onto %s: %d v %d; attacker %s, defender %s" % [who, other, int(a.get("tbcf", 0)),
+			int(d.get("tbcf", 0)), side.call(a), side.call(d)]
+
+	## "X's boarders are repulsed and take 1 MC" / "Y is captured!" / "The fight aboard Y goes on".
+	func _boarding_result_text(who: String, other: String) -> String:
+		var d10 := int(data.get("d10", -1))
+		var kind := "capture roll" if str(data.get("special", "")).begins_with("capture") else "repulse roll"
+		var roll := " (%s d10 %d %s MR %d)" % [kind, d10, "<" if d10 < int(data.get("mr", 0)) else "≥", int(data.get("mr", 0))] if d10 >= 0 else ""
+		match str(data.get("result", "")):
+			"captured":
+				return "%s is captured!%s" % [other, roll]
+			"repulsed":
+				var mcs := int(data.get("mcs", 0))
+				return "%s's boarders are repulsed%s%s" % [who, " and take %s" % PhaseEvents.plural(mcs, "MC") if mcs > 0 else "", roll]
+			"driven_off":
+				return "%s's boarders are all lost: %s holds" % [who, other]
+		var special := str(data.get("special", "none"))
+		if special != "none" and d10 >= 0:
+			return "The fight aboard %s goes on%s" % [other, roll]
+		return "The fight aboard %s goes on" % other
 
 	## "X cuts the grapples to Y — d10 3, crew −2 → 1 ≤ 2 (1st try): free" (8.C.4).
 	func _ungrapple_text(who: String, other: String) -> String:

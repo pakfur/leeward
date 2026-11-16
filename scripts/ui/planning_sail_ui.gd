@@ -41,6 +41,8 @@ static func status_badge(ship: ShipState) -> String:
 		return "DESTROYED"
 	if ship.is_struck():
 		return "STRUCK"
+	if ship.is_captured():
+		return "PRIZE"
 	if ship.is_dismasted():
 		return "DISMASTED"
 	if ship.fouled_with != "":
@@ -61,7 +63,7 @@ static func fire_badge(ship: ShipState) -> String:
 ## The card badge text: the status badge and the fire badge, joined.
 static func card_badge(ship: ShipState) -> String:
 	var parts: PackedStringArray = []
-	for b in [status_badge(ship), fire_badge(ship)]:
+	for b in [status_badge(ship), fire_badge(ship), "BOARDERS" if ship.has_boarders() else ""]:
 		if b != "":
 			parts.append(b)
 	return " · ".join(parts)
@@ -75,6 +77,7 @@ static func movement_block_reason(ship: ShipState) -> String:
 	match status_badge(ship):
 		"DESTROYED": return "Ship has been destroyed."
 		"STRUCK": return "Ship has struck its colours and cannot move."
+		"PRIZE": return "Prize: cannot sail (10.H.2)."
 		"DISMASTED": return "Ship is dismasted and cannot move."
 		"FOULED": return "Ship is fouled with %s and cannot move until it breaks free." % ship.fouled_with
 		"GRAPPLED": return "Ship is grappled to %s and cannot move until the grapples are cut (8.C.7)." % ", ".join(ship.grappled_with)

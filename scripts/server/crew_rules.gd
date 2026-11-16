@@ -16,6 +16,8 @@ const STATION_GUNS := "guns"
 const STATION_MARINE_FIRE := "marine_fire"
 const STATION_SAILS := "sails"
 const STATION_BRACES := "braces"
+## The Boarders station (boarding spec §4.1-4.2): FB, BR, BA and, in its "Standing down" strip, BD.
+const STATION_BOARDERS := "boarders"
 ## Sections in RO (crew disorganized) sit here; not a drop target (spec §4.3).
 const STATION_REORGANIZING := "reorganizing"
 ## Fire stations are "fire_<seq>", one per fire burning (8.E.2).
@@ -38,13 +40,13 @@ const ONE_TURN_CODES: Array[String] = ["T", "BD"]
 const DRAFT_TIE_ORDER: Array[String] = ["RS", "RR", "RH", "SAIL"]
 ## Short words for the planning-panel summary line (spec §4.8).
 const SUMMARY_WORDS := {"guns": "guns", "marine_fire": "fire", "sails": "sails", "braces": "braces",
-	"reorganizing": "RO"}
+	"reorganizing": "RO", "boarders": "boarders"}
 ## Station labels and short codes (small deck cards), spec §4.3.
 const STATION_LABELS := {"guns": "Serve the guns", "marine_fire": "Marine fire", "sails": "Sails aloft",
-	"braces": "Braces (tacking)", "reorganizing": "Reorganizing", "rr": "Rigging repair",
+	"braces": "Braces (tacking)", "reorganizing": "Reorganizing", "boarders": "Boarders", "rr": "Rigging repair",
 	"rh": "Hull repair", "rs": "Shroud repair"}
 const STATION_SHORT := {"guns": "Guns", "marine_fire": "Marines", "sails": "Sails", "braces": "T",
-	"reorganizing": "RO", "rr": "RR", "rh": "RH", "rs": "RS"}
+	"reorganizing": "RO", "boarders": "FB", "rr": "RR", "rh": "RH", "rs": "RS"}
 ## Codes whose sections are locked once begun (5.F.9: a sail change must be completed).
 const LOCKED_CODES: Array[String] = ["SAIL"]
 ## Critical effects whose 8.D.5 fix roll the marines would spoil if busy (+1, "marines not avail.").
@@ -79,6 +81,7 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 	for pair in adjacent:
 		adjacent_names.append(str(pair[1]))
 	var turn = game_state.get("current_turn") if game_state != null else null
+	var boarding := boarding_context(game_state, ship)
 	var ma0_turn := false
 	var steps: Array = ship.plotted_actions.get("movement", [])
 	if not steps.is_empty() and game_state != null and game_state.get("ship_controller") != null \
@@ -99,7 +102,73 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 		# Names of the enemy ships the marines could fire on (7.G.1), by ship_id.
 		"adjacent_enemies": adjacent_names,
 		"turn": int(turn) if turn != null else 0,
+		# Boarding (boarding spec §2.4; BoardingRules): the enemies the ship may board this g-t
+		# [{id, name, odds}], why others may not {id: reason}, counter-boarding {enemy: [sections]},
+		# and every ship's name.
+		"board_targets": boarding["board_targets"],
+		"board_refusals": boarding["board_refusals"],
+		"counter_board": boarding["counter_board"],
+		"ship_names": boarding["ship_names"],
 	}
+
+
+## The boarding part of context(): ships linked to `ship` when PLANNING began (10.A.2) that it may
+## board, with the odds as they stand (BoardingController.preview; the enemy counts only its
+## announced boarders and its marines), and counter-boarding rights (10.E.4). Pure read.
+static func boarding_context(game_state: Node, ship: ShipState) -> Dictionary:
+	var out := {"board_targets": [], "board_refusals": {}, "counter_board": {}, "ship_names": {}}
+	if game_state == null:
+		return out
+	for other: ShipState in game_state.get_all_ships():
+		out["ship_names"][other.ship_id] = other.ship_name
+	var links = game_state.get("linked_at_plot")
+	var linked: Array = (links as Dictionary).get(ship.ship_id, []) if links is Dictionary else []
+	var boarding = game_state.get("boarding_controller")
+	if boarding != null:
+		out["counter_board"] = boarding.counter_board(ship.ship_id)
+	var ids := linked.duplicate()
+	ids.sort()
+	for other_id in ids:
+		var other: ShipState = game_state.get_ship(str(other_id))
+		if other == null:
+			continue
+		var why := BoardingRules.boardable_error(ship, other, linked)
+		if why != "":
+			out["board_refusals"][other.ship_id] = why
+			continue
+		var entry := {"id": other.ship_id, "name": other.ship_name, "odds": ""}
+		if boarding != null:
+			var goers := board_goers(ship, (out["counter_board"] as Dictionary).get(other.ship_id, []))
+			var p: Dictionary = boarding.preview(ship.ship_id, other.ship_id, goers)
+			entry["tbcf"] = int(p["tbcf"])
+			entry["enemy_tbcf"] = int(p["enemy_tbcf"])
+			entry["drm"] = int(p["drm"])
+			entry["odds"] = "%d v about %d · you %s%d" % [int(p["tbcf"]), int(p["enemy_tbcf"]),
+				"−" if int(p["drm"]) < 0 else "+", absi(int(p["drm"]))]
+		out["board_targets"].append(entry)
+	return out
+
+
+## The sections that would go on a "Board" order (10.C.1): the readied marines and lowest readied
+## sailor section (S4 never), or with none readied the marines and the lowest sailor section; after a
+## repulse every section in `counter` (10.E.4).
+static func board_goers(ship: ShipState, counter: Array) -> Array:
+	var out: Array = []
+	if not counter.is_empty():
+		for s in counter:
+			if ship.section_alive(int(s)) and int(s) != BoardingRules.MINIMUM_CREW_SECTION:
+				out.append(int(s))
+		return out
+	var any_ready := false
+	for s in range(ShipState.MARINES + 1):
+		any_ready = any_ready or ship.is_readied(s)
+	if ship.section_alive(ShipState.MARINES) and (ship.is_readied(ShipState.MARINES) or not any_ready):
+		out.append(ShipState.MARINES)
+	for k in range(BoardingRules.MINIMUM_CREW_SECTION):
+		if ship.section_alive(k) and (ship.is_readied(k) or not any_ready):
+			out.append(k)
+			break
+	return out
 
 
 ## The plan stored on the ship (plotted_actions), as a plan dictionary (copies). Before anything
@@ -224,8 +293,16 @@ static func refusal(ship: ShipState, plan: Dictionary, ctx: Dictionary, section:
 		var code: String = locked[section]["code"]
 		if code == SailController.CODE:
 			return "%s is altering sail. Must be completed (5.F.9)." % name
+		if BoardingRules.is_code(code):
+			return "%s is fighting a boarding action and cannot leave it (10.E.1)." % name
+		if code == CODE_RO and str(locked[section]["params"].get("reason", "")) == "boarding":
+			return "%s is reorganizing aboard the prize (10.G.2)." % name
 		return "%s cannot be moved." % name
 	match station_id:
+		STATION_BOARDERS:
+			if ship.is_readied(section):
+				return ""
+			return BoardingRules.task_error(ship, plan.get("assignments", {}), ctx, section, BoardingRules.FB)
 		STATION_GUNS:
 			if section == ShipState.MARINES:
 				return "Only sailor sections serve the guns. Marines fire muskets instead."
@@ -297,7 +374,14 @@ static func assign(ship: ShipState, plan: Dictionary, ctx: Dictionary, section: 
 		result["orders"] = {"sail_target": ""}
 	if refusal(ship, plan, ctx, section, station_id) != "":
 		return result
+	var readied := ship.is_readied(section)
+	if readied and station_id != STATION_BOARDERS:
+		# 10.B.5: a readied section leaving the boarders must disband (BD) this g-t.
+		result["assignments"][section] = BoardingRules.entry(BoardingRules.BD, section)
+		return result
 	match station_id:
+		STATION_BOARDERS:
+			result["assignments"][section] = BoardingRules.entry(BoardingRules.BR if readied else BoardingRules.FB, section)
 		STATION_GUNS, STATION_MARINE_FIRE:
 			result["assignments"].erase(section)
 		STATION_SAILS:
@@ -350,7 +434,13 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 		result["assignments"] = auto["assignments"]
 		result["auto"] = auto["auto"]
 		return result
-	# (4) manual: drop what the rules refuse
+	# (4) manual: drop what the rules refuse. Boarding first (BoardingRules.normalize_manual): readied
+	# sections not plotted to BR/BA/BD stand down, illegal FB/BA are refused.
+	var boarding := BoardingRules.normalize_manual(ship, assignments, ctx, locked)
+	assignments = boarding["assignments"]
+	result["warnings"].append_array(boarding["warnings"])
+	result["dropped"].append_array(boarding["dropped"])
+	result["notes"] = boarding["notes"]
 	var sail_target := str(orders.get("sail_target", ""))
 	var on_sails := 0
 	var at_braces := 0
@@ -392,6 +482,8 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 				why = "That fire is out"
 			else:
 				entry["params"] = ff_params(fire, section)
+		elif BoardingRules.is_code(code):
+			pass  # made legal by BoardingRules.normalize_manual above
 		elif RepairController.is_repair(code):
 			# 8.F.3, 8.F.4: only when there is something to repair, one section per type.
 			why = RepairController.refusal(ship, code)
@@ -470,6 +562,8 @@ static func station_of(section: int, entry: Dictionary) -> String:
 			return STATION_REORGANIZING
 		CODE_FF:
 			return STATION_FIRE_PREFIX + str(int(entry.get("params", {}).get("fire", -1)))
+	if BoardingRules.is_code(code):
+		return STATION_BOARDERS
 	return code.to_lower()
 
 
@@ -549,6 +643,8 @@ static func stations(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Arra
 	if ship.crew_auto and held != "":
 		marine["note"] = "Marines held back: %s. %s" % [held, marine["note"]]
 	out.append(marine)
+	if not ship.is_out_of_play():
+		out.append(boarders_station(ship, plan, ctx, by_station.get(STATION_BOARDERS, []), locked_on))
 	var choices := sail_choices(ship)
 	if not choices.is_empty() or ship.has_sail_change():
 		var target := str(orders.get("sail_target", ""))
@@ -616,6 +712,57 @@ static func stations(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Arra
 	return out
 
 
+## The Boarders station (boarding spec §4.1-4.2). Beyond the common keys: "tags" {section: code}
+## (FB forming, BR ready, BA away, BD standing down; "fighting" engaged ones carry "engaged": true),
+## "standing_down" [sections at BD, drawn in a strip under the station, not in "occupants"],
+## "order" (crew_orders.boarding) and "choices" [{order, text, odds}] for the order picker.
+static func boarders_station(ship: ShipState, plan: Dictionary, ctx: Dictionary, sections: Array,
+		locked_on: Callable) -> Dictionary:
+	var assignments: Dictionary = plan.get("assignments", {})
+	var orders: Dictionary = plan.get("orders", {})
+	var occupants: Array = []
+	var standing: Array = []
+	var tags := {}
+	var engaged: Array = []
+	for s in sections:
+		var code := str(assignments.get(int(s), {}).get("code", ""))
+		tags[int(s)] = code
+		if ship.boarding_action_of(int(s)) >= 0:
+			engaged.append(int(s))
+		if code == BoardingRules.BD:
+			standing.append(int(s))
+		else:
+			occupants.append(int(s))
+	var st := {"id": STATION_BOARDERS, "code": "FB", "label": STATION_LABELS[STATION_BOARDERS],
+		"short": STATION_SHORT[STATION_BOARDERS], "capacity": ShipState.MARINES + 1, "turns": 1,
+		"accepts": "any", "warning": "", "disabled_reason": "",
+		"note": "Boarders come from the lowest-numbered sailor sections first (4.B.1). Each sailor section here is −3 on the guns; marines here still fire muskets (10.B.4).",
+		"occupants": occupants, "locked": locked_on.call(occupants), "fire": {},
+		"tags": tags, "engaged": engaged, "standing_down": standing,
+		"order": str(orders.get("boarding", "")), "choices": boarding_choices(ship, ctx)}
+	if ship.is_burning():
+		st["disabled_reason"] = BoardingRules.FIRE_REFUSAL
+	return st
+
+
+## The Boarders station's order picker (spec §4.2): no order, "Stand ready", one "Board ‹enemy›!"
+## (or "Counter-board ‹enemy›!", 10.E.4) per enemy that may be boarded, with the odds as they stand,
+## and "Stand down" while any section is readied.
+static func boarding_choices(ship: ShipState, ctx: Dictionary) -> Array:
+	var out: Array = [{"order": "", "text": "No boarders", "odds": ""},
+		{"order": "ready", "text": "Stand ready", "odds": ""}]
+	var counter: Dictionary = ctx.get("counter_board", {})
+	for t in ctx.get("board_targets", []):
+		var id := str(t.get("id", ""))
+		out.append({"order": "board:" + id, "odds": str(t.get("odds", "")),
+			"text": "%s %s!" % ["Counter-board" if counter.has(id) else "Board", str(t.get("name", id))]})
+	for s in range(ShipState.MARINES + 1):
+		if ship.is_readied(s):
+			out.append({"order": "stand_down", "text": "Stand down", "odds": ""})
+			break
+	return out
+
+
 ## How a task reads in a sentence ("rigging repair", "the sail change to MS").
 static func task_name(code: String, params: Dictionary = {}) -> String:
 	match code:
@@ -628,6 +775,14 @@ static func task_name(code: String, params: Dictionary = {}) -> String:
 			return "the braces"
 		CODE_RO:
 			return "reorganizing"
+		"FB":
+			return "forming boarders"
+		"BR":
+			return "boarders ready"
+		"BA":
+			return "boarding %s" % str(params.get("target", "")) if str(params.get("target", "")) != "" else "boarding"
+		"BD":
+			return "standing down"
 		CODE_FF:
 			var fire := int(params.get("fire", -1))
 			return "fire watch" if fire < 0 else "fighting a fire"
@@ -647,8 +802,8 @@ static func progress_warning(ship: ShipState, _plan: Dictionary, section: int, s
 	if task.is_empty() or int(task.get("done", 0)) <= 0:
 		return ""
 	var code := str(task.get("code", ""))
-	if code == SailController.CODE or bool(task.get("forced", false)):
-		return ""  # locked: cannot be moved at all
+	if code == SailController.CODE or bool(task.get("forced", false)) or BoardingRules.is_code(code):
+		return ""  # locked, or a boarding task (leaving it is BD, 10.B.5)
 	if station_of(section, {"code": code, "params": task.get("params", {})}) == station_id:
 		return ""
 	var needed := ship.task_turns_required(task)
@@ -774,6 +929,11 @@ static func summary(ship: ShipState, plan: Dictionary, ctx: Dictionary = {}) -> 
 		if not ship.section_alive(section):
 			continue
 		var st := station_of(section, assignments.get(section, {}))
+		var b_entry: Dictionary = assignments.get(section, {})
+		if st == STATION_BOARDERS and str(b_entry.get("code", "")) == BoardingRules.BA:
+			st = "board:" + str(b_entry.get("params", {}).get("target", ""))
+		elif st == STATION_BOARDERS and str(b_entry.get("code", "")) == BoardingRules.BD:
+			st = "stand_down"
 		var group = null
 		for g in groups:
 			if g[0] == st:
@@ -785,6 +945,11 @@ static func summary(ship: ShipState, plan: Dictionary, ctx: Dictionary = {}) -> 
 	for g in groups:
 		var st: String = g[0]
 		var word: String = SUMMARY_WORDS.get(st, st.to_upper())
+		if st.begins_with("board:"):
+			var target := st.trim_prefix("board:")
+			word = "board " + str((ctx.get("ship_names", {}) as Dictionary).get(target, target))
+		elif st == "stand_down":
+			word = "stand down"
 		var kind := "task"
 		if st == STATION_GUNS or st == STATION_MARINE_FIRE:
 			kind = "default"

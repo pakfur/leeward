@@ -7,7 +7,9 @@ extends Resource
 ## DESTROYED: blown up (hull critical #12). Out of play like a struck ship, and it also never
 ## drifts, fouls or takes damage; its two hexes stay on the map as a wreck that blocks movement
 ## and line of sight.
-enum Status { ACTIVE, STRUCK, DESTROYED }
+## CAPTURED: taken by boarding (10.H; boarding spec §2.5). Out of play for its holder (it never moves,
+## fires or keeps a side alive) but, unlike a struck ship, a target for its old side (10.H.1).
+enum Status { ACTIVE, STRUCK, DESTROYED, CAPTURED }
 
 const PORT := 0
 const STARBOARD := 1
@@ -28,6 +30,10 @@ const OBSCURED_PENALTY := -2
 const SAILOR_SECTIONS := 4
 const MARINES := 4
 const SECTION_NAMES: Array[String] = ["S1", "S2", "S3", "S4", "M"]
+## Boarding crew-task codes (10.B-10.C): form boarders, boarders ready, boarders away, disband.
+const BOARDING_CODES: Array[String] = ["FB", "BR", "BA", "BD"]
+## Boarding tasks that put boarders aboard: the public counter (10.B.6), the marine-fire -1, 10.D.7.
+const BOARDER_CODES: Array[String] = ["FB", "BR", "BA"]
 
 # Ship reference (immutable identity + type definition)
 var ship: Ship = null
@@ -35,7 +41,12 @@ var ship: Ship = null
 # Convenience getters for immutable identity fields
 var ship_id: String:
 	get: return ship.ship_id if ship else ""
+## The side that controls the ship: the captor once it is a prize (controller_id), else the owner.
+## Every reader (selection, owner colour, gunnery sides, AI) follows control (boarding spec §2.5).
 var player_id: int:
+	get: return controller_id if controller_id >= 0 else (ship.player_id if ship else 0)
+## The side the ship began the game with (Ship.player_id); victory points go by this (VI.B).
+var original_player_id: int:
 	get: return ship.player_id if ship else 0
 var ship_name: String:
 	get: return ship.ship_name if ship else "Unknown"
@@ -80,6 +91,15 @@ var ship_type: String:
 
 # Combat and turn-loop state (mutated only through ShipStateController)
 @export var status: Status = Status.ACTIVE
+## The side controlling the ship when it is not its original owner (a prize, 10.H.1); -1 = the owner.
+@export var controller_id: int = -1
+## Prize data while CAPTURED (10.G-H): {"captor_id": String, "original_crew": {"crew_count", "marine_count",
+## "crew_quality", "morale_rating"}, "prize_crew_aboard": bool}. While a prize, the live crew fields are
+## the prize crew's (empty until it is put aboard). {} otherwise.
+@export var prize: Dictionary = {}
+## Boxes this ship detached as prize crews, per section (S1-S4, M): emptied sections that only lost
+## men to a prize crew do not count as destroyed for victory points (boarding spec §8 Q4).
+@export var detached_boxes: Array[int] = [0, 0, 0, 0, 0]
 @export var guns_dismounted: Array[int] = [0, 0]  # per side: PORT, STARBOARD
 @export var initial_broadside_fired: Array[bool] = [false, false]
 @export var moved_this_turn: bool = false
@@ -168,6 +188,25 @@ func is_struck() -> bool:
 
 func is_destroyed() -> bool:
 	return status == Status.DESTROYED
+
+## Taken by boarding (10.H): a prize of the side in controller_id.
+func is_captured() -> bool:
+	return status == Status.CAPTURED
+
+## May be fired on (gunfire and marine fire): in play, or a prize, which its old side may fire on
+## (10.H.1). Struck and destroyed ships are not targets (feature_diff §4).
+func is_targetable() -> bool:
+	return status == Status.ACTIVE or status == Status.CAPTURED
+
+## May be boarded (10.A.2-3): in play or struck, and not on fire. A prize cannot be boarded until
+## prize operations exist (boarding spec B5).
+func can_be_boarded() -> bool:
+	return (status == Status.ACTIVE or status == Status.STRUCK) and not is_burning()
+
+## The prize's original crew's morale rating (its point value, VI.B), else the current one.
+func original_morale_rating() -> int:
+	var crew: Dictionary = prize.get("original_crew", {})
+	return int(crew.get("morale_rating", morale_rating))
 
 ## Struck or destroyed: cannot move, fire, change sail, unfoul, fix or check morale, and is not a
 ## target. A struck ship still drifts; a destroyed one does not.
@@ -285,6 +324,42 @@ func marines_busy() -> bool:
 ## The marines have boxes and are not busy (4.B.4b, 8.C.5).
 func marines_available() -> bool:
 	return section_alive(MARINES) and not marines_busy()
+
+## The live boarding task (FB, BR, BA, BD) section i is on, or {}.
+func boarding_task(i: int) -> Dictionary:
+	var task := task_of(i)
+	return task if BOARDING_CODES.has(str(task.get("code", ""))) else {}
+
+## Section i is readied (10.B.3): it formed boarders on an earlier g-t and is now BR.
+func is_readied(i: int) -> bool:
+	return str(boarding_task(i).get("code", "")) == "BR"
+
+## The boarding action section i is engaged in (10.E.1), or -1.
+func boarding_action_of(i: int) -> int:
+	var task := boarding_task(i)
+	return int((task.get("params", {}) as Dictionary).get("action", -1)) if not task.is_empty() else -1
+
+## The ship has boarders preparing or prepared: a live FB, BR or BA task (10.B.6; the public
+## counter, the marine-fire -1, 10.D.7).
+func has_boarders() -> bool:
+	for code in BOARDER_CODES:
+		if not tasks_with(code).is_empty():
+			return true
+	return false
+
+## Sections on a boarding task aimed at, or engaged with, `enemy_id`, in section order.
+func boarding_sections(enemy_id: String) -> Array[int]:
+	var out: Array[int] = []
+	for i in range(MARINES + 1):
+		var params: Dictionary = boarding_task(i).get("params", {})
+		if str(params.get("target", "")) == enemy_id or str(params.get("enemy", "")) == enemy_id:
+			out.append(i)
+	return out
+
+## The marines are fighting in a boarding action, as attackers (BA) or engaged (8.C.5).
+func marines_in_boarding() -> bool:
+	var task := boarding_task(MARINES)
+	return str(task.get("code", "")) == "BA" or boarding_action_of(MARINES) >= 0
 
 func fire_count() -> int:
 	return fire_list.size()
@@ -449,6 +524,9 @@ func serialize() -> Dictionary:
 		"crew_count": crew_count,
 		"marine_count": marine_count,
 		"status": int(status),
+		"controller_id": controller_id,
+		"prize": prize.duplicate(true),
+		"detached_boxes": detached_boxes.duplicate(),
 		"guns_dismounted": guns_dismounted,
 		"initial_broadside_fired": initial_broadside_fired,
 		"crew_auto": crew_auto,
@@ -529,6 +607,9 @@ static func deserialize(data: Dictionary) -> ShipState:
 		state.crew_count.append(int(ct))
 	state.marine_count = data.get("marine_count", 0)
 	state.status = int(data.get("status", Status.ACTIVE)) as Status
+	state.controller_id = int(data.get("controller_id", -1))
+	state.prize = prize_from(data.get("prize", {}))
+	state.detached_boxes = _int_array(data.get("detached_boxes", [0, 0, 0, 0, 0]))
 	state.guns_dismounted = _int_array(data.get("guns_dismounted", [0, 0]))
 	state.initial_broadside_fired.clear()
 	for fired in data.get("initial_broadside_fired", [false, false]):
@@ -599,6 +680,22 @@ static func plot_from(data: Dictionary) -> Dictionary:
 	if str(data.get("sail_change", "")) != "" and plot["crew_orders"]["sail_target"] == "":
 		plot["crew_orders"]["sail_target"] = str(data["sail_change"])
 	return plot
+
+## Copy of serialized prize data with its numbers as ints (JSON gives floats).
+static func prize_from(data: Variant) -> Dictionary:
+	if not data is Dictionary or (data as Dictionary).is_empty():
+		return {}
+	var copy: Dictionary = (data as Dictionary).duplicate(true)
+	copy["captor_id"] = str(copy.get("captor_id", ""))
+	copy["prize_crew_aboard"] = bool(copy.get("prize_crew_aboard", false))
+	var crew: Dictionary = copy.get("original_crew", {})
+	copy["original_crew"] = {
+		"crew_count": _int_array(crew.get("crew_count", [0, 0, 0, 0])),
+		"marine_count": int(crew.get("marine_count", 0)),
+		"crew_quality": str(crew.get("crew_quality", "G")),
+		"morale_rating": int(crew.get("morale_rating", 6)),
+	}
+	return copy
 
 ## Copy of a serialized crew task with its numeric fields as ints.
 static func crew_task_from(task: Dictionary) -> Dictionary:
@@ -706,4 +803,14 @@ func _clear_turn_flags() -> void:
 	collision_this_turn = false
 
 func _clear_plot() -> void:
+	# The boarding order is a standing order (boarding spec §2.4 #6); "stand_down" lapses.
+	var orders = plotted_actions.get("crew_orders", {})
+	var boarding := str(orders.get("boarding", "")) if orders is Dictionary else ""
 	plotted_actions = empty_plot()
+	if boarding != "" and boarding != "stand_down":
+		plotted_actions["crew_orders"]["boarding"] = boarding
+
+## The standing boarding order (crew_orders.boarding): "", "ready", "board:<ship_id>" or "stand_down".
+func boarding_order() -> String:
+	var orders = plotted_actions.get("crew_orders", {})
+	return str(orders.get("boarding", "")) if orders is Dictionary else ""

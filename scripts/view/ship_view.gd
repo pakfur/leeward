@@ -44,6 +44,11 @@ const FIRE_POLL_SECONDS := 0.25
 var _fire_effect: ShipFireEffect = null
 var _seen_afloat := false  ## synced at least once before it was destroyed (so the explosion is new)
 var _fire_poll := 0.0
+## Capture on the map (boarding spec §4.5, UX4): the ring and pennant take the captor's colour (they
+## follow ShipState.player_id), a prize flag (captor's colour over white) flies at the masthead, and
+## a label shows "PRIZE" with the boarders' reorganizing turns until the prize crew is aboard.
+var _prize_flag: Node3D = null
+var _prize_label: Label3D = null
 
 static func owner_color(player_id: int) -> Color:
 	"""Owner colour for a player id (matches the minimap ship icons)."""
@@ -106,6 +111,7 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 
 	# Struck ships look different (flag + desaturated); the ring keeps the owner's colour
 	_update_struck_visual(ship_state.is_struck())
+	_update_prize_visual(ship_state)
 	if _owner_pennant:
 		_owner_pennant.visible = not ship_state.is_struck()
 		_owner_pennant.position = _masthead_position(0.24)
@@ -185,6 +191,65 @@ func _update_struck_visual(struck: bool) -> void:
 	else:
 		_struck_flag.queue_free()
 		_struck_flag = null
+
+## The prize flag and label while the ship is a prize (boarding spec §4.5); removed otherwise.
+func _update_prize_visual(ship_state: ShipState) -> void:
+	if model_node == null:
+		return
+	if not ship_state.is_captured():
+		if _prize_flag != null:
+			_prize_flag.queue_free()
+			_prize_flag = null
+		if _prize_label != null:
+			_prize_label.queue_free()
+			_prize_label = null
+		return
+	var color := owner_color(ship_state.player_id)
+	if _prize_flag == null:
+		_prize_flag = Node3D.new()
+		_prize_flag.name = "PrizeFlag"
+		for k in 2:
+			var panel := MeshInstance3D.new()
+			var mesh := BoxMesh.new()
+			mesh.size = Vector3(0.04, 0.17, 0.5)
+			panel.mesh = mesh
+			var mat := StandardMaterial3D.new()
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.albedo_color = Color(1, 1, 1)
+			panel.material_override = mat
+			panel.position = Vector3(0, 0.09 - 0.18 * k, 0)
+			panel.name = "Top" if k == 0 else "Bottom"
+			_prize_flag.add_child(panel)
+		model_node.add_child(_prize_flag)
+		_prize_label = Label3D.new()
+		_prize_label.name = "PrizeLabel"
+		_prize_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		_prize_label.no_depth_test = true
+		_prize_label.fixed_size = true
+		_prize_label.pixel_size = 0.0011
+		_prize_label.font_size = 22
+		_prize_label.outline_size = 8
+		add_child(_prize_label)
+	(_prize_flag.get_node("Top").material_override as StandardMaterial3D).albedo_color = color
+	_prize_flag.position = _masthead_position(0.3) - Vector3(0, 0.05, 0)
+	_prize_label.modulate = color
+	_prize_label.position = Vector3(0, 2.6, 0)
+	_prize_label.text = prize_caption(ship_state)
+
+
+## "PRIZE · reorganizing 1/3" while the captor's boarders reorganize (10.G.4), else "PRIZE".
+static func prize_caption(ship_state: ShipState) -> String:
+	if bool(ship_state.prize.get("prize_crew_aboard", false)):
+		return "PRIZE"
+	var captor: ShipState = GameState.get_ship(str(ship_state.prize.get("captor_id", "")))
+	if captor == null:
+		return "PRIZE"
+	for task in captor.tasks_with("RO"):
+		if str(task.get("params", {}).get("prize", "")) == ship_state.ship_id:
+			var needed := captor.task_turns_required(task)
+			return "PRIZE · reorganizing %d/%d" % [mini(int(task.get("done", 0)) + 1, needed), needed]
+	return "PRIZE · prize crew boarding"
+
 
 ## Number of fires the flame effect shows (0 when none), for tests.
 func fire_visual_count() -> int:

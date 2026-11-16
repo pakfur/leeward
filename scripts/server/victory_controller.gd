@@ -2,7 +2,7 @@ class_name VictoryController
 extends RefCounted
 ## VictoryController - Close Action 1997 victory points (section 12.1).
 ## A side scores a fraction of each enemy ship's point value: all of it once the ship has
-## struck or been destroyed (hull #12), otherwise a share for each rigging, hull and crew section
+## struck, been destroyed (hull #12) or been captured (VI.B.2-3), otherwise a share for each rigging, hull and crew section
 ## that is completely destroyed. The game ends when a side has no ship left in play (every ship
 ## struck or destroyed), or at the scenario's turn limit. Pure queries: nothing here mutates game state.
 
@@ -21,7 +21,7 @@ func _init(p_game_state: Node) -> void:
 
 func points_lost(ship: ShipState) -> float:
 	## Points the enemy scores for this ship.
-	var value: float = ship.ship.point_value(ship.starting_crew_quality, ship.morale_rating)
+	var value: float = ship.ship.point_value(ship.starting_crew_quality, ship.original_morale_rating())
 	if ship.is_out_of_play():
 		return value
 	var share := 0.0
@@ -31,11 +31,13 @@ func points_lost(ship: ShipState) -> float:
 	for i in range(mini(ship.hull_current_hp.size(), HULL_SHARES.size())):
 		if ship.hull_current_hp[i] <= 0:
 			share += HULL_SHARES[i]
+	# Spec §8 Q4: a section emptied only by detaching a prize crew is not destroyed (the men are
+	# alive aboard the prize).
 	var crew_share := 0.0
-	for boxes in ship.crew_count:
-		if boxes <= 0:
+	for i in range(ship.crew_count.size()):
+		if ship.crew_count[i] <= 0 and _detached(ship, i) <= 0:
 			crew_share += CREW_SECTION_SHARE
-	if ship.marine_count <= 0:
+	if ship.marine_count <= 0 and _detached(ship, ShipState.MARINES) <= 0:
 		crew_share += CREW_SECTION_SHARE
 	share += minf(crew_share, CREW_SHARE_CAP)
 	return value * share
@@ -63,8 +65,13 @@ func check(turn: int) -> Dictionary:
 	return {"winner": winner, "reason": reason, "points": points, "turn": turn}
 
 
+static func _detached(ship: ShipState, section: int) -> int:
+	return ship.detached_boxes[section] if section < ship.detached_boxes.size() else 0
+
+
 func _is_defeated(player_id: int) -> bool:
-	## A side with no ships at all counts as defeated.
+	## A side with no ships at all counts as defeated. Ships it controls only: a prize (CAPTURED)
+	## is out of play, so a side holding only prizes is defeated (boarding spec §2.6).
 	for ship: ShipState in game_state.get_player_ships(player_id):
 		if not ship.is_out_of_play():
 			return false
@@ -72,7 +79,9 @@ func _is_defeated(player_id: int) -> bool:
 
 
 func _points_scored(player_id: int) -> float:
+	## The enemy's ships by original owner: a ship it lost to capture scores 100 % like a struck one
+	## (VI.B.2-3), wherever it now is.
 	var total := 0.0
-	for ship: ShipState in game_state.get_player_ships(1 - player_id):
+	for ship: ShipState in game_state.get_original_player_ships(1 - player_id):
 		total += points_lost(ship)
 	return total

@@ -31,6 +31,9 @@ func resolve_unfouling(phase: int) -> void:
 			continue
 		if ship_id > ship.fouled_with:
 			continue  # the pair was (or will be) handled from its lower ship_id
+		var boarding = game_state.get("boarding_controller")
+		if boarding != null and boarding.locked_in_boarding(ship_id, ship.fouled_with):
+			continue  # 8.D.4, 10.D.8: locked in a boarding action, no unfouling between them
 		if _attempt(ship, partner, phase) or _attempt(partner, ship, phase):
 			game_state.ship_controller.set_fouled_with(ship_id, "")
 			game_state.ship_controller.set_fouled_with(partner.ship.ship_id, "")
@@ -46,7 +49,7 @@ func _attempt(ship: ShipState, partner: ShipState, phase: int) -> bool:
 	var roll: int = game_state.dice.d10()
 	# Chart DRMs (All Uses): ± SK, +1 when the marines are busy on another task.
 	var modifier: int = tables.skill_modifier(ship.crew_quality)
-	if ship.marines_busy():
+	if ship.marines_busy() or ship.marines_in_boarding():  # 8.C.5: marines fighting boarders
 		modifier += tables.marines_unavailable_modifier()
 	var needed: int = tables.unfouling_success_max(attempts)
 	var success: bool = roll + modifier <= needed

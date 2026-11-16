@@ -91,7 +91,8 @@ func test_default_stations_guns_marines_and_sails() -> void:
 	var plan := CrewRules.normalize(ship, CrewRules.plan_of(ship), _ctx())
 	var stations := CrewRules.stations(ship, plan, _ctx())
 	assert_eq(_ids(stations), [CrewRules.STATION_FIRE_WATCH, CrewRules.STATION_GUNS, CrewRules.STATION_MARINE_FIRE,
-		CrewRules.STATION_SAILS], "no braces without a turn at MA 0, no reorganizing, no fires; fire watch (8.E.2 HINT)")
+		CrewRules.STATION_BOARDERS, CrewRules.STATION_SAILS],
+		"no braces without a turn at MA 0, no reorganizing, no fires; fire watch (8.E.2 HINT); Boarders for a ship in play (boarding spec §4.1)")
 	assert_false(_station(stations, CrewRules.STATION_FIRE_WATCH)["menu_only"], "drawn while no fire burns")
 	var guns := _station(stations, CrewRules.STATION_GUNS)
 	assert_eq(guns["occupants"], [0, 1, 2, 3], "4.B.4: unplotted sailors serve the guns")

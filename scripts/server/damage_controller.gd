@@ -32,7 +32,7 @@ func apply_hits(ship_id: String, rigging: int, hull: int, crew: int, crew_cause:
 		return
 	if ship.is_destroyed():
 		return  # a wreck takes no damage
-	var struck_before := ship.is_struck()
+	var struck_before := ship.is_out_of_play()  # struck (or a prize): no checks, no morale
 	var dismasted_before := ship.is_dismasted()
 	# The DAMAGE line is the cause; guns dismounted, morale checks and a strike logged while the
 	# hits are applied are its consequences, so it goes in ahead of them.
@@ -77,7 +77,7 @@ func apply_crew_losses(ship_id: String, count: int, crew_cause: String, phase: i
 		return 0
 	if ship.is_destroyed():
 		return 0  # a wreck takes no damage
-	var struck_before := ship.is_struck()
+	var struck_before := ship.is_out_of_play()  # struck (or a prize): no checks, no morale
 	var damage_index: int = game_state.turn_log.events.size()
 	var marines_before := ship.marine_count
 	var rolls: Array = []
@@ -113,7 +113,7 @@ func apply_crew_boxes(ship_id: String, count: int, marines_first: bool, phase: i
 		return 0
 	if ship.is_destroyed():
 		return 0  # a wreck takes no damage
-	var struck_before := ship.is_struck()
+	var struck_before := ship.is_out_of_play()  # struck (or a prize): no checks, no morale
 	var damage_index: int = game_state.turn_log.events.size()
 	var marines_before := ship.marine_count
 	var applied := 0
@@ -139,6 +139,101 @@ func apply_crew_boxes(ship_id: String, count: int, marines_first: bool, phase: i
 		"cause": CAUSE_CRITICAL,
 	}, source_id)
 	return applied
+
+
+## Boarding combat losses (10.D.4): crew boxes are removed from the sections in the action until at
+## least `bcf_required` BCFs (at crew quality `quality`) are gone; overshoot is normal. While both
+## sailors and marines are in the action, each box is rolled on the Crew Loss table's "All Other
+## Causes" row (one d6); with one type only, that type is lost with no roll (10.D.4a). Sailors come
+## from the lowest-numbered section in the action. Emptied sections lose their task and note a morale
+## check as for gunfire; a ship left with no crew strikes. Logged as DAMAGE with cause "boarding"
+## ({..., "bcf_needed", "bcf_lost"}). Returns {"sailors", "marines", "bcf", "rolls"}.
+func apply_boarding_losses(ship_id: String, bcf_required: int, sections: Array, quality: String,
+		phase: int, source_id: String = "") -> Dictionary:
+	var out := {"sailors": 0, "marines": 0, "bcf": 0, "rolls": []}
+	if not is_server:
+		push_error("DamageController: Cannot apply boarding losses on client")
+		return out
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null or ship.is_destroyed() or bcf_required <= 0:
+		return out
+	var struck_before := ship.is_out_of_play()
+	var damage_index: int = game_state.turn_log.events.size()
+	var tables: CombatTables = DataManager.combat_tables
+	while int(out["bcf"]) < bcf_required:
+		var sailor_sections: Array[int] = []
+		for s in sections:
+			if int(s) < ShipState.SAILOR_SECTIONS and ship.section_alive(int(s)):
+				sailor_sections.append(int(s))
+		sailor_sections.sort()
+		var marines_in := sections.has(ShipState.MARINES) and ship.section_alive(ShipState.MARINES)
+		if sailor_sections.is_empty() and not marines_in:
+			break
+		var sailor: bool
+		if not sailor_sections.is_empty() and marines_in:
+			var roll: int = game_state.dice.d6()
+			out["rolls"].append(roll)
+			sailor = tables.crew_loss_is_sailor("other", roll)
+		else:
+			sailor = not sailor_sections.is_empty()
+		var emptied := -1
+		if sailor:
+			emptied = game_state.ship_controller.remove_crew_box_from(ship_id, sailor_sections[0])
+			out["sailors"] += 1
+		else:
+			emptied = game_state.ship_controller.remove_crew_box(ship_id, true)
+			out["marines"] += 1
+		out["bcf"] += tables.bcf(quality, not sailor)
+		if emptied >= 0 and game_state.get("crew_task_controller") != null:
+			game_state.crew_task_controller.cancel_section(ship_id, emptied, "crew lost", phase)
+		if emptied >= 0 and not struck_before:
+			_note_morale(ship_id, "crew_%d" % emptied, 1, phase)
+	var lost: int = int(out["sailors"]) + int(out["marines"])
+	if lost > 0 and ship.total_crew_boxes() == 0 and not struck_before:
+		strike(ship_id, "no crew", phase)
+	game_state.turn_log.insert(damage_index, PhaseEvents.Type.DAMAGE, phase, ship_id, {
+		"rigging": 0, "hull": 0, "crew": lost, "sailors_lost": out["sailors"], "marines_lost": out["marines"],
+		"crew_rolls": (out["rolls"] as Array).duplicate(), "cause": "boarding",
+		"bcf_needed": bcf_required, "bcf_lost": out["bcf"],
+	}, source_id)
+	return out
+
+
+## The prize crew leaves the parent ship (10.G.7): `sailors` boxes from the lowest-numbered sailor
+## sections and `marines` from the marine section, with no morale check (an emptied section only
+## loses its task). Each box is counted in ShipState.detached_boxes (boarding spec §8 Q4).
+## Returns {"sailors", "marines"} actually taken.
+func detach_prize_crew(ship_id: String, sailors: int, marines: int, phase: int) -> Dictionary:
+	var out := {"sailors": 0, "marines": 0}
+	if not is_server:
+		push_error("DamageController: Cannot detach a prize crew on client")
+		return out
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null:
+		return out
+	var sc: ShipStateController = game_state.ship_controller
+	for i in range(sailors):
+		var section := -1
+		for k in range(ShipState.SAILOR_SECTIONS):
+			if ship.section_alive(k):
+				section = k
+				break
+		if section < 0:
+			break
+		var emptied := sc.remove_crew_box_from(ship_id, section)
+		sc.add_detached_box(ship_id, section)
+		out["sailors"] += 1
+		if emptied >= 0 and game_state.get("crew_task_controller") != null:
+			game_state.crew_task_controller.cancel_section(ship_id, emptied, "prize crew", phase)
+	for i in range(marines):
+		if not ship.section_alive(ShipState.MARINES):
+			break
+		var emptied := sc.remove_crew_box(ship_id, true)
+		sc.add_detached_box(ship_id, ShipState.MARINES)
+		out["marines"] += 1
+		if emptied >= 0 and game_state.get("crew_task_controller") != null:
+			game_state.crew_task_controller.cancel_section(ship_id, emptied, "prize crew", phase)
+	return out
 
 
 ## 8.F.6: a dismasted ship that suffers a rigging hit (a gunfire or blast result with an r, a

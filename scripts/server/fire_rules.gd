@@ -163,12 +163,16 @@ static func marine_error(firer: ShipState, target: ShipState, range_hexes: int) 
 		return "unknown ship"
 	if firer.is_destroyed() or target.is_destroyed():
 		return "a destroyed ship cannot fire or be fired on"
-	if firer.is_struck() or target.is_struck():
+	if firer.is_captured():
+		return "a prize does not fight (10.H.2)"
+	if firer.is_out_of_play() or not target.is_targetable():
 		return "a struck ship cannot fire or be fired on"
 	if firer.player_id == target.player_id:
 		return "cannot fire on a ship of the same side"
 	if firer.marine_count <= 0:
 		return "no marines left"
+	if firer.marines_in_boarding():
+		return "the marines are fighting a boarding action (7.G.1)"
 	if firer.marines_busy():
 		return "the marines are plotted to another task (7.G.1)"
 	if range_hexes < 1 or range_hexes > MARINE_RANGE:

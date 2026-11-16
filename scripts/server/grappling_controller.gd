@@ -19,7 +19,7 @@ extends RefCounted
 ## Uses): ± SK, marines not available +1 (8.C.5: also when they fight in a boarding action);
 ## (Ungrappling Only): -1 per CQ level the roller is better than an enemy partner (a struck partner
 ## counts as CQ G, 8.C.6, 9.C.4), friendly ships -2, wind speed 4 -1. Ships locked in a boarding
-## action may not ungrapple from each other (8.C.5); boarding arrives with boarding spec B4.
+## action may not ungrapple from each other (8.C.5, BoardingController.locked_in_boarding).
 ##
 ## A grapple made while either ship is at WF=L puts that ship in irons (5.D.5): its speed is set to
 ## 0, which is how Leeward knows a ship is in irons.
@@ -163,16 +163,16 @@ func marines_unavailable(ship: ShipState) -> bool:
 	return ship.marines_busy() or marines_in_boarding(ship)
 
 
-## The ship's marines are engaged in a boarding action (8.C.5). Boarding arrives with boarding spec
-## B4; until then nothing is ever engaged.
-func marines_in_boarding(_ship: ShipState) -> bool:
-	return false
+## The ship's marines fight in a boarding action (8.C.5): away (BA) or engaged.
+func marines_in_boarding(ship: ShipState) -> bool:
+	return ship != null and ship.marines_in_boarding()
 
 
 ## The two ships fight a boarding action with each other, so neither may ungrapple or unfoul from
-## the other (8.C.5, 8.D.4). Boarding arrives with boarding spec B4; until then never.
-func locked_in_boarding(_ship_a: String, _ship_b: String) -> bool:
-	return false
+## the other (8.C.5, 8.D.4, 10.D.8; BoardingController.locked_in_boarding).
+func locked_in_boarding(ship_a: String, ship_b: String) -> bool:
+	var boarding = game_state.get("boarding_controller")
+	return boarding != null and boarding.locked_in_boarding(ship_a, ship_b)
 
 
 ## Crew quality for these rolls: a struck ship is CQ G (8.C.6, 9.C.4).

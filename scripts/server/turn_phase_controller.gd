@@ -164,6 +164,9 @@ func _enter_planning_phase() -> void:
 	players_ready = [false, false]
 	Trace.trace_log("TurnPhase", "Phase: PLANNING - Players plot their actions")
 
+	# 10.A.2: boarding needs the two ships fouled or grappled at the start of the g-t.
+	if game_state.get("boarding_controller") != null:
+		game_state.boarding_controller.take_link_snapshot()
 	if game_state.stub_ai:
 		game_state.stub_ai.plot_all_ai_ships()
 
@@ -387,11 +390,23 @@ func _enter_combat_resolution_phase() -> void:
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: COMBAT_RESOLUTION")
 
+	# SoP IV.A, 10.C.4a: boarders away are announced first (the defenders' marines replot, struck
+	# or undefended ships are taken at once); the boarding is fought after all the fire.
+	var boarding = game_state.get("boarding_controller")
+	var announced: bool = boarding != null and boarding.declare(current_phase)
+	var any_boarding: bool = announced or (boarding != null and boarding.has_actions_to_resolve())
 	var calculator = game_state.gunnery_calculator
 	var marines = game_state.get("marine_fire_resolver")
 	var any_gun: bool = calculator != null and calculator.any_eligible_shot()
 	var any_marine: bool = marines != null and marines.any_eligible_marine_shot()
 	if not any_gun and not any_marine:
+		if any_boarding:
+			# Boarding with no fire: no declaration step; RESOLVE runs the boarding alone.
+			combat_step = CombatStep.RESOLVE
+			boarding.resolve(current_phase)
+			Trace.trace_log("TurnPhase", "COMBAT_RESOLUTION: boarding only")
+			combat_log_ready.emit(game_state.turn_log)
+			return
 		combat_step = CombatStep.NONE
 		advance_phase()
 		return
@@ -463,6 +478,9 @@ func _resolve_combat() -> void:
 	var marine_shots: Array[Dictionary] = game_state.marine_fire_resolver.prepare(all_marine)
 	game_state.gunnery_resolver.resolve(all_orders, GamePhase.COMBAT_RESOLUTION)
 	game_state.marine_fire_resolver.resolve(marine_shots, GamePhase.COMBAT_RESOLUTION)
+	# 10.C.4: boarding combat after all gunfire and marine fire, on what is left.
+	if game_state.get("boarding_controller") != null:
+		game_state.boarding_controller.resolve(GamePhase.COMBAT_RESOLUTION)
 	Trace.trace_log("TurnPhase", "COMBAT_RESOLUTION resolved", {"orders": all_orders.size(),
 		"marine_orders": marine_shots.size()})
 	combat_log_ready.emit(game_state.turn_log)
@@ -649,6 +667,9 @@ func _finish_status_adjustment() -> void:
 	# take effect, 5.F.8) or cancelled.
 	if game_state.crew_task_controller:
 		game_state.crew_task_controller.advance_tasks(current_phase)
+	# 10.G.7: prize crews of actions whose boarders finished reorganizing go aboard.
+	if game_state.get("boarding_controller") != null:
+		game_state.boarding_controller.advance_reorganizing(current_phase)
 	# TODO: sinking, anchors
 	advance_phase()
 
@@ -719,6 +740,8 @@ func _enter_end_turn_phase() -> void:
 
 func _start_new_turn() -> void:
 	"""SERVER ONLY: Start a new turn"""
+	if game_state.get("boarding_controller") != null:
+		game_state.boarding_controller.end_of_turn(current_turn)
 	for ship: ShipState in game_state.get_all_ships():
 		game_state.ship_controller.clear_turn_flags(ship.ship_id)
 	game_state.turn_logs[current_turn] = game_state.turn_log

@@ -153,6 +153,7 @@ func _resolve_shot(shot: Dictionary, phase: int) -> void:
 	crits.hold()
 	var hull_fire := order.ammo == GunneryTypes.AMMO_ROUND and order.aim == GunneryTypes.AIM_LOW
 	var cause := "gunfire_at_hull" if hull_fire else "other"
+	cause = BoardingRules.crew_loss_cause(game_state.get_ship(order.target_id), cause)  # 10.D.7
 	game_state.damage_controller.apply_hits(order.target_id, rigging, hull, crew, cause, phase,
 			order.ship_id, ctx)
 	if target_dismasted and rigging_hit:

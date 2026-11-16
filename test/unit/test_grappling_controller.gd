@@ -397,6 +397,12 @@ func test_ai_cuts_grapples_it_does_not_want() -> void:
 	_make_ship("ai_friend", 1, Vector2i(4, 6), "B")
 	GameState.ship_controller.add_grapple("ai", "p")
 	GameState.ship_controller.add_grapple("ai", "ai_friend")
+	# Boarding spec §3.6 (B4): it keeps a grapple to an enemy it would board: M + S1 (2 x 9 + 3 x 7 =
+	# 39) against the enemy's marines (18) is 2:1 +2, class 3 defender -1 => +1.
+	assert_eq(GameState.stub_ai.ungrapple_orders([1] as Array[int]), [["ai", "ai_friend"], ["ai_friend", "ai"]])
+	enemy.crew_quality = "A"
+	enemy.marine_count = 6
+	# Now 39 v 6 x 10 = 60: 1:2 -2, -1 => -3, and the enemy is no weaker: it cuts.
 	assert_eq(GameState.stub_ai.ungrapple_orders([1] as Array[int]),
 		[["ai", "ai_friend"], ["ai", "p"], ["ai_friend", "ai"]])
 	enemy.status = ShipState.Status.STRUCK

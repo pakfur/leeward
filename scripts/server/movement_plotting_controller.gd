@@ -56,6 +56,8 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 		return MovementTypes.PlottingErrorResponse.create(request_id, "UNAUTHORIZED", "Player %d does not own ship %s" % [player_id, ship_id])
 
 	# Fouled, grappled, struck and dismasted ships cannot plot movement
+	if ship_state.is_captured():  # 10.H.2: a prize cannot sail
+		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_CAPTURED", "Ship %s is a prize and cannot sail (10.H.2)" % ship_id)
 	if ship_state.fouled_with != "":
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_FOULED", "Ship %s is fouled with %s and cannot move" % [ship_id, ship_state.fouled_with])
 	if ship_state.is_grappled():  # 8.C.7: grappled ships cannot move or turn

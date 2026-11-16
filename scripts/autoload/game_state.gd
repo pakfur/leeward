@@ -69,8 +69,20 @@ var repair_controller: RepairController = null
 var drift_resolver: DriftResolver = null
 var fouling_controller: FoulingController = null
 var grappling_controller: GrapplingController = null
+var boarding_controller: BoardingController = null
 var morale_controller: MoraleController = null
 var victory_controller: VictoryController = null
+
+# Boarding (boarding spec §2.2-2.3; changed only by BoardingController)
+## Live and recently finished boarding actions (BoardingAction).
+var boarding_actions: Array = []
+## Last BoardingAction id given.
+var boarding_seq: int = 0
+## Ships fouled or grappled to each ship when PLANNING began: ship_id -> Array of ship ids
+## ("fouled or grappled at the start of the g-t", 10.A.2).
+var linked_at_plot: Dictionary = {}
+## Boarding actions at the end of each turn: turn -> Array of BoardingAction dictionaries.
+var boarding_history: Dictionary = {}
 
 # Event log for the current turn, and finished logs by turn number
 var turn_log: PhaseEvents.PhaseLog = null
@@ -118,6 +130,9 @@ func _initialize_server_controllers() -> void:
 	drift_resolver = DriftResolver.new(self)
 	fouling_controller = FoulingController.new(self)
 	grappling_controller = GrapplingController.new(self)
+	boarding_controller = BoardingController.new(self)
+	for code in BoardingTaskHandler.CODES:
+		crew_task_controller.register_handler(code, BoardingTaskHandler.new(self, code))
 	morale_controller = MoraleController.new(self)
 	victory_controller = VictoryController.new(self)
 	turn_log = PhaseEvents.PhaseLog.new()
@@ -178,6 +193,10 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	turn_log = PhaseEvents.PhaseLog.new()
 	turn_log.turn = 1
 	turn_logs.clear()
+	boarding_actions = []
+	boarding_seq = 0
+	linked_at_plot = {}
+	boarding_history = {}
 	Trace.trace_log("GameState", "RNG seeded", seed_value)
 
 	# Clear any existing state history
@@ -313,6 +332,37 @@ func get_player_ships(player_id: int) -> Array[ShipState]:
 				result.append(ships[ship_id])
 	return result
 
+## Ships whose original owner is `player_id`, whoever controls them now (victory points, VI.B).
+func get_original_player_ships(player_id: int) -> Array[ShipState]:
+	var result: Array[ShipState] = []
+	var ids: Array = ships.keys()
+	ids.sort()
+	for ship_id in ids:
+		if ships[ship_id].original_player_id == player_id:
+			result.append(ships[ship_id])
+	return result
+
+## SERVER ONLY: hands a ship to `player_id` (a prize, 10.H.1; through ShipStateController) and
+## re-indexes ships_by_player. Returns false when refused.
+func transfer_control(ship_id: String, player_id: int) -> bool:
+	if not is_server:
+		push_error("GameState: Cannot transfer control on client")
+		return false
+	var ship: ShipState = ships.get(ship_id)
+	if ship == null:
+		return false
+	var before := ship.player_id
+	if not ship_controller.set_controller(ship_id, -1 if player_id == ship.original_player_id else player_id):
+		return false
+	if ships_by_player.has(before):
+		ships_by_player[before].erase(ship_id)
+	if not ships_by_player.has(player_id):
+		ships_by_player[player_id] = []
+	if not ships_by_player[player_id].has(ship_id):
+		ships_by_player[player_id].append(ship_id)
+	Trace.trace_log("GameState", "Ship %s now controlled by player %d" % [ship_id, player_id])
+	return true
+
 func get_all_ships() -> Array[ShipState]:
 	"""Get all ships in game"""
 	var result: Array[ShipState] = []
@@ -431,9 +481,15 @@ func serialize_full_state() -> Dictionary:
 				history_array.append(null)
 		ships_history[ship_id] = history_array
 
+	var actions: Array = []
+	for action in boarding_actions:
+		actions.append(action.to_dict())
 	return {
 		"turn": current_turn,
 		"phase": current_phase,
+		"boarding_actions": actions,
+		"boarding_seq": boarding_seq,
+		"linked_at_plot": linked_at_plot.duplicate(true),
 		"environment": environment.serialize() if environment else {},
 		"ships": ship_states,
 		"environment_history": env_history,
@@ -450,6 +506,12 @@ func deserialize_full_state(data: Dictionary) -> void:
 		environment = EnvironmentState.deserialize(data.environment)
 	else:
 		environment = EnvironmentState.new()
+
+	boarding_actions = []
+	for action_data in data.get("boarding_actions", []):
+		boarding_actions.append(BoardingAction.from_dict(action_data))
+	boarding_seq = int(data.get("boarding_seq", 0))
+	linked_at_plot = (data.get("linked_at_plot", {}) as Dictionary).duplicate(true)
 
 	# Load ships
 	clear_ships()
@@ -568,6 +630,11 @@ func _update_ship_from_data(ship: ShipState, data: Dictionary) -> void:
 	ship.crew_quality = data.get("crew_quality", ship.crew_quality)
 	ship.morale_rating = int(data.get("morale_rating", ship.morale_rating))
 	ship.status = int(data.get("status", ship.status)) as ShipState.Status
+	ship.controller_id = int(data.get("controller_id", ship.controller_id))
+	if data.has("prize"):
+		ship.prize = ShipState.prize_from(data["prize"])
+	if data.has("detached_boxes"):
+		ship.detached_boxes = ShipState._int_array(data["detached_boxes"])
 	if data.has("guns_dismounted"):
 		ship.guns_dismounted = ShipState._int_array(data["guns_dismounted"])
 	if data.has("initial_broadside_fired"):

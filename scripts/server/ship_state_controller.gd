@@ -274,6 +274,78 @@ func remove_crew_box(ship_id: String, marine: bool) -> int:
 	ship_state_changed.emit(ship_id)
 	return emptied
 
+## SERVER ONLY: removes one sailor box from sailor section `section` (a boarding loss falls on the
+## sections in the action, 10.D.4). Returns `section` if it is now empty, else -1.
+func remove_crew_box_from(ship_id: String, section: int) -> int:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify crew on client")
+		return -1
+	var ship = _server_ship(ship_id)
+	if not ship or section < 0 or section >= ship.crew_count.size() or ship.crew_count[section] <= 0:
+		return -1
+	ship.crew_count[section] -= 1
+	ship_state_changed.emit(ship_id)
+	return section if ship.crew_count[section] == 0 else -1
+
+## SERVER ONLY: sets the whole live crew (a prize's crew changes hands, 10.G.7, 10.H).
+func set_crew(ship_id: String, crew_count: Array, marine_count: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify crew on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.crew_count = ShipState._int_array(crew_count)
+	ship.marine_count = maxi(0, marine_count)
+	ship_state_changed.emit(ship_id)
+	return true
+
+## SERVER ONLY: counts one box detached from `section` (0-3 sailors, 4 marines) as prize crew
+## (boarding spec §8 Q4: not a section destroyed for victory points).
+func add_detached_box(ship_id: String, section: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify detached boxes on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship or section < 0 or section > ShipState.MARINES:
+		return false
+	while ship.detached_boxes.size() <= ShipState.MARINES:
+		ship.detached_boxes.append(0)
+	ship.detached_boxes[section] += 1
+	ship_state_changed.emit(ship_id)
+	return true
+
+## SERVER ONLY: the controlling side (-1 = the original owner). Use GameState.transfer_control,
+## which also re-indexes ships_by_player.
+func set_controller(ship_id: String, controller_id: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot change control on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.controller_id = controller_id
+	ship_state_changed.emit(ship_id)
+	return true
+
+## SERVER ONLY: the prize data (ShipState.prize; {} clears it). Keys not given keep their value
+## unless `replace`.
+func set_prize(ship_id: String, prize: Dictionary, replace: bool = false) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify prize data on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	if replace or prize.is_empty():
+		ship.prize = prize.duplicate(true)
+	else:
+		var merged: Dictionary = ship.prize.duplicate(true)
+		merged.merge(prize.duplicate(true), true)
+		ship.prize = merged
+	ship_state_changed.emit(ship_id)
+	return true
+
 func _first_sailor_section(ship: ShipState) -> int:
 	for i in range(ship.crew_count.size()):
 		if ship.crew_count[i] > 0:
@@ -386,7 +458,11 @@ func clear_crew_plot(ship_id: String) -> bool:
 	if not ship:
 		return false
 	ship.plotted_actions["crew_assignments"] = {}
-	ship.plotted_actions["crew_orders"] = {"sail_target": ""}
+	# The boarding order is a standing order (boarding spec §2.4 #6): "ready" and "board:<id>" stand
+	# until changed (BoardingController turns "board" back to "ready" once the boarders go away);
+	# "stand_down" is carried out this g-t and lapses.
+	var boarding := str(ship.plotted_actions.get("crew_orders", {}).get("boarding", ""))
+	ship.plotted_actions["crew_orders"] = {"sail_target": "", "boarding": "" if boarding == "stand_down" else boarding}
 	ship.plotted_actions["crew_plotted"] = false
 	ship_state_changed.emit(ship_id)
 	return true

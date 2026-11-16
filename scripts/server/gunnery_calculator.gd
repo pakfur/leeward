@@ -30,7 +30,9 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 		return _refuse(p, "unknown ship")
 	if firer.is_destroyed() or target.is_destroyed():
 		return _refuse(p, "a destroyed ship cannot fire or be fired on")
-	if firer.is_struck() or target.is_struck():
+	if firer.is_captured():
+		return _refuse(p, "a prize does not fight (10.H.2)")
+	if firer.is_out_of_play() or not target.is_targetable():
 		return _refuse(p, "a struck ship cannot fire or be fired on")
 	if firer.player_id == target.player_id:
 		return _refuse(p, "cannot fire on a ship of the same side")
