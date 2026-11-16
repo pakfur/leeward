@@ -55,9 +55,11 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 		Trace.trace_log(Trace.MOVEMENT_PLOTTING_CATEGORY, "SHIP_NOT_FOUND - Player %d does not own ship %s" % [player_id, ship_id])
 		return MovementTypes.PlottingErrorResponse.create(request_id, "UNAUTHORIZED", "Player %d does not own ship %s" % [player_id, ship_id])
 
-	# Fouled, struck and dismasted ships cannot plot movement
+	# Fouled, grappled, struck and dismasted ships cannot plot movement
 	if ship_state.fouled_with != "":
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_FOULED", "Ship %s is fouled with %s and cannot move" % [ship_id, ship_state.fouled_with])
+	if ship_state.is_grappled():  # 8.C.7: grappled ships cannot move or turn
+		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_GRAPPLED", "Ship %s is grappled to %s and cannot move" % [ship_id, ", ".join(ship_state.grappled_with)])
 	if ship_state.is_destroyed():
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_DESTROYED", "Ship %s has been destroyed and cannot move" % ship_id)
 	if ship_state.is_struck():

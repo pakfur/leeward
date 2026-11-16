@@ -355,6 +355,85 @@ func test_fouled_pair_blocked_member_holds_both() -> void:
 	assert_string_contains(by_ship["a"].to_text({}), "held back by b")
 
 
+# --- grappled groups (8.A.6, 8.C.7) ---------------------------------------------
+
+## Three ships in a chain a-b-c along the wind line (a most leeward), grappled a-b and b-c.
+func _grappled_chain(sail_a: String, sail_b: String, sail_c: String) -> Array[ShipState]:
+	var a := _make_ship("a", Vector2i(5, 5), sail_a)
+	var b := _make_ship("b", Vector2i(6, 5), sail_b)
+	var c := _make_ship("c", Vector2i(7, 5), sail_c)
+	GameState.ship_controller.add_grapple("a", "b")
+	GameState.ship_controller.add_grapple("b", "c")
+	return [a, b, c]
+
+
+func test_grappled_chain_drifts_as_one_on_one_roll_by_the_least_likely() -> void:
+	# 8.A.6 example 1: one drift DR for the group, by the ship least likely to drift (FS: 5+ at
+	# WS 3, class 3 +1). d10 4: 4 + 1 = 5 >= 5, all three drift.
+	var ships := _grappled_chain("PS", "MS", "FS")
+	_dice.queue([4])
+	resolver.resolve(PHASE)
+	assert_eq(_dice.remaining(), 0, "one roll for the group")
+	assert_eq(ships[0].hex_position, Vector2i(4, 5))
+	assert_eq(ships[1].hex_position, Vector2i(5, 5))
+	assert_eq(ships[2].hex_position, Vector2i(6, 5))
+	assert_eq(_drift_events()[0].data["needed"], 5, "the FS ship decides")
+
+
+func test_grappled_chain_low_roll_none_drifts() -> void:
+	# d10 3: 3 + 1 = 4 < 5 (FS), although the PS and MS ships alone would drift.
+	var ships := _grappled_chain("PS", "MS", "FS")
+	_dice.queue([3])
+	resolver.resolve(PHASE)
+	for ship in ships:
+		assert_eq(ship.hex_position.x, [5, 6, 7][ships.find(ship)], "%s stays" % ship.ship_id)
+
+
+func test_grappled_chain_one_hex_blocked_none_drifts() -> void:
+	# §6 test 11 (8.A.6 example 2): any blocked hex holds the whole group; no partial drift; one d10.
+	var ships := _grappled_chain("MS", "MS", "MS")
+	var blocker := _make_ship("d", Vector2i(4, 5))
+	blocker.moved_this_turn = true
+	_dice.queue([9])
+	resolver.resolve(PHASE)
+	assert_eq(_dice.remaining(), 0, "one roll, no fouling roll for a group")
+	assert_eq(ships[0].hex_position, Vector2i(5, 5))
+	assert_eq(ships[1].hex_position, Vector2i(6, 5))
+	assert_eq(ships[2].hex_position, Vector2i(7, 5))
+	assert_eq(ships[0].facing, 1, "no partial drift")
+	var by_ship := {}
+	for ev in _drift_events():
+		by_ship[ev.ship_id] = ev
+	assert_eq(by_ship["a"].data["blocked"], "ship")
+	assert_eq(by_ship["b"].data["blocked"], "partner")
+	assert_eq(by_ship["b"].target_id, "a")
+	assert_eq(by_ship["b"].data["link"], "grappled")
+	assert_string_contains(by_ship["b"].to_text({}), "grappled alongside")
+	assert_eq(by_ship["c"].data["link"], "group", "c is tied to a only through b")
+
+
+func test_grappled_ship_that_moved_still_drifts_with_its_group() -> void:
+	# A grappled ship is eligible like a fouled one (it cannot move while grappled, 8.C.7).
+	var a := _make_ship("a", Vector2i(5, 5))
+	var b := _make_ship("b", Vector2i(6, 5))
+	a.moved_this_turn = true
+	b.moved_this_turn = true
+	GameState.ship_controller.add_grapple("a", "b")
+	_dice.queue([3])
+	resolver.resolve(PHASE)
+	assert_eq(a.hex_position, Vector2i(4, 5))
+	assert_eq(b.hex_position, Vector2i(5, 5))
+
+
+func test_grappled_ship_cannot_plot() -> void:
+	var a := _make_ship("a", Vector2i(5, 5))
+	_make_ship("b", Vector2i(6, 5), "MS", 1)
+	GameState.ship_controller.add_grapple("a", "b")
+	var response = _start_plotting(a)
+	assert_true(response is MovementTypes.PlottingErrorResponse)
+	assert_eq(response.error_code, "SHIP_GRAPPLED")
+
+
 # --- two-hex footprints ------------------------------------------------------
 
 func test_drift_moves_bow_and_stern() -> void:

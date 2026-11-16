@@ -95,7 +95,17 @@ static func movement_line(s: ShipState, allowance: int, partner_name: String = "
 		return "Cannot move (dismasted)"
 	if s.fouled_with != "":
 		return "Cannot move (fouled with %s)" % (partner_name if partner_name != "" else s.fouled_with)
+	if s.is_grappled():
+		return "Cannot move (grappled)"
 	return "Movement allowance this turn: %d" % allowance
+
+
+## "Grappled to Hermione and Vengeance: cannot move; the grapples can be cut in maintenance (8.C)",
+## or "" when not grappled. `names` are the partners' display names.
+static func grapple_line(s: ShipState, names: Array[String]) -> String:
+	if not s.is_grappled():
+		return ""
+	return "Grappled to %s: cannot move; the grapples can be cut in maintenance (8.C)" % " and ".join(names)
 
 
 ## Movement has been resolved this turn from combat until the turn ends (the ship's speed then
@@ -154,6 +164,8 @@ static func badges(s: ShipState) -> Array[String]:
 	var result: Array[String] = []
 	if s.fouled_with != "":
 		result.append("FOULED")
+	if s.is_grappled():
+		result.append("GRAPPLED")
 	if s.is_destroyed():
 		result.append("DESTROYED")
 	if s.is_struck():
@@ -265,6 +277,9 @@ func _update_display() -> void:
 		var change := sail_change_line(s)
 		if change != "":
 			extra.append(change)
+		var grapple := grapple_line(s, _partner_names(s))
+		if grapple != "":
+			extra.append(grapple)
 		extra.append_array(crew_task_lines(s))
 		extra.append_array(critical_lines(s))
 		_extra_label.text = "\n".join(extra)
@@ -279,6 +294,14 @@ func _update_display() -> void:
 		var partner: ShipState = GameState.get_ship(s.fouled_with) if s.fouled_with != "" else null
 		var moved: int = s.speed if movement_resolved(GameState.current_phase) else -1
 		ma_label.text = movement_line(s, ma, partner.ship_name if partner else "", moved)
+
+## Display names of the ships grappled to `s`.
+static func _partner_names(s: ShipState) -> Array[String]:
+	var names: Array[String] = []
+	for other_id in s.grappled_with:
+		var other: ShipState = GameState.get_ship(other_id)
+		names.append(other.ship_name if other else other_id)
+	return names
 
 func _on_close_pressed() -> void:
 	visible = false

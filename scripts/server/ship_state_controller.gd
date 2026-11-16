@@ -785,6 +785,63 @@ func set_fouled_with(ship_id: String, fouled_with: String) -> bool:
 	ship_state_changed.emit(ship_id)
 	return true
 
+## Grapples two ships together (8.C.2; one grapple per pair, symmetric). Returns false when refused
+## (client, unknown ship, a ship to itself) or already grappled.
+func add_grapple(ship_a: String, ship_b: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot add a grapple on client")
+		return false
+	if ship_a == ship_b:
+		push_error("[Server] A ship cannot grapple itself: %s" % ship_a)
+		return false
+	var a = _server_ship(ship_a)
+	var b = _server_ship(ship_b)
+	if not a or not b:
+		return false
+	if a.grappled_with.has(ship_b) and b.grappled_with.has(ship_a):
+		return false
+	if not a.grappled_with.has(ship_b):
+		a.grappled_with.append(ship_b)
+		a.grappled_with.sort()
+	if not b.grappled_with.has(ship_a):
+		b.grappled_with.append(ship_a)
+		b.grappled_with.sort()
+	a.ungrapple_attempts.erase(ship_b)
+	b.ungrapple_attempts.erase(ship_a)
+	ship_state_changed.emit(ship_a)
+	ship_state_changed.emit(ship_b)
+	return true
+
+## Removes the grapple between two ships (8.C.4 ungrappling, or a ship destroyed), on both sides,
+## with their ungrappling attempt counts. Returns false when there was none.
+func remove_grapple(ship_a: String, ship_b: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot remove a grapple on client")
+		return false
+	var removed := false
+	for pair in [[ship_a, ship_b], [ship_b, ship_a]]:
+		var ship = game_state.get_ship(pair[0])
+		if ship == null:
+			continue
+		if ship.grappled_with.has(pair[1]):
+			ship.grappled_with.erase(pair[1])
+			removed = true
+		ship.ungrapple_attempts.erase(pair[1])
+		ship_state_changed.emit(pair[0])
+	return removed
+
+## The number of ungrappling attempts `ship_id` has made against `partner_id` (8.C.4).
+func set_ungrapple_attempts(ship_id: String, partner_id: String, attempts: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify ungrapple attempts on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.ungrapple_attempts[partner_id] = attempts
+	ship_state_changed.emit(ship_id)
+	return true
+
 func set_plotted_movement(ship_id: String, movement_commands: Array) -> bool:
 	if not is_server:
 		push_error("ShipStateController: Cannot plot movement on client")

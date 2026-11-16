@@ -48,6 +48,7 @@ var selected_ship_id: String = ""
 var ship_indicators: Node3D = null     # ShipIndicators
 var indicator_overlay: Control = null  # IndicatorOverlay
 var status_overlay: ShipStatusOverlay = null  # graphic status over the selected / hovered ship
+var grapple_lines: GrappleLines = null  # the grapples between ships (8.C), redrawn with the ships
 var _mouse_pos: Vector2 = Vector2(-1, -1)  # last mouse position seen (viewport coordinates)
 const HUMAN_PLAYER_ID := 0
 
@@ -115,6 +116,9 @@ func _ready() -> void:
 		GameState.phase_controller.bear_off_decision_requested.connect(_on_bear_off_decision_requested)
 		# The human player's ships ask before bearing off (6.D.3); the AI's decide for themselves.
 		GameState.phase_controller.bear_off_prompt_player_ids = [HUMAN_PLAYER_ID] as Array[int]  # SCV:ALLOW
+		# Likewise the grapple and ungrapple orders of the Maintenance Phase (8.C).
+		GameState.phase_controller.maintenance_orders_requested.connect(_on_maintenance_orders_requested)
+		GameState.phase_controller.maintenance_prompt_player_ids = [HUMAN_PLAYER_ID] as Array[int]  # SCV:ALLOW
 
 	# Set up OceanView for water shader updates
 	if GameState.environment_controller and hex_map:
@@ -1327,6 +1331,41 @@ func _on_bear_off_chosen(ship_id: String, choice: String, panel: BearOffPanel) -
 		panel.show_error(reason)
 
 
+## Maintenance Phase (8.C): the server asks for the player's grapple or ungrapple orders. Drift has
+## moved ships since the last sync, so the map is brought up to date first.
+func _on_maintenance_orders_requested(player_id: int, step: String, options: Array) -> void:
+	if player_id != HUMAN_PLAYER_ID or _leaving:
+		return
+	_sync_all_views()
+	var names := {}
+	for ship: ShipState in GameState.get_all_ships():
+		names[ship.ship_id] = ship.ship_name
+	var panel := MaintenanceOrdersPanel.new()
+	panel.setup(step, options, names)
+	panel.orders_submitted.connect(_on_maintenance_orders_submitted.bind(panel))
+	if context_panel:
+		context_panel.set_context_title(MaintenanceOrdersPanel.title(step))
+		context_panel.set_context_content(panel)
+	else:
+		add_child(panel)
+	current_planning_ui = null
+	if combat_log_panel:
+		combat_log_panel.auto_expand(false)  # keep the ships alongside visible
+
+
+func _on_maintenance_orders_submitted(step: String, pairs: Array, panel: MaintenanceOrdersPanel) -> void:
+	var reason := "maintenance orders can only be submitted on the server"
+	# Single-player: submit player 0's orders under the server guard  SCV:ALLOW
+	if GameState.is_server and GameState.phase_controller:
+		reason = GameState.phase_controller.player_submit_maintenance_orders(HUMAN_PLAYER_ID, {step: pairs})
+	else:
+		push_warning("Client maintenance orders not yet implemented - needs network layer")
+	if reason != "" and is_instance_valid(panel):
+		panel.show_error(reason)
+	else:
+		_sync_all_views()  # new grapples drawn at once
+
+
 func _on_playback_completed() -> void:
 	if _leaving:
 		return
@@ -1761,6 +1800,11 @@ func _sync_all_views() -> void:
 		var ship_state = GameState.get_ship(ship_id)
 		if ship_state and ship_view and hex_map:
 			ship_view.sync_to_state(ship_state, hex_map.get_hex_grid())
+	if hex_map:
+		if grapple_lines == null:
+			grapple_lines = GrappleLines.new()
+			add_child(grapple_lines)
+		grapple_lines.refresh(GameState.get_all_ships(), hex_map.get_hex_grid())
 	if ship_status_panel:
 		ship_status_panel.refresh()
 

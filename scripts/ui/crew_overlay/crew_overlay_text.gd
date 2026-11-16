@@ -16,7 +16,7 @@ const AUTO_RULES := [
 	"A4  Tacking: with a turn at MA 0 plotted, up to 3 free sections at the braces.",
 	"A5  Repairs, one section each, shrouds, then rigging, then hull: the marines if free; sailors only with no enemy within 15 hexes.",
 	"A6  Everyone else: sailors serve the guns, marines at marine fire.",
-	"Worker order: M, then S4, S3, S2, S1. The marines are held back while there is a fire aboard, damage to fix, the ship is fouled or an enemy is alongside.",
+	"Worker order: M, then S4, S3, S2, S1. The marines are held back while there is a fire aboard, damage to fix, the ship is fouled or grappled or an enemy is alongside.",
 ]
 
 const LOCKED_AUTO := "Automatic crew is on: the ship's officers place the sections. Turn it off to place them yourself."

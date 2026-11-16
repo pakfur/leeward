@@ -197,6 +197,8 @@ func destroy(ship_id: String, reason: String, phase: int) -> void:
 		var partner: ShipState = game_state.get_ship(partner_id)
 		if partner != null and partner.fouled_with == ship_id:
 			sc.set_fouled_with(partner_id, "")
+	for grappled_id in ship.grappled_with.duplicate():
+		sc.remove_grapple(ship_id, grappled_id)  # a wreck holds no grapples (8.C)
 	if game_state.get("crew_task_controller") != null:
 		game_state.crew_task_controller.drop_all(ship_id, "destroyed")
 	sc.clear_fires(ship_id)  # a wreck does not burn (spec Q10)

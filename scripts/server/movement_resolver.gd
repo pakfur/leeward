@@ -1637,6 +1637,10 @@ func _is_in_irons(ship_state: ShipState, _environment: EnvironmentState) -> bool
 	return ship_state.speed == 0 and wind_facing == "L"
 
 
+func _wind_direction() -> int:
+	return game_state.environment.wind_direction if game_state and game_state.environment else 0
+
+
 func _get_ship_wind_facing(ship_state: ShipState) -> String:
 	var wind_dir: int = 0
 	if game_state and game_state.environment:
@@ -1652,9 +1656,9 @@ func _mps_plotted(ship_state: ShipState, steps_by_ship: Dictionary) -> int:
 
 
 func _get_plotted_steps(ship_state: ShipState) -> Array:
-	## Fouled, struck and destroyed ships cannot move: any plot is ignored (defence behind the
-	## plotting check).
-	if ship_state.fouled_with != "" or ship_state.is_out_of_play():
+	## Fouled, grappled (8.C.7), struck and destroyed ships cannot move: any plot is ignored
+	## (defence behind the plotting check).
+	if ship_state.is_linked() or ship_state.is_out_of_play():
 		return []
 	return ship_state.plotted_actions.get("movement", [])
 
@@ -1716,7 +1720,11 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			if result.immobilized:
 				sc.set_immobilized(sid, true)
 			# A ship with its rudder destroyed that enters WF=L is in irons at once (hull #2): stopped.
-			sc.set_ship_speed(sid, _count_steps_executed(result) if moved_ahead and not rudder_irons else 0)
+			# So is a ship at WF=L in a collision (5.D.5).
+			var collision_irons: bool = result.collided_with != "" \
+					and hex_grid.get_wind_facing(result.final_facing, _wind_direction()) == "L"
+			sc.set_ship_speed(sid, _count_steps_executed(result) if moved_ahead and not rudder_irons \
+					and not collision_irons else 0)
 			if result.collided_with != "":
 				sc.set_collision_this_turn(sid, true)
 			if result.fouled_with != "":

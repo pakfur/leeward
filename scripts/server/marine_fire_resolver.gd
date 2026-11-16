@@ -12,7 +12,7 @@ extends RefCounted
 ## Marine orders are {"ship_id", "target_id"} dictionaries, a second list in the fire submission
 ## (TurnPhaseController.player_submit_fire_orders).
 ##
-## Not yet modelled (boarding spec B3/B4): grapples (the -1 reads `fouled_with` only until B3) and
+## Not yet modelled (boarding spec B4):
 ## 10.D.7's Crew Loss row while boarders are formed (B4). The "target has boarders preparing or
 ## prepared" -1 reads live FB/BR/BA tasks, which exist from B4.
 
@@ -158,12 +158,9 @@ func resolve(shots: Array[Dictionary], phase: int) -> void:
 			shot["ship_id"], shot["target_id"], d6, int(shot["modifier"]), total, hits])
 
 
-## The firing ship is grappled or fouled to the target (Marine Fire DRM). Grapples arrive with B3.
+## The firing ship is grappled or fouled to the target (Marine Fire DRM).
 static func linked(firer: ShipState, target_id: String) -> bool:
-	if firer.fouled_with == target_id:
-		return true
-	var grapples = firer.get("grappled_with")
-	return grapples is Array and (grapples as Array).has(target_id)
+	return firer.linked_ids().has(target_id)
 
 
 ## The ship has boarders preparing or prepared (a live FB, BR or BA task, 10.B.6).

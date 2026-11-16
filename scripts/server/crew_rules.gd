@@ -55,6 +55,7 @@ const MARINE_HOLD_EFFECTS: Array[String] = [
 const HOLD_FIRE := "fire aboard"
 const HOLD_EFFECT := "damage to fix"
 const HOLD_FOULED := "fouled"
+const HOLD_GRAPPLED := "grappled"
 const HOLD_ENEMY := "enemy alongside"
 
 
@@ -157,6 +158,8 @@ static func marines_held_back(ship: ShipState, ctx: Dictionary) -> String:
 			return HOLD_EFFECT
 	if ship.fouled_with != "":
 		return HOLD_FOULED
+	if ship.is_grappled():  # ungrappling wants the marines too (8.C.4)
+		return HOLD_GRAPPLED
 	if bool(ctx.get("enemy_adjacent", false)):
 		return HOLD_ENEMY
 	return ""

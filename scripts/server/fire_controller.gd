@@ -348,12 +348,11 @@ func _blast(source_id: String, target: ShipState, range_hexes: int, mgn: int, ph
 
 # --- helpers ---
 
-## Ships fouled (later: grappled) to `ship`, in id order.
+## Ships fouled or grappled to `ship` (8.E.4, 8.E.11), in id order.
 func _attached_ids(ship: ShipState) -> Array:
 	var out: Array = []
-	if ship.fouled_with != "":
-		out.append(ship.fouled_with)
-	out.sort()
+	for other_id in ship.linked_ids():
+		out.append(other_id)
 	return out
 
 

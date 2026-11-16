@@ -68,6 +68,7 @@ var fire_controller: FireController = null
 var repair_controller: RepairController = null
 var drift_resolver: DriftResolver = null
 var fouling_controller: FoulingController = null
+var grappling_controller: GrapplingController = null
 var morale_controller: MoraleController = null
 var victory_controller: VictoryController = null
 
@@ -116,6 +117,7 @@ func _initialize_server_controllers() -> void:
 		crew_task_controller.register_handler(code, repair_controller)
 	drift_resolver = DriftResolver.new(self)
 	fouling_controller = FoulingController.new(self)
+	grappling_controller = GrapplingController.new(self)
 	morale_controller = MoraleController.new(self)
 	victory_controller = VictoryController.new(self)
 	turn_log = PhaseEvents.PhaseLog.new()

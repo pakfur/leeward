@@ -2,7 +2,7 @@ extends GutTest
 ## Server authority over game state (CLAUDE.md "Server Authority"): view-side code
 ## (scripts/ui, scripts/view, scripts/core) reads state and sends requests that the server
 ## validates (player_submit_*, including player_submit_fire_orders with its marine fire orders, player_clear_movement, player_plot_crew, player_set_crew_auto,
-## player_plot_sail_change, dev_commands.*, including dev_commands.start_fire and
+## player_plot_sail_change, player_submit_maintenance_orders (grapple and ungrapple orders), dev_commands.*, including dev_commands.start_fire and
 ## dev_commands.damage_ship). It never calls a state mutator or writes a ShipState field itself.
 ## This test scans the source so a violation fails `make test`.
 
@@ -47,6 +47,17 @@ const FORBIDDEN := [
 	["\\bgunnery_resolver\\.", "a GunneryResolver call from view code (use player_submit_fire_orders)"],
 	["\\b(apply_crew_losses|apply_crew_boxes|remove_crew_box)\\(", "a crew-loss mutator called from view code"],
 	["\\.(prepare|resolve)\\(", "a resolver step run from view code"],
+	# grappling (8.C): the view reads grappled_with / is_grappled(); GrapplingController's queries
+	# (grapple_options, grapple_chance, grapple_error and their ungrapple twins) are pure; orders go
+	# through phase_controller.player_submit_maintenance_orders
+	["\\bgrappling_controller\\.(?!grapple_options\\(|grapple_chance\\(|grapple_error\\(|ungrapple_options\\(|ungrapple_chance\\(|ungrapple_error\\(|adjacent\\()",
+			"a GrapplingController mutator called from view code (use player_submit_maintenance_orders)"],
+	["\\bGrapplingController\\.new\\b", "a GrapplingController made in view code"],
+	["\\b(resolve_grapples|resolve_ungrapples|add_grapple|remove_grapple|set_ungrapple_attempts)\\(",
+			"a grapple mutator called from view code"],
+	["\\.(grappled_with|ungrapple_attempts)\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "a grapple field written from view code"],
+	["\\.(grappled_with|ungrapple_attempts)\\.(append|append_array|clear|erase|remove_at|push_back|push_front|pop_back|pop_front|insert|resize|sort|sort_custom|fill|merge)\\(",
+			"a grapple field changed in place from view code"],
 	["\\.(fire_list|crew_tasks|critical_effects|plotted_sections)\\.(append|append_array|clear|erase|remove_at|push_back|push_front|pop_back|pop_front|insert|resize|sort|sort_custom|fill)\\(",
 			"a ShipState array changed in place from view code"],
 	["\\b(_?ship|ship_state|ss|state|s)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots|crew_auto|plotted_sections|task_seq|fire_list|fire_seq|explosion_checks|checked_sections|mp_used_this_turn)\\s*(=|\\+=|-=)[^=]",
@@ -88,6 +99,39 @@ func test_view_code_never_mutates_game_state() -> void:
 						violations.append("%s:%d %s: %s" % [path, i + 1, c[1], line.strip_edges()])
 	assert_gt(scanned, 10, "view code was scanned")
 	assert_eq(violations.size(), 0, "view code must not mutate game state:\n" + "\n".join(violations))
+
+
+## The grapple patterns (8.C) catch the violations they are meant to, and let the queries through.
+func test_grapple_patterns_catch_mutations() -> void:
+	var bad := [
+		"GameState.grappling_controller.resolve_grapples(orders, 6)",
+		"GameState.ship_controller.add_grapple(\"a\", \"b\")",
+		"remove_grapple(a, b)",
+		"ship.grappled_with = []",
+		"s.grappled_with.append(\"b\")",
+		"ship.ungrapple_attempts[\"b\"] = 2",
+		"var g = GrapplingController.new(GameState)",
+	]
+	var good := [
+		"var options = GameState.grappling_controller.grapple_options(ship_id)",
+		"if s.grappled_with.has(other_id):",
+		"var n := ship.grappled_with.size()",
+		"GameState.phase_controller.player_submit_maintenance_orders(0, {\"grapple\": pairs})",
+	]
+	var checks: Array = []
+	for f in FORBIDDEN:
+		var re := RegEx.new()
+		re.compile(f[0])
+		checks.append(re)
+	for line in bad:
+		var hit := false
+		for re in checks:
+			if re.search(line) != null:
+				hit = true
+		assert_true(hit, "caught: %s" % line)
+	for line in good:
+		for re in checks:
+			assert_null(re.search(line), "allowed: %s" % line)
 
 
 func test_dev_commands_refuse_unknown_property() -> void:

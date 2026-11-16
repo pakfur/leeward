@@ -49,6 +49,12 @@ var ship_type: String:
 @export var immobilized: bool = false  # ship cannot move
 @export var tacking: bool = false # user has indicated they are tacking
 @export var fouled_with: String = ""  # ship_id of fouled partner, empty if not fouled
+## Ships grappled to this one (8.C; symmetric, any number; ShipStateController.add_grapple /
+## remove_grapple). A pair may be fouled and grappled at once.
+@export var grappled_with: Array[String] = []
+## Ungrappling attempts this ship has made against each grappled partner: partner id -> count
+## (8.C.4, the Unfouling table's g-t column). Dropped when the grapple goes.
+@export var ungrapple_attempts: Dictionary = {}
 @export var collision_this_turn: bool = false  # set during resolution, cleared at turn start
 @export var movement_allowance: int = 0 # current turns movement points
 @export var min_ma: int = 0 # current ma + any deceleration considerations
@@ -167,6 +173,28 @@ func is_destroyed() -> bool:
 ## target. A struck ship still drifts; a destroyed one does not.
 func is_out_of_play() -> bool:
 	return status != Status.ACTIVE
+
+## Grappled to at least one ship (8.C.7: cannot move or turn).
+func is_grappled() -> bool:
+	return not grappled_with.is_empty()
+
+func is_grappled_to(other_id: String) -> bool:
+	return grappled_with.has(other_id)
+
+## Ships fouled or grappled to this one, sorted, each once (8.A.6 groups, 10.A.2 boarding links).
+func linked_ids() -> Array[String]:
+	var ids: Array[String] = []
+	if fouled_with != "":
+		ids.append(fouled_with)
+	for other_id in grappled_with:
+		if not ids.has(other_id):
+			ids.append(other_id)
+	ids.sort()
+	return ids
+
+## Fouled or grappled to another ship.
+func is_linked() -> bool:
+	return fouled_with != "" or is_grappled()
 
 func is_dismasted() -> bool:
 	return rigging_level() == 0
@@ -404,6 +432,8 @@ func serialize() -> Dictionary:
 		"immobilized": immobilized,
 		"tacking": tacking,
 		"fouled_with": fouled_with,
+		"grappled_with": grappled_with.duplicate(),
+		"ungrapple_attempts": ungrapple_attempts.duplicate(),
 		"collision_this_turn": collision_this_turn,
 		"movement_allowance": movement_allowance,
 		"min_ma": min_ma,
@@ -464,6 +494,13 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.immobilized = data.get("immobilized", false)
 	state.tacking = data.get("tacking", false)
 	state.fouled_with = data.get("fouled_with", "")
+	state.grappled_with.clear()
+	for other_id in data.get("grappled_with", []):
+		state.grappled_with.append(str(other_id))
+	state.ungrapple_attempts = {}
+	var attempts: Dictionary = data.get("ungrapple_attempts", {})
+	for other_id in attempts:
+		state.ungrapple_attempts[str(other_id)] = int(attempts[other_id])
 	state.collision_this_turn = data.get("collision_this_turn", false)
 	state.min_ma = int(data.get("min_ma", 0))
 	state.max_ma = int(data.get("max_ma", 0))

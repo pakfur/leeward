@@ -45,6 +45,8 @@ static func status_badge(ship: ShipState) -> String:
 		return "DISMASTED"
 	if ship.fouled_with != "":
 		return "FOULED"
+	if ship.is_grappled():
+		return "GRAPPLED"
 	return ""
 
 
@@ -75,6 +77,7 @@ static func movement_block_reason(ship: ShipState) -> String:
 		"STRUCK": return "Ship has struck its colours and cannot move."
 		"DISMASTED": return "Ship is dismasted and cannot move."
 		"FOULED": return "Ship is fouled with %s and cannot move until it breaks free." % ship.fouled_with
+		"GRAPPLED": return "Ship is grappled to %s and cannot move until the grapples are cut (8.C.7)." % ", ".join(ship.grappled_with)
 	return ""
 
 

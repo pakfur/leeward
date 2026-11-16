@@ -28,6 +28,8 @@ enum Type {
 	DEBRIS,  # 8.E.11 flaming debris from ship_id on target_id: {range, roll | attached, afire}
 	REPAIR,  # 8.F.5 a repair completed: {code, kind: rigging/hull/shrouds, section (0-3, rigging/hull), sections}
 	MARINE_FIRE,  # 7.G marine fire from ship_id at target_id: {boxes, column, modifiers, modifier, d6, total, crew}
+	GRAPPLE,  # 8.C.2 grappling roll by ship_id at target_id: {roll, modifiers, modifier, total, needed, success, in_irons?}
+	UNGRAPPLE,  # 8.C.4 ungrappling roll by ship_id from target_id: {roll, modifiers, modifier, total, needed, attempt, success}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -54,6 +56,14 @@ const MODIFIER_LABELS := {
 	"cq_g": "crew",
 	"target_boarders": "target's boarders",
 	"larger_class": "larger ship",
+	# Grappling and ungrappling DRMs (8.C)
+	"skill": "crew",
+	"fouled": "fouled",
+	"marines_unavailable": "marines busy",
+	"ws4": "wind speed 4",
+	"target_did_not_move": "target did not move",
+	"friendly": "friendly ship",
+	"better_crew": "better crew",
 }
 
 const SIDE_NAMES := ["port", "starboard"]
@@ -305,6 +315,10 @@ class PhaseEvent extends RefCounted:
 				return _repair_text(who)
 			Type.MARINE_FIRE:
 				return _marine_fire_text(who, other)
+			Type.GRAPPLE:
+				return _grapple_text(who, other)
+			Type.UNGRAPPLE:
+				return _ungrapple_text(who, other)
 			Type.DESTROYED:
 				var text := "%s explodes and is destroyed" % who
 				if target_id != "":
@@ -607,6 +621,34 @@ class PhaseEvent extends RefCounted:
 			PhaseEvents.plural(int(data.get("boxes", 0)), "box", "boxes"), _val("column"),
 			", ".join(calc), _val("total"), result]
 
+	## "X throws grapples at Y — d10 2, crew −1 → 1 ≤ 2: grappled" (8.C.2).
+	func _grapple_text(who: String, other: String) -> String:
+		var success: bool = data.get("success", false)
+		var text := "%s throws grapples at %s — %s %s %s: %s" % [who, other, _calc_text(),
+			"≤" if success else ">", _val("needed"), "grappled" if success else "they miss"]
+		var irons: Array = data.get("in_irons", [])
+		if success and not irons.is_empty():
+			var names := PackedStringArray()
+			for sid in irons:
+				names.append(who if sid == ship_id else other)
+			text += "; %s %s in irons, head to wind" % [" and ".join(names), "is" if names.size() == 1 else "are"]
+		return text
+
+	## "X cuts the grapples to Y — d10 3, crew −2 → 1 ≤ 2 (1st try): free" (8.C.4).
+	func _ungrapple_text(who: String, other: String) -> String:
+		var success: bool = data.get("success", false)
+		var verdict := "cuts the grapples to" if success else "fails to cut the grapples to"
+		return "%s %s %s — %s %s %s (try %s)" % [who, verdict, other, _calc_text(),
+			"≤" if success else ">", _val("needed"), _val("attempt")]
+
+	## "d10 4, crew −2, fouled −1 → 1" from roll, modifiers and total.
+	func _calc_text() -> String:
+		var calc := PackedStringArray(["d10 %s" % _val("roll")])
+		for m in data.get("modifiers", []):
+			calc.append("%s %s%d" % [PhaseEvents.modifier_label(str(m.get("name", "?"))),
+				"−" if int(m.get("value", 0)) < 0 else "+", absi(int(m.get("value", 0)))])
+		return "%s → %s" % [", ".join(calc), _val("total")]
+
 	func _morale_check_text(who: String) -> String:
 		var text := "%s morale check: rolled %s, needed %s" % [who, _val("roll"), _val("rating")]
 		if not data.has("passed"):
@@ -646,9 +688,15 @@ class PhaseEvent extends RefCounted:
 						who, other, dice]
 				return "%s would drift onto %s (%s) but is blocked and holds position%s" % [who, other, dice, at]
 			"partner":
-				var partner := other if target_id != "" else "its fouled partner"
-				return "%s would drift (%s) but is held back by %s, fouled alongside, and holds position%s" % [
-					who, dice, partner, at]
+				var link := str(data.get("link", "fouled"))
+				var partner := other if target_id != "" else "its %s partner" % ("grappled" if link == "grappled" else "fouled")
+				var how := "fouled alongside"
+				if link == "grappled":
+					how = "grappled alongside"
+				elif link == "group":
+					how = "in the same grappled or fouled group"
+				return "%s would drift (%s) but is held back by %s, %s, and holds position%s" % [
+					who, dice, partner, how, at]
 		return "%s would drift (%s) but is blocked and holds position%s" % [who, dice, at]
 
 	## A partial drift (8.A.5): one end slips downwind and the ship swings round on the other.

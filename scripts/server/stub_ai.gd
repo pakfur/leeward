@@ -22,7 +22,7 @@ const FIRING_RANGE_WEIGHT := 2
 const SECOND_BATTERY_BONUS := 3
 
 ## Plotting errors for ships that legitimately cannot move; the AI skips them without error.
-const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED"]
+const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_GRAPPLED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED"]
 
 var game_state: Node = null
 var _request_counter: int = 0
@@ -61,6 +61,60 @@ func assign_crew() -> void:
 		if not ship_state.crew_auto:
 			sc.set_crew_auto(ship_state.ship_id, true)
 		sc.set_crew_orders(ship_state.ship_id, {"sail_target": ""})
+
+
+## Grapple orders (8.C.1) for the ships of `player_ids`, as [ship_id, target_id] pairs: every
+## eligible enemy that has struck, or whose crew is at most two thirds of this ship's in boarding
+## combat factors (boarding spec §3.6). Never a friendly ship.
+func grapple_orders(player_ids: Array[int]) -> Array:
+	var grappling: GrapplingController = game_state.grappling_controller
+	var orders: Array = []
+	for ship_state in _ships_of(player_ids):
+		for target_id in grappling.grapple_options(ship_state.ship_id):
+			if _wants_grapple(ship_state, game_state.get_ship(target_id)):
+				orders.append([ship_state.ship_id, target_id])
+	return orders
+
+
+## Ungrapple orders (8.C.4) for the ships of `player_ids`: every grapple to a ship it would not
+## grapple (a friendly ship, or an enemy it would not take on).
+func ungrapple_orders(player_ids: Array[int]) -> Array:
+	var grappling: GrapplingController = game_state.grappling_controller
+	var orders: Array = []
+	for ship_state in _ships_of(player_ids):
+		for partner_id in grappling.ungrapple_options(ship_state.ship_id):
+			if not _wants_grapple(ship_state, game_state.get_ship(partner_id)):
+				orders.append([ship_state.ship_id, partner_id])
+	return orders
+
+
+## The AI's grappling rule (boarding spec §3.6): an enemy that has struck, or whose crew's boarding
+## combat factors are at most two thirds of this ship's.
+func _wants_grapple(ship_state: ShipState, other: ShipState) -> bool:
+	if other == null or other.player_id == ship_state.player_id:
+		return false
+	if other.is_struck():
+		return true
+	return crew_strength(other) * 3 <= crew_strength(ship_state) * 2
+
+
+## A ship's whole crew in boarding combat factors (10.D.1 BCFs at its current CQ).
+static func crew_strength(ship_state: ShipState) -> int:
+	var tables: CombatTables = DataManager.combat_tables
+	var sailors := 0
+	for boxes in ship_state.crew_count:
+		sailors += int(boxes)
+	return sailors * tables.bcf(ship_state.crew_quality, false) \
+		+ ship_state.marine_count * tables.bcf(ship_state.crew_quality, true)
+
+
+func _ships_of(player_ids: Array[int]) -> Array[ShipState]:
+	var out: Array[ShipState] = []
+	for ship_state in game_state.get_all_ships():
+		if player_ids.has(ship_state.player_id):
+			out.append(ship_state)
+	out.sort_custom(func(a: ShipState, b: ShipState) -> bool: return a.ship_id < b.ship_id)
+	return out
 
 
 ## A potential collision (6.D) for a ship the AI decides for. It always tries to bear off when a turn

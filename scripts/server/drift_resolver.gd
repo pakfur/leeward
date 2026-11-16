@@ -5,6 +5,9 @@ extends RefCounted
 ## Drifting table. A destroyed ship (wreck) never drifts or fouls, but it blocks drift. On a success it drifts one hex downwind, keeping its facing. A drift into an
 ## occupied hex or off the map is blocked; drifting onto a ship may foul the two, and the drift
 ## line itself names the ship in the way and says whether they fouled.
+## Ships fouled or grappled together drift as one group (8.A.6): the connected ships over
+## ShipState.linked_ids(), one d10 by the member least likely to drift, never a partial drift, and
+## the whole group stays when any of its hexes is blocked.
 ## All mutations go through ShipStateController.
 
 var is_server: bool = true
@@ -22,8 +25,8 @@ func _init(p_game_state: Node) -> void:
 ## leeward-most first (8.A.2: largest projection of the footprint's middle, between bow and stern,
 ## on the downwind world vector; ties by ship_id), each seeing the positions left by those before
 ## it. Judging by the middle, a single ship whose hex would drift into another's is always the
-## later one. A fouled pair is processed once, at its more leeward member, so its other member may
-## come before a ship it would drift into. For each ship or fouled pair:
+## later one. A group of fouled or grappled ships (8.A.6) is processed once, at its most leeward
+## member, so its other members may come before a ship they would drift into. For each ship or group:
 ##   1. the drift d10
 ##   2. only if that drift is blocked by another ship that may foul it: the fouling d10
 ## At wind speed 0 nothing is rolled and nothing is logged.
@@ -53,14 +56,35 @@ func resolve(phase: int) -> void:
 		if done.has(sid):
 			continue
 		done[sid] = true
-		var group: Array[ShipState] = [ship]
-		var partner: ShipState = game_state.get_ship(ship.fouled_with) if ship.fouled_with != "" else null
-		if partner != null and not done.has(partner.ship.ship_id):
-			done[partner.ship.ship_id] = true
-			group.append(partner)
+		var group: Array[ShipState] = _linked_group(ship)
+		for member in group:
+			done[member.ship.ship_id] = true
 		if not _is_eligible(group):
 			continue
 		_resolve_group(group, downwind_dir, wind_speed, phase)
+
+
+## `ship` and every ship fouled or grappled to it, directly or through others (8.A.6), `ship`
+## first, the rest by ship_id.
+func _linked_group(ship: ShipState) -> Array[ShipState]:
+	var seen := {ship.ship.ship_id: true}
+	var queue: Array[ShipState] = [ship]
+	var others: Array[ShipState] = []
+	while not queue.is_empty():
+		var current: ShipState = queue.pop_front()
+		for other_id in current.linked_ids():
+			if seen.has(other_id):
+				continue
+			var other: ShipState = game_state.get_ship(other_id)
+			if other == null:
+				continue
+			seen[other_id] = true
+			queue.append(other)
+			others.append(other)
+	others.sort_custom(func(a: ShipState, b: ShipState) -> bool: return a.ship.ship_id < b.ship.ship_id)
+	var group: Array[ShipState] = [ship]
+	group.append_array(others)
+	return group
 
 
 func _projection(ship: ShipState, downwind_vector: Vector3) -> float:
@@ -72,7 +96,7 @@ func _is_eligible(group: Array[ShipState]) -> bool:
 		if ship.is_destroyed():
 			return false  # a wreck never drifts (its fouling was cleared when it blew up)
 	for ship in group:
-		if not ship.moved_this_turn or ship.collision_this_turn or ship.fouled_with != "":
+		if not ship.moved_this_turn or ship.collision_this_turn or ship.is_linked():
 			return true
 	return false
 
@@ -82,8 +106,8 @@ func _sail_key(ship: ShipState) -> String:
 
 
 func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int, phase: int) -> void:
-	## The ship that is harder to drift (higher number) decides for a fouled pair, with its own
-	## class modifier. A ship that never drifts (-1) holds the pair in place.
+	## The ship least likely to drift (higher number) decides for a fouled or grappled group (8.A.6),
+	## with its own class modifier. A ship that never drifts (-1) holds the group in place.
 	var decider: ShipState = null
 	var needed := 0
 	for ship in group:
@@ -130,7 +154,7 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 	# The fouled_with check is unreachable under the 8.A.2 order (a blocker is always resolved
 	# first); kept so a fouled ship never partially drifts (8.A.6), e.g. one whose partner id is
 	# dangling.
-	if drifts and blocked == "ship" and group.size() == 1 and group[0].fouled_with == "":
+	if drifts and blocked == "ship" and group.size() == 1 and not group[0].is_linked():
 		# Partial drift (8.A.5): only the bow or only the stern is blocked by a ship; the free end
 		# drifts and the ship pivots on the other, if that leaves a legal two-hex footprint.
 		var lone: ShipState = group[0]
@@ -187,15 +211,31 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 				data["blocked"] = own_block[sid]
 				other_id = own_blocker.get(sid, "")
 			else:
-				# Free to drift itself, but held by the fouled partner that is blocked.
+				# Free to drift itself, but held by a fouled or grappled member that is blocked.
 				data["blocked"] = "partner"
 				other_id = ship.fouled_with
+				if other_id == "" or not own_block.has(other_id):
+					other_id = _held_by(ship, own_block)
+				# How it is tied to that ship: fouled (no key), grappled, or through other ships.
+				if ship.fouled_with != other_id:
+					data["link"] = "grappled" if ship.is_grappled_to(other_id) else "group"
 			if fouled != null:
 				data["fouled"] = fouled
 		game_state.turn_log.add(PhaseEvents.Type.DRIFT, phase, sid, data, other_id)
 	if moved:
 		for ship in group:
 			game_state.ship_controller.set_ship_position(ship.ship.ship_id, targets[ship.ship.ship_id])
+
+
+## The blocked group member that holds `ship` back: a directly linked one if any, else the first
+## blocked member by ship_id.
+func _held_by(ship: ShipState, own_block: Dictionary) -> String:
+	for other_id in ship.linked_ids():
+		if own_block.has(other_id):
+			return other_id
+	var ids: Array = own_block.keys()
+	ids.sort()
+	return str(ids[0]) if not ids.is_empty() else ""
 
 
 ## What first stops `ship`'s whole footprint shifting one hex downwind: {} when nothing does,

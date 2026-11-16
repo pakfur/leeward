@@ -12,6 +12,10 @@ signal game_over(result: Dictionary)
 ## Movement playback reached a potential collision of a prompted player's ship (6.D.3): the player
 ## answers with player_submit_bear_off.
 signal bear_off_decision_requested(situation: MovementTypes.BearOffSituation)
+## STATUS_ADJUSTMENT waits for a prompted player's grapple (SoP V.C) or ungrapple (V.D) orders:
+## `step` is "grapple" or "ungrapple", `options` that player's choices (see maintenance_options).
+## The player answers with player_submit_maintenance_orders.
+signal maintenance_orders_requested(player_id: int, step: String, options: Array)
 
 enum GamePhase {
 	SETUP,
@@ -30,6 +34,10 @@ enum GamePhase {
 ## Steps inside COMBAT_RESOLUTION: orders are declared (hidden, simultaneous), then resolved.
 enum CombatStep { NONE, DECLARE, RESOLVE }
 
+## Waiting steps inside STATUS_ADJUSTMENT (Maintenance sub-phases C and D, 8.C): the phase waits in
+## GRAPPLE, then in UNGRAPPLE, only while a prompted player has a choice to make.
+enum MaintenanceStep { NONE, GRAPPLE, UNGRAPPLE }
+
 var current_phase: GamePhase = GamePhase.SETUP
 var current_turn: int = 0
 var players_ready: Array[bool] = [false, false]
@@ -44,6 +52,16 @@ var _fire_ready: Array[bool] = [false, false]
 var bear_off_prompt_player_ids: Array[int] = []
 ## This turn's answers: ship_id -> {choice, segment} (see MovementResolver.run).
 var _bear_off_decisions: Dictionary = {}
+## Players asked for their grapple and ungrapple orders (8.C); everyone else's ships are ordered by
+## StubAI. Empty (no prompts, no pause) unless the game wires a human player in, as for bear-off.
+var maintenance_prompt_player_ids: Array[int] = []
+var maintenance_step: MaintenanceStep = MaintenanceStep.NONE
+## Prompted players whose orders for the current maintenance step are still awaited.
+var _maintenance_waiting: Array[int] = []
+## The current maintenance step's options per prompted player (player_id -> Array) and the orders
+## received ([ship_id, other_id] pairs, all players).
+var _maintenance_options: Dictionary = {}
+var _maintenance_orders: Array = []
 ## The resolver's RNG state when this g-t's movement resolution first ran: a re-run after a bear-off
 ## answer starts from it, so the dice before the decision (poor maneuvering, tacking, contests) repeat.
 var _resolution_rng_state: int = 0
@@ -71,6 +89,7 @@ func start_new_game() -> void:
 	_fire_ready = [false, false]
 	_pending_resolution_log = null
 	_bear_off_decisions = {}
+	_reset_maintenance()
 	current_phase = GamePhase.SETUP  # Start in SETUP so advance_phase() enters ENVIRONMENT
 
 	Trace.trace_log("TurnPhase", "Game started - Turn: %d" % current_turn)
@@ -84,6 +103,9 @@ func advance_phase() -> void:
 		return
 	if not game_result.is_empty():
 		return  # Game over: the phase stays END_TURN
+	if maintenance_step != MaintenanceStep.NONE:
+		push_warning("TurnPhaseController: STATUS_ADJUSTMENT waits for maintenance orders; advance_phase ignored")
+		return
 
 	match current_phase:
 		GamePhase.SETUP:
@@ -483,10 +505,138 @@ func _enter_drift_calculation_phase() -> void:
 	advance_phase()
 
 func _enter_status_adjustment_phase() -> void:
-	"""SERVER ONLY: Enter status adjustment phase"""
+	"""SERVER ONLY: Enter status adjustment phase (the Maintenance Phase after drift, SoP V.C-G).
+	Grappling, then ungrappling (8.C), each waiting for a prompted player's orders only when that
+	player has a choice; then unfouling, fixes, fire and the crew tasks."""
 	current_phase = GamePhase.STATUS_ADJUSTMENT
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: STATUS_ADJUSTMENT")
+	_reset_maintenance()
+	if game_state.get("grappling_controller") == null:
+		_finish_status_adjustment()
+		return
+	_begin_maintenance_step(MaintenanceStep.GRAPPLE)
+
+
+## Collect the prompted players' options for `step`; wait if any has one, else resolve at once.
+func _begin_maintenance_step(step: MaintenanceStep) -> void:
+	_maintenance_options = {}
+	_maintenance_orders = []
+	_maintenance_waiting = []
+	for player_id in maintenance_prompt_player_ids:
+		var options: Array = maintenance_options(player_id, step)
+		if not options.is_empty():
+			_maintenance_options[player_id] = options
+			_maintenance_waiting.append(player_id)
+	if _maintenance_waiting.is_empty():
+		_resolve_maintenance_step(step)
+		return
+	maintenance_step = step
+	Trace.trace_log("TurnPhase", "STATUS_ADJUSTMENT waits for %s orders" % _step_name(step),
+		{"players": _maintenance_waiting})
+	for player_id in _maintenance_waiting.duplicate():
+		maintenance_orders_requested.emit(player_id, _step_name(step), _maintenance_options[player_id])
+
+
+## The choices `player_id` has in `step`: one entry per (own ship, other ship) pair:
+## {"ship_id", "target_id", "needed", "modifier", "modifiers", "percent"} (+ "attempt" when
+## ungrappling), from GrapplingController's queries. Pure.
+func maintenance_options(player_id: int, step: MaintenanceStep) -> Array:
+	var out: Array = []
+	var grappling = game_state.get("grappling_controller")
+	if grappling == null:
+		return out
+	var own: Array = []
+	for ship: ShipState in game_state.get_player_ships(player_id):
+		own.append(ship.ship_id)
+	own.sort()
+	for ship_id in own:
+		var others: Array[String] = grappling.grapple_options(ship_id) if step == MaintenanceStep.GRAPPLE \
+				else grappling.ungrapple_options(ship_id)
+		# 0.4 #7: enemy targets first, then friendly ones.
+		var enemies: Array = []
+		var friends: Array = []
+		for other_id in others:
+			var other: ShipState = game_state.get_ship(other_id)
+			(friends if other.player_id == player_id else enemies).append(other_id)
+		for other_id in enemies + friends:
+			var chance: Dictionary = grappling.grapple_chance(ship_id, other_id) if step == MaintenanceStep.GRAPPLE \
+					else grappling.ungrapple_chance(ship_id, other_id)
+			var entry := {"ship_id": ship_id, "target_id": other_id}
+			entry.merge(chance)
+			out.append(entry)
+	return out
+
+
+## SERVER ONLY: a prompted player's orders for the maintenance step now waiting:
+## {"grapple": [[ship_id, target_id], ...]} in GRAPPLE, {"ungrapple": [[ship_id, partner_id], ...]}
+## in UNGRAPPLE (an empty list orders nothing). Each pair must be one of the player's options.
+## Returns "" when accepted (once every prompted player has answered, the step is rolled and the
+## phase goes on), else the reason it was refused (nothing changes).
+func player_submit_maintenance_orders(player_id: int, orders: Dictionary) -> String:
+	if not is_server:
+		push_error("TurnPhaseController: Cannot submit maintenance orders on client")
+		return "maintenance orders can only be submitted on the server"
+	if not game_result.is_empty():
+		return "the game is over"
+	if current_phase != GamePhase.STATUS_ADJUSTMENT or maintenance_step == MaintenanceStep.NONE:
+		return "no maintenance orders are being asked for"
+	if not _maintenance_waiting.has(player_id):
+		return "no maintenance orders are awaited from player %d" % player_id
+	var key := _step_name(maintenance_step)
+	for k in orders:
+		if str(k) != key:
+			return "only %s orders are given now" % key
+	var pairs = GrapplingController.parse_pairs(orders.get(key, []))
+	if pairs == null:
+		return "malformed %s orders" % key
+	var legal := {}
+	for option in _maintenance_options.get(player_id, []):
+		legal["%s|%s" % [option["ship_id"], option["target_id"]]] = true
+	for pair in pairs:
+		var ship: ShipState = game_state.get_ship(pair[0])
+		if ship == null:
+			return "no ship %s" % pair[0]
+		if ship.player_id != player_id:
+			return "%s is not this player's ship" % pair[0]
+		if not legal.has("%s|%s" % [pair[0], pair[1]]):
+			var grappling: GrapplingController = game_state.grappling_controller
+			var why: String = grappling.grapple_error(pair[0], pair[1]) if maintenance_step == MaintenanceStep.GRAPPLE \
+					else grappling.ungrapple_error(pair[0], pair[1])
+			return why if why != "" else "%s cannot %s %s now" % [pair[0], key, pair[1]]
+	_maintenance_orders.append_array(pairs)
+	_maintenance_waiting.erase(player_id)
+	Trace.trace_log("TurnPhase", "Player %d gave %d %s orders" % [player_id, pairs.size(), key])
+	if _maintenance_waiting.is_empty():
+		var step := maintenance_step
+		maintenance_step = MaintenanceStep.NONE
+		_resolve_maintenance_step(step)
+	return ""
+
+
+## Roll `step` with the prompted players' orders plus StubAI's for every other player's ships, then
+## move on: ungrappling after grappling, the rest of the phase after ungrappling.
+func _resolve_maintenance_step(step: MaintenanceStep) -> void:
+	var orders: Array = _maintenance_orders.duplicate()
+	if game_state.stub_ai:
+		var ai_players: Array[int] = []
+		for p in game_state.ships_by_player.keys():
+			if not maintenance_prompt_player_ids.has(int(p)):
+				ai_players.append(int(p))
+		orders.append_array(game_state.stub_ai.grapple_orders(ai_players) if step == MaintenanceStep.GRAPPLE
+				else game_state.stub_ai.ungrapple_orders(ai_players))
+	_maintenance_orders = []
+	_maintenance_options = {}
+	if step == MaintenanceStep.GRAPPLE:
+		game_state.grappling_controller.resolve_grapples(orders, current_phase)
+		_begin_maintenance_step(MaintenanceStep.UNGRAPPLE)
+	else:
+		game_state.grappling_controller.resolve_ungrapples(orders, current_phase)
+		_finish_status_adjustment()
+
+
+## SoP V.E-G after grappling and ungrappling, then the next phase.
+func _finish_status_adjustment() -> void:
 	if game_state.fouling_controller:
 		game_state.fouling_controller.resolve_unfouling(current_phase)
 	if game_state.critical_hit_controller:
@@ -501,6 +651,17 @@ func _enter_status_adjustment_phase() -> void:
 		game_state.crew_task_controller.advance_tasks(current_phase)
 	# TODO: sinking, anchors
 	advance_phase()
+
+
+func _reset_maintenance() -> void:
+	maintenance_step = MaintenanceStep.NONE
+	_maintenance_waiting = []
+	_maintenance_options = {}
+	_maintenance_orders = []
+
+
+static func _step_name(step: MaintenanceStep) -> String:
+	return "grapple" if step == MaintenanceStep.GRAPPLE else "ungrapple"
 
 func _enter_morale_check_phase() -> void:
 	"""SERVER ONLY: Enter morale check phase"""
@@ -524,7 +685,6 @@ func _enter_post_combat_phase() -> void:
 	current_phase = GamePhase.POST_COMBAT
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: POST_COMBAT - waiting for End Turn")
-	# TODO: Allow grappling/ungrappling, unfouling, fire fighting
 
 func player_end_turn(player_id: int) -> bool:
 	"""SERVER ONLY: The human player ends the turn. Only valid in POST_COMBAT; the AI needs no call."""
@@ -580,7 +740,8 @@ func serialize_phase_state() -> Dictionary:
 		"current_phase": current_phase,
 		"current_turn": current_turn,
 		"players_ready": players_ready,
-		"combat_step": combat_step
+		"combat_step": combat_step,
+		"maintenance_step": maintenance_step
 	}
 
 func apply_phase_state(data: Dictionary) -> void:
@@ -589,6 +750,7 @@ func apply_phase_state(data: Dictionary) -> void:
 	current_turn = data.get("current_turn", 0)
 	players_ready = data.get("players_ready", [false, false])
 	combat_step = data.get("combat_step", CombatStep.NONE)
+	maintenance_step = data.get("maintenance_step", MaintenanceStep.NONE)
 
 	# Emit signals so UI can update
 	phase_changed.emit(current_phase)
