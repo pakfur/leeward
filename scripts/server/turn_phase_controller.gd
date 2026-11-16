@@ -232,6 +232,89 @@ func player_clear_movement(player_id: int, ship_id: String) -> String:
 	return ""
 
 
+## SERVER ONLY: appends one step to the ship's stored course (the always-on course editing). The
+## hex must be a valid next move from the course end (validated as the plotting session's
+## SELECT_HEX does). A ship with no stored course starts from its position and facing. Stores the
+## course; returns "" or the reason it is refused (the course is then unchanged).
+func player_extend_course(player_id: int, ship_id: String, hex: Vector2i) -> String:
+	var why := _course_request_error(player_id, ship_id)
+	if why != "":
+		return why
+	var ship: ShipState = game_state.get_ship(ship_id)
+	var path := stored_course(ship)
+	var cur_hex: Vector2i = ship.hex_position if path.is_empty() else path[-1].hex
+	var cur_facing: int = ship.facing if path.is_empty() else path[-1].facing
+	var validation := MovementValidator.new(game_state).validate_hex_selection(
+		ship, cur_hex, cur_facing, hex, path)
+	if not validation.is_valid:
+		return validation.error_message
+	var move_type: MovementTypes.MoveType = validation.metadata.move_type \
+			if validation.metadata else MovementTypes.MoveType.NONE
+	var resulting_hex: Vector2i = validation.metadata.resulting_hex \
+			if validation.metadata else hex
+	path.append(MovementTypes.PlotStep.new(resulting_hex, validation.new_facing, move_type))
+	game_state.ship_controller.set_plotted_movement(ship_id, DefaultCourse.as_dicts(path))
+	return ""
+
+
+## SERVER ONLY: cuts the ship's stored course back to the steps before `step_index` (0 clears it;
+## the size keeps all of it). Stores the result as the player's plot. Returns "" or the reason.
+func player_cut_course(player_id: int, ship_id: String, step_index: int) -> String:
+	var why := _course_request_error(player_id, ship_id)
+	if why != "":
+		return why
+	var ship: ShipState = game_state.get_ship(ship_id)
+	var path := stored_course(ship)
+	if step_index < 0 or step_index > path.size():
+		return "no step %d in the course of %s" % [step_index, ship_id]
+	var kept: Array[MovementTypes.PlotStep] = []
+	kept.assign(path.slice(0, step_index))
+	game_state.ship_controller.set_plotted_movement(ship_id, DefaultCourse.as_dicts(kept))
+	return ""
+
+
+## Read-only: what the view needs to draw and extend a ship's course: `path` (the stored steps),
+## `valid_next` (MovementTypes.ValidNextHexes from the course end), `remaining_ma`,
+## `is_tacking_attempt`, `rudder_error` ("" or the jammed-rudder text: the course is kept, the view
+## warns). {} when the ship cannot plot.
+func course_options(ship_id: String) -> Dictionary:
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null or not DefaultCourse.can_plot(ship):
+		return {}
+	var path := stored_course(ship)
+	var cur_hex: Vector2i = ship.hex_position if path.is_empty() else path[-1].hex
+	var cur_facing: int = ship.facing if path.is_empty() else path[-1].facing
+	var validator := MovementValidator.new(game_state)
+	var moves := validator.calculate_valid_moves(ship, cur_hex, cur_facing, path)
+	return {
+		"path": path,
+		"valid_next": moves.valid_hexes,
+		"remaining_ma": moves.remaining_ma,
+		"is_tacking_attempt": moves.is_tacking_attempt,
+		"rudder_error": validator.rudder_jam_error(ship, path),
+	}
+
+
+## The steps stored in the ship's plotted movement.
+func stored_course(ship: ShipState) -> Array[MovementTypes.PlotStep]:
+	var steps: Array[MovementTypes.PlotStep] = []
+	for d in ship.plotted_actions.get("movement", []):
+		steps.append(MovementTypes.PlotStep.from_dict(d))
+	return steps
+
+
+## The `_crew_request_error` checks (phase, submitted plan, owner) plus: the ship must be able to
+## plot (not fouled, grappled, struck, dismasted, a prize).
+func _course_request_error(player_id: int, ship_id: String) -> String:
+	var why := _crew_request_error(player_id, ship_id)
+	if why != "":
+		return why
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if not DefaultCourse.can_plot(ship):
+		return "%s cannot move" % ship_id
+	return ""
+
+
 ## SERVER ONLY: the player's crew plan for one ship (the crew overlay; crew-tasks spec §3.2, §4.4).
 ## Checks the phase, the player, that the plan is not yet submitted and that the ship is theirs;
 ## CrewTaskController.plot_crew normalizes and stores it. Returns "" or the reason it is refused.
