@@ -246,43 +246,6 @@ func test_automatic_fire_first_then_tasks_then_braces() -> void:
 	assert_false(a.has(ShipState.MARINES), "marines held back: fire aboard")
 
 
-# --- Summary line (spec §4.8) ---
-
-func test_summary_line_groups_by_station() -> void:
-	ship.crew_auto = false
-	var ctx := _ctx()
-	ctx["fires"] = [3]
-	var plan := {"assignments": {0: {"code": "SAIL", "params": {"target": "FS"}}}, "orders": {"sail_target": "FS"}}
-	var n := CrewRules.normalize(ship, plan, ctx)
-	assert_eq(CrewRules.summary_text(CrewRules.summary(ship, n, ctx)), "S1 sails · S2 FF1", "no chips for guns or musket fire")
-	var kinds: Array = []
-	for chip in CrewRules.summary(ship, n, ctx):
-		kinds.append(chip["kind"])
-	assert_eq(kinds, ["task", "fire"])
-
-
-func test_summary_line_automatic_and_warning() -> void:
-	ship.crew_auto = true
-	var plan := CrewRules.normalize(ship, CrewRules.plan_of(ship), _ctx())
-	assert_eq(CrewRules.summary_text(CrewRules.summary(ship, plan, _ctx())), "Auto")
-	ship.crew_auto = false
-	var short := CrewRules.normalize(ship, {"assignments": {3: {"code": "SAIL", "params": {}}},
-		"orders": {"sail_target": "PS"}}, _ctx())
-	var chips := CrewRules.summary(ship, short, _ctx())
-	assert_eq(chips[-1]["kind"], "warn")
-	assert_eq(chips[-1]["text"], "Needs 2 sections: 1 placed. The change will not start.")
-
-
-func test_summary_line_lost_section_left_out() -> void:
-	ship.crew_auto = false
-	ship.crew_count = [3, 0, 3, 3] as Array[int]
-	var plan := CrewRules.normalize(ship, CrewRules.plan_of(ship), _ctx())
-	assert_eq(CrewRules.summary_text(CrewRules.summary(ship, plan, _ctx())), "", "all at their default stations")
-	plan = CrewRules.normalize(ship, {"assignments": {1: {"code": "SAIL", "params": {}}},
-		"orders": {"sail_target": "FS"}}, _ctx())
-	assert_false(CrewRules.summary_text(CrewRules.summary(ship, plan, _ctx())).contains("S2"), "the lost S2 is left out")
-
-
 # --- Progress warning (4.A.3) and the sail order ---
 
 func test_progress_warning_for_an_abandonable_task_with_progress() -> void:
@@ -387,13 +350,14 @@ func test_guns_readout_text() -> void:
 	var g := CrewOverlayText.guns_readout(ship, plan)
 	assert_eq(g["big"], "3 of 4 sections · −3", "4.B.4: -3 per sailor section off the guns")
 	assert_false(g["bad"])
-	assert_eq(g["why"], "S4 altering sail")
+	assert_eq(g["why"], "Gunfire modifier for sections firing, on both broadsides.",
+		"what S4 is doing shows under the Crew line, not here")
 	assert_eq(g["marines"], "Marines: muskets at the rail.")
 	ship.crew_count = [0, 3, 3, 3] as Array[int]
 	g = CrewOverlayText.guns_readout(ship, plan)
 	assert_eq(g["big"], "2 of 4 sections · −6")
 	assert_true(g["bad"], "red at -6 or worse")
-	assert_eq(g["why"], "S1 lost · S4 altering sail")
+	assert_false(g["why"].contains("S1"), "no section activity in the guns readout")
 
 
 # --- Ship card status box (planning panel rework C3-C6) ---

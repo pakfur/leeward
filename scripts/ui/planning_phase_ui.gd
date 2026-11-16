@@ -78,27 +78,21 @@ func setup_for_player(player_ships: Array[ShipState]) -> void:
 	_update_instructions()
 	refresh_crew_summaries()
 
-## The crew plan changed (crew overlay): the sail row and the summary lines follow it.
+## The crew plan changed (crew overlay): the sail row and the cards follow it.
 func refresh_crew_orders() -> void:
 	_refresh_sail_row()
 	refresh_crew_summaries()
 
-## The crew summary line and the status box on every card (CrewRules.summary of the stored plan,
-## a read-only query); the cards redraw their hull, rigging, crew and guns from the ship too.
+## The status box on every card from the stored crew plan (a read-only query); the cards redraw
+## their hull, rigging, crew and guns from the ship too.
 func refresh_crew_summaries() -> void:
 	for ship_id in ship_list_items:
 		var ship: ShipState = ship_states.get(ship_id)
 		var item = ship_list_items[ship_id]
 		if ship == null or GameState.crew_task_controller == null:
-			item.set_crew_summary([])
 			continue
-		var plan: Dictionary = GameState.crew_task_controller.current_plan(ship_id)
 		item.setup(ship)
-		item.set_crew_plan(plan)
-		if crew_overlay_open and ship_id == selected_ship_id:
-			item.set_crew_summary([])
-			continue
-		item.set_crew_summary(CrewRules.summary(ship, plan, CrewRules.context(GameState, ship)))
+		item.set_crew_plan(GameState.crew_task_controller.current_plan(ship_id))
 
 func clear_ships() -> void:
 	for child in ship_list_container.get_children():

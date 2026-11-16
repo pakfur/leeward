@@ -38,7 +38,7 @@ const FIRE_EXEMPT_CODES: Array[String] = ["RO"]
 const ONE_TURN_CODES: Array[String] = ["T", "BD"]
 ## Tie order among multi-g-t tasks for the fire draft (spec §3.4 step 5).
 const DRAFT_TIE_ORDER: Array[String] = ["RS", "RR", "RH", "SAIL"]
-## Short words for the planning-panel summary line (spec §4.8).
+## Short words for a section's task (the Crew line on a ship card, CrewOverlayText.section_job).
 const SUMMARY_WORDS := {"guns": "guns", "marine_fire": "fire", "sails": "sails", "braces": "braces",
 	"reorganizing": "RO", "boarders": "boarders"}
 ## Station labels and short codes (small deck cards), spec §4.3.
@@ -571,7 +571,7 @@ static func guns_preview(ship: ShipState, plan: Dictionary) -> Dictionary:
 	return {"sections": able, "modifier": modifier, "missing": missing}
 
 
-# --- Stations (spec §4.3), progress warnings, summary (§4.8) ---
+# --- Stations (spec §4.3), progress warnings ---
 
 ## The station a plan entry sits on: "" (unplotted) is the guns for a sailor, marine fire for M.
 static func station_of(section: int, entry: Dictionary) -> String:
@@ -947,71 +947,6 @@ static func fill_fires(ship: ShipState, assignments: Dictionary, fires: Array) -
 		result[s] = {"code": CODE_FF, "params": {"fire": int(seq)}}
 		auto.append(s)
 	return {"assignments": result, "auto": auto}
-
-
-# --- Summary line (spec §4.8) ---
-
-## The planning-panel chips for a normalized plan: [{"text", "kind"}], kind "auto" (leading, when
-## Automatic is on), "task", "fire" or "warn". Sections are grouped by station in section order:
-## "S1 sails · S2 FF1". Sections at their default stations (guns, marine fire) get no chip: the
-## card's Crew and Marines lines already say so.
-static func summary(ship: ShipState, plan: Dictionary, ctx: Dictionary = {}) -> Array[Dictionary]:
-	var chips: Array[Dictionary] = []
-	if ship.crew_auto:
-		chips.append({"text": "Auto", "kind": "auto"})
-	var assignments: Dictionary = plan.get("assignments", {})
-	var groups: Array = []  # [station, [names]]
-	for section in range(ShipState.MARINES + 1):
-		if not ship.section_alive(section):
-			continue
-		var st := station_of(section, assignments.get(section, {}))
-		var b_entry: Dictionary = assignments.get(section, {})
-		if st == STATION_BOARDERS and str(b_entry.get("code", "")) == BoardingRules.BA:
-			st = "board:" + str(b_entry.get("params", {}).get("target", ""))
-		elif st == STATION_BOARDERS and str(b_entry.get("code", "")) == BoardingRules.BD:
-			st = "stand_down"
-		var group = null
-		for g in groups:
-			if g[0] == st:
-				group = g
-		if group == null:
-			group = [st, []]
-			groups.append(group)
-		group[1].append(ShipState.SECTION_NAMES[section])
-	for g in groups:
-		var st: String = g[0]
-		var word: String = SUMMARY_WORDS.get(st, st.to_upper())
-		if st.begins_with("board:"):
-			var target := st.trim_prefix("board:")
-			word = "board " + str((ctx.get("ship_names", {}) as Dictionary).get(target, target))
-		elif st == "stand_down":
-			word = "stand down"
-		if st == STATION_GUNS or st == STATION_MARINE_FIRE:
-			continue
-		var kind := "task"
-		if st.begins_with(STATION_FIRE_PREFIX):
-			var seq := int(st.trim_prefix(STATION_FIRE_PREFIX))
-			word = "fire watch" if seq < 0 else "FF%d" % maxi(1, fire_number(ctx, seq))
-			kind = "fire"
-		chips.append({"text": " ".join(g[1]) + " " + word, "kind": kind})
-	var fires: Array = ctx.get("fires", [])
-	for seq in fires:
-		var fought := false
-		for s in assignments:
-			fought = fought or station_of(int(s), assignments[s]) == STATION_FIRE_PREFIX + str(seq)
-		if not fought:
-			chips.append({"text": "Fire %d unfought" % fire_number(ctx, int(seq)), "kind": "warn"})
-	for w in plan.get("warnings", []):
-		chips.append({"text": str(w), "kind": "warn"})
-	return chips
-
-
-## The chips as one line of text (tests, tooltips).
-static func summary_text(chips: Array) -> String:
-	var parts: PackedStringArray = []
-	for chip in chips:
-		parts.append(str(chip.get("text", "")))
-	return " · ".join(parts)
 
 
 static func _key_less(a: Array, b: Array) -> bool:

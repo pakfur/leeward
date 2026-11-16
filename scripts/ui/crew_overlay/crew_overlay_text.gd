@@ -136,12 +136,8 @@ static func guns_readout(ship: ShipState, plan: Dictionary) -> Dictionary:
 		var mod: int = preview["modifier"]
 		big = "%d of 4 sections · %s" % [n, "±0" if mod == 0 else ("%d" % mod).replace("-", "−")]
 		bad = mod <= -6
-	var why: PackedStringArray = []
-	for m in preview["missing"]:
-		var name := section_name(int(m["section"]))
-		var code := str(m["why"])
-		why.append("%s lost" % name if code == "lost" else "%s %s" % [name, _doing(code)])
-	var why_text := " · ".join(why) if not why.is_empty() else "Gunfire modifier for sections firing, on both broadsides."
+	# What the sections away from the guns are doing is shown under the Crew line, not here.
+	var why_text := "Gunfire modifier for sections firing, on both broadsides."
 	if preview["modifier"] == null:
 		why_text = "No sailor section is left at the guns: neither broadside can fire."
 	var assignments: Dictionary = plan.get("assignments", {})
@@ -203,23 +199,6 @@ static func gun_rows(ship: ShipState) -> Array[Dictionary]:
 			"lg": int(gf.get("lg", 0)), "mg": int(gf.get("mg", 0)), "cr": int(gf.get("cr", 0)),
 			"dismounted": off, "status": "ready" if off == 0 else "%d dismounted · −%d" % [off, off]})
 	return rows
-
-
-static func _doing(code: String) -> String:
-	match code:
-		SailController.CODE:
-			return "altering sail"
-		TackCrewHandler.CODE:
-			return "at the braces"
-		CrewRules.CODE_RO:
-			return "reorganizing"
-		CrewRules.CODE_FF:
-			return "fighting fire"
-		"FB", "BR", "BA":
-			return "with the boarders"
-		"BD":
-			return "standing down"
-	return CrewRules.task_name(code)
 
 
 ## One line per lasting critical-hit effect (7.D.11-12), in the order they happened, then the

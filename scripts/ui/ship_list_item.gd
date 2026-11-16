@@ -1,7 +1,7 @@
 extends PanelContainer
 ## ShipListItem - A ship's card in the planning panel. The cards are an accordion (planning panel
 ## rework C2, prototypes/planning_panel/planning_panel.html): the selected card is expanded (title,
-## crew chips, Movement / Crew & damage, then the ShipCardStatus box: hull, rigging, crew,
+## Movement / Crew & damage, then the ShipCardStatus box: hull, rigging, crew,
 ## marines and guns); every other card is one row: health icon, name, badge, speed / MA.
 
 signal selected()
@@ -16,14 +16,12 @@ signal crew_pressed()  ## the "Crew & damage" button: open the crew overlay for 
 @onready var maintenance_button: Button = %MaintenanceButton
 
 var ship_state: ShipState = null
-var crew_summary_row: HFlowContainer = null  ## the crew summary chips (CrewRules.summary)
 var health_icon: ShipHealthIcon = null
 var status_box: ShipCardStatus = null  ## hull, rigging, crew, marines, guns (expanded card only)
 var chevron_label: Label = null  ## "▸" on a collapsed card
 var action_row: HBoxContainer = null
 var is_selected: bool = false
 var is_submitted: bool = false
-var _chips: Array = []
 var _plan: Dictionary = {}
 
 # Style themes
@@ -82,12 +80,6 @@ func _ready() -> void:
 	chevron_label.add_theme_color_override("font_color", CrewStyle.MUTED)
 	chevron_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top_row.add_child(chevron_label)
-	crew_summary_row = HFlowContainer.new()
-	crew_summary_row.name = "CrewSummary"
-	crew_summary_row.add_theme_constant_override("h_separation", 4)
-	crew_summary_row.add_theme_constant_override("v_separation", 4)
-	crew_summary_row.mouse_filter = Control.MOUSE_FILTER_PASS
-	top_row.add_sibling(crew_summary_row)
 	action_row = movement_button.get_parent()
 	status_box = ShipCardStatus.new()
 	action_row.add_sibling(status_box)
@@ -156,10 +148,8 @@ func set_selected_state(selected_state: bool) -> void:
 		ship_name_label.text = _title()
 
 
-## The expanded card shows its chips, buttons and status box; a collapsed one only its top row.
+## The expanded card shows its buttons and status box; a collapsed one only its top row.
 func _apply_expanded() -> void:
-	if crew_summary_row:
-		crew_summary_row.visible = is_selected and not _chips.is_empty()
 	if action_row:
 		action_row.visible = is_selected
 	if crew_button:
@@ -172,19 +162,6 @@ func _apply_expanded() -> void:
 	_render_status()
 
 
-## The crew summary line (spec §4.8): chips [{"text", "kind"}]; hidden when `chips` is empty.
-func set_crew_summary(chips: Array) -> void:
-	_chips = chips
-	if crew_summary_row == null:
-		return
-	for c in crew_summary_row.get_children():
-		crew_summary_row.remove_child(c)
-		c.queue_free()
-	crew_summary_row.visible = is_selected and not chips.is_empty()
-	for chip in chips:
-		crew_summary_row.add_child(crew_chip(chip))
-
-
 ## The ship's crew plan (CrewTaskController.current_plan): the status box's crew and guns lines read it.
 func set_crew_plan(plan: Dictionary) -> void:
 	_plan = plan
@@ -195,35 +172,6 @@ func _render_status() -> void:
 	if status_box and ship_state and is_selected:
 		status_box.render(ship_state, _plan)
 
-
-static func crew_chip(chip: Dictionary) -> Label:
-	var kind := str(chip.get("kind", ""))
-	var l := Label.new()
-	l.text = str(chip.get("text", ""))
-	l.add_theme_font_size_override("font_size", 14)
-	var bg := CrewStyle.BTN
-	var edge := Color.TRANSPARENT
-	var fg := CrewStyle.FG
-	match kind:
-		"auto":
-			bg = CrewStyle.BTN_PRIMARY
-		"fire":
-			bg = CrewStyle.FIRE
-			fg = Color("#1b0d05")
-		"warn":
-			bg = Color.TRANSPARENT
-			edge = CrewStyle.BAD
-			fg = CrewStyle.BAD_TEXT
-			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			l.custom_minimum_size.x = 300
-	var sb := CrewStyle.box(bg, edge, 1 if edge.a > 0 else 0, 8)
-	sb.content_margin_left = 6
-	sb.content_margin_right = 6
-	l.add_theme_stylebox_override("normal", sb)
-	l.add_theme_color_override("font_color", fg)
-	l.mouse_filter = Control.MOUSE_FILTER_PASS
-	l.tooltip_text = l.text
-	return l
 
 func set_submitted_state(submitted: bool) -> void:
 	is_submitted = submitted
