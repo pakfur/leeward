@@ -46,7 +46,7 @@ var ship_views: Dictionary = {}  # ship_id -> ShipView
 var selected_ship_id: String = ""
 var ship_indicators: Node3D = null     # ShipIndicators
 var indicator_overlay: Control = null  # IndicatorOverlay
-var status_overlay: ShipStatusOverlay = null  # graphic status over the selected / hovered ship
+var status_overlay: ShipStatusOverlay = null  # graphic status by a clicked or hovered enemy ship
 var grapple_lines: GrappleLines = null  # the grapples between ships (8.C), redrawn with the ships
 var _mouse_pos: Vector2 = Vector2(-1, -1)  # last mouse position seen (viewport coordinates)
 const HUMAN_PLAYER_ID := 0
@@ -660,12 +660,17 @@ func _update_status_hover() -> void:
 			and get_viewport().gui_get_hovered_control() == null:
 		ship_view = _ship_view_at(_mouse_pos)
 	var ship_state: ShipState = GameState.get_ship(ship_view.state_id) if ship_view else null
-	if ship_state:
+	if ship_state and shows_status_plate(ship_state):
 		status_overlay.set_hover_target(ship_state.ship_id, ship_state)
 	else:
 		status_overlay.set_hover_target("", null)
 
-## Keep the graphic status up over a ship (ours when selected, an enemy when clicked).
+## Only enemy ships get the status plate on the water: the planning panel's card shows more about
+## one of ours.
+static func shows_status_plate(ship_state: ShipState) -> bool:
+	return ship_state != null and ship_state.player_id != HUMAN_PLAYER_ID
+
+## Keep the graphic status up over a clicked enemy ship.
 func _pin_status(ship_id: String) -> void:
 	var ship_state = GameState.get_ship(ship_id)
 	if status_overlay and ship_state:
@@ -686,7 +691,6 @@ func _select_ship(ship_id: String) -> void:
 
 	selected_ship_id = ship_id
 	_show_selected_indicators(ship_id)
-	_pin_status(ship_id)
 
 func _show_selected_indicators(ship_id: String) -> void:
 	var ship_state = GameState.get_ship(ship_id)

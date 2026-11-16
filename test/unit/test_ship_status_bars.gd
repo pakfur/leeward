@@ -272,3 +272,14 @@ func test_last_line_shows_destroyed_or_struck_instead_of_speed() -> void:
 	assert_eq(ShipStatusBars.last_line(s, "Reach"), ["Status", "Struck"] as Array[String])
 	s.status = ShipState.Status.DESTROYED
 	assert_eq(ShipStatusBars.last_line(s, "Reach"), ["Status", "Destroyed"] as Array[String])
+
+
+func test_status_plate_only_for_enemy_ships() -> void:
+	var own := ShipState.new()
+	own.controller_id = 0
+	var enemy := ShipState.new()
+	enemy.controller_id = 1  # player_id follows the controlling side
+	var GC = load("res://scripts/core/game_controller.gd")
+	assert_false(GC.shows_status_plate(own), "the planning panel covers our own ships")
+	assert_true(GC.shows_status_plate(enemy))
+	assert_false(GC.shows_status_plate(null))

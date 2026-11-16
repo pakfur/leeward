@@ -1,9 +1,10 @@
 class_name ShipStatusOverlay
 extends Node3D
 ## ShipStatusOverlay - lays a ship's ShipStatusBars flat on the water beside it, at a fixed size
-## in the world (about six hexes long). One plate stays by the pinned (selected) ship for as long
+## in the world (about six hexes long). One plate stays by the pinned (clicked) ship for as long
 ## as it is pinned; another appears by a ship the mouse has rested on for HOVER_DELAY seconds and
-## goes when the mouse leaves it.
+## goes when the mouse leaves it. GameController shows it for enemy ships only
+## (GameController.shows_status_plate): the planning panel's card covers the player's own.
 ##
 ## The plate lies with its long side parallel to the ship. It goes astern if that water is clear,
 ## otherwise ahead, to port, to starboard; if none is clear it goes astern anyway. Water is
