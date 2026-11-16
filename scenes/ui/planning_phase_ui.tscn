@@ -49,48 +49,6 @@ theme_override_constants/separation = 6
 [node name="OrdersSeparator" type="HSeparator" parent="VBoxContainer/ScrollContainer/ScrollContent"]
 layout_mode = 2
 
-[node name="SailRow" type="VBoxContainer" parent="VBoxContainer/ScrollContainer/ScrollContent"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_constants/separation = 4
-
-[node name="SailHeader" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/SailRow"]
-layout_mode = 2
-text = "Sail"
-
-[node name="SailCurrentLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/SailRow"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Now: Manoeuvring sail"
-
-[node name="SailStatusLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/SailRow"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"SecondaryLabel"
-theme_override_colors/font_color = Color(1, 0.8, 0.2, 1)
-autowrap_mode = 2
-
-[node name="SailButtons" type="VBoxContainer" parent="VBoxContainer/ScrollContainer/ScrollContent/SailRow"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 4
-
-[node name="SailHintLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/SailRow"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"SecondaryLabel"
-text = "Sections changing sail cannot serve the guns."
-autowrap_mode = 2
-
-[node name="SailErrorLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/SailRow"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_type_variation = &"SecondaryLabel"
-theme_override_colors/font_color = Color(1, 0.4, 0.4, 1)
-autowrap_mode = 2
-
 [node name="PlottingControls" type="VBoxContainer" parent="VBoxContainer/ScrollContainer/ScrollContent"]
 unique_name_in_owner = true
 visible = false

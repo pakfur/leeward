@@ -105,7 +105,10 @@ func test_default_stations_guns_marines_and_sails() -> void:
 	for c in sails["choices"]:
 		targets.append(c["target"])
 	assert_eq(targets, ["FS", "PS"], "one step down or up from MS")
-	assert_eq(sails["choices"][1]["text"], "MS → PS (2 CS, 2 turns)", "ship log: MS<->PS 2 CS, 2 g-t's at CQ B")
+	assert_eq(sails["choices"][1]["sections"], 2, "ship log: MS<->PS 2 CS, 2 g-t's at CQ B")
+	assert_eq(sails["choices"][1]["turns"], 2)
+	assert_eq(PlanningSailUi.target_button_text("PS", sails["choices"][1]), "Plain sail — 2 turns, 2 sections",
+		"the overlay's Sails aloft picker wording")
 
 
 func test_stations_lost_section_has_no_counter() -> void:

@@ -8,7 +8,6 @@ signal undo_all_pressed()
 signal submit_pressed()
 signal cancel_pressed()
 signal end_planning_pressed()
-signal sail_change_requested(ship_id: String, target: String)  ## target "" cancels the plotted order
 signal crew_overlay_requested(ship_id: String)  ## a card's "Crew & damage" button
 
 const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
@@ -32,13 +31,6 @@ const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
 @onready var collision_label: Label = %CollisionLabel
 @onready var allowance_note_label: Label = %AllowanceNoteLabel
 
-# Sail row
-@onready var sail_row: VBoxContainer = %SailRow
-@onready var sail_current_label: Label = %SailCurrentLabel
-@onready var sail_status_label: Label = %SailStatusLabel
-@onready var sail_buttons: VBoxContainer = %SailButtons
-@onready var sail_hint_label: Label = %SailHintLabel
-@onready var sail_error_label: Label = %SailErrorLabel
 
 # Track state
 var ship_list_items: Dictionary = {}  # ship_id -> ShipListItem
@@ -78,9 +70,8 @@ func setup_for_player(player_ships: Array[ShipState]) -> void:
 	_update_instructions()
 	refresh_crew_summaries()
 
-## The crew plan changed (crew overlay): the sail row and the cards follow it.
+## The crew plan changed (crew overlay): the cards follow it.
 func refresh_crew_orders() -> void:
-	_refresh_sail_row()
 	refresh_crew_summaries()
 
 ## The status box on every card from the stored crew plan (a read-only query); the cards redraw
@@ -104,7 +95,6 @@ func clear_ships() -> void:
 	submitted_ships.clear()
 	ship_states.clear()
 	total_player_ships = 0
-	_refresh_sail_row()
 
 func _add_ship_to_list(ship_state: ShipState) -> void:
 	var list_item = ShipListItem.instantiate()
@@ -149,8 +139,6 @@ func _select_ship(ship_id: String) -> void:
 	selected_ship_id = ship_id
 	if ship_list_items.has(ship_id):
 		ship_list_items[ship_id].set_selected_state(true)
-	sail_error_label.visible = false
-	_refresh_sail_row()
 	refresh_crew_summaries()
 
 func _on_action_button_pressed(ship_id: String, action_type: String) -> void:
@@ -161,7 +149,7 @@ func _on_action_button_pressed(ship_id: String, action_type: String) -> void:
 	var current_state = action_states[ship_id].get(action_type, false)
 	var new_state = not current_state
 
-	# Giving a ship orders selects it in every sense (card, sail section, plotting controls, map):
+	# Giving a ship orders selects it in every sense (card, plotting controls, map):
 	# `selected_ship_id` is the one ship whose orders the panel shows. Only one ship plots at a time.
 	if new_state:
 		if selected_ship_id != ship_id:
@@ -189,7 +177,6 @@ func get_action_state(ship_id: String, action_type: String) -> bool:
 func update_ship_display(ship_state: ShipState) -> void:
 	if ship_list_items.has(ship_state.ship_id):
 		ship_list_items[ship_state.ship_id].setup(ship_state)
-	_refresh_sail_row()
 
 func is_ship_submitted(ship_id: String) -> bool:
 	return submitted_ships.get(ship_id, false)
@@ -206,59 +193,6 @@ func get_submitted_count() -> int:
 		if submitted_ships[ship_id]:
 			count += 1
 	return count
-
-# ============================================================================
-# Sail Row
-# ============================================================================
-
-## Shows the server's answer to a sail request: "" refreshes the row, anything else is the reason.
-func show_sail_result(reason: String) -> void:
-	_refresh_sail_row()
-	refresh_crew_summaries()
-	sail_error_label.text = reason
-	sail_error_label.visible = reason != ""
-
-func _request_sail_change(target: String) -> void:
-	if selected_ship_id != "":
-		sail_change_requested.emit(selected_ship_id, target)
-
-func _refresh_sail_row() -> void:
-	if not sail_row:
-		return
-	var ship: ShipState = ship_states.get(selected_ship_id)
-	if ship == null:
-		sail_row.visible = false
-		return
-	var targets: Array = GameState.sail_controller.available_targets(selected_ship_id)
-	var costs := {}
-	for target in targets:
-		costs[target] = GameState.sail_controller.change_cost(selected_ship_id, target)
-	var row := PlanningSailUi.sail_row(ship, targets, costs)
-
-	sail_row.visible = row["mode"] != PlanningSailUi.Mode.NONE
-	sail_current_label.text = "Now: %s" % row["current"]
-	sail_status_label.text = row["text"]
-	sail_status_label.visible = row["text"] != ""
-	sail_hint_label.text = row["hint"]
-	sail_hint_label.visible = row["hint"] != ""
-	sail_error_label.visible = false
-
-	# The choices keep their places: the ordered one is shown pressed, pressing it again cancels.
-	for child in sail_buttons.get_children():
-		sail_buttons.remove_child(child)
-		child.queue_free()
-	for entry in row["buttons"]:
-		var button := Button.new()
-		var ordered: bool = entry["pressed"]
-		button.text = ("● " if ordered else "○ ") + entry["text"]
-		button.toggle_mode = true
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.focus_mode = Control.FOCUS_NONE
-		button.set_pressed_no_signal(ordered)
-		button.tooltip_text = "Press again to cancel this order" if ordered else "Order this sail change"
-		var target: String = entry["target"]
-		button.pressed.connect(func(): _request_sail_change("" if ordered else target))
-		sail_buttons.add_child(button)
 
 # ============================================================================
 # Plotting Controls

@@ -548,13 +548,14 @@ func _sail_picker(st: Dictionary) -> Control:
 	var target: String = st.get("target", "")
 	var targets: Array = []
 	if _ship.has_sail_change():
-		sel.add_item("→ %s (in progress)" % target)
+		sel.add_item("%s (in progress)" % PlanningSailUi.sail_label(target))
 		sel.disabled = true
 		return sel
 	sel.add_item("No sail change")
 	targets.append("")
 	for c in choices:
-		sel.add_item(c["text"])
+		# Worded as the planning panel's sail choices were: "Fighting sail — 1 turn, 1 section".
+		sel.add_item(PlanningSailUi.target_button_text(c["target"], c))
 		targets.append(c["target"])
 	sel.select(maxi(0, targets.find(target)))
 	sel.disabled = not client.editable() or str(st.get("disabled_reason", "")) != ""

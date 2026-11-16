@@ -605,9 +605,7 @@ static func sail_choices(ship: ShipState) -> Array[Dictionary]:
 	for target in SailController.targets_for(ship):
 		var sections := SailController.sections_needed(ship, target)
 		var turns: int = DataManager.combat_tables.task_turns(SailController.cost_row(ship, target), ship.crew_quality)
-		out.append({"target": target, "sections": sections, "turns": turns,
-			"text": "%s → %s (%d CS, %d turn%s)" % [ship.sail_state.to_upper(), target, sections, turns,
-				"" if turns == 1 else "s"]})
+		out.append({"target": target, "sections": sections, "turns": turns})
 	return out
 
 

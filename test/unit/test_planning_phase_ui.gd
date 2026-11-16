@@ -50,13 +50,6 @@ func test_movement_on_another_card_selects_that_ship() -> void:
 	assert_signal_emitted_with_parameters(ui, "action_toggled", ["p2", "movement", true])
 
 
-func test_sail_choice_after_movement_orders_the_selected_ship() -> void:
-	ui._on_action_button_pressed("p2", "movement")
-	watch_signals(ui)
-	ui._request_sail_change("FS")
-	assert_signal_emitted_with_parameters(ui, "sail_change_requested", ["p2", "FS"])
-
-
 func test_movement_on_a_new_ship_releases_the_other_ships_movement_button() -> void:
 	ui._on_action_button_pressed("p1", "movement")
 	ui._on_action_button_pressed("p2", "movement")

@@ -786,7 +786,6 @@ func _enter_planning_phase() -> void:
 		current_planning_ui.submit_pressed.connect(_on_plotting_submit_pressed)
 		current_planning_ui.cancel_pressed.connect(_on_plotting_cancel_pressed)
 		current_planning_ui.end_planning_pressed.connect(_on_end_planning_pressed)
-		current_planning_ui.sail_change_requested.connect(_on_sail_change_requested)
 		current_planning_ui.crew_overlay_requested.connect(_open_crew_overlay)
 
 	# Load into context panel (must be done before setup to ensure @onready nodes are available)
@@ -826,15 +825,6 @@ func _on_planning_ship_selected(ship_id: String) -> void:
 	_select_ship(ship_id)
 	if crew_client:
 		crew_client.follow_ship(ship_id)
-
-func _on_sail_change_requested(ship_id: String, target: String) -> void:
-	# A request the server checks (phase, owner, plan not yet submitted).
-	var reason: String = GameState.phase_controller.player_plot_sail_change(HUMAN_PLAYER_ID, ship_id, target)
-	Trace.trace_log("GameController", "Sail change %s -> '%s': %s" % [ship_id, target, reason if reason != "" else "accepted"])
-	if current_planning_ui:
-		current_planning_ui.show_sail_result(reason)
-	if crew_client:
-		crew_client.refresh()
 
 func _on_planning_action_toggled(ship_id: String, action_type: String, active: bool) -> void:
 	Trace.trace_log("GameController", "Action '%s' toggled to %s for ship %s" % [action_type, active, ship_id])

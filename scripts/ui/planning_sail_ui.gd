@@ -1,6 +1,6 @@
 class_name PlanningSailUi
 extends RefCounted
-## PlanningSailUi - Pure presentation logic for the planning sail row and ship status badges.
+## PlanningSailUi - Pure presentation logic for sail names, sail-change wording and ship status badges.
 ## No scene nodes and no state changes: given a ShipState it says what text and controls to show.
 
 const SAIL_NAMES := {
@@ -9,12 +9,6 @@ const SAIL_NAMES := {
 	"MS": "Manoeuvring sail",
 	"PS": "Plain sail",
 }
-
-const HINT := "Sections changing sail cannot serve the guns."
-const CHOOSE_TEXT := "No change ordered. Choose one, or keep this sail."
-const ORDERED_TEXT := "Ordered: %s. Press it again to cancel."
-
-enum Mode { NONE, PROGRESS, ORDERED, CHOOSE }
 
 
 ## The sail's name alone ("Fighting sail"); unknown codes pass through.
@@ -82,40 +76,3 @@ static func movement_block_reason(ship: ShipState) -> String:
 		"FOULED": return "Ship is fouled with %s and cannot move until it breaks free." % ship.fouled_with
 		"GRAPPLED": return "Ship is grappled to %s and cannot move until the grapples are cut (8.C.7)." % ", ".join(ship.grappled_with)
 	return ""
-
-
-static func sail_row(ship: ShipState, targets: Array, costs: Dictionary) -> Dictionary:
-	## Returns {mode, current, text, hint, buttons: [{target, text, pressed}]}.
-	## `targets` is SailController.available_targets; `costs` maps target -> change_cost dict.
-	## The choices keep their place once one is ordered: the ordered one is shown pressed and
-	## pressing it again cancels the order (the status text says so).
-	var row := {
-		"mode": Mode.NONE,
-		"current": sail_label(ship.sail_state),
-		"text": "",
-		"hint": "",
-		"buttons": [],
-	}
-	if ship.is_out_of_play():
-		return row
-	var change := ship.sail_change_info()
-	if not change.is_empty():
-		row["mode"] = Mode.PROGRESS
-		row["text"] = "Changing to %s — %s left" % [
-			sail_label(change.get("target", "?")),
-			plural(change.get("turns_left", 0), "turn")]
-		row["hint"] = HINT
-		return row
-	var ordered: String = ship.ordered_sail_target()
-	if targets.is_empty() and ordered == "":
-		return row
-	var choices: Array = targets.duplicate()
-	if ordered != "" and not choices.has(ordered):
-		choices.append(ordered)
-	row["mode"] = Mode.ORDERED if ordered != "" else Mode.CHOOSE
-	row["text"] = ORDERED_TEXT % sail_label(ordered) if ordered != "" else CHOOSE_TEXT
-	for target in choices:
-		row["buttons"].append({"target": target, "text": target_button_text(target, costs.get(target, {})),
-			"pressed": target == ordered})
-	row["hint"] = HINT
-	return row
