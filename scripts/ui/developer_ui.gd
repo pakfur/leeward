@@ -478,23 +478,18 @@ func _on_advance_turn_pressed() -> void:
 		_log("Advanced to turn %d" % game_state.current_turn)
 
 func _on_reset_pressed() -> void:
-	if not GameState.is_server:
-		_log("ERROR: Cannot reset game on client")
-		return
 	if initial_scenario.is_empty():
 		_log("ERROR: No initial scenario stored")
 		return
 
 	_log("Resetting to initial scenario...")
 
-	# Reset game state
+	# Reset through the server (the scenario starts again; the map rebuilds its ships)
 	if game_state:
-		game_state.deserialize_full_state({
-			"turn": 1,
-			"phase": 0,  # SETUP
-			"environment": initial_scenario,
-			"ships": initial_scenario.get("ships", [])
-		})
+		var reason: String = game_state.dev_commands.reset_game(initial_scenario)
+		if reason != "":
+			_log("ERROR: " + reason)
+			return
 
 	# Rebuild UI
 	_build_environment_tab()

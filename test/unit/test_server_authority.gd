@@ -7,7 +7,7 @@ extends GutTest
 ## (player_plot_crew); the boarding controller and capture fields are never touched by view code. It never calls a state mutator or writes a ShipState field itself.
 ## This test scans the source so a violation fails `make test`.
 
-const VIEW_DIRS := ["res://scripts/ui", "res://scripts/view", "res://scripts/core"]
+const VIEW_DIRS := ["res://scripts/ui", "res://scripts/view", "res://scripts/core", "res://scripts/commands"]
 
 ## [regex, what it catches]
 const FORBIDDEN := [
@@ -73,6 +73,24 @@ const FORBIDDEN := [
 	["\\b(_?action|a)\\.(state|attacker_sections|defender_sections|rounds|outcome|prize_aboard|finished_turn|prize_size|helper_id|helper_sections|original_crew_joins|prize_action|retaken|shared_with)\\s*(=|\\+=|-=)[^=]", "a BoardingAction field written from view code"],
 	["\\.(fire_list|crew_tasks|critical_effects|plotted_sections)\\.(append|append_array|clear|erase|remove_at|push_back|push_front|pop_back|pop_front|insert|resize|sort|sort_custom|fill)\\(",
 			"a ShipState array changed in place from view code"],
+	# the game itself: the view starts a scenario with GameState.start_scenario (server side) and
+	# never fills or rewrites the state container, the logs or the phase controller's settings
+	["\\b(GameState|game_state)\\.(clear_ships|add_ship|remove_ship|start_new_game|deserialize_full_state|sync_from_server|save_\\w*snapshot|clear_state_history|new_turn_log|transfer_control)\\(",
+			"a GameState container mutator called from view code"],
+	["\\bturn_logs?\\b.*\\.(add|insert|remove)\\(", "a turn log written from view code"],
+	["\\bturn_logs\\s*\\[[^\\]]*\\]\\s*=[^=]", "a turn log stored from view code"],
+	["\\.(events|players)\\.(append|append_array|clear|erase|remove_at|insert|sort|sort_custom|merge)\\(", "a logged event changed from view code"],
+	["\\bphase_controller\\.\\w+\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "a TurnPhaseController field written from view code"],
+	["\\bplayer_submit_plan\\(\\s*[1-9]", "a plan submitted for the AI side from view code (the server marks it ready)"],
+	["\\bmovement_resolver\\.(run|apply_results|log_outcomes|roll_fouling)\\(", "a MovementResolver step run from view code"],
+	["\\b(damage_controller|morale_controller|victory_controller|critical_hit_controller|fouling_controller|drift_resolver|stub_ai|command_validator|network_sync)\\.", "a server controller called from view code"],
+	["\\.(moved_this_turn|collision_this_turn|pending_turn|immobilized|tacking|rudder_destroyed|wheel_shot_away|guns_dismounted|initial_broadside_fired|morale_rating|starting_crew_quality|pending_morale_checks|morale_triggers_used|unfoul_attempts|critical_seq)\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]",
+			"a ShipState field written from view code"],
+	["\\.(crew_count|rigging_current_hp|hull_current_hp|guns_dismounted|initial_broadside_fired|pending_morale_checks|morale_triggers_used|unfoul_attempts)\\.(append|append_array|clear|erase|remove_at|insert|resize|fill)\\(",
+			"a ShipState array changed in place from view code"],
+	["\\.plotted_actions\\s*\\[[^\\]]*\\]\\s*=[^=]|\\.plotted_actions\\.(merge|erase|clear)\\(", "a plot written from view code"],
+	["\\b(environment|env)\\.(wind_speed|wind_direction|pending_wind_speed|pending_wind_direction|original_wind_speed|original_wind_direction|sea_state|visibility|time_of_day|precipitation)\\s*(=|\\+=|-=)[^=]",
+			"an EnvironmentState field written from view code"],
 	["\\b(_?ship|ship_state|ss|state|s)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots|crew_auto|plotted_sections|task_seq|fire_list|fire_seq|explosion_checks|checked_sections|mp_used_this_turn)\\s*(=|\\+=|-=)[^=]",
 			"a ShipState field written from view code"],
 ]
@@ -249,3 +267,37 @@ func test_dev_place_ship_moves_through_the_server_and_refuses_held_hexes() -> vo
 	GameState.ships = old_ships
 	GameState.ships_by_player = old_by_player
 	GameState.active_scenario = old_scenario
+
+
+## Movement is plotted in PLANNING before the player's plan is in (or in SETUP, before any turn
+## loop runs); the server refuses it otherwise, whatever the view sends.
+func test_plotting_refused_after_submit_or_outside_planning() -> void:
+	var old_ships: Dictionary = GameState.ships.duplicate()
+	var old_by_player: Dictionary = GameState.ships_by_player.duplicate(true)
+	GameState.ships = {}
+	GameState.ships_by_player = {0: [], 1: []}
+	var plotter := _dev_ship("plot_a", 0, Vector2i.ZERO, 0)
+	plotter.ship = Ship.from_dict({"ship_id": "plot_a", "player_id": 0, "ship_name": "plot_a",
+		"ship_type": "frigate_38", "class": 3, "maneuverability": "C", "speed_type": "F/F",
+		"crew_count": [3, 3, 3, 3], "marine_count": 2, "rigging_hp": [5, 5, 6, 6], "hull_hp": [5, 5, 5, 6]})
+	plotter.sail_state = "MS"
+	var pc: TurnPhaseController = GameState.phase_controller
+	var mpc: MovementPlottingController = GameState.movement_plotting_controller
+	var P := TurnPhaseController.GamePhase
+	pc.current_phase = P.PLANNING
+	pc.players_ready = [true, false] as Array[bool]
+	var refused := mpc.handle_start_plotting(0, "plot_a", "r1")
+	assert_true(refused is MovementTypes.PlottingErrorResponse)
+	assert_eq((refused as MovementTypes.PlottingErrorResponse).error_code, "NOT_PLANNING", "plan already submitted")
+	pc.players_ready = [false, false] as Array[bool]
+	pc.current_phase = P.COMBAT_RESOLUTION
+	var late := mpc.handle_start_plotting(0, "plot_a", "r2")
+	assert_eq((late as MovementTypes.PlottingErrorResponse).error_code, "NOT_PLANNING", "outside PLANNING")
+	pc.current_phase = P.PLANNING
+	var ok := mpc.handle_start_plotting(0, "plot_a", "r3")
+	assert_false(ok is MovementTypes.PlottingErrorResponse, "PLANNING, plan not yet in")
+	mpc.sessions.clear()
+	mpc.ship_sessions.clear()
+	pc.current_phase = P.SETUP
+	GameState.ships = old_ships
+	GameState.ships_by_player = old_by_player

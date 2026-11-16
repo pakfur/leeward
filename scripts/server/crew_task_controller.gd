@@ -280,6 +280,9 @@ func cancel_task(ship_id: String, seq: int, reason: String, phase: int, log_it: 
 ## Ends the task the section is on (4.B.3 crew lost, crew disorganized): a task shared with other
 ## sections ends for all of them (5.F.9a).
 func cancel_section(ship_id: String, section: int, reason: String, phase: int) -> bool:
+	if not is_server:
+		push_error("CrewTaskController: Cannot change tasks on client")
+		return false
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
 		return false
@@ -291,6 +294,9 @@ func cancel_section(ship_id: String, section: int, reason: String, phase: int) -
 
 ## Every live task with this code ends (log_it false: silently, as when the ship is dismasted).
 func cancel_code(ship_id: String, code: String, reason: String, phase: int, log_it: bool = true) -> void:
+	if not is_server:
+		push_error("CrewTaskController: Cannot change tasks on client")
+		return
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
 		return
@@ -301,6 +307,9 @@ func cancel_code(ship_id: String, code: String, reason: String, phase: int, log_
 ## Every live task but those with code `keep` ends (a ship that strikes keeps fighting its fires
 ## and does nothing else, 8.E.3, 9.C.3).
 func cancel_all_except(ship_id: String, keep: String, reason: String, phase: int) -> void:
+	if not is_server:
+		push_error("CrewTaskController: Cannot change tasks on client")
+		return
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
 		return
@@ -311,6 +320,9 @@ func cancel_all_except(ship_id: String, keep: String, reason: String, phase: int
 
 ## Tells every handler that a fire broke out aboard the ship (8.E.2; spec §3.9 hook).
 func notify_fire_breaks_out(ship_id: String) -> void:
+	if not is_server:
+		push_error("CrewTaskController: Cannot change tasks on client")
+		return
 	var seen := {}
 	for code in _handlers:
 		var h: CrewTaskHandler = _handlers[code]

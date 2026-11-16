@@ -135,8 +135,7 @@ func _initialize_server_controllers() -> void:
 		crew_task_controller.register_handler(code, BoardingTaskHandler.new(self, code))
 	morale_controller = MoraleController.new(self)
 	victory_controller = VictoryController.new(self)
-	turn_log = PhaseEvents.PhaseLog.new()
-	turn_log.turn = 1
+	turn_log = new_turn_log(1)
 	phase_controller = TurnPhaseController.new(self)
 	ship_controller = ShipStateController.new(self)
 	environment_controller = EnvironmentController.new(self)
@@ -172,6 +171,50 @@ func _initialize_server_controllers() -> void:
 
 	Trace.trace_log("GameState", "Server controllers initialized")
 
+## SERVER ONLY: starts a scenario game: clears the ships, builds every ship of the scenario (its
+## type from ships.json, its navy per ship or per side, 1.G.8), sets which players are human
+## (they are asked about bearing off and the maintenance orders; every other side is the AI,
+## whose plan is in as soon as PLANNING begins), then start_new_game. The view creates its ship
+## views on game_started. Returns false when refused.
+func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int]) -> bool:
+	if not is_server:
+		push_error("GameState: Cannot start a scenario on client")
+		return false
+	clear_ships()
+	var navies: Variant = scenario_data.get("navies", {})
+	var sides: Array[int] = []
+	for ship_data in scenario_data.get("ships", []):
+		var ship_state := _scenario_ship(ship_data, navies)
+		if ship_state != null and add_ship(ship_state) and not sides.has(ship_state.player_id):
+			sides.append(ship_state.player_id)
+	if phase_controller:
+		phase_controller.bear_off_prompt_player_ids = human_player_ids.duplicate()
+		phase_controller.maintenance_prompt_player_ids = human_player_ids.duplicate()
+		var ai: Array[int] = []
+		for side in sides:
+			if not human_player_ids.has(side):
+				ai.append(side)
+		phase_controller.ai_player_ids = ai
+	start_new_game(scenario_data)
+	return true
+
+
+## A ShipState for one scenario ship entry, or null when its type is unknown.
+func _scenario_ship(ship_data: Dictionary, navies: Variant) -> ShipState:
+	var type_def = DataManager.get_ship_definition(str(ship_data.get("ship_type", "")))
+	if type_def == null:
+		push_error("Ship definition not found: %s" % ship_data.get("ship_type", ""))
+		return null
+	var ship_ref := Ship.initialize_from_scenario(ship_data, type_def.to_dict())
+	var side := str(int(ship_data.get("player_id", 0)))  # JSON numbers are floats
+	if not ship_data.has("navy") and navies is Dictionary and navies.has(side):
+		ship_data = ship_data.duplicate()
+		ship_data["navy"] = str(navies[side])
+	var ship_state := ShipState.new()
+	ship_state.initialize_from_scenario(ship_data, ship_ref)
+	return ship_state
+
+
 func start_new_game(scenario_data: Dictionary) -> void:
 	"""Initialize a new game with scenario data - SERVER ONLY"""
 	if not is_server:
@@ -190,8 +233,7 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	rng = RandomNumberGenerator.new()
 	rng.seed = seed_value
 	dice = Dice.new(rng)
-	turn_log = PhaseEvents.PhaseLog.new()
-	turn_log.turn = 1
+	turn_log = new_turn_log(1)
 	turn_logs.clear()
 	boarding_actions = []
 	boarding_seq = 0
@@ -319,6 +361,19 @@ func remove_ship(ship_id: String) -> void:
 
 	Trace.trace_log("GameState", "Removed ship %s" % ship_id)
 
+## SERVER: a fresh event log for `turn` whose events record each named ship's controlling side
+## when logged (PhaseEvent.players), so the log can label them as they were then.
+func new_turn_log(turn: int) -> PhaseEvents.PhaseLog:
+	var fresh: PhaseEvents.PhaseLog = PhaseEvents.PhaseLog.new()
+	fresh.turn = turn
+	fresh.controller_of = controller_of
+	return fresh
+
+## The player controlling the ship now, -1 for an unknown id.
+func controller_of(ship_id: String) -> int:
+	var ship: ShipState = ships.get(ship_id)
+	return ship.player_id if ship != null else -1
+
 func get_ship(ship_id: String) -> ShipState:
 	"""Get ship state by ID"""
 	return ships.get(ship_id)
@@ -372,6 +427,9 @@ func get_all_ships() -> Array[ShipState]:
 
 func clear_ships() -> void:
 	"""Clear all ships (for new game)"""
+	if not is_server:
+		push_error("GameState: Cannot clear ships on client")
+		return
 	ships.clear()
 	ships_by_player.clear()
 
@@ -379,6 +437,9 @@ func clear_ships() -> void:
 
 func save_environment_snapshot(turn_number: int) -> void:
 	"""Save a snapshot of the current environment state for the given turn"""
+	if not is_server:
+		push_error("GameState: Cannot save an environment snapshot on client")
+		return
 	if not environment:
 		push_warning("GameState: Cannot save environment snapshot - environment is null")
 		return
@@ -406,6 +467,9 @@ func get_previous_environment(turns_ago: int = 1) -> EnvironmentState:
 
 func save_ship_snapshot(ship_id: String, turn_number: int) -> void:
 	"""Save a snapshot of a specific ship's state for the given turn"""
+	if not is_server:
+		push_error("GameState: Cannot save a ship snapshot on client")
+		return
 	if not ships.has(ship_id):
 		push_warning("GameState: Cannot save ship snapshot - ship %s not found" % ship_id)
 		return
@@ -430,6 +494,9 @@ func save_ship_snapshot(ship_id: String, turn_number: int) -> void:
 
 func save_all_ships_snapshot(turn_number: int) -> void:
 	"""Save snapshots of all ships for the given turn"""
+	if not is_server:
+		push_error("GameState: Cannot save ship snapshots on client")
+		return
 	for ship_id in ships.keys():
 		save_ship_snapshot(ship_id, turn_number)
 
@@ -450,6 +517,9 @@ func get_previous_ship_state(ship_id: String, turns_ago: int = 1) -> ShipState:
 
 func clear_state_history() -> void:
 	"""Clear all historical state data (for new game)"""
+	if not is_server:
+		push_error("GameState: Cannot clear the state history on client")
+		return
 	environment_history.clear()
 	ship_history.clear()
 	Trace.trace_log("GameState", "Cleared all state history")
@@ -498,6 +568,9 @@ func serialize_full_state() -> Dictionary:
 
 func deserialize_full_state(data: Dictionary) -> void:
 	"""Load full game state from network or save file"""
+	if not is_server:
+		push_error("GameState: Cannot load a full state on client")
+		return
 	current_turn = data.get("turn", 1)
 	current_phase = data.get("phase", GamePhase.SETUP) as GamePhase
 

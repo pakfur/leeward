@@ -57,6 +57,9 @@ var _bear_off_decisions: Dictionary = {}
 ## Players asked for their grapple and ungrapple orders (8.C); everyone else's ships are ordered by
 ## StubAI. Empty (no prompts, no pause) unless the game wires a human player in, as for bear-off.
 var maintenance_prompt_player_ids: Array[int] = []
+## Players the server plays (StubAI): their plan counts as submitted as soon as PLANNING begins.
+## Set by GameState.start_scenario; empty in headless tests, which submit for both sides.
+var ai_player_ids: Array[int] = []
 var maintenance_step: MaintenanceStep = MaintenanceStep.NONE
 ## Prompted players whose orders for the current maintenance step are still awaited.
 var _maintenance_waiting: Array[int] = []
@@ -171,6 +174,9 @@ func _enter_planning_phase() -> void:
 		game_state.boarding_controller.take_link_snapshot()
 	if game_state.stub_ai:
 		game_state.stub_ai.plot_all_ai_ships()
+	for p in ai_player_ids:
+		if p >= 0 and p < players_ready.size():
+			players_ready[p] = true
 
 func player_submit_plan(player_id: int) -> bool:
 	"""SERVER ONLY: Validate and accept player plan submission"""
@@ -817,8 +823,7 @@ func _start_new_turn() -> void:
 		game_state.ship_controller.clear_turn_flags(ship.ship_id)
 	game_state.turn_logs[current_turn] = game_state.turn_log
 	current_turn += 1
-	game_state.turn_log = PhaseEvents.PhaseLog.new()
-	game_state.turn_log.turn = current_turn
+	game_state.turn_log = game_state.new_turn_log(current_turn)
 	turn_changed.emit(current_turn)
 	Trace.trace_log("TurnPhase", "=== Turn %d ===" % current_turn)
 	# 10.H.4: at the start of the g-t, a prize crew below the minimum may lose the ship.
@@ -843,6 +848,9 @@ func serialize_phase_state() -> Dictionary:
 
 func apply_phase_state(data: Dictionary) -> void:
 	"""Apply phase state from server (CLIENT ONLY)"""
+	if is_server:
+		push_error("TurnPhaseController: apply_phase_state is for clients")
+		return
 	current_phase = data.get("current_phase", GamePhase.SETUP)
 	current_turn = data.get("current_turn", 0)
 	players_ready = data.get("players_ready", [false, false])

@@ -23,7 +23,7 @@ func _ready() -> void:
 	if err != OK:
 		push_error("McpInteractionServer: Failed to listen on port %d, error: %d" % [PORT, err])
 		return
-	print("McpInteractionServer: Listening on 127.0.0.1:%d" % PORT)
+	Trace.trace_log("McpInteractionServer", "Listening on 127.0.0.1:%d" % PORT)
 
 
 func _process(_delta: float) -> void:
@@ -46,7 +46,7 @@ func _process(_delta: float) -> void:
 				_client.disconnect_from_host()
 			_client = new_client
 			_buffer = ""
-			print("McpInteractionServer: Client connected")
+			Trace.trace_log("McpInteractionServer", "Client connected")
 
 	# Read data from client
 	if _client == null:
@@ -55,7 +55,7 @@ func _process(_delta: float) -> void:
 	_client.poll()
 	var status: int = _client.get_status()
 	if status == StreamPeerTCP.STATUS_ERROR or status == StreamPeerTCP.STATUS_NONE:
-		print("McpInteractionServer: Client disconnected")
+		Trace.trace_log("McpInteractionServer", "Client disconnected")
 		_client = null
 		_buffer = ""
 		_busy = false
@@ -4418,4 +4418,4 @@ func _exit_tree() -> void:
 	if _server != null:
 		_server.stop()
 		_server = null
-	print("McpInteractionServer: Stopped")
+	Trace.trace_log("McpInteractionServer", "Stopped")

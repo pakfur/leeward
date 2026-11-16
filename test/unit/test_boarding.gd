@@ -779,7 +779,7 @@ func test_log_text() -> void:
 	ev = PhaseEvents.PhaseEvent.new(PhaseEvents.Type.SHIP_CAPTURED, PHASE, "b", {"captor_id": "a"}, "a")
 	assert_eq(ev.to_text(names), "Hermione is taken by Vengeance")
 	ev = PhaseEvents.PhaseEvent.new(PhaseEvents.Type.PRIZE_CREW, PHASE, "b", {"sailors": 3, "marines": 0, "cq": "B", "mr": 3}, "a")
-	assert_eq(ev.to_text(names), "Prize crew of 3 (B3) from Vengeance put aboard Hermione")
+	assert_eq(ev.to_text(names), "A prize crew of 3 (B3) from Vengeance goes aboard Hermione")
 	ev = PhaseEvents.PhaseEvent.new(PhaseEvents.Type.DAMAGE, PHASE, "b", {"sailors_lost": 1, "cause": "boarding", "bcf_needed": 5})
 	assert_eq(ev.to_text(names), "Hermione loses 1 sailor in the boarding (5 BCF needed)")
 
@@ -824,10 +824,10 @@ func test_boarders_station_and_summary() -> void:
 func test_boarding_order_is_a_standing_order() -> void:
 	var a := _ship("a", 0, Vector2i(5, 5), "C", 3, [3, 3, 3, 3], 2)
 	a.plotted_actions["crew_orders"] = {"sail_target": "", "boarding": "ready"}
-	a._clear_plot()
+	GameState.ship_controller.clear_plotted_actions("a")
 	assert_eq(a.boarding_order(), "ready", "kept across the movement plot clear")
 	a.plotted_actions["crew_orders"] = {"sail_target": "", "boarding": "stand_down"}
-	a._clear_plot()
+	GameState.ship_controller.clear_plotted_actions("a")
 	assert_eq(a.boarding_order(), "", "stand_down lapses after its g-t")
 
 

@@ -204,15 +204,63 @@ func test_unnamed_ships_get_numbered_fallback_names_per_side() -> void:
 
 # --- Placement validation ---
 
+## The game's own start: the server builds the ships (GameState.start_scenario).
 func _start_with_ships(scenario: Dictionary) -> void:
+	GameState.start_scenario(scenario, [] as Array[int])
+
+
+func _reset_sides() -> void:
+	var pc: TurnPhaseController = GameState.phase_controller
+	pc.ai_player_ids = [] as Array[int]
+	pc.bear_off_prompt_player_ids = [] as Array[int]
+	pc.maintenance_prompt_player_ids = [] as Array[int]
+	pc.current_phase = TurnPhaseController.GamePhase.SETUP
+	pc.players_ready = [false, false] as Array[bool]
 	GameState.clear_ships()
-	for ship_data in scenario["ships"]:
-		var ref := Ship.initialize_from_scenario(
-				ship_data, DataManager.get_ship_definition(ship_data["ship_type"]).to_dict())
-		var state := ShipState.new()
-		state.initialize_from_scenario(ship_data, ref)
-		GameState.add_ship(state)
-	GameState.start_new_game(scenario)
+
+
+func test_start_scenario_builds_the_ships_on_the_server() -> void:
+	var scenario := DataManager.load_scenario("test_prizes")
+	GameState.start_scenario(scenario, [0] as Array[int])
+	assert_eq(GameState.ships.size(), scenario["ships"].size(), "every scenario ship is built")
+	for ship in GameState.get_player_ships(1):
+		assert_eq(ship.gunnery_navy(), "French", "1.G.8: the side's navy from \"navies\"")
+	var pc: TurnPhaseController = GameState.phase_controller
+	assert_eq(pc.bear_off_prompt_player_ids, [0] as Array[int])
+	assert_eq(pc.maintenance_prompt_player_ids, [0] as Array[int])
+	assert_eq(pc.ai_player_ids, [1] as Array[int])
+	_reset_sides()
+
+
+func test_ai_plan_is_in_when_planning_begins() -> void:
+	GameState.start_scenario(DataManager.load_scenario("test_basic"), [0] as Array[int])
+	var pc: TurnPhaseController = GameState.phase_controller
+	assert_eq(pc.current_phase, TurnPhaseController.GamePhase.PLANNING)
+	assert_eq(pc.players_ready, [false, true] as Array[bool], "the server marks the AI side ready")
+	pc.player_submit_plan(0)
+	assert_ne(pc.current_phase, TurnPhaseController.GamePhase.PLANNING, "the human's plan alone ends planning")
+	_reset_sides()
+
+
+func test_start_scenario_refused_on_client() -> void:
+	GameState.is_server = false
+	assert_false(GameState.start_scenario(DataManager.load_scenario("test_basic"), [0] as Array[int]))
+	GameState.clear_ships()
+	GameState.is_server = true
+	assert_push_error("Cannot start a scenario on client")
+	assert_push_error("Cannot clear ships on client")
+
+
+func test_dev_reset_restarts_the_scenario() -> void:
+	var scenario := DataManager.load_scenario("test_basic")
+	GameState.start_scenario(scenario, [0] as Array[int])
+	var first: ShipState = GameState.get_all_ships()[0]
+	assert_eq(GameState.dev_commands.reset_game(scenario), "")
+	assert_eq(GameState.current_turn, 1)
+	assert_false(GameState.get_all_ships().has(first), "fresh ships")
+	assert_eq(GameState.phase_controller.ai_player_ids, [1] as Array[int], "the human side is kept")
+	assert_ne(GameState.dev_commands.reset_game({}), "")
+	_reset_sides()
 
 func test_shipped_scenarios_have_valid_placement() -> void:
 	for scenario_name in ["test_basic", "test_fleet", "test_prizes"]:

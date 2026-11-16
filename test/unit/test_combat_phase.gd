@@ -259,7 +259,9 @@ func test_serialize_includes_combat_step() -> void:
 	var data := pc.serialize_phase_state()
 	assert_eq(data["combat_step"], TurnPhaseController.CombatStep.DECLARE)
 	pc.combat_step = TurnPhaseController.CombatStep.NONE
+	pc.is_server = false  # apply_phase_state is the client's side of the sync
 	pc.apply_phase_state(data)
+	pc.is_server = true
 	assert_eq(pc.combat_step, TurnPhaseController.CombatStep.DECLARE)
 
 

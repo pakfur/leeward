@@ -21,30 +21,11 @@ func validate() -> bool:
 
 	return true
 
+## A command is data sent to the server (NetworkSync), which runs it through CommandValidator; it is
+## never executed where it is made. Movement is plotted through the plotting protocol.
 func execute() -> bool:
-	"""Execute the move command via server authority"""
-	# If this is the server, use command validator
-	if GameState.is_server and GameState.command_validator:
-		var result = GameState.command_validator.execute_command(self)
-		return result.get("success", false)
-
-	# If this is a client, commands should be sent to server
-	# For now, we'll push a warning and fail
-	push_warning("MoveCommand.execute() called on client - should send to server instead")
+	push_warning("MoveCommand.execute(): send the command to the server instead")
 	return false
-
-func execute_local_for_testing() -> bool:
-	"""Direct execution for single-player testing (bypasses server validation)"""
-	if not validate():
-		return false
-
-	var ship_state = GameState.get_ship(ship_id)
-	if not ship_state:
-		return false
-
-	GameState.ship_controller.set_plotted_movement(ship_id, movement_commands)
-	Trace.trace_log("Command", "MoveCommand: Ship %s plotted movement: %s" % [ship_id, movement_commands])
-	return true
 
 func serialize() -> Dictionary:
 	var data = super.serialize()

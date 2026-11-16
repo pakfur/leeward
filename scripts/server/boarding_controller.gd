@@ -1027,9 +1027,10 @@ func capture(action: BoardingAction, struck_target: bool, phase: int, outcome: S
 	sc.set_crew(def.ship_id, [0, 0, 0, 0], 0)
 	sc.set_navy(def.ship_id, att.gunnery_navy())  # 1.G.8: the navy using her (a prize does not fire, §8 Q2)
 	sc.set_status(def.ship_id, ShipState.Status.CAPTURED)
-	game_state.transfer_control(def.ship_id, att.player_id)
+	# Logged before control passes, so the line labels her by the side she was taken from.
 	game_state.turn_log.add(PhaseEvents.Type.SHIP_CAPTURED, phase, def.ship_id,
 		{"captor_id": att.ship_id, "struck_before": struck_before, "action": action.id, "outcome": action.outcome}, att.ship_id)
+	game_state.transfer_control(def.ship_id, att.player_id)
 	if action.struck_target:
 		for s in action.attacker_sections:
 			var task := att.boarding_task(s)
@@ -1068,9 +1069,26 @@ func _share_capture(action: BoardingAction, phase: int) -> void:
 			ctc.force_task(att.ship_id, [s], ReorganizeHandler.CODE,
 				{"reason": "boarding", "prize": a.defender_id, "action": a.id}, phase)
 		_set_order(att.ship_id, "")
-		game_state.turn_log.add(PhaseEvents.Type.BOARDING_RESULT, phase, att.ship_id,
-			{"result": "shared_capture", "action": a.id, "with": action.id, "captor_id": action.attacker_id,
-			"special": "none", "d10": -1, "mr": 0, "mcs": 0}, a.defender_id)
+		var data := {"result": "shared_capture", "action": a.id, "with": action.id, "captor_id": action.attacker_id,
+			"special": "none", "d10": -1, "mr": 0, "mcs": 0}
+		# Both actions may have rolled a capture this round (10.F.3): she is taken once, so this
+		# action's own "captured" line gives way to the shared one, which keeps its roll.
+		var rolled := _capture_result_of(a.id, phase)
+		if rolled != null:
+			for key in ["special", "side", "d10", "mr", "round"]:
+				if rolled.data.has(key):
+					data[key] = rolled.data[key]
+			game_state.turn_log.remove(rolled)
+		game_state.turn_log.add(PhaseEvents.Type.BOARDING_RESULT, phase, att.ship_id, data, a.defender_id)
+
+
+## This g-t's BOARDING_RESULT "captured" line of action `action_id` in `phase`, or null.
+func _capture_result_of(action_id: int, phase: int) -> PhaseEvents.PhaseEvent:
+	for ev in game_state.turn_log.of_type(PhaseEvents.Type.BOARDING_RESULT):
+		if ev.phase == phase and int(ev.data.get("action", -1)) == action_id \
+				and str(ev.data.get("result", "")) == "captured":
+			return ev
+	return null
 
 
 ## `ship` is being taken: her own boarders elsewhere are cut off from her (10.D.6 and 10.G.2 by

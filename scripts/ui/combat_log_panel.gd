@@ -69,7 +69,9 @@ static func phase_heading(turn: int, phase: int) -> String:
 
 ## Display entries for events [from_index, to_index) of a turn log: {"heading": bool, "text": String}.
 ## A heading entry precedes the first event and every event whose phase differs from the previous
-## one (`last_phase` is the phase of the event before from_index, -1 for none).
+## one (`last_phase` is the phase of the event before from_index, -1 for none). `ship_names` is
+## id -> label, or id -> {"name", "player"} (log_ships) to label each ship by its side when the
+## event was logged (event_names).
 static func entries(turn_log: PhaseEvents.PhaseLog, from_index: int, to_index: int,
 		last_phase: int, ship_names: Dictionary) -> Array:
 	var result: Array = []
@@ -81,7 +83,7 @@ static func entries(turn_log: PhaseEvents.PhaseLog, from_index: int, to_index: i
 		if ev.phase != last_phase:
 			result.append({"heading": true, "text": phase_heading(turn_log.turn, ev.phase)})
 			last_phase = ev.phase
-		result.append({"heading": false, "text": ev.to_text(ship_names)})
+		result.append({"heading": false, "text": ev.to_text(event_names(ev, ship_names))})
 	return result
 
 
@@ -150,12 +152,38 @@ static func syncs_views(event: PhaseEvents.PhaseEvent) -> bool:
 		PhaseEvents.Type.FIRE_STARTED, PhaseEvents.Type.SHIP_CAPTURED, PhaseEvents.Type.RECAPTURED]
 
 
-## ship_id -> "<name> (yours)" / "<name> (enemy)". The suffix is always added so ships that
-## share a type name (scenarios do not name ships individually) stay distinguishable in the log.
+## ship_id -> "<name> (yours)" / "<name> (enemy)" by the sides now. The suffix is always added so
+## ships that share a type name (scenarios do not name ships individually) stay distinguishable.
 static func log_names(ships: Array) -> Dictionary:
 	var names := {}
 	for ship in ships:
-		names[ship.ship_id] = "%s (%s)" % [ship.ship_name, "yours" if ship.player_id == 0 else "enemy"]
+		names[ship.ship_id] = side_label(ship.ship_name, ship.player_id)
+	return names
+
+
+## ship_id -> {"name", "player"} (the side now), for event_names.
+static func log_ships(ships: Array) -> Dictionary:
+	var info := {}
+	for ship in ships:
+		info[ship.ship_id] = {"name": ship.ship_name, "player": ship.player_id}
+	return info
+
+
+static func side_label(ship_name: String, player_id: int) -> String:
+	return "%s (%s)" % [ship_name, "yours" if player_id == PhaseEvents.HUMAN_PLAYER else "enemy"]
+
+
+## The labels for one event: each ship by the side recorded when the event was logged (a prize
+## taken later keeps her old side on earlier lines), else by her side now. Plain String labels in
+## `ship_names` are used as given.
+static func event_names(ev: PhaseEvents.PhaseEvent, ship_names: Dictionary) -> Dictionary:
+	var names := {}
+	for id in ship_names:
+		var entry = ship_names[id]
+		if entry is Dictionary:
+			names[id] = side_label(str(entry.get("name", id)), ev.player_when_logged(id, int(entry.get("player", 0))))
+		else:
+			names[id] = entry
 	return names
 
 
@@ -166,7 +194,8 @@ static func latest_line(turn_log: PhaseEvents.PhaseLog, ship_names: Dictionary, 
 	var shown: int = turn_log.events.size() if limit < 0 else mini(limit, turn_log.events.size())
 	if shown == 0:
 		return "No events yet"
-	return turn_log.events[shown - 1].to_text(ship_names)
+	var ev := turn_log.events[shown - 1]
+	return ev.to_text(event_names(ev, ship_names))
 
 
 # --- Panel -------------------------------------------------------------------
@@ -418,7 +447,7 @@ func _signature_now() -> String:
 
 
 func _ship_names() -> Dictionary:
-	return log_names(GameState.get_all_ships())
+	return log_ships(GameState.get_all_ships())
 
 
 func _heading_label(text: String) -> Label:

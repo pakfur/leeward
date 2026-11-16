@@ -24,6 +24,10 @@ func before_each() -> void:
 	env.sea_state = 1
 	GameState.environment = env
 	GameState.current_turn = 1
+	# Plotting is refused once a turn loop is past PLANNING; start from SETUP like a fresh game.
+	GameState.phase_controller.current_phase = TurnPhaseController.GamePhase.SETUP
+	GameState.phase_controller.game_result = {}
+	GameState.phase_controller.players_ready = [false, false] as Array[bool]
 
 	if GameState.movement_plotting_controller:
 		GameState.movement_plotting_controller.sessions.clear()

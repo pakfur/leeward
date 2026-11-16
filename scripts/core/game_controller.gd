@@ -6,7 +6,6 @@ extends Node
 @onready var ships_container: Node3D = $Ships
 @onready var ui: Control = $UI
 @onready var context_panel = $UI/ContextPanel
-@onready var planning_panel = $UI/PlanningPanel
 @onready var ship_status_panel = $UI/ShipStatusPanel
 @onready var developer_ui: Window = $DeveloperUI
 
@@ -93,9 +92,6 @@ func _ready() -> void:
 	DataManager.load_bearing_off_table()
 	DataManager.load_turning_table()
 
-	# Clear previous game state
-	GameState.clear_ships()
-
 	# Load scenario from GameState (set by menu selection)
 	var scenario_name = GameState.selected_scenario
 	if scenario_name.is_empty():
@@ -106,8 +102,6 @@ func _ready() -> void:
 
 	# Connect signals
 	GameState.phase_changed.connect(_on_phase_changed)
-	if planning_panel:
-		planning_panel.plan_submitted.connect(_on_player_plan_submitted)
 
 	# Connect resolution log signal for playback
 	if GameState.phase_controller:
@@ -116,11 +110,9 @@ func _ready() -> void:
 		GameState.phase_controller.combat_log_ready.connect(_on_combat_log_ready)
 		GameState.phase_controller.game_over.connect(_on_game_over)
 		GameState.phase_controller.bear_off_decision_requested.connect(_on_bear_off_decision_requested)
-		# The human player's ships ask before bearing off (6.D.3); the AI's decide for themselves.
-		GameState.phase_controller.bear_off_prompt_player_ids = [HUMAN_PLAYER_ID] as Array[int]  # SCV:ALLOW
-		# Likewise the grapple and ungrapple orders of the Maintenance Phase (8.C).
 		GameState.phase_controller.maintenance_orders_requested.connect(_on_maintenance_orders_requested)
-		GameState.phase_controller.maintenance_prompt_player_ids = [HUMAN_PLAYER_ID] as Array[int]  # SCV:ALLOW
+	# The ships are built by the server (GameState.start_scenario); their views follow on game_started.
+	GameState.game_started.connect(_on_game_started)
 
 	# Set up OceanView for water shader updates
 	if GameState.environment_controller and hex_map:
@@ -152,8 +144,9 @@ func _ready() -> void:
 		developer_ui.hex_labels_toggled.connect(_on_hex_labels_toggled)
 		developer_ui.ship_changed.connect(_on_dev_ship_changed)
 
-	# Start the game
-	GameState.start_new_game(scenario)
+	# Start the game. The human player's ships ask before bearing off (6.D.3) and for the
+	# Maintenance Phase orders (8.C); the AI's decide for themselves.
+	GameState.start_scenario(scenario, [HUMAN_PLAYER_ID] as Array[int])
 
 func _setup_combat_log_panel() -> void:
 	combat_log_panel = CombatLogPanelScene.instantiate()
@@ -452,35 +445,20 @@ func _setup_scenario(scenario: Dictionary) -> void:
 			var texture = load(texture_path) as Texture2D
 			hex_map.set_water_texture(texture)
 
-	# Spawn ships (create both state and view)
-	if scenario.has("ships"):
-		for ship_data in scenario.ships:
-			_spawn_ship(ship_data, scenario.get("navies", {}))
+## A new game (or a Developer UI reset): one ShipView per ship the server built, replacing any old ones.
+func _on_game_started(_scenario: Dictionary) -> void:
+	for id in ship_views.keys():
+		var old_view: Node = ship_views[id]
+		if is_instance_valid(old_view):
+			if old_view.get_parent():
+				old_view.get_parent().remove_child(old_view)  # free the name for the new view
+			old_view.queue_free()
+	ship_views.clear()
+	for ship_state in GameState.get_all_ships():
+		_spawn_ship_view(ship_state)
 
-func _spawn_ship(ship_data: Dictionary, navies: Variant = {}) -> void:
-	var ship_type_id = ship_data.get("ship_type", "")
-	var type_def = DataManager.get_ship_definition(ship_type_id)
 
-	if type_def == null:
-		push_error("Ship definition not found: %s" % ship_type_id)
-		return
-
-	# Create Ship (immutable identity + type data) from scenario + type definition
-	var ship_ref = Ship.initialize_from_scenario(ship_data, type_def.to_dict())
-	# 1.G.8: the navy using the ship, per ship or per side ("navies": {"0": "British", ...}).
-	var side := str(int(ship_data.get("player_id", 0)))  # JSON numbers are floats
-	if not ship_data.has("navy") and navies is Dictionary and navies.has(side):
-		ship_data = ship_data.duplicate()
-		ship_data["navy"] = str(navies[side])
-
-	# Create ship state (mutable game data only)
-	var ship_state = ShipState.new()
-	ship_state.initialize_from_scenario(ship_data, ship_ref)
-
-	# Add state to GameState (a duplicate id is rejected there, with an error naming it)
-	if not GameState.add_ship(ship_state):
-		return
-
+func _spawn_ship_view(ship_state: ShipState) -> void:
 	# Create ship view (presentation only)
 	var ship_view = ShipView.new()
 	ship_view.name = "ShipView_" + ship_state.ship_id
@@ -838,10 +816,6 @@ func _enter_planning_phase() -> void:
 	if crew_client:
 		crew_client.follow_ship(current_planning_ui.selected_ship_id)
 
-	# Hide old planning panel (will be deprecated)
-	if planning_panel:
-		planning_panel.visible = false
-
 func _on_planning_ship_selected(ship_id: String) -> void:
 	Trace.trace_log("GameController", "Planning UI: Ship selected - %s" % ship_id)
 
@@ -925,16 +899,11 @@ func _on_end_planning_pressed() -> void:
 	if movement_client and movement_client.is_plotting():
 		movement_client.cancel()
 
-	# Single-player shortcut: call controller directly under server guard  SCV:ALLOW
+	# The AI's plan is in already (TurnPhaseController.ai_player_ids); only the human's is sent.
 	if GameState.is_server and GameState.phase_controller:
-		GameState.phase_controller.player_submit_plan(0)
-		# Stub: submit player 1 immediately (StubAI will replace this in S08)
-		GameState.phase_controller.player_submit_plan(1)
+		GameState.phase_controller.player_submit_plan(HUMAN_PLAYER_ID)
 	else:
 		push_warning("Client plan submission not yet implemented — needs network layer")
-
-func _on_player_plan_submitted() -> void:
-	_on_end_planning_pressed()
 
 # ============================================================================
 # Movement Plotting UI Callbacks

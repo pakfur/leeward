@@ -35,7 +35,9 @@ func _init(p_game_state: Node = null) -> void:
 
 
 func plot_all_ai_ships() -> void:
-	assert(game_state.is_server, "StubAI: Must only run on server")
+	if not game_state.is_server:
+		push_error("StubAI: Must only run on server")
+		return
 	var controller: MovementPlottingController = game_state.movement_plotting_controller
 	if not controller:
 		push_error("StubAI: No movement_plotting_controller on game_state")
@@ -53,7 +55,9 @@ func plot_all_ai_ships() -> void:
 ## The AI's crew orders (crew-tasks spec §3.3). It gives the orders only (no sail changes today)
 ## and leaves Automatic on, so CrewAuto places its sections by the same rules as the player's.
 func assign_crew() -> void:
-	assert(game_state.is_server, "StubAI: Must only run on server")
+	if not game_state.is_server:
+		push_error("StubAI: Must only run on server")
+		return
 	var sc: ShipStateController = game_state.ship_controller
 	for ship_state in _get_ai_ships():
 		if ship_state.is_destroyed():
@@ -239,7 +243,9 @@ static func _axial_distance(a: Vector2i, b: Vector2i) -> int:
 
 ## Declare fire for the AI side (player 1).
 func submit_fire_orders() -> void:
-	assert(game_state.is_server, "StubAI: Must only run on server")
+	if not game_state.is_server:
+		push_error("StubAI: Must only run on server")
+		return
 	var reason: String = game_state.phase_controller.player_submit_fire_orders(1, choose_fire_orders(),
 		choose_marine_orders())
 	if reason != "":

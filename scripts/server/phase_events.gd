@@ -49,6 +49,26 @@ const CREW_TASK_NAMES := {
 	"FB": "form boarders", "BR": "stand ready to board", "BA": "board", "BD": "disband the boarders",
 }
 
+## The same tasks as gerunds, for "finishes …" / "stops …" lines.
+const CREW_TASK_GERUNDS := {
+	"T": "working the braces", "RO": "reorganizing", "FF": "fighting the fire",
+	"RR": "repairing rigging", "RH": "repairing the hull", "RS": "repairing the shrouds",
+	"FB": "forming boarders", "BR": "standing ready to board", "BA": "boarding", "BD": "disbanding the boarders",
+}
+
+## Why a crew task ended early, in plain words (reasons not listed are shown as given).
+const CREW_TASK_REASONS := {
+	"abandoned": "given other orders",
+	"crew lost": "the section is lost",
+	"crew_disorganized": "crew disorganized",
+	"action over": "the boarding action is over",
+	"boarding": "the prize is taken",
+	"captured": "the ship is captured",
+	"retaken": "the ship is retaken",
+	"destroyed": "the ship has been destroyed",
+	"struck": "the ship has struck",
+}
+
 const MODIFIER_LABELS := {
 	"crew_quality": "crew",
 	"sections_firing": "sections firing",
@@ -208,6 +228,23 @@ static func sections_text(sections: Array) -> String:
 	return ", ".join(names)
 
 
+## "S3", "S3 and S4", "S1, S2 and the marines": crew sections as the subject of a log line.
+static func crew_subject(sections: Array) -> String:
+	var names := PackedStringArray()
+	for s in sections:
+		names.append("the marines" if int(s) == ShipState.MARINES else ShipState.SECTION_NAMES[clampi(int(s), 0, 4)])
+	if names.is_empty():
+		return "the crew"
+	if names.size() == 1:
+		return names[0]
+	return ", ".join(names.slice(0, names.size() - 1)) + " and " + names[names.size() - 1]
+
+
+## `one` for a single crew section, else `many` ("begins" / "begin").
+static func crew_verb(sections: Array, one: String, many: String) -> String:
+	return one if sections.size() <= 1 else many
+
+
 ## "fighting sail (FS)" for a sail-state code; unknown codes are shown as given.
 static func sail_name(code: String) -> String:
 	var key := code.to_upper()
@@ -248,6 +285,9 @@ class PhaseEvent extends RefCounted:
 	var ship_id: String = ""
 	var target_id: String = ""
 	var data: Dictionary = {}
+	## Ship id -> the player controlling it when the event was logged (PhaseLog stamps it, server
+	## side), so the log can label sides as they were: a ship captured later keeps her old side here.
+	var players: Dictionary = {}
 
 	func _init(p_type: Type = Type.FIRE, p_phase: int = 0, p_ship_id: String = "",
 			p_data: Dictionary = {}, p_target_id: String = "") -> void:
@@ -264,7 +304,24 @@ class PhaseEvent extends RefCounted:
 			"ship_id": ship_id,
 			"target_id": target_id,
 			"data": data.duplicate(true),
+			"players": players.duplicate(),
 		}
+
+	## Every ship id the event's text names: ship_id, target_id and the ids kept in its data.
+	func ship_ids() -> PackedStringArray:
+		var ids := PackedStringArray()
+		for id in [ship_id, target_id, str(data.get("captor_id", ""))]:
+			if id != "" and not ids.has(id):
+				ids.append(id)
+		for e in data.get("split", []):
+			var id := str((e as Dictionary).get("attacker_id", "")) if e is Dictionary else ""
+			if id != "" and not ids.has(id):
+				ids.append(id)
+		return ids
+
+	## The player that controlled `id` when the event was logged, or `fallback` if not recorded.
+	func player_when_logged(id: String, fallback: int) -> int:
+		return int(players.get(id, fallback))
 
 	## One readable line in plain English, numbers kept. Missing data keys are skipped, never
 	## an error; raw ids, roll arrays and zero amounts are never shown.
@@ -343,7 +400,7 @@ class PhaseEvent extends RefCounted:
 			Type.BOARDERS:
 				var secs := PhaseEvents.sections_text(data.get("sections", []))
 				if str(data.get("task", "")) == "BD":
-					return "%s stands down its boarders (%s)" % [who, secs]
+					return "%s stands down her boarders (%s)" % [who, secs]
 				return "%s forms boarders (%s)" % [who, secs]
 			Type.BOARDERS_AWAY:
 				if data.get("joins", false):
@@ -366,7 +423,9 @@ class PhaseEvent extends RefCounted:
 						return "%s is overwhelmed by a sixth boarding ship and taken by %s (10.F.2)" % [who, other]
 					"undefended":
 						return "%s is taken by %s: no one is left to defend her (10.E.2b)" % [who, other]
-				return "%s is taken by %s%s" % [who, other, " (she had struck)" if data.get("struck_before", false) else ""]
+				# A ship that struck in the fight already has her own line (BOARDING_RESULT, 10.E.2c).
+				var struck: bool = data.get("struck_before", false) and str(data.get("outcome", "")) != "struck_in_action"
+				return "%s is taken by %s%s" % [who, other, " (she had struck)" if struck else ""]
 			Type.DEFENCE_SPLIT:
 				var parts := PackedStringArray()
 				for e in data.get("split", []):
@@ -376,7 +435,7 @@ class PhaseEvent extends RefCounted:
 				return "%s, boarded by %d ships, splits her defence: %s (10.F.2)" % [who, parts.size(), "; ".join(parts)]
 			Type.PRIZE_CREW:
 				var n := int(data.get("sailors", 0)) + int(data.get("marines", 0))
-				return "Prize crew of %d (%s%s) from %s put aboard %s" % [n, _val("cq"), _val("mr"), other, who]
+				return "A prize crew of %d (%s%s) from %s goes aboard %s" % [n, _val("cq"), _val("mr"), other, who]
 			Type.RECAPTURED:
 				if str(data.get("cause", "")) == "boarded":
 					return "%s is retaken by %s: her crew is freed from below (%s%s)" % [who, other, _val("cq"), _val("mr")]
@@ -714,7 +773,8 @@ class PhaseEvent extends RefCounted:
 			" (round %d)" % round_no if round_no > 1 else "", int(a.get("tbcf", 0)),
 			int(d.get("tbcf", 0)), side.call(a), side.call(d)]
 
-	## "X's boarders are repulsed and take 1 MC" / "Y is captured!" / "The fight aboard Y goes on".
+	## "X's boarders are repulsed and take 1 MC" / "X's boarders carry Y" / "The fight aboard Y goes on".
+	## A capture's taking is the SHIP_CAPTURED line that follows; this line gives the fight's outcome.
 	func _boarding_result_text(who: String, other: String, ship_names: Dictionary) -> String:
 		var d10 := int(data.get("d10", -1))
 		var kind := "capture roll" if str(data.get("special", "")).begins_with("capture") else "repulse roll"
@@ -723,13 +783,13 @@ class PhaseEvent extends RefCounted:
 			"captured":
 				match str(data.get("reason", "")):
 					"struck_in_action":
-						return "%s has struck with boarders aboard: she is captured (10.E.2c)" % other
+						return "%s has struck with boarders aboard (10.E.2c)" % other
 					"all_defenders_lost":
-						return "%s has no defenders left: she is captured (10.E.2e)" % other
-				return "%s is captured!%s" % [other, roll]
+						return "%s has no defenders left (10.E.2e)" % other
+				return "%s's boarders carry %s!%s" % [who, other, roll]
 			"shared_capture":
-				return "%s's boarders are aboard %s as %s takes her: they reorganize too (10.F)" % [who, other,
-					_name(ship_names, str(data.get("captor_id", "")))]
+				return "%s's boarders are aboard %s as %s takes her: they reorganize too (10.F)%s" % [who, other,
+					_name(ship_names, str(data.get("captor_id", ""))), roll]
 			"surrendered":
 				return "%s's boarders aboard %s surrender with their ship (10.D.6)" % [who, other]
 			"attackers_lost":
@@ -875,34 +935,35 @@ class PhaseEvent extends RefCounted:
 			"debris":
 				why = "flaming debris from %s" % other if target_id != "" else "flaming debris"
 		var text := head + (" (%s)" % why if why != "" else "")
+		if fires > 1 and why != "":
+			text = head.trim_suffix(")") + "; %s)" % why  # one parenthesis: "(2 burning; …)"
 		if data.get("mc", false):
 			text += ": morale check"
 		return text
 
 	## "Vengeance's S2 puts out fire 1 (3 −2 = 1 ≤ 2)" / "... fails to master fire 1 (8 −2 = 6 > 2)" (8.E.3).
 	func _fire_fought_text(who: String) -> String:
-		var names: Array = []
-		for section in data.get("sections", []):
-			names.append(ShipState.SECTION_NAMES[int(section)])
-		var crew := " ".join(names) if not names.is_empty() else "crew"
+		var sections: Array = data.get("sections", [])
+		var crew := PhaseEvents.crew_subject(sections)
 		if data.get("below", false):
 			crew = "original crew below"  # 10.H.3
+			sections = []
 		var roll := int(data.get("roll", 0))
 		var modifier := int(data.get("modifier", 0))
 		var needed := int(data.get("needed", 0))
 		var sum := "%d %s = %d" % [roll, ("%+d" % modifier).replace("-", "−"), roll + modifier] if modifier != 0 else str(roll)
 		var number := int(data.get("number", 1))
 		if data.get("success", false):
-			return "%s's %s puts out fire %d (%s ≤ %d)" % [who, crew, number, sum, needed]
-		return "%s's %s fails to master fire %d (%s > %d, %s turn)" % [who, crew, number, sum, needed,
+			return "%s's %s %s out fire %d (%s ≤ %d)" % [who, crew, PhaseEvents.crew_verb(sections, "puts", "put"),
+				number, sum, needed]
+		return "%s's %s %s to master fire %d (%s > %d, %s turn)" % [who, crew,
+			PhaseEvents.crew_verb(sections, "fails", "fail"), number, sum, needed,
 			PhaseEvents._ordinal(int(data.get("attempt", 1)) - 1)]
 
 	## "Vengeance repairs a rigging box (section 2)", "Vengeance splices the severed shrouds" (8.F.5).
 	func _repair_text(who: String) -> String:
-		var names: Array = []
-		for section in data.get("sections", []):
-			names.append(ShipState.SECTION_NAMES[int(section)])
-		var by := " (%s)" % " ".join(names) if not names.is_empty() else ""
+		var sections: Array = data.get("sections", [])
+		var by := " (%s)" % PhaseEvents.sections_text(sections) if not sections.is_empty() else ""
 		match str(data.get("kind", "")):
 			"shrouds":
 				return "%s splices the severed shrouds%s" % [who, by]
@@ -912,32 +973,35 @@ class PhaseEvent extends RefCounted:
 				return "%s repairs a %s box%s%s" % [who, str(data["kind"]), where, by]
 		return "%s completes a repair%s" % [who, by]
 
-	## "Vengeance: S3 begins to repair rigging (4 turns)", "...: S3 stops: abandoned".
+	## "Vengeance: S3 begins to repair rigging (4 turns)", "Vengeance: S3 and S4 stop reorganizing: the
+	## ship has struck", "Vengeance: S3 finishes repairing rigging".
 	func _crew_task_text(who: String) -> String:
-		var names: Array = []
-		for section in data.get("sections", []):
-			names.append(ShipState.SECTION_NAMES[int(section)])
-		var crew := " ".join(names) if not names.is_empty() else "the crew"
+		var sections: Array = data.get("sections", [])
+		var crew := PhaseEvents.crew_subject(sections)
 		var code := str(data.get("code", ""))
 		var task: String = PhaseEvents.CREW_TASK_NAMES.get(code, code)
+		var doing: String = PhaseEvents.CREW_TASK_GERUNDS.get(code, code)
 		if code == "FF" and int((data.get("params", {}) as Dictionary).get("fire", -1)) < 0:
-			task = "stand by as fire watch"
+			task = "stand fire watch"
+			doing = "standing fire watch"
+		var verb := func(one: String, many: String) -> String: return PhaseEvents.crew_verb(sections, one, many)
+		var reason_id := str(data.get("reason", data.get("state", "")))
+		var reason: String = PhaseEvents.CREW_TASK_REASONS.get(reason_id, reason_id)
 		var needed := int(data.get("needed", -1))
 		match str(data.get("state", "")):
 			"attached":
-				return "%s: %s, on fire watch, turns to the new fire at once" % [who, crew]
+				return "%s: %s, on fire watch, %s to the new fire at once" % [who, crew, verb.call("turns", "turn")]
 			"started":
 				var length := " (%s)" % PhaseEvents.plural(needed, "turn") if needed > 0 else ""
-				return "%s: %s begins to %s%s" % [who, crew, task, length]
+				return "%s: %s %s to %s%s" % [who, crew, verb.call("begins", "begin"), task, length]
 			"completed":
-				return "%s: %s finishes: %s" % [who, crew, task]
+				return "%s: %s %s %s" % [who, crew, verb.call("finishes", "finish"), doing]
 			"refused":
-				return "%s: %s cannot %s: %s" % [who, crew, task, str(data.get("reason", ""))]
+				return "%s: %s cannot %s: %s" % [who, crew, task, reason]
 			"reset":
-				return "%s: %s's work to %s is lost (%d %s done): %s" % [who, crew, task,
-					int(data.get("done", 0)), "turn" if int(data.get("done", 0)) == 1 else "turns",
-					str(data.get("reason", ""))]
-		return "%s: %s stops (%s): %s" % [who, crew, task, str(data.get("reason", data.get("state", "")))]
+				return "%s: %s's work to %s is lost (%s done): %s" % [who, crew, task,
+					PhaseEvents.plural(int(data.get("done", 0)), "turn"), reason]
+		return "%s: %s %s %s: %s" % [who, crew, verb.call("stops", "stop"), doing, reason]
 
 	## "The wind veers to west", "The wind freshens to 3 (fresh)", or both in one line.
 	func _wind_text() -> String:
@@ -973,18 +1037,35 @@ class PhaseEvent extends RefCounted:
 class PhaseLog extends RefCounted:
 	var turn: int = 0
 	var events: Array[PhaseEvent] = []
+	## ship id -> controlling player id (-1 unknown). GameState sets it on the logs it makes, so each
+	## event records the sides as they are when it is logged (PhaseEvent.players).
+	var controller_of: Callable
 
 	func add(type: Type, phase: int, ship_id: String, data: Dictionary = {},
 			target_id: String = "") -> PhaseEvent:
 		var ev := PhaseEvent.new(type, phase, ship_id, data, target_id)
+		_stamp(ev)
 		events.append(ev)
 		return ev
+
+	## Takes an event out of the log (a result superseded before anything was shown).
+	func remove(ev: PhaseEvent) -> void:
+		events.erase(ev)
+
+	func _stamp(ev: PhaseEvent) -> void:
+		if not controller_of.is_valid():
+			return
+		for id in ev.ship_ids():
+			var player: int = controller_of.call(id)
+			if player >= 0:
+				ev.players[id] = player
 
 	## Like add, but places the event at `index` (clamped to the log), so a cause can be logged
 	## ahead of consequences that were recorded while it was being worked out.
 	func insert(index: int, type: Type, phase: int, ship_id: String, data: Dictionary = {},
 			target_id: String = "") -> PhaseEvent:
 		var ev := PhaseEvent.new(type, phase, ship_id, data, target_id)
+		_stamp(ev)
 		events.insert(clampi(index, 0, events.size()), ev)
 		return ev
 

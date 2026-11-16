@@ -414,7 +414,7 @@ func test_results_without_a_round_are_logged() -> void:
 	var ev := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.BOARDING_RESULT, PHASE, "a", {"result": "surrendered"}, "b")
 	assert_eq(ev.to_text(names), "Vengeance's boarders aboard Hermione surrender with their ship (10.D.6)")
 	ev = PhaseEvents.PhaseEvent.new(PhaseEvents.Type.BOARDING_RESULT, PHASE, "a", {"result": "captured", "reason": "struck_in_action"}, "b")
-	assert_eq(ev.to_text(names), "Hermione has struck with boarders aboard: she is captured (10.E.2c)")
+	assert_eq(ev.to_text(names), "Hermione has struck with boarders aboard (10.E.2c)")
 	ev = PhaseEvents.PhaseEvent.new(PhaseEvents.Type.BOARDING_RESULT, PHASE, "a", {"result": "target_gone"}, "b")
 	assert_eq(ev.to_text(names), "The fight aboard Hermione ends: she is gone")
 
@@ -488,3 +488,67 @@ func test_prize_label_avoids_ships_alongside() -> void:
 	place = ShipView.prize_label_place(down, PI / 2.0, both, 3.0, 0.7)
 	var z: float = (place["offset"] as Vector3).z
 	assert_true(absf(z) > 1.5 + ShipView.LABEL_HULL_RADIUS, "sandwiched: pushed out past the neighbour")
+
+
+# --- Log: one capture line, sides as they were (crew spec phase 6) ---
+
+func _result_texts() -> PackedStringArray:
+	var texts := PackedStringArray()
+	for ev in _events(PhaseEvents.Type.BOARDING_RESULT):
+		texts.append(ev.to_text(_names()))
+	return texts
+
+
+func test_two_actions_that_both_take_her_log_the_capture_once() -> void:
+	var ships := _two_board_one()
+	var d: ShipState = ships[2]
+	d.status = ShipState.Status.STRUCK  # 10.E.2c in both actions: no round, no dice
+	boarding.resolve(PHASE)
+	assert_true(d.is_captured())
+	var texts := _result_texts()
+	assert_eq(texts.size(), 2, "one line per action: %s" % [texts])
+	var struck_lines := 0
+	for t in texts:
+		if t.contains("has struck with boarders aboard"):
+			struck_lines += 1
+	assert_eq(struck_lines, 1, "the capture is logged once: %s" % [texts])
+	assert_eq(_events(PhaseEvents.Type.SHIP_CAPTURED).size(), 1)
+	var captor := str(d.prize["captor_id"])
+	var other := "c" if captor == "a" else "a"
+	assert_has(texts, "%s's boarders are aboard d as %s takes her: they reorganize too (10.F)" % [other, captor])
+
+
+func test_shared_capture_keeps_the_superseded_capture_roll() -> void:
+	_two_board_one()
+	var a_act := _action("a", "d")
+	var c_act := _action("c", "d")
+	# Both actions rolled "captured if d10 < MR" and made it (as _fight logs them).
+	for act in [a_act, c_act]:
+		GameState.turn_log.add(PhaseEvents.Type.BOARDING_RESULT, PHASE, act.attacker_id,
+			{"special": "capture_if_lt_mr", "side": "attacker", "d10": 1, "mr": 3, "mcs": 0,
+			"result": "captured", "action": act.id, "round": 1}, "d")
+	boarding._apply_outcomes([
+		{"action": a_act, "kind": "capture", "outcome": "captured", "mcs": 0},
+		{"action": c_act, "kind": "capture", "outcome": "captured", "mcs": 0}], PHASE)
+	var texts := _result_texts()
+	assert_eq(texts, PackedStringArray([
+		"a's boarders carry d! (capture roll d10 1 < MR 3)",
+		"c's boarders are aboard d as a takes her: they reorganize too (10.F) (capture roll d10 1 < MR 3)"]))
+
+
+func test_capture_log_labels_ships_by_their_side_when_logged() -> void:
+	GameState.turn_log = GameState.new_turn_log(5)
+	var ships := _two_board_one()
+	var d: ShipState = ships[2]
+	d.status = ShipState.Status.STRUCK
+	boarding.resolve(PHASE)
+	assert_eq(d.player_id, 0, "d is now a prize of side 0")
+	var info := CombatLogPanel.log_ships(GameState.get_all_ships())
+	var split: PhaseEvents.PhaseEvent = _events(PhaseEvents.Type.DEFENCE_SPLIT)[0]
+	assert_eq(split.players.get("d"), 1, "recorded at log time")
+	assert_string_contains(split.to_text(CombatLogPanel.event_names(split, info)), "d (enemy), boarded by 2 ships")
+	var cap: PhaseEvents.PhaseEvent = _events(PhaseEvents.Type.SHIP_CAPTURED)[0]
+	assert_string_starts_with(cap.to_text(CombatLogPanel.event_names(cap, info)), "d (enemy) is taken by ")
+	# A line logged after the capture shows her new side.
+	var later := GameState.turn_log.add(PhaseEvents.Type.HOLD_FIRE, PHASE, "d")
+	assert_eq(later.to_text(CombatLogPanel.event_names(later, info)), "d (yours) holds fire.")

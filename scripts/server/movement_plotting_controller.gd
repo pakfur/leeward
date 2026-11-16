@@ -32,6 +32,23 @@ func _init(p_game_state: Node = null) -> void:
 	movement_validator = MovementValidator.new(game_state)
 
 
+## Movement is plotted only in PLANNING, before the game is over and before the player's plan
+## is submitted (TurnPhaseController.players_ready). SETUP (no turn loop running: set-up code and
+## tests) is let through too. "" when the request may go ahead.
+func _turn_refusal(player_id: int) -> String:
+	var pc = game_state.get("phase_controller") if game_state else null
+	if pc == null:
+		return ""
+	if not pc.game_result.is_empty():
+		return "the game is over"
+	if pc.current_phase != TurnPhaseController.GamePhase.PLANNING \
+			and pc.current_phase != TurnPhaseController.GamePhase.SETUP:
+		return "movement is plotted in the planning phase"
+	if player_id >= 0 and player_id < pc.players_ready.size() and pc.players_ready[player_id]:
+		return "this player's plan is already submitted"
+	return ""
+
+
 ## ============================================================================
 ## Protocol Handlers
 ## ============================================================================
@@ -68,6 +85,10 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_STRUCK", "Ship %s has struck its colours and cannot move" % ship_id)
 	if ship_state.is_dismasted():
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_DISMASTED", "Ship %s is dismasted and cannot move" % ship_id)
+
+	var refusal := _turn_refusal(player_id)
+	if refusal != "":
+		return MovementTypes.PlottingErrorResponse.create(request_id, "NOT_PLANNING", refusal)
 
 	# Check if ship already has an active session
 	if ship_sessions.has(ship_id):
@@ -139,6 +160,9 @@ func handle_select_hex(session_id: String, expected_version: int, selected_hex: 
 	# Check session state
 	if session.is_terminated():
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SESSION_TERMINATED", "Session has already ended")
+	var refusal := _turn_refusal(session.player_id)
+	if refusal != "":
+		return MovementTypes.PlottingErrorResponse.create(request_id, "NOT_PLANNING", refusal)
 
 	# Version validation with idempotency check
 	var version_result = _validate_version(session, expected_version, request_id)

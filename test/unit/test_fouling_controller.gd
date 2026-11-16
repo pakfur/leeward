@@ -229,8 +229,15 @@ func test_freed_ships_can_start_plotting_again() -> void:
 	controller.resolve_unfouling(PHASE)
 	GameState.movement_plotting_controller.sessions.clear()
 	GameState.movement_plotting_controller.ship_sessions.clear()
+	var pc: TurnPhaseController = GameState.phase_controller
+	var old_phase := pc.current_phase
+	var old_ready := pc.players_ready.duplicate()
+	pc.current_phase = TurnPhaseController.GamePhase.PLANNING  # movement is plotted in PLANNING
+	pc.players_ready = [false, false] as Array[bool]
 	var response := GameState.movement_plotting_controller.handle_start_plotting(
 			ships[0].player_id, "a", "req")
+	pc.current_phase = old_phase
+	pc.players_ready = old_ready
 	assert_false(response is MovementTypes.PlottingErrorResponse)
 
 

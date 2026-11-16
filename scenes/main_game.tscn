@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3 uid="uid://c7vk3p2xmxfq8"]
+[gd_scene load_steps=11 format=3 uid="uid://c7vk3p2xmxfq8"]
 
 [ext_resource type="Script" uid="uid://t6fop8pw7x2s" path="res://scripts/core/game_controller.gd" id="1_controller"]
 [ext_resource type="Script" uid="uid://drpxitgfk6sd3" path="res://scripts/core/hex_map.gd" id="2_hex_map"]
@@ -7,7 +7,6 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/minimap.tscn" id="4_minimap"]
 [ext_resource type="PackedScene" path="res://scenes/ui/context_panel.tscn" id="5_context"]
 [ext_resource type="Script" uid="uid://s0ckjki5xttb" path="res://scripts/ui/ship_status_panel.gd" id="6_status"]
-[ext_resource type="Script" uid="uid://d4gdl7csfejl7" path="res://scripts/ui/planning_panel.gd" id="7_planning"]
 [ext_resource type="PackedScene" path="res://scenes/ui/developer_ui.tscn" id="8_dev_ui"]
 
 [sub_resource type="Environment" id="env"]
@@ -156,85 +155,5 @@ text = "Rigging: 4/4"
 unique_name_in_owner = true
 layout_mode = 2
 text = "Movement Allowance: 4"
-
-[node name="PlanningPanel" type="PanelContainer" parent="UI"]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -300.0
-offset_top = -200.0
-offset_right = 300.0
-offset_bottom = 200.0
-grow_horizontal = 2
-grow_vertical = 2
-script = ExtResource("7_planning")
-
-[node name="VBox" type="VBoxContainer" parent="UI/PlanningPanel"]
-layout_mode = 2
-
-[node name="Title" type="Label" parent="UI/PlanningPanel/VBox"]
-layout_mode = 2
-text = "Planning Phase"
-horizontal_alignment = 1
-
-[node name="HSeparator" type="HSeparator" parent="UI/PlanningPanel/VBox"]
-layout_mode = 2
-
-[node name="ShipSelectorLabel" type="Label" parent="UI/PlanningPanel/VBox"]
-layout_mode = 2
-text = "Select Ship:"
-
-[node name="ShipSelector" type="OptionButton" parent="UI/PlanningPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="HSeparator2" type="HSeparator" parent="UI/PlanningPanel/VBox"]
-layout_mode = 2
-
-[node name="InstructionsLabel" type="Label" parent="UI/PlanningPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Movement Allowance: 4
-Commands: F# (forward), P (port), S (starboard)
-Example: F2 S F1"
-autowrap_mode = 3
-
-[node name="MovementLabel" type="Label" parent="UI/PlanningPanel/VBox"]
-layout_mode = 2
-text = "Movement Commands:"
-
-[node name="MovementInput" type="LineEdit" parent="UI/PlanningPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-placeholder_text = "e.g. F2 S F1"
-
-[node name="SailStateLabel" type="Label" parent="UI/PlanningPanel/VBox"]
-layout_mode = 2
-text = "Sail State:"
-
-[node name="SailStateSelector" type="OptionButton" parent="UI/PlanningPanel/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="HSeparator3" type="HSeparator" parent="UI/PlanningPanel/VBox"]
-layout_mode = 2
-
-[node name="ButtonRow" type="HBoxContainer" parent="UI/PlanningPanel/VBox"]
-layout_mode = 2
-
-[node name="ClearButton" type="Button" parent="UI/PlanningPanel/VBox/ButtonRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Clear"
-
-[node name="SubmitButton" type="Button" parent="UI/PlanningPanel/VBox/ButtonRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Submit Plan"
 
 [node name="DeveloperUI" parent="." instance=ExtResource("8_dev_ui")]

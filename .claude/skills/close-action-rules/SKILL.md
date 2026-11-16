@@ -29,7 +29,7 @@ All in `docs/rules/images/`. Pages are the PDF pages (for `Read` with `pages:`).
 | `boarding-combat-chart.jpg` | 109 | Boarding combat and skill factors (CQ → SK mod, BCF), grappling, **unfouling**, **collision resolution** (fouling roll, extra rigging lost), **tacking**, **bearing off**, poor maneuvering, **drifting**, **wind speed change**, **wind direction change** | `crew_quality_table.json`, `unfouling_table.json`, `tacking_table.json`, `bearing_off_table.json`, `drifting_table.json` (collision and wind: in code) |
 | `gunfire-results-chart.jpg` | 110 | Gunfire results (FGN → damage, CH#), gunfire modifiers (range, rake, initial broadside, two targets …), crew loss | `gunfire_results_table.json`, `gunfire_modifiers.json`, `crew_loss_table.json` |
 | `gunnery-factor-chart.jpg` | 111 | Gunnery factor multipliers by range, Basic Gunfire Number | `gunnery_factor_table.json`, `basic_gunfire_number_table.json` |
-| `rigging-critical-hits.jpg`, `hull-critical-hits.jpg` | 112–113 | Critical hits (not implemented) | — |
+| `rigging-critical-hits.jpg`, `hull-critical-hits.jpg` | 112–113 | Critical hits | `critical_hits_table.json`, `poor_maneuvering_table.json` |
 | `ship-data-chart.jpg` | 106 | Ship Data Chart (notes are transcribed under "SHIP DATA CHART (SDC) — NOTES") | `ships.json` |
 | `ship-log-sample.png`, `ship-log-blank-*.png` | — | Section boxes, morale-check marks per section | `ships.json`, `damage_controller.gd` |
 | `diagram-NN-*.png` | — | Diagrams 1–26, cited by rule text (e.g. 20 = rakes, 23 = drifting) | — |
@@ -54,13 +54,14 @@ Then read the whole section, including its EXAMPLE and EXPLANATION paragraphs an
 |---|---|---|
 | Sequence of play | 2 | `turn_phase_controller.gd` |
 | Weather, wind direction/speed, sea state | 3.B–3.E | `environment_controller.gd` |
-| Plotting, crew tasks | 4 | `movement_plotting_*.gd`, `sail_controller.gd` |
+| Plotting, crew tasks | 4 | `movement_plotting_*.gd`, `crew_task_controller.gd`, `crew_rules.gd`, `crew_auto.gd`, `sail_controller.gd` |
 | MA, turning, tacking, in irons, speed change, sail state, blocked wind | 5.A–5.G | `movement_validator.gd`, `movement_resolver.gd`, `ship_state.gd` |
 | Execution, overlap, contested hexes, bearing off, collisions, fouling, illegal moves | 6.A–6.G | `movement_resolver.gd`, `occupancy.gd` |
 | Arcs, LOS, gunfire procedure and modifiers, damage, rakes | 7.A–7.E | `fire_geometry.gd`, `fire_rules.gd`, `gunnery_calculator.gd`, `gunnery_resolver.gd`, `damage_controller.gd` |
-| Drift, unfouling (fire, repairs, grappling: not implemented) | 8 | `drift_resolver.gd`, `fouling_controller.gd` |
+| Drift, grappling, unfouling, fire, repairs | 8 | `drift_resolver.gd`, `grappling_controller.gd`, `fouling_controller.gd`, `fire_controller.gd`, `repair_controller.gd` |
 | Crew quality, morale checks, striking | 9 | `morale_controller.gd` |
-| Boarding, signalling, towing, anchoring, optional rules | 10–14 | not implemented (see feature_diff §2) |
+| Boarding, capture, prizes | 10 | `boarding_controller.gd`, `boarding_rules.gd` |
+| Signalling, towing, anchoring, optional rules | 11–14 | not implemented (see feature_diff §2) |
 | Victory, scenarios | Scenario Book ("Standard Victory Determination") | `victory_controller.gd`, `data/scenarios/` |
 
 ## Working on game logic

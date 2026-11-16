@@ -546,6 +546,9 @@ func update_task(ship_id: String, seq: int, fields: Dictionary) -> bool:
 
 ## Ends the task: it stays, with `ended` = reason, until the g-t ends (clear_turn_flags).
 func end_task(ship_id: String, seq: int, reason: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot end a task on client")
+		return false
 	return update_task(ship_id, seq, {"ended": reason if reason != "" else "ended"})
 
 func set_plotted_sections(ship_id: String, sections: Array) -> bool:
@@ -967,7 +970,11 @@ func clear_plotted_actions(ship_id: String) -> bool:
 		push_error("[Server] Ship not found: %s" % ship_id)
 		return false
 
-	ship._clear_plot()
+	# The boarding order is a standing order (boarding spec §2.4 #6); "stand_down" lapses.
+	var boarding: String = ship.boarding_order()
+	ship.plotted_actions = ShipState.empty_plot()
+	if boarding != "" and boarding != "stand_down":
+		ship.plotted_actions["crew_orders"]["boarding"] = boarding
 	return true
 
 func clear_turn_flags(ship_id: String) -> bool:

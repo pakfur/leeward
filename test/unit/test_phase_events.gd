@@ -104,7 +104,7 @@ func test_fire_started_text() -> void:
 	ev = log.add(PhaseEvents.Type.FIRE_STARTED, 7, "s2", {"fires": 1, "cause": "spread", "roll": 2, "needed": 4}, "s1")
 	assert_eq(ev.to_text(NAMES), "Renard catches fire (from Surprise, d10 2 ≤ 4)")
 	ev = log.add(PhaseEvents.Type.FIRE_STARTED, 7, "s1", {"fires": 2, "cause": "growth", "age": 5})
-	assert_eq(ev.to_text(NAMES), "Another fire breaks out aboard Surprise (2 burning) (the fire grows after 5 turns)")
+	assert_eq(ev.to_text(NAMES), "Another fire breaks out aboard Surprise (2 burning; the fire grows after 5 turns)")
 
 
 func test_fire_and_explosion_texts() -> void:

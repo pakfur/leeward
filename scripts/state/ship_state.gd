@@ -461,8 +461,8 @@ func missing_boxes(kind: String) -> int:
 func task_turns_required(task: Dictionary) -> int:
 	var params: Dictionary = task.get("params", {})
 	var row: String = params.get("row", task.get("code", ""))
-	if row == "SAIL":  # no row recorded: MS<->PS is the major change (ship log)
-		row = "SAIL_MAJOR" if sail_state.to_upper() == "PS" or params.get("target", "") == "PS" else "SAIL_MINOR"
+	if row == "SAIL":  # no row recorded: the sail controller's choice (MS<->PS is the major change)
+		row = SailController.cost_row(self, str(params.get("target", "")))
 	return DataManager.combat_tables.task_turns(row, crew_quality)
 
 ## The sail change in progress in the old shape, for the views: {} or
@@ -851,14 +851,6 @@ func initialize_from_scenario(data: Dictionary, ship_ref: Ship) -> void:
 
 func _clear_turn_flags() -> void:
 	collision_this_turn = false
-
-func _clear_plot() -> void:
-	# The boarding order is a standing order (boarding spec §2.4 #6); "stand_down" lapses.
-	var orders = plotted_actions.get("crew_orders", {})
-	var boarding := str(orders.get("boarding", "")) if orders is Dictionary else ""
-	plotted_actions = empty_plot()
-	if boarding != "" and boarding != "stand_down":
-		plotted_actions["crew_orders"]["boarding"] = boarding
 
 ## The standing boarding order (crew_orders.boarding): "", "ready", "board:<ship_id>" or "stand_down".
 func boarding_order() -> String:

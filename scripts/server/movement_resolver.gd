@@ -1694,6 +1694,9 @@ static func tack_crew_drm(sections: int) -> int:
 
 @warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) -> void:
+	if game_state and not game_state.is_server:
+		push_error("MovementResolver: Cannot apply movement results on client")
+		return
 	var sc = game_state.ship_controller if game_state else null
 	if game_state and game_state.get("turn_log") != null:
 		log_outcomes(log, ships, game_state.turn_log)  # before the plots are cleared
@@ -1804,6 +1807,9 @@ func _count_steps_executed(result: MovementTypes.ShipResolutionResult) -> int:
 ## pair). Reads each ship's plot, so call it before the plots are cleared.
 @warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], turn_log: PhaseEvents.PhaseLog) -> void:
+	if game_state and not game_state.is_server:
+		push_error("MovementResolver: Cannot log movement outcomes on client")
+		return
 	var phase := TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
 	var fouled_logged := {}
 	for ship_state in ships:

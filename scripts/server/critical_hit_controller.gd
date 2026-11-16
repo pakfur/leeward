@@ -103,10 +103,16 @@ func shot_context(order: GunneryTypes.FireOrder, rake: String, target_dismasted:
 
 ## While held, DamageController queues checks but does not drain them.
 func hold() -> void:
+	if not is_server:
+		push_error("CriticalHitController: Cannot hold checks on client")
+		return
 	_hold += 1
 
 
 func release(phase: int) -> void:
+	if not is_server:
+		push_error("CriticalHitController: Cannot release checks on client")
+		return
 	_hold = maxi(_hold - 1, 0)
 	if _hold == 0:
 		drain(phase)
@@ -161,11 +167,17 @@ func check_gunfire_crit(ctx: Dictionary, phase: int) -> bool:
 
 ## 7.D.7: a rigging section was completely marked out.
 func queue_rigging_check(ship_id: String, ctx: Dictionary = {}, section: int = -1) -> void:
+	if not is_server:
+		push_error("CriticalHitController: Cannot queue checks on client")
+		return
 	_enqueue(ship_id, TABLE_RIGGING, ctx, section)
 
 
 ## 7.D.8a: hull section 1-3 was completely marked out (section 4 strikes the ship; spec Q5).
 func queue_hull_check(ship_id: String, ctx: Dictionary = {}, section: int = -1) -> void:
+	if not is_server:
+		push_error("CriticalHitController: Cannot queue checks on client")
+		return
 	_enqueue(ship_id, TABLE_HULL, ctx, section)
 
 
@@ -267,6 +279,9 @@ func end_effect(ship_id: String, seq: int, reason: String, phase: int) -> void:
 
 ## Rigging #5 note: a dismasted ship's jammed lines are fixed automatically.
 func clear_lines_jammed_on_dismasting(ship_id: String, phase: int) -> void:
+	if not is_server:
+		push_error("CriticalHitController: Cannot clear effects on client")
+		return
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null or not ship.is_dismasted():
 		return

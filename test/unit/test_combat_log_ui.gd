@@ -285,6 +285,40 @@ func test_log_names_feed_event_text() -> void:
 		"HMS Test (enemy) strikes her colours (the crew's morale broke)")
 
 
+func test_log_labels_each_event_by_the_side_when_it_was_logged() -> void:
+	# A prize changes side (10.H.1); earlier lines must not read as if she had always been on it.
+	var mine := _make_ship("s1")
+	var theirs := _make_ship("s2")
+	theirs.ship.player_id = 1
+	var sides := {"s1": 0, "s2": 1}
+	var turn_log := PhaseEvents.PhaseLog.new()
+	turn_log.controller_of = func(id: String) -> int: return int(sides.get(id, -1))
+	turn_log.add(PhaseEvents.Type.HOLD_FIRE, COMBAT, "s2")
+	sides["s2"] = 0
+	theirs.controller_id = 0  # captured by side 0
+	turn_log.add(PhaseEvents.Type.HOLD_FIRE, COMBAT, "s2")
+	var info := LogPanel.log_ships([mine, theirs])
+	var list: Array = LogPanel.entries(turn_log, 0, 2, -1, info)
+	assert_eq(list[1]["text"], "HMS Test (enemy) holds fire.", "logged before the capture")
+	assert_eq(list[2]["text"], "HMS Test (yours) holds fire.", "logged after it")
+	assert_eq(LogPanel.latest_line(turn_log, info, 1), "HMS Test (enemy) holds fire.")
+
+
+func test_unstamped_events_fall_back_to_the_side_now() -> void:
+	var theirs := _make_ship("s2")
+	theirs.ship.player_id = 1
+	var turn_log := PhaseEvents.PhaseLog.new()  # no controller_of: nothing recorded
+	turn_log.add(PhaseEvents.Type.HOLD_FIRE, COMBAT, "s2")
+	assert_eq(LogPanel.latest_line(turn_log, LogPanel.log_ships([theirs])), "HMS Test (enemy) holds fire.")
+
+
+func test_game_state_logs_record_sides() -> void:
+	var fresh := GameState.new_turn_log(3)
+	assert_eq(fresh.turn, 3)
+	assert_true(fresh.controller_of.is_valid())
+	assert_eq(fresh.controller_of.call("no_such_ship"), -1)
+
+
 # --- Auto collapse / expand ----------------------------------------------------------
 
 func test_phase_key_separates_turns_phases_and_combat_steps() -> void:

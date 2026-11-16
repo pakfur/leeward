@@ -28,6 +28,23 @@ func _refusal() -> String:
 	return ""
 
 
+## Starts the scenario again from the beginning (GameState.start_scenario), keeping which players
+## are human. The views rebuild on game_started.
+func reset_game(scenario: Dictionary) -> String:
+	var reason := _refusal()
+	if reason != "":
+		return reason
+	if scenario.is_empty():
+		return "no scenario to reset to"
+	var humans: Array[int] = []
+	if game_state.phase_controller:
+		humans = game_state.phase_controller.maintenance_prompt_player_ids.duplicate()
+	if not game_state.start_scenario(scenario.duplicate(true), humans):
+		return "the server refused the reset"
+	Trace.trace_log("DevCommands", "Game reset to scenario %s" % scenario.get("name", "?"))
+	return ""
+
+
 ## Sets one ship property (see SHIP_PROPERTIES) through ShipStateController.
 func set_ship_property(ship_id: String, property: String, value: Variant) -> String:
 	var reason := _refusal()
