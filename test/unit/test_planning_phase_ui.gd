@@ -82,6 +82,18 @@ func test_course_info_on_the_selected_card() -> void:
 	assert_false(card.collision_label.visible)
 
 
+func test_course_block_hidden_for_a_ship_that_cannot_plot() -> void:
+	ui.select_ship("p2")
+	var card = ui.ship_list_items["p2"]
+	assert_true(card.course_box.visible)
+	GameState.get_ship("p2").fouled_with = "p1"
+	card.setup(GameState.get_ship("p2"))
+	assert_false(card.course_box.visible, "a fouled ship has no course")
+	GameState.get_ship("p2").fouled_with = ""
+	card.setup(GameState.get_ship("p2"))
+	assert_true(card.course_box.visible)
+
+
 func test_reset_course_button_asks_for_that_ship() -> void:
 	ui.select_ship("p2")
 	watch_signals(ui)

@@ -243,10 +243,10 @@ func test_log_with_immobilized_completes() -> void:
 	result.final_facing = 0
 	result.immobilized = true
 
-	var skip_ev = MovementTypes.ResolutionEvent.new("ship_1", 0, MovementTypes.ResolutionEventType.SKIP_NO_PLOT)
+	var skip_ev = MovementTypes.ResolutionEvent.new("ship_1", 0, MovementTypes.ResolutionEventType.IMMOBILIZED)
 	skip_ev.from_hex = Vector2i(5, 5)
 	skip_ev.to_hex = Vector2i(5, 5)
-	skip_ev.detail = "no movement plotted"
+	skip_ev.detail = "immobilized"
 	result.events.append(skip_ev)
 
 	log.add_result(result)
@@ -499,7 +499,7 @@ func test_rolled_back_turn_with_ahead_move_animates_only_the_move() -> void:
 
 
 func test_pre_movement_events_are_not_played_again_on_impulse_0() -> void:
-	var skip := MovementTypes.ResolutionEvent.new("a", 0, MovementTypes.ResolutionEventType.SKIP_NO_PLOT)
+	var skip := MovementTypes.ResolutionEvent.new("a", 0, MovementTypes.ResolutionEventType.IMMOBILIZED)
 	var tack := MovementTypes.ResolutionEvent.new("b", 0, MovementTypes.ResolutionEventType.TACKING_ROLL)
 	var move := MovementTypes.ResolutionEvent.new("b", 0, MovementTypes.ResolutionEventType.MOVE)
 	var contest := MovementTypes.ResolutionEvent.new("c", 0, MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL)

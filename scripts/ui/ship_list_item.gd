@@ -120,6 +120,7 @@ func _update_display() -> void:
 		var can_move := PlanningSailUi.can_plot_movement(ship_state)
 		speed_label.tooltip_text = "Speed last turn / movement allowance this turn" if can_move \
 			else PlanningSailUi.movement_block_reason(ship_state)
+	_apply_course_visibility()
 
 	if health_icon:
 		health_icon.show_ship(ship_state)
@@ -154,12 +155,18 @@ func _apply_expanded() -> void:
 		crew_button.visible = is_selected
 	if status_box:
 		status_box.visible = is_selected
-	if course_box:
-		course_box.visible = is_selected
+	_apply_course_visibility()
 	if chevron_label:
 		chevron_label.visible = not is_selected
 	tooltip_text = "" if is_selected else "Select to show this ship's orders"
 	_render_status()
+
+
+## The Course block shows on the expanded card of a ship that can plot (a fouled, grappled, struck,
+## dismasted or captured ship has no course).
+func _apply_course_visibility() -> void:
+	if course_box:
+		course_box.visible = is_selected and (ship_state == null or PlanningSailUi.can_plot_movement(ship_state))
 
 
 ## The ship's crew plan (CrewTaskController.current_plan): the status box's crew and guns lines read it.
@@ -205,7 +212,7 @@ func _build_course_block() -> void:
 	reset_course_button.pressed.connect(func(): reset_course_pressed.emit())
 	course_box.add_child(reset_course_button)
 	status_box.add_sibling(course_box)
-	course_box.visible = is_selected
+	_apply_course_visibility()
 
 
 func _course_note(node_name: String, color: Color) -> Label:

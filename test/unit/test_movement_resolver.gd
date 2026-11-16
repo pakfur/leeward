@@ -152,8 +152,18 @@ func test_unplotted_ship_moves_on_its_6g2_course() -> void:
 	var result = log.get_result("test_ship_1")
 
 	assert_eq(result.final_hex, Vector2i(3, 5), "Two hexes ahead on its default course")
-	for ev in result.events:
-		assert_ne(ev.event_type, MovementTypes.ResolutionEventType.SKIP_NO_PLOT)
+
+
+func test_stored_course_breaking_a_jammed_rudder_holds_position() -> void:
+	# 6.F: the course goes straight with the rudder jammed to port, so it is not executed.
+	var state = _make_ship_state(Vector2i(5, 5), 3, 2)
+	state.critical_effects.append({"id": "rudder_jammed", "side": ShipState.PORT})
+	_plot_straight(state, 2)
+	var ships: Array[ShipState] = [state]
+
+	var log = resolver.run(ships, env)
+
+	assert_eq(log.get_result("test_ship_1").final_hex, Vector2i(5, 5), "The jam-breaking course holds")
 
 
 func test_explicit_empty_plot_holds_position() -> void:

@@ -175,7 +175,6 @@ func _collect_pre_movement_events() -> Array:
 			var t = ev.event_type
 			if t == MovementTypes.ResolutionEventType.TACKING_ROLL \
 				or t == MovementTypes.ResolutionEventType.IN_IRONS_ESCAPE_ROLL \
-				or t == MovementTypes.ResolutionEventType.SKIP_NO_PLOT \
 				or t == MovementTypes.ResolutionEventType.IMMOBILIZED:
 				pre.append(ev)
 	return pre

@@ -44,6 +44,10 @@ static func for_ship(game_state: Node, ship: ShipState) -> Array[MovementTypes.P
 			break
 		steps.append(MovementTypes.PlotStep.new(ahead, cur_facing, MovementTypes.MoveType.FORWARD))
 		cur_hex = ahead
+	# 6.F: a jammed rudder must turn its way if the ship moves; a straight course breaks that, so the
+	# ship holds (an empty plot satisfies the rule).
+	if validator.rudder_jam_error(ship, steps) != "":
+		steps.clear()
 	return steps
 
 

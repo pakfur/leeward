@@ -96,6 +96,13 @@ func test_default_course_none_for_a_ship_that_cannot_plot() -> void:
 	assert_eq(DefaultCourse.for_ship(mock_gs, ss).size(), 0)
 
 
+func test_default_course_empty_for_a_jammed_rudder_when_moving() -> void:
+	# 6.F: a straight course breaks a rudder jammed to port; an empty plot is the legal one.
+	var ss := _make_ship_state(0, 3)
+	ss.critical_effects.append({"id": "rudder_jammed", "side": ShipState.PORT})
+	assert_eq(DefaultCourse.for_ship(mock_gs, ss).size(), 0)
+
+
 func test_as_dicts() -> void:
 	var ss := _make_ship_state(0, 2)
 	var dicts := DefaultCourse.as_dicts(DefaultCourse.for_ship(mock_gs, ss))

@@ -554,6 +554,9 @@ func _refresh_courses() -> void:
 		var id := ship.ship_id
 		var options: Dictionary = GameState.phase_controller.course_options(id)  # read-only query
 		if options.is_empty():
+			# Cannot plot (fouled, grappled, struck, dismasted, a prize): no course, no stale readout.
+			if current_planning_ui and is_instance_valid(current_planning_ui):
+				current_planning_ui.set_course_info(id, {})
 			continue
 		var input := CourseView.course_input(options, ship)
 		_courses[id] = input

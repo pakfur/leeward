@@ -155,6 +155,13 @@ func test_course_options_lists_next_hexes_from_the_course_end() -> void:
 	assert_eq(opts["rudder_error"], "")
 
 
+func test_course_options_report_a_jam_breaking_course() -> void:
+	ship.critical_effects.append({"id": "rudder_jammed", "side": ShipState.PORT})
+	assert_eq(_pc().course_options("own")["rudder_error"], "", "an empty course is fine")
+	assert_eq(_pc().player_extend_course(0, "own", _ahead(ship.hex_position, 0)), "")
+	assert_ne(_pc().course_options("own")["rudder_error"], "")
+
+
 func test_course_options_count_the_mp_a_turn_spends() -> void:
 	# Ahead, a turn, ahead: three movement points, the turn included; used and left add up to the
 	# allowance at the course-end heading.

@@ -1654,6 +1654,15 @@ func _get_plotted_steps(ship_state: ShipState) -> Array:
 	var plot: Array = ship_state.plotted_actions.get("movement", [])
 	if plot.is_empty() and not ship_state.plotted_actions.get("movement_plotted", false):
 		return DefaultCourse.as_dicts(DefaultCourse.for_ship(game_state, ship_state))  # 6.G.2
+	# 6.F: a stored course that breaks a jammed rudder is not executed: the ship holds.
+	var path: Array[MovementTypes.PlotStep] = []
+	for d in plot:
+		path.append(MovementTypes.PlotStep.from_dict(d))
+	var jam_error := _validator().rudder_jam_error(ship_state, path)
+	if jam_error != "":
+		Trace.trace_log("MovementResolver", "course breaks jammed rudder, ship holds",
+			{"ship": ship_state.ship_id, "why": jam_error})
+		return []
 	return plot
 
 

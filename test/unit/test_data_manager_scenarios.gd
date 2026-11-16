@@ -212,6 +212,7 @@ func _start_with_ships(scenario: Dictionary) -> void:
 func _reset_sides() -> void:
 	var pc: TurnPhaseController = GameState.phase_controller
 	pc.ai_player_ids = [] as Array[int]
+	pc.human_player_ids = [] as Array[int]
 	pc.bear_off_prompt_player_ids = [] as Array[int]
 	pc.maintenance_prompt_player_ids = [] as Array[int]
 	pc.current_phase = TurnPhaseController.GamePhase.SETUP
