@@ -816,7 +816,7 @@ func test_boarders_station_and_summary() -> void:
 	assert_eq(st["order"], "board:b")
 	assert_eq(st["choices"][2]["order"], "board:b")
 	assert_string_contains(str(st["choices"][2]["odds"]), " v about ")
-	assert_eq(CrewRules.summary_text(CrewRules.summary(a, normalized, _ctx(a))), "S1 M board b · S2 S3 S4 guns")
+	assert_eq(CrewRules.summary_text(CrewRules.summary(a, normalized, _ctx(a))), "S1 M board b")
 	var toggled := BoardingRules.toggle_away(a, normalized, _ctx(a), 0)
 	assert_eq(str(toggled["plan"]["assignments"][0]["code"]), "BR", "clicking a BA token keeps it ready")
 

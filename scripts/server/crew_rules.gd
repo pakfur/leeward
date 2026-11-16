@@ -952,8 +952,9 @@ static func fill_fires(ship: ShipState, assignments: Dictionary, fires: Array) -
 # --- Summary line (spec §4.8) ---
 
 ## The planning-panel chips for a normalized plan: [{"text", "kind"}], kind "auto" (leading, when
-## Automatic is on), "default" (guns, marine fire), "task", "fire" or "warn". Sections are grouped
-## by station in section order: "S1 sails · S2 FF1 · S3 S4 guns · M fire".
+## Automatic is on), "task", "fire" or "warn". Sections are grouped by station in section order:
+## "S1 sails · S2 FF1". Sections at their default stations (guns, marine fire) get no chip: the
+## card's Crew and Marines lines already say so.
 static func summary(ship: ShipState, plan: Dictionary, ctx: Dictionary = {}) -> Array[Dictionary]:
 	var chips: Array[Dictionary] = []
 	if ship.crew_auto:
@@ -985,10 +986,10 @@ static func summary(ship: ShipState, plan: Dictionary, ctx: Dictionary = {}) -> 
 			word = "board " + str((ctx.get("ship_names", {}) as Dictionary).get(target, target))
 		elif st == "stand_down":
 			word = "stand down"
-		var kind := "task"
 		if st == STATION_GUNS or st == STATION_MARINE_FIRE:
-			kind = "default"
-		elif st.begins_with(STATION_FIRE_PREFIX):
+			continue
+		var kind := "task"
+		if st.begins_with(STATION_FIRE_PREFIX):
 			var seq := int(st.trim_prefix(STATION_FIRE_PREFIX))
 			word = "fire watch" if seq < 0 else "FF%d" % maxi(1, fire_number(ctx, seq))
 			kind = "fire"

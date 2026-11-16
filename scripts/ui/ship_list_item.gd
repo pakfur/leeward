@@ -207,9 +207,6 @@ static func crew_chip(chip: Dictionary) -> Label:
 	match kind:
 		"auto":
 			bg = CrewStyle.BTN_PRIMARY
-		"default":
-			bg = Color("#1f2a36")
-			fg = CrewStyle.MUTED
 		"fire":
 			bg = CrewStyle.FIRE
 			fg = Color("#1b0d05")

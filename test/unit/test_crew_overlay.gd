@@ -254,17 +254,17 @@ func test_summary_line_groups_by_station() -> void:
 	ctx["fires"] = [3]
 	var plan := {"assignments": {0: {"code": "SAIL", "params": {"target": "FS"}}}, "orders": {"sail_target": "FS"}}
 	var n := CrewRules.normalize(ship, plan, ctx)
-	assert_eq(CrewRules.summary_text(CrewRules.summary(ship, n, ctx)), "S1 sails · S2 FF1 · S3 S4 guns · M fire")
+	assert_eq(CrewRules.summary_text(CrewRules.summary(ship, n, ctx)), "S1 sails · S2 FF1", "no chips for guns or musket fire")
 	var kinds: Array = []
 	for chip in CrewRules.summary(ship, n, ctx):
 		kinds.append(chip["kind"])
-	assert_eq(kinds, ["task", "fire", "default", "default"])
+	assert_eq(kinds, ["task", "fire"])
 
 
 func test_summary_line_automatic_and_warning() -> void:
 	ship.crew_auto = true
 	var plan := CrewRules.normalize(ship, CrewRules.plan_of(ship), _ctx())
-	assert_eq(CrewRules.summary_text(CrewRules.summary(ship, plan, _ctx())), "Auto · S1 S2 S3 S4 guns · M fire")
+	assert_eq(CrewRules.summary_text(CrewRules.summary(ship, plan, _ctx())), "Auto")
 	ship.crew_auto = false
 	var short := CrewRules.normalize(ship, {"assignments": {3: {"code": "SAIL", "params": {}}},
 		"orders": {"sail_target": "PS"}}, _ctx())
@@ -277,7 +277,10 @@ func test_summary_line_lost_section_left_out() -> void:
 	ship.crew_auto = false
 	ship.crew_count = [3, 0, 3, 3] as Array[int]
 	var plan := CrewRules.normalize(ship, CrewRules.plan_of(ship), _ctx())
-	assert_eq(CrewRules.summary_text(CrewRules.summary(ship, plan, _ctx())), "S1 S3 S4 guns · M fire")
+	assert_eq(CrewRules.summary_text(CrewRules.summary(ship, plan, _ctx())), "", "all at their default stations")
+	plan = CrewRules.normalize(ship, {"assignments": {1: {"code": "SAIL", "params": {}}},
+		"orders": {"sail_target": "FS"}}, _ctx())
+	assert_false(CrewRules.summary_text(CrewRules.summary(ship, plan, _ctx())).contains("S2"), "the lost S2 is left out")
 
 
 # --- Progress warning (4.A.3) and the sail order ---
