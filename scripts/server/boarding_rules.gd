@@ -72,7 +72,9 @@ static func task_error(ship: ShipState, assignments: Dictionary, ctx: Dictionary
 	var name := _name(section)
 	if section < 0 or section > ShipState.MARINES:
 		return "Unknown crew section"
-	if ship.is_out_of_play():
+	if not ship.crew_can_act():
+		if ship.is_captured():
+			return "%s: the prize crew is not yet aboard (10.G.7)." % ship.ship_name
 		return "%s cannot form boarders: the ship is out of the fight." % ship.ship_name
 	if not ship.section_alive(section):
 		return "%s is lost (4.B.3)" % name
@@ -163,8 +165,6 @@ static func boardable_error(ship: ShipState, target: ShipState, linked_at_plot: 
 		return "Friendly ships may not board each other (10.A.2)."
 	if target.is_destroyed():
 		return "%s has been destroyed." % target.ship_name
-	if target.is_captured():
-		return "Boarding a prize is not yet simulated (boarding spec B5)."
 	if target.is_burning():
 		return FIRE_REFUSAL
 	if not linked_at_plot.has(target.ship_id):
@@ -269,7 +269,7 @@ static func normalize_manual(ship: ShipState, assignments_in: Dictionary, ctx: D
 ## Sections already in `taken` (locked, fires, tasks in progress) are not moved. Returns the new taken.
 static func auto_assign(ship: ShipState, orders: Dictionary, ctx: Dictionary, taken_in: Dictionary) -> Dictionary:
 	var taken := taken_in.duplicate(true)
-	if ship.is_out_of_play():
+	if not ship.crew_can_act():
 		return taken
 	var order := str(orders.get("boarding", ""))
 	var readied: Array[int] = []

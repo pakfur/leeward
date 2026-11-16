@@ -53,6 +53,10 @@ const LOCKED_CODES: Array[String] = ["SAIL"]
 const MARINE_HOLD_EFFECTS: Array[String] = [
 	"broadside_obscured", "braces_cut", "lines_jammed", "rudder_jammed", "signal_halyards_cut",
 ]
+## 10.H.2-3: what a prize's crew may not do.
+const PRIZE_REFUSAL := "A prize may only board or repair; her original crew below fights the fires (10.H.2-3)."
+const PRIZE_IDLE_NOTE := "A prize does not fight (10.H.2): sections here stand by."
+const PRIZE_FIRE_NOTE := "Fought by the original crew locked below (10.H.3)."
 ## Marines-held-back reasons (spec §3.3), shown on the Marine fire station.
 const HOLD_FIRE := "fire aboard"
 const HOLD_EFFECT := "damage to fix"
@@ -298,6 +302,9 @@ static func refusal(ship: ShipState, plan: Dictionary, ctx: Dictionary, section:
 		if code == CODE_RO and str(locked[section]["params"].get("reason", "")) == "boarding":
 			return "%s is reorganizing aboard the prize (10.G.2)." % name
 		return "%s cannot be moved." % name
+	if ship.is_captured() and not (station_id in [STATION_BOARDERS, STATION_GUNS, STATION_MARINE_FIRE]
+			or REPAIR_STATIONS.has(station_id)):
+		return PRIZE_REFUSAL
 	match station_id:
 		STATION_BOARDERS:
 			if ship.is_readied(section):
@@ -408,7 +415,25 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 	for section in plan.get("assignments", {}):
 		assignments[int(section)] = (plan["assignments"][section] as Dictionary).duplicate(true)
 	var result := {"assignments": {}, "orders": orders, "auto": [], "warnings": [], "dropped": []}
-	if ship.is_out_of_play():
+	if ship.is_captured():
+		# A prize (10.H.2-3): her prize crew may plot only boarding and repairs; the original crew
+		# below fights the fires (FireController), so no fire draft and no fire stations. With no
+		# prize crew aboard yet there is no crew to plot.
+		orders["sail_target"] = ""
+		if not ship.has_prize_crew():
+			result["orders"] = {"sail_target": ""}
+			result["dropped"] = assignments.keys()
+			return result
+		ctx = ctx.duplicate()
+		ctx["fires"] = []
+		ctx["ma0_turn_plotted"] = false
+		for section in assignments.keys():
+			var code := str(assignments[section].get("code", ""))
+			if not (BoardingRules.is_code(code) or RepairController.is_repair(code)):
+				assignments.erase(section)
+				result["dropped"].append(section)
+				result["warnings"].append("%s: %s" % [ShipState.SECTION_NAMES[section], PRIZE_REFUSAL])
+	elif ship.is_out_of_play():
 		# (6) A destroyed ship has no crew tasks. A struck ship only fights its fires (8.E.3, 9.C.3),
 		# always by the automatic allocation (rule A1; spec 0.3 #8).
 		result["orders"] = {"sail_target": ""}
@@ -625,7 +650,11 @@ static func stations(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Arra
 		st["label"] = "Fire %d" % n
 		st["short"] = "FF%d" % n
 		st["fire"] = {"seq": int(seq), "number": n, "age": ship.fire_age(int(seq), int(ctx.get("turn", 0)))}
-		if (st["occupants"] as Array).is_empty():
+		if ship.is_captured():
+			st["accepts"] = "none"
+			st["note"] = PRIZE_FIRE_NOTE
+			st["disabled_reason"] = PRIZE_FIRE_NOTE
+		elif (st["occupants"] as Array).is_empty():
 			st["warning"] = "Unfought: morale check each turn (8.E.6)"
 		out.append(st)
 	# Fire watch (8.E.2 HINT): drawn while no fire burns; with fires, offered in the menu only.
@@ -634,16 +663,22 @@ static func stations(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Arra
 	watch["label"] = "Fire watch"
 	watch["short"] = "FF"
 	watch["menu_only"] = not fires.is_empty()
-	out.append(watch)
-	out.append(make.call(STATION_GUNS, "", ShipState.SAILOR_SECTIONS, 0, "sailor",
-		"Both broadsides. Unassigned sailors work the guns (4.B.4)."))
+	if not ship.is_captured():
+		out.append(watch)
+	var guns: Dictionary = make.call(STATION_GUNS, "", ShipState.SAILOR_SECTIONS, 0, "sailor",
+		"Both broadsides. Unassigned sailors work the guns (4.B.4).")
 	var marine: Dictionary = make.call(STATION_MARINE_FIRE, "", 1, 0, "marine",
 		marine_fire_note(ctx.get("adjacent_enemies", []) as Array))
 	var held := marines_held_back(ship, ctx)
 	if ship.crew_auto and held != "":
 		marine["note"] = "Marines held back: %s. %s" % [held, marine["note"]]
+	if ship.is_captured():
+		guns["note"] = PRIZE_IDLE_NOTE  # spec §8 Q2: a prize does not fire
+		guns["label"] = "Serve the guns (idle)"
+		marine["note"] = PRIZE_IDLE_NOTE
+	out.append(guns)
 	out.append(marine)
-	if not ship.is_out_of_play():
+	if ship.crew_can_act():
 		out.append(boarders_station(ship, plan, ctx, by_station.get(STATION_BOARDERS, []), locked_on))
 	var choices := sail_choices(ship)
 	if not choices.is_empty() or ship.has_sail_change():
@@ -690,7 +725,7 @@ static func stations(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Arra
 			"RR": nothing = ship.missing_boxes("rigging") <= 0
 			"RH": nothing = ship.missing_boxes("hull") <= 0
 			"RS": nothing = not ship.has_critical(RepairController.SHROUDS)
-		if (nothing or ship.is_out_of_play()) and occupied.is_empty():
+		if (nothing or not ship.crew_can_act()) and occupied.is_empty():
 			continue
 		var note := ""
 		match code:

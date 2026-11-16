@@ -100,6 +100,29 @@ func boarding_order(ship_state: ShipState) -> String:
 	return ""
 
 
+## Prize-crew sizes (10.G.6; boarding spec §3.6) for the won actions of `player_ids` that offer a
+## choice: the minimum, plus one if another enemy ship in play is within 3 hexes of the prize.
+## {action_id: size}.
+func prize_sizes(player_ids: Array[int]) -> Dictionary:
+	var out := {}
+	var boarding = game_state.get("boarding_controller")
+	if boarding == null:
+		return out
+	for player_id in player_ids:
+		for option in boarding.prize_size_options(player_id):
+			var prize: ShipState = game_state.get_ship(str(option["prize_id"]))
+			var size := int(option["minimum"])
+			for other: ShipState in game_state.get_all_ships():
+				if other.ship_id == prize.ship_id or other.player_id == player_id or other.is_out_of_play():
+					continue
+				var r: int = game_state.fire_geometry.range_between(prize.occupied_hexes(), other.occupied_hexes())
+				if r >= 0 and r <= 3:
+					size += 1
+					break
+			out[int(option["action_id"])] = mini(size, int(option["maximum"]))
+	return out
+
+
 ## The odds of `sections` of the ship against the enemy's visible defence (its boarders and marines)
 ## give at least +1 after the class DRM (boarding spec §3.6).
 func _odds_favour(ship_state: ShipState, sections: Array, enemy: ShipState) -> bool:

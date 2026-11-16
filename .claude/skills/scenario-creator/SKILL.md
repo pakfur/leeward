@@ -48,7 +48,9 @@ Create a new scenario JSON file in `data/scenarios/`.
 
 Optional fields: `turn_limit` (integer, game ends at that turn; omit for no limit) and `year`
 (integer, the battle's year; when present and ≤ 1783 a hull critical #12 explosion roll takes −1,
-Hull Critical Hits table; omit it and no year DRM applies).
+Hull Critical Hits table; omit it and no year DRM applies). Also optional: `navies`, the navy each
+side sails under, `{"0": "British", "1": "French"}` (1.G.8: French BGN at ranges 11–15), or `navy` on
+one ship; without them a ship uses its type's `nationality`.
 
 Each ship entry:
 

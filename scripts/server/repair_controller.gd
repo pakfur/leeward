@@ -49,7 +49,9 @@ static func max_mp() -> int:
 ## "" when the ship may plot repair `code` now, else the reason (quoting the rule). The 8.F.3b MP
 ## limit is not part of it (see mp_warning): it is checked against the movement actually made.
 static func refusal(ship: ShipState, code: String) -> String:
-	if ship.is_out_of_play():
+	if not ship.crew_can_act():
+		if ship.is_captured():
+			return "The prize crew is not yet aboard (10.G.7)."
 		return "A struck ship makes no repairs."
 	match code:
 		CODE_RR:

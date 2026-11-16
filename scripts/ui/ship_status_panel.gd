@@ -152,6 +152,7 @@ static func crew_task_lines(s: ShipState) -> Array[String]:
 		if bool(s.prize.get("prize_crew_aboard", false)):
 			crew_text = "prize crew %d (%s%d)" % [s.total_crew_boxes(), s.crew_quality, s.morale_rating]
 		lines.append("Prize of %s · %s · original crew %d below" % [captor.ship_name if captor else "the enemy", crew_text, below])
+		lines.append_array(prize_lines(s))
 	for task in s.crew_tasks:
 		if task.get("ended", "") != "":
 			continue
@@ -182,6 +183,26 @@ static func crew_task_lines(s: ShipState) -> Array[String]:
 				var what: String = {"RR": "rigging", "RH": "the hull", "RS": "the shrouds"}[str(task["code"])]
 				lines.append("%s repairing %s, %d of %d turns" % [crew, what, int(task.get("done", 0)),
 					s.task_turns_required(task)])
+	return lines
+
+
+## The prize's extra lines (10.H.2-4; boarding spec §4.5): what she may do, who fights her fires
+## and whether her original crew may retake her.
+static func prize_lines(s: ShipState) -> Array[String]:
+	var lines: Array[String] = []
+	if not s.is_captured():
+		return lines
+	if s.has_prize_crew():
+		lines.append("The prize crew may only board and repair; she does not sail or fight (10.H.2)")
+		var minimum: int = DataManager.combat_tables.prize_minimum(s.ship.ship_class if s.ship else 0)
+		if s.total_crew_boxes() < minimum:
+			var below := s.original_crew_boxes()
+			if BoardingController.recapture_due(s):
+				lines.append("Prize crew below the minimum of %d: the %d below retake her at the start of next turn (10.H.4)" % [minimum, below])
+			else:
+				lines.append("Prize crew below the minimum of %d: the crew below retakes her once it has twice the prize crew's boxes (10.H.4)" % minimum)
+	if s.is_burning():
+		lines.append("Her fires are fought by the original crew locked below (10.H.3)")
 	return lines
 
 

@@ -199,6 +199,108 @@ func apply_boarding_losses(ship_id: String, bcf_required: int, sections: Array, 
 	return out
 
 
+## Boarding losses shared by several contingents defending one prize (10.G.5): `contingents` are
+## {"ship_id", "sections", "quality"} (the prize's live crew, the captor's boarders) or
+## {"ship_id", "below": true, "quality"} (the prize's original crew below). Boxes are removed one at
+## a time until `bcf_required` BCFs are gone (10.D.4): while both sailors and marines are left in
+## the whole defence one Crew Loss d6 ("All Other Causes") per box, else that type with no roll;
+## the box comes from the first contingent, in the order given, that has that type (sailors from its
+## lowest section). An emptied section of a ship in play loses its task and notes a morale check.
+## Logged as one DAMAGE event per ship that lost boxes (cause "boarding"). Returns
+## {"sailors", "marines", "bcf", "rolls"}.
+func apply_boarding_losses_shared(contingents: Array, bcf_required: int, phase: int,
+		source_id: String = "") -> Dictionary:
+	var out := {"sailors": 0, "marines": 0, "bcf": 0, "rolls": []}
+	if not is_server:
+		push_error("DamageController: Cannot apply boarding losses on client")
+		return out
+	if bcf_required <= 0:
+		return out
+	var tables: CombatTables = DataManager.combat_tables
+	var sc: ShipStateController = game_state.ship_controller
+	var per_ship := {}  # ship_id -> {sailors, marines}
+	var damage_index: int = game_state.turn_log.events.size()
+	while int(out["bcf"]) < bcf_required:
+		var sailor_c := -1
+		var marine_c := -1
+		for i in contingents.size():
+			var has := _contingent_boxes(contingents[i])
+			if sailor_c < 0 and int(has["sailors"]) > 0:
+				sailor_c = i
+			if marine_c < 0 and int(has["marines"]) > 0:
+				marine_c = i
+		if sailor_c < 0 and marine_c < 0:
+			break
+		var sailor: bool
+		if sailor_c >= 0 and marine_c >= 0:
+			var roll: int = game_state.dice.d6()
+			out["rolls"].append(roll)
+			sailor = tables.crew_loss_is_sailor("other", roll)
+		else:
+			sailor = sailor_c >= 0
+		var c: Dictionary = contingents[sailor_c if sailor else marine_c]
+		var ship_id := str(c["ship_id"])
+		var ship: ShipState = game_state.get_ship(ship_id)
+		var emptied := -1
+		if bool(c.get("below", false)):
+			var crew: Dictionary = (ship.prize.get("original_crew", {}) as Dictionary).duplicate(true)
+			if sailor:
+				var counts: Array = crew.get("crew_count", [0, 0, 0, 0])
+				for k in counts.size():
+					if int(counts[k]) > 0:
+						counts[k] = int(counts[k]) - 1
+						break
+				crew["crew_count"] = counts
+			else:
+				crew["marine_count"] = int(crew.get("marine_count", 0)) - 1
+			sc.set_prize(ship_id, {"original_crew": crew})
+		else:
+			var secs: Array[int] = []
+			for s in c.get("sections", []):
+				if int(s) < ShipState.SAILOR_SECTIONS and ship.section_alive(int(s)):
+					secs.append(int(s))
+			secs.sort()
+			emptied = sc.remove_crew_box_from(ship_id, secs[0]) if sailor else sc.remove_crew_box(ship_id, true)
+		if not per_ship.has(ship_id):
+			per_ship[ship_id] = {"sailors": 0, "marines": 0}
+		per_ship[ship_id]["sailors" if sailor else "marines"] += 1
+		out["sailors" if sailor else "marines"] += 1
+		out["bcf"] += tables.bcf(str(c["quality"]), not sailor)
+		if emptied >= 0 and game_state.get("crew_task_controller") != null:
+			game_state.crew_task_controller.cancel_section(ship_id, emptied, "crew lost", phase)
+		if emptied >= 0 and not ship.is_out_of_play():
+			_note_morale(ship_id, "crew_%d" % emptied, 1, phase)
+	var ids: Array = per_ship.keys()
+	ids.sort()
+	for ship_id in ids:
+		var lost: Dictionary = per_ship[ship_id]
+		game_state.turn_log.insert(damage_index, PhaseEvents.Type.DAMAGE, phase, ship_id, {
+			"rigging": 0, "hull": 0, "crew": int(lost["sailors"]) + int(lost["marines"]),
+			"sailors_lost": lost["sailors"], "marines_lost": lost["marines"],
+			"crew_rolls": (out["rolls"] as Array).duplicate(), "cause": "boarding",
+			"bcf_needed": bcf_required, "bcf_lost": out["bcf"],
+		}, source_id)
+		damage_index += 1
+	return out
+
+
+## {"sailors", "marines"} boxes a defending contingent still has (apply_boarding_losses_shared).
+func _contingent_boxes(c: Dictionary) -> Dictionary:
+	var ship: ShipState = game_state.get_ship(str(c["ship_id"]))
+	var out := {"sailors": 0, "marines": 0}
+	if ship == null:
+		return out
+	if bool(c.get("below", false)):
+		var crew: Dictionary = ship.prize.get("original_crew", {})
+		out["marines"] = int(crew.get("marine_count", 0))
+		for b in crew.get("crew_count", []):
+			out["sailors"] += int(b)
+		return out
+	for s in c.get("sections", []):
+		out["marines" if int(s) == ShipState.MARINES else "sailors"] += ship.section_boxes(int(s))
+	return out
+
+
 ## The prize crew leaves the parent ship (10.G.7): `sailors` boxes from the lowest-numbered sailor
 ## sections and `marines` from the marine section, with no morale check (an emptied section only
 ## loses its task). Each box is counted in ShipState.detached_boxes (boarding spec §8 Q4).

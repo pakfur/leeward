@@ -9,9 +9,20 @@ extends RefCounted
 ##   COMBAT_RESOLUTION entry declare(): BA announced, the defender's marines replotted to FB
 ##                            (10.C.3), struck or undefended defenders captured at once (10.E.2a-b)
 ##   COMBAT RESOLVE          resolve(): after all gunfire and marine fire (10.C.4)
-##   STATUS_ADJUSTMENT       advance_reorganizing(): after the crew tasks are counted, the prize crew
-##                            of an action whose RO tasks all ended is put aboard (10.G.7)
+##   STATUS_ADJUSTMENT       advance_reorganizing(): after the crew tasks are counted (and the prize-
+##                            crew size chosen, prize_size_options / set_prize_size), the prize crew
+##                            of an action whose RO tasks all ended is put aboard (10.G.6-7)
 ##   END_TURN                end_of_turn(): finished actions dropped, the turn's snapshot kept
+##   next turn's start       start_of_turn(): 10.H.4, a prize crew below the minimum against an
+##                            original crew of twice its boxes loses the ship (RECAPTURED)
+##
+## Prizes (10.G.5, 10.H; boarding spec B5): a prize with its prize crew aboard plots boarding and
+## repairs like any ship (CrewRules); it may be boarded. Boarded while its captors reorganize aboard
+## her, their RO ends, they defend (forced FB, BoardingAction.helper_*), and her original crew joins
+## the defence at CQ G (spec §1.5, §3.4); if they hold, RO starts again. When the prize's own side
+## wins, she is retaken: back to her side, ACTIVE, her original crew freed at G6 (as 10.H.4), the
+## defenders taken prisoner; the winning boarders reorganize (10.G.2) and then return with no prize
+## crew (spec §8 Q5: she scores by her state at the end).
 ##
 ## Dice order (the contract for ScriptedDice; boarding spec §3.3):
 ##   declare: per mutual boarding (both ships BA at each other, 10.C.5b) in (defender, attacker) id
@@ -21,13 +32,22 @@ extends RefCounted
 ##     action, DamageController.apply_boarding_losses); the special-result d10 only for a "< MR"
 ##     result that survives 10.D.5. TBCFs are all taken before any result (10.F.3).
 ##
-## Not here yet (boarding spec B5/B6): the prize-crew size choice (always the minimum, from the
-## boarders only, §8 Q3), boarding a prize (10.G.5), recapture (10.H.4), several ships in one action
-## (10.F; a second boarder of a ship already in an action is refused).
+##   With defenders from several contingents (10.G.5: the prize's live crew, the captor's boarders,
+##   the original crew below), the defender's loss d6s are rolled box by box across all of them, and
+##   each box is taken from the first contingent in that order that has that type
+##   (DamageController.apply_boarding_losses_shared).
+##
+## Not here yet (boarding spec B6): several ships in one action (10.F; a second boarder of a ship
+## already in an action is refused).
 
 const QUALITY_ORDER := "ABCDEFG"
 ## Morale-check trigger prefix for "attacker repulsed and takes n MC" (unique per action and g-t).
 const MC_TRIGGER := "boarding_%d_%d"
+## 10.H.4 (and a prize boarded back by her own side): the crew that retakes the ship.
+const RETAKEN_QUALITY := "G"
+const RETAKEN_MORALE := 6
+## 10.G.5: the original crew joins a new boarding action at CQ G.
+const BELOW_QUALITY := "G"
 
 var is_server: bool = true
 var game_state: Node = null
@@ -183,7 +203,7 @@ func declare(phase: int) -> bool:
 	var boardings := {}  # "attacker|target" -> sections
 	for ship_id in _sorted_ids():
 		var ship: ShipState = game_state.get_ship(ship_id)
-		if ship == null or ship.is_out_of_play():
+		if ship == null or not ship.crew_can_act():
 			continue
 		for task in ship.tasks_with(BoardingRules.BA):
 			if BoardingTaskHandler.engaged(task):
@@ -303,11 +323,94 @@ func _board(attacker_id: String, target_id: String, sections: Array, defending_b
 			{"cancelled_task": str(old.get("code", "")), "done": int(old.get("done", 0))}, attacker_id)
 	defenders.sort()
 	action.defender_sections = defenders
-	if defenders.is_empty():
+	_reorganizers_defend(action, target, phase)  # 10.G.5
+	if _defence_empty(action):
 		capture(action, false, phase, "undefended")  # 10.E.2b
 		return true
 	_engage_tasks(action)
 	return true
+
+
+## 10.G.5: the prize `target` is boarded while the boarders who took her reorganize aboard her:
+## their reorganization is aborted and they defend (forced FB on the parent's log), and the prize's
+## original crew joins the defence at CQ G (boarding spec §1.5, §3.4).
+func _reorganizers_defend(action: BoardingAction, target: ShipState, phase: int) -> void:
+	if not target.is_captured():
+		return
+	var taking := reorganizing_capture_of(target.ship_id)
+	if taking == null:
+		return
+	var captor: ShipState = game_state.get_ship(taking.attacker_id)
+	var secs: Array[int] = []
+	for task in captor.tasks_with(ReorganizeHandler.CODE):
+		var params: Dictionary = task.get("params", {})
+		if int(params.get("action", -1)) != taking.id:
+			continue
+		for s in task.get("sections", []):
+			if captor.section_alive(int(s)) and not secs.has(int(s)):
+				secs.append(int(s))
+	secs.sort()
+	for s in secs:
+		game_state.crew_task_controller.force_task(captor.ship_id, [s], "FB",
+			{"reason": "defend the prize", "section": s, "prize": target.ship_id}, phase)
+	action.helper_id = captor.ship_id
+	action.helper_sections = secs
+	action.prize_action = taking.id
+	action.original_crew_joins = target.original_crew_boxes() > 0
+	game_state.turn_log.add(PhaseEvents.Type.REORGANIZING_ABORTED, phase, captor.ship_id,
+		{"sections": secs.duplicate(), "action": action.id, "original_crew": target.original_crew_boxes()},
+		target.ship_id)
+
+
+## The won action whose boarders are still reorganizing aboard the prize `prize_id` (RO tasks
+## live for it), or null.
+func reorganizing_capture_of(prize_id: String) -> BoardingAction:
+	for a in game_state.boarding_actions:
+		if a.state != BoardingAction.ATTACKER_WON or a.prize_aboard or a.retaken or a.defender_id != prize_id:
+			continue
+		var captor: ShipState = game_state.get_ship(a.attacker_id)
+		if captor == null:
+			continue
+		for task in captor.tasks_with(ReorganizeHandler.CODE):
+			if int(task.get("params", {}).get("action", -1)) == a.id:
+				return a
+	return null
+
+
+## The defence has nothing left: no section of the defender, none of the captor's boarders
+## (10.G.5) and no original crew joining.
+func _defence_empty(action: BoardingAction) -> bool:
+	if not action.defender_sections.is_empty() or not action.helper_sections.is_empty():
+		return false
+	if action.original_crew_joins:
+		var def: ShipState = game_state.get_ship(action.defender_id)
+		return def == null or def.original_crew_boxes() <= 0
+	return true
+
+
+## The defence's TBCF (10.D.1): the defender's sections at its CQ, the captor's boarders at theirs
+## and the original crew below at CQ G (10.G.5).
+func defence_tbcf(action: BoardingAction) -> int:
+	var def: ShipState = game_state.get_ship(action.defender_id)
+	if def == null:
+		return 0
+	var total := tbcf_of(def, action.defender_sections, def.crew_quality)
+	var helper: ShipState = game_state.get_ship(action.helper_id) if action.helper_id != "" else null
+	if helper != null:
+		total += tbcf_of(helper, action.helper_sections, helper.crew_quality)
+	if action.original_crew_joins:
+		total += below_tbcf(def)
+	return total
+
+
+## BCF of the prize's original crew below at CQ G (10.G.5).
+static func below_tbcf(prize: ShipState) -> int:
+	var tables: CombatTables = DataManager.combat_tables
+	var crew: Dictionary = prize.prize.get("original_crew", {})
+	var total := int(crew.get("marine_count", 0)) * tables.bcf(BELOW_QUALITY, true)
+	for b in crew.get("crew_count", []):
+		total += int(b) * tables.bcf(BELOW_QUALITY, false)
+	return total
 
 
 ## A BA section whose boarding was refused stays a readied boarder (BR).
@@ -323,9 +426,14 @@ func _back_to_ready(ship_id: String, section: int, reason: String, phase: int) -
 
 ## Marks every section of a live action as engaged: forced, with the action and the enemy (10.E.1).
 func _engage_tasks(action: BoardingAction) -> void:
-	for side in [[action.attacker_id, action.attacker_sections, action.defender_id],
-			[action.defender_id, action.defender_sections, action.attacker_id]]:
+	var sides := [[action.attacker_id, action.attacker_sections, action.defender_id],
+			[action.defender_id, action.defender_sections, action.attacker_id]]
+	if action.helper_id != "":
+		sides.append([action.helper_id, action.helper_sections, action.attacker_id])
+	for side in sides:
 		var ship: ShipState = game_state.get_ship(side[0])
+		if ship == null:
+			continue
 		for s in side[1]:
 			var task := ship.boarding_task(int(s))
 			if task.is_empty():
@@ -362,10 +470,12 @@ func resolve(phase: int) -> void:
 		_prune(a)
 		var att: ShipState = game_state.get_ship(a.attacker_id)
 		var def: ShipState = game_state.get_ship(a.defender_id)
+		var helper: ShipState = game_state.get_ship(a.helper_id) if a.helper_id != "" else null
 		plans.append({"action": a,
 			"att_tbcf": tbcf_of(att, a.attacker_sections, att.crew_quality),
-			"def_tbcf": tbcf_of(def, a.defender_sections, def.crew_quality),
-			"att_cq": att.crew_quality, "def_cq": def.crew_quality})
+			"def_tbcf": defence_tbcf(a),
+			"att_cq": att.crew_quality, "def_cq": def.crew_quality,
+			"helper_cq": helper.crew_quality if helper != null else ""})
 	for plan in plans:
 		_fight(plan, phase)
 
@@ -396,6 +506,8 @@ func _prune(action: BoardingAction) -> void:
 	var def: ShipState = game_state.get_ship(action.defender_id)
 	action.attacker_sections = _alive(att, action.attacker_sections)
 	action.defender_sections = _alive(def, action.defender_sections)
+	if action.helper_id != "":
+		action.helper_sections = _alive(game_state.get_ship(action.helper_id), action.helper_sections)
 
 
 static func _alive(ship: ShipState, sections: Array[int]) -> Array[int]:
@@ -424,7 +536,7 @@ func _fight(plan: Dictionary, phase: int) -> void:
 	if action.attacker_sections.is_empty():
 		_attackers_lost(action, "attackers_lost", phase)  # 10.E.3a
 		return
-	if action.defender_sections.is_empty():
+	if _defence_empty(action):
 		capture(action, false, phase, "all_defenders_lost")  # 10.E.2e
 		return
 	var tables: CombatTables = DataManager.combat_tables
@@ -444,8 +556,26 @@ func _fight(plan: Dictionary, phase: int) -> void:
 	var def_secs_before := action.defender_sections.duplicate()
 	var att_boxes := _boxes_by_type(att, att_secs_before)
 	var def_boxes := _boxes_by_type(def, def_secs_before)
-	var def_lost: Dictionary = game_state.damage_controller.apply_boarding_losses(
-		def.ship_id, def_need, def_secs_before, plan["def_cq"], phase, att.ship_id)
+	var helper_secs_before := action.helper_sections.duplicate()
+	var below_before := def.original_crew_boxes() if action.original_crew_joins else 0
+	var def_lost: Dictionary
+	if action.helper_id == "" and not action.original_crew_joins:
+		def_lost = game_state.damage_controller.apply_boarding_losses(
+			def.ship_id, def_need, def_secs_before, plan["def_cq"], phase, att.ship_id)
+	else:
+		# 10.G.5: the prize's crew, the captor's boarders, then the original crew below.
+		var contingents: Array = [{"ship_id": def.ship_id, "sections": def_secs_before, "quality": plan["def_cq"]}]
+		var helper: ShipState = game_state.get_ship(action.helper_id) if action.helper_id != "" else null
+		if helper != null:
+			contingents.append({"ship_id": helper.ship_id, "sections": helper_secs_before, "quality": plan["helper_cq"]})
+			var hb := _boxes_by_type(helper, helper_secs_before)
+			def_boxes = [def_boxes[0] + hb[0], def_boxes[1] + hb[1]]
+		if action.original_crew_joins:
+			contingents.append({"ship_id": def.ship_id, "below": true, "quality": BELOW_QUALITY})
+			var crew: Dictionary = def.prize.get("original_crew", {})
+			def_boxes = [def_boxes[0] + below_before - int(crew.get("marine_count", 0)),
+				def_boxes[1] + int(crew.get("marine_count", 0))]
+		def_lost = game_state.damage_controller.apply_boarding_losses_shared(contingents, def_need, phase, att.ship_id)
 	var att_lost: Dictionary = game_state.damage_controller.apply_boarding_losses(
 		att.ship_id, att_need, att_secs_before, plan["att_cq"], phase, def.ship_id)
 	# 10.D.5: one special result at most.
@@ -470,8 +600,8 @@ func _fight(plan: Dictionary, phase: int) -> void:
 			captured = true
 		elif a_special == "capture_if_lt_mr":
 			result["d10"] = game_state.dice.d10()
-			result["mr"] = def.morale_rating
-			captured = int(result["d10"]) < def.morale_rating
+			result["mr"] = _defence_morale(action, def)
+			captured = int(result["d10"]) < int(result["mr"])
 	elif side == "defender":
 		result["special"] = d_special
 		match d_special:
@@ -496,7 +626,8 @@ func _fight(plan: Dictionary, phase: int) -> void:
 			"cq": plan["def_cq"], "tbcf": def_tbcf, "odds": drms["defender"]["odds"],
 			"other": 0, "drm": drms["defender"]["total"], "roll": d_roll,
 			"total": d_total, "pct": d_row["pct"], "inflicts": att_need,
-			"lost_sailors": int(def_lost.get("sailors", 0)), "lost_marines": int(def_lost.get("marines", 0))},
+			"lost_sailors": int(def_lost.get("sailors", 0)), "lost_marines": int(def_lost.get("marines", 0)),
+			"helper_id": action.helper_id, "helper_sections": helper_secs_before, "below": below_before},
 	}
 	game_state.turn_log.insert(round_index, PhaseEvents.Type.BOARDING_ROUND, phase, att.ship_id, round_data, def.ship_id)
 	action.rounds += 1
@@ -505,7 +636,7 @@ func _fight(plan: Dictionary, phase: int) -> void:
 		result["result"] = "captured"
 	elif repulsed:
 		result["result"] = "repulsed"
-	elif action.defender_sections.is_empty() or def.is_struck():
+	elif _defence_empty(action) or def.is_struck():
 		result["result"] = "captured"
 	elif action.attacker_sections.is_empty() or att.is_out_of_play():
 		result["result"] = "driven_off"
@@ -523,6 +654,16 @@ func _fight(plan: Dictionary, phase: int) -> void:
 	Trace.trace_log("Boarding", "Action %d round %d: %s %d (%d%+d) v %s %d (%d%+d): %s" % [action.id,
 		action.rounds, att.ship_id, a_total, a_roll, int(drms["attacker"]["total"]), def.ship_id, d_total,
 		d_roll, int(drms["defender"]["total"]), result["result"]])
+
+
+## The MR the "d10 < defender's MR" capture test reads: the prize's crew's, or while its captors
+## defend her (10.G.5) with no prize crew aboard, the captor's.
+func _defence_morale(action: BoardingAction, def: ShipState) -> int:
+	if action.helper_id != "" and not def.has_prize_crew():
+		var helper: ShipState = game_state.get_ship(action.helper_id)
+		if helper != null:
+			return helper.morale_rating
+	return def.morale_rating
 
 
 ## [sailor boxes, marine boxes] in `sections` of the ship.
@@ -580,6 +721,20 @@ func _end_action(action: BoardingAction, state: String, outcome: String, phase: 
 	action.finished_turn = _turn()
 	if state == BoardingAction.DEFENDER_WON:
 		_release(action.defender_id, action.defender_sections, phase)
+		_reorganize_again(action, phase)
+
+
+## 10.G.5: the captors held their prize: they begin reorganizing again from the beginning.
+func _reorganize_again(action: BoardingAction, phase: int) -> void:
+	if action.helper_id == "":
+		return
+	var helper: ShipState = game_state.get_ship(action.helper_id)
+	var prize: ShipState = game_state.get_ship(action.defender_id)
+	if helper == null or helper.is_out_of_play() or prize == null or not prize.is_captured():
+		return
+	for s in _alive(helper, action.helper_sections):
+		game_state.crew_task_controller.force_task(helper.ship_id, [s], ReorganizeHandler.CODE,
+			{"reason": "boarding", "prize": prize.ship_id, "action": action.prize_action}, phase)
 
 
 ## Engaged tasks of a ship's sections go back to plain boarders: FB completes into BR as usual, BA
@@ -620,6 +775,24 @@ func capture(action: BoardingAction, struck_target: bool, phase: int, outcome: S
 	_end_action(action, BoardingAction.ATTACKER_WON, outcome if outcome != "" else ("struck" if struck_target else "captured"), phase)
 	var sc: ShipStateController = game_state.ship_controller
 	var ctc: CrewTaskController = game_state.crew_task_controller
+	if def.is_captured() and att.player_id == def.original_player_id:
+		# A prize boarded back by her own side: retaken (boarding spec §8 Q5). The winners reorganize
+		# (10.G.2) and then come home; she needs no prize crew.
+		action.retaken = true
+		retake(def.ship_id, "boarded", phase, action)
+		for s in _alive(att, action.attacker_sections):
+			ctc.force_task(att.ship_id, [s], ReorganizeHandler.CODE,
+				{"reason": "boarding", "prize": def.ship_id, "action": action.id}, phase)
+		_set_order(att.ship_id, "")
+		return
+	var original_crew := {"crew_count": def.crew_count.duplicate(), "marine_count": def.marine_count,
+		"crew_quality": def.crew_quality, "morale_rating": def.morale_rating}
+	var original_navy := def.gunnery_navy()
+	if def.is_captured():
+		# Taken from her captor by a third side: the old original crew stays below.
+		original_crew = (def.prize.get("original_crew", {}) as Dictionary).duplicate(true)
+		original_navy = str(def.prize.get("original_navy", original_navy))
+		_finish_captures_of(def.ship_id, action.id, phase)
 	ctc.cancel_all_except(def.ship_id, "FF", "captured", phase)
 	ctc.cancel_code(def.ship_id, "FF", "captured", phase, false)
 	sc.clear_crew_plot(def.ship_id)
@@ -627,11 +800,12 @@ func capture(action: BoardingAction, struck_target: bool, phase: int, outcome: S
 	sc.clear_pending_morale_checks(def.ship_id)
 	sc.set_prize(def.ship_id, {
 		"captor_id": att.ship_id,
-		"original_crew": {"crew_count": def.crew_count.duplicate(), "marine_count": def.marine_count,
-			"crew_quality": def.crew_quality, "morale_rating": def.morale_rating},
+		"original_crew": original_crew,
+		"original_navy": original_navy,
 		"prize_crew_aboard": false,
 	}, true)
 	sc.set_crew(def.ship_id, [0, 0, 0, 0], 0)
+	sc.set_navy(def.ship_id, att.gunnery_navy())  # 1.G.8: the navy using her (a prize does not fire, §8 Q2)
 	sc.set_status(def.ship_id, ShipState.Status.CAPTURED)
 	game_state.transfer_control(def.ship_id, att.player_id)
 	game_state.turn_log.add(PhaseEvents.Type.SHIP_CAPTURED, phase, def.ship_id,
@@ -670,13 +844,119 @@ func advance_reorganizing(phase: int) -> void:
 		if att == null or prize == null or att.is_destroyed() or prize.is_destroyed():
 			action.prize_aboard = true
 			continue
-		var reorganizing := false
-		for task in att.tasks_with(ReorganizeHandler.CODE):
-			if int(task.get("params", {}).get("action", -1)) == action.id:
-				reorganizing = true
-		if reorganizing:
+		if _still_reorganizing(action, att):
 			continue
+		if action.retaken or not prize.is_captured() or prize.prize.get("captor_id", "") != att.ship_id:
+			action.prize_aboard = true  # retaken: the boarders come home with no prize crew
+			continue
+		if live_action_of(prize.ship_id) != null:
+			continue  # 10.G.5: being boarded; the prize crew waits for the action
 		_put_prize_crew_aboard(action, att, prize, phase)
+
+
+func _still_reorganizing(action: BoardingAction, att: ShipState) -> bool:
+	for task in att.tasks_with(ReorganizeHandler.CODE):
+		if int(task.get("params", {}).get("action", -1)) == action.id:
+			return true
+	return false
+
+
+## An action ready for its prize crew this STATUS_ADJUSTMENT (RO over, or a struck prize).
+func _awaiting_prize_crew(action: BoardingAction) -> bool:
+	if action.state != BoardingAction.ATTACKER_WON or action.prize_aboard or action.retaken:
+		return false
+	var att: ShipState = game_state.get_ship(action.attacker_id)
+	var prize: ShipState = game_state.get_ship(action.defender_id)
+	if att == null or prize == null or att.is_destroyed() or prize.is_destroyed() or not prize.is_captured():
+		return false
+	if prize.prize.get("captor_id", "") != att.ship_id:
+		return false
+	return not _still_reorganizing(action, att) and live_action_of(prize.ship_id) == null
+
+
+## The surviving boarders of a won action: {"sailors", "marines"} boxes.
+func _boarders_left(action: BoardingAction, att: ShipState) -> Dictionary:
+	var out := {"sailors": 0, "marines": 0}
+	for s in _alive(att, action.attacker_sections):
+		out["marines" if s == ShipState.MARINES else "sailors"] += att.section_boxes(s)
+	return out
+
+
+## The prize-crew sizes the captor may choose this g-t (10.G.6, spec §4.3 and §8 Q3: from the
+## minimum up to the surviving boarders; none from sections that did not board). One entry per won
+## action of `player_id` awaiting its prize crew where there is a choice (more boarders than the
+## minimum, the ships still together): {"action_id", "prize_id", "captor_id", "minimum", "maximum",
+## "size" (current choice), "previews": [{"size", "sailors", "marines", "prize": "0-0-1-2:0",
+## "parent": "0-5-6-6:2"}]}. Pure.
+func prize_size_options(player_id: int) -> Array:
+	var out: Array = []
+	for action in game_state.boarding_actions:
+		if not _awaiting_prize_crew(action):
+			continue
+		var att: ShipState = game_state.get_ship(action.attacker_id)
+		var prize: ShipState = game_state.get_ship(action.defender_id)
+		if att.player_id != player_id or not att.linked_ids().has(prize.ship_id):
+			continue
+		var left := _boarders_left(action, att)
+		var available := int(left["sailors"]) + int(left["marines"])
+		var minimum := DataManager.combat_tables.prize_minimum(_class(prize))
+		if available <= minimum:
+			continue  # no choice: the minimum, or all of them (spec §8 Q3)
+		var previews: Array = []
+		for n in range(minimum, available + 1):
+			previews.append(prize_preview(att, prize, left, n))
+		out.append({"action_id": action.id, "prize_id": prize.ship_id, "captor_id": att.ship_id,
+			"minimum": minimum, "maximum": available, "size": clampi(action.prize_size, minimum, available),
+			"previews": previews})
+	return out
+
+
+## Both crews after a prize crew of `size` (10.G.7): sailors from the parent's lowest-numbered
+## sections first, then marines, formed into the prize's original section sizes. Pure.
+static func prize_preview(att: ShipState, prize: ShipState, left: Dictionary, size: int) -> Dictionary:
+	var sailors := mini(size, int(left["sailors"]))
+	var marines := mini(size - sailors, int(left["marines"]))
+	var crew: Array = att.crew_count.duplicate()
+	var take := sailors
+	for k in range(crew.size()):
+		var t := mini(take, int(crew[k]))
+		crew[k] = int(crew[k]) - t
+		take -= t
+	var formed := BoardingRules.form_prize_sections(prize.ship.crew_count if prize.ship else [0, 0, 0, 0],
+		prize.ship.marine_count if prize.ship else 0, sailors, marines)
+	return {"size": size, "sailors": sailors, "marines": marines,
+		"prize": crew_text(formed["crew_count"], int(formed["marine_count"])),
+		"parent": crew_text(crew, att.marine_count - marines)}
+
+
+## "0-5-6-6:2": the four sailor sections and the marines.
+static func crew_text(crew: Array, marines: int) -> String:
+	var parts := PackedStringArray()
+	for b in crew:
+		parts.append(str(int(b)))
+	return "%s:%d" % ["-".join(parts), marines]
+
+
+## Records the prize-crew size the captor chose for a won action (10.G.6); "" or the reason it is
+## refused (only from the minimum to the surviving boarders, spec §8 Q3).
+func set_prize_size(action_id: int, size: int) -> String:
+	if not is_server:
+		push_error("BoardingController: Cannot set a prize-crew size on client")
+		return "not the server"
+	var action := action_by_id(action_id)
+	if action == null or not _awaiting_prize_crew(action):
+		return "no prize crew is to be put aboard for action %d" % action_id
+	var att: ShipState = game_state.get_ship(action.attacker_id)
+	var prize: ShipState = game_state.get_ship(action.defender_id)
+	var left := _boarders_left(action, att)
+	var available := int(left["sailors"]) + int(left["marines"])
+	var minimum := DataManager.combat_tables.prize_minimum(_class(prize))
+	if size < minimum:
+		return "the prize crew of %s must be at least %d boxes (10.G.6)" % [prize.ship_name, minimum]
+	if size > available:
+		return "only %d boarders are aboard %s: the prize crew comes from the boarders (10.G.6)" % [available, prize.ship_name]
+	action.prize_size = size
+	return ""
 
 
 func _put_prize_crew_aboard(action: BoardingAction, att: ShipState, prize: ShipState, phase: int) -> void:
@@ -707,6 +987,109 @@ func _put_prize_crew_aboard(action: BoardingAction, att: ShipState, prize: ShipS
 		"sailors": int(taken["sailors"]), "marines": int(taken["marines"]), "cq": att.crew_quality,
 		"mr": att.morale_rating, "crew_count": (formed["crew_count"] as Array).duplicate(),
 		"marine_count": int(formed["marine_count"])}, att.ship_id)
+
+
+# --- Recapture (10.H.4; a prize boarded back) ---
+
+## Start of a g-t (10.H.4): a prize whose prize crew is below the minimum for her class (10.G.6)
+## and whose original crew below has at least twice its boxes is retaken. Not while she is in a
+## boarding action. No dice. Ships in id order.
+func start_of_turn(phase: int) -> void:
+	if not is_server:
+		push_error("BoardingController: Cannot check recaptures on client")
+		return
+	for ship_id in _sorted_ids():
+		var ship: ShipState = game_state.get_ship(ship_id)
+		if ship == null or not ship.has_prize_crew() or live_action_of(ship_id) != null:
+			continue
+		if recapture_due(ship):
+			retake(ship_id, "rose", phase)
+
+
+## 10.H.4: the prize crew is below the minimum and the original crew has at least twice its boxes
+## (and at least one). Pure.
+static func recapture_due(ship: ShipState) -> bool:
+	if not ship.has_prize_crew():
+		return false
+	var prize_boxes := ship.total_crew_boxes()
+	var below := ship.original_crew_boxes()
+	return prize_boxes < DataManager.combat_tables.prize_minimum(_class(ship)) \
+		and below > 0 and below >= 2 * prize_boxes
+
+
+## The prize is back with her own side (10.H.4, or boarded back by `action`): ACTIVE, controlled by
+## her original owner, her original crew freed from below as her crew at CQ G and MR 6 (10.H.4; the
+## same for a ship boarded back, spec reading); her point value keeps her original MR. The prize
+## crew aboard is taken prisoner (gone from her), as are the captor's boarders still aboard her
+## (reorganizing, or defending under 10.G.5), crossed off the captor's log. Every task and plot of
+## hers ends. Logs RECAPTURED.
+func retake(ship_id: String, cause: String, phase: int, action: BoardingAction = null) -> void:
+	if not is_server:
+		push_error("BoardingController: Cannot retake a ship on client")
+		return
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null or not ship.is_captured():
+		return
+	var sc: ShipStateController = game_state.ship_controller
+	var ctc: CrewTaskController = game_state.crew_task_controller
+	var original: Dictionary = (ship.prize.get("original_crew", {}) as Dictionary).duplicate(true)
+	var data := {"cause": cause, "original_boxes": ship.original_crew_boxes(),
+		"prize_boxes": ship.total_crew_boxes(), "cq": RETAKEN_QUALITY, "mr": RETAKEN_MORALE}
+	var prisoners := 0
+	var captor_id := str(ship.prize.get("captor_id", ""))
+	var helper_secs: Array[int] = []
+	if action != null and action.helper_id == captor_id:
+		helper_secs = action.helper_sections.duplicate()
+	var captor: ShipState = game_state.get_ship(captor_id)
+	if captor != null:
+		for task in captor.tasks_with(ReorganizeHandler.CODE):
+			if str(task.get("params", {}).get("prize", "")) == ship_id:
+				for s in task.get("sections", []):
+					if not helper_secs.has(int(s)):
+						helper_secs.append(int(s))
+		for s in helper_secs:
+			prisoners += _cross_off(captor_id, s, phase)
+	data["prisoners"] = prisoners
+	ctc.cancel_all_except(ship_id, "", "retaken", phase)
+	sc.clear_crew_plot(ship_id)
+	sc.set_crew_orders(ship_id, {"boarding": ""})
+	sc.clear_pending_morale_checks(ship_id)
+	sc.set_value_morale_rating(ship_id, ship.original_morale_rating())
+	sc.set_crew(ship_id, original.get("crew_count", [0, 0, 0, 0]), int(original.get("marine_count", 0)))
+	sc.set_crew_quality(ship_id, RETAKEN_QUALITY)
+	sc.set_morale_rating(ship_id, RETAKEN_MORALE)
+	sc.set_navy(ship_id, str(ship.prize.get("original_navy", "")))
+	sc.set_prize(ship_id, {}, true)
+	sc.set_status(ship_id, ShipState.Status.ACTIVE)
+	game_state.transfer_control(ship_id, ship.original_player_id)
+	_finish_captures_of(ship_id, action.id if action != null else -1, phase)
+	game_state.turn_log.add(PhaseEvents.Type.RECAPTURED, phase, ship_id, data,
+		action.attacker_id if action != null else captor_id)
+	Trace.trace_log("Boarding", "%s retaken (%s)" % [ship_id, cause], data)
+
+
+## Every box of `section` of the ship is crossed off (taken prisoner aboard a retaken prize); an
+## emptied section loses its task and notes a morale check as for crew lost. Returns the boxes.
+func _cross_off(ship_id: String, section: int, phase: int) -> int:
+	var ship: ShipState = game_state.get_ship(ship_id)
+	var n := 0
+	while ship != null and ship.section_alive(section):
+		var emptied: int = game_state.ship_controller.remove_crew_box_from(ship_id, section) \
+			if section < ShipState.SAILOR_SECTIONS else game_state.ship_controller.remove_crew_box(ship_id, true)
+		n += 1
+		if emptied >= 0:
+			game_state.crew_task_controller.cancel_section(ship_id, emptied, "taken prisoner", phase)
+			if not ship.is_out_of_play() and game_state.ship_controller.note_morale_check(ship_id, "crew_%d" % emptied):
+				game_state.turn_log.add(PhaseEvents.Type.MORALE_NOTED, phase, ship_id,
+					{"trigger": "crew_%d" % emptied, "count": 1})
+	return n
+
+
+## Won actions that took `prize_id` (other than `except_id`) are finished: no prize crew follows.
+func _finish_captures_of(prize_id: String, except_id: int, _phase: int) -> void:
+	for a in game_state.boarding_actions:
+		if a.id != except_id and a.state == BoardingAction.ATTACKER_WON and a.defender_id == prize_id:
+			a.prize_aboard = true
 
 
 # --- END_TURN ---

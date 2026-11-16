@@ -180,6 +180,8 @@ func resolve(phase: int) -> void:
 			if success:
 				sc.remove_fire(ship_id, seq)
 				game_state.crew_task_controller.cancel_task(ship_id, int(task["seq"]), ENDED_OUT, phase, false)
+		if ship.is_captured():
+			_fight_fires_below(ship, turn, phase)
 	# 2. Damage
 	for ship_id: String in ids:
 		var ship: ShipState = game_state.get_ship(ship_id)
@@ -250,6 +252,47 @@ func resolve(phase: int) -> void:
 				{"fire": seq, "number": ship.fire_seqs().find(seq) + 1, "mc": mc})
 			if mc:
 				game_state.turn_log.add(PhaseEvents.Type.MORALE_NOTED, phase, ship_id, {"trigger": trigger, "count": 1})
+
+
+## 10.H.3: a prize's original crew, locked below, fights its fires itself (boarding spec §4.5:
+## automatic, no token). One section below per fire, fires by seq, as many fires as the original
+## crew has sections with boxes; each d10 + SK of CQ G (a crew that has surrendered, as 9.C.4) <=
+## the Unfouling number for the g-t's that crew has fought that fire (1, 2, 3+), kept in
+## prize.fires_below {seq: g-t's}. No "marines not available" DRM: the marines below are among them.
+## Logged as FIRE_FOUGHT with "below": true. Dice: one d10 per fire fought, after the ship's FF rolls.
+func _fight_fires_below(ship: ShipState, turn: int, phase: int) -> void:
+	var tables: CombatTables = DataManager.combat_tables
+	var sc: ShipStateController = game_state.ship_controller
+	var hands := ship.original_crew_sections()
+	var before: Dictionary = ship.prize.get("fires_below", {})
+	var below: Dictionary = before.duplicate(true)
+	for seq in ship.fire_seqs():
+		if hands <= 0:
+			break
+		if not ship.fire_task(seq).is_empty():
+			continue
+		hands -= 1
+		var attempt := int(below.get(str(seq), 0)) + 1
+		var roll: int = game_state.dice.d10()
+		var modifier := tables.skill_modifier(STRUCK_QUALITY)
+		var needed: int = tables.unfouling_success_max(attempt)
+		var success := roll + modifier <= needed
+		game_state.turn_log.add(PhaseEvents.Type.FIRE_FOUGHT, phase, ship.ship_id, {
+			"fire": seq, "number": ship.fire_seqs().find(seq) + 1, "sections": [], "below": true,
+			"roll": roll, "modifier": modifier, "needed": needed, "attempt": attempt, "success": success,
+		})
+		if success:
+			sc.remove_fire(ship.ship_id, seq)
+			below.erase(str(seq))
+		else:
+			below[str(seq)] = attempt
+	for key in below.keys():
+		if ship.fire_by_seq(int(key)).is_empty():
+			below.erase(key)
+	if below != before:
+		sc.set_prize(ship.ship_id, {"fires_below": below})
+	if not below.is_empty():
+		Trace.trace_log("Fire", "%s: the original crew fights the fires below (turn %d)" % [ship.ship_id, turn])
 
 
 # --- Explosions (8.E.8-11, hull #12) ---

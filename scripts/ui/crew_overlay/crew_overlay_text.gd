@@ -29,6 +29,8 @@ static func section_name(section: int) -> String:
 ## "38-gun Frigate · crew quality B · carrying fighting sail".
 static func header_subtitle(ship: ShipState) -> String:
 	var type_name: String = ship.ship.name if ship.ship else ship.ship_type
+	if ship.is_captured():
+		return "%s · prize crew quality %s · a prize: boarding and repairs only (10.H.2)" % [type_name, ship.crew_quality]
 	return "%s · crew quality %s · carrying %s" % [type_name, ship.crew_quality,
 		PlanningSailUi.sail_name(ship.sail_state).to_lower()]
 
@@ -41,6 +43,8 @@ static func read_only_note(phase: int, ship: ShipState, own: bool, submitted: bo
 		return "The ship is destroyed."
 	if ship.is_struck():
 		return "The ship has struck: firefighting is automatic."
+	if ship.is_captured() and not ship.has_prize_crew():
+		return "A prize: her crew is locked below and the prize crew is not yet aboard (10.G.7, 10.H.3)."
 	if phase != TurnPhaseController.GamePhase.PLANNING:
 		return "Orders are given in the planning phase."
 	if submitted:

@@ -75,7 +75,7 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 	p.tgf = ceili(total)
 	if p.tgf <= 0:
 		return _refuse(p, "no gunnery factor at this range")
-	p.bgn = tables.basic_gunfire_number(p.tgf, p.range_hexes, firer.ship.is_french_gunned())
+	p.bgn = tables.basic_gunfire_number(p.tgf, p.range_hexes, firer.is_french_gunned())
 	if p.bgn < 0:
 		return _refuse(p, "cannot fire at this range with this gunnery factor")
 

@@ -179,7 +179,7 @@ func test_shipped_scenarios_name_every_ship_uniquely() -> void:
 			seen[ship_name] = true
 
 func test_loaded_scenarios_have_unique_names_after_fallback() -> void:
-	for scenario_name in ["test_basic", "test_fleet"]:
+	for scenario_name in ["test_basic", "test_fleet", "test_prizes"]:
 		var scenario := DataManager.load_scenario(scenario_name)
 		var seen := {}
 		for ship in scenario["ships"]:
@@ -215,11 +215,20 @@ func _start_with_ships(scenario: Dictionary) -> void:
 	GameState.start_new_game(scenario)
 
 func test_shipped_scenarios_have_valid_placement() -> void:
-	for scenario_name in ["test_basic", "test_fleet"]:
+	for scenario_name in ["test_basic", "test_fleet", "test_prizes"]:
 		_start_with_ships(DataManager.load_scenario(scenario_name))
 		assert_gt(GameState.ships.size(), 1, "%s: ships were placed" % scenario_name)
 		assert_eq(GameState.placement_errors(), [] as Array[String], scenario_name)
 	GameState.clear_ships()
+
+func test_prizes_scenario_sides_and_navies() -> void:
+	# Two ships a side, so one capture does not end the game; the enemy sails French (1.G.8).
+	var scenario := DataManager.load_scenario("test_prizes")
+	var sides := {0: 0, 1: 0}
+	for ship_data in scenario["ships"]:
+		sides[int(ship_data["player_id"])] += 1
+	assert_eq(sides, {0: 2, 1: 2})
+	assert_eq(str(scenario["navies"]["1"]), "French")
 
 func test_overlapping_placement_rejected() -> void:
 	# Both sterns are on (-1, 0)

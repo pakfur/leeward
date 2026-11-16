@@ -1,0 +1,80 @@
+{
+  "name": "Test Scenario - Prizes",
+  "description": "Two frigates a side, close together, for testing prizes: capture, prize crews, recapture (10.G-H). The enemy sails under the French navy (1.G.8).",
+  "seed": 7,
+  "wind_direction": 2,
+  "wind_speed": 1,
+  "wind_speed_change": "steady",
+  "wind_direction_change": "none",
+  "region": "oceanic",
+  "sea_state": 1,
+  "turn_limit": 30,
+  "navies": {"0": "British", "1": "French"},
+  "map": {
+	"map_texture": "res://assets/textures/water_default.png",
+	"show_hex": true
+  },
+  "map_bounds": {
+	"width": 100,
+	"height": 100
+  },
+  "minimap_texture": "",
+  "ships": [
+	{
+	  "id": "player_ship_1",
+	  "ship_name": "HMS Lively",
+	  "player_id": 0,
+	  "ship_type": "frigate_38",
+	  "position": {"q": -4, "r": -2},
+	  "facing": 0,
+	  "speed": 0,
+	  "movement_points": 0,
+	  "acceleration": 0,
+	  "sail_state": "FS",
+	  "crew_quality": "Crack",
+	  "crew_morale": 3
+	},
+	{
+	  "id": "player_ship_2",
+	  "ship_name": "HMS Phoebe",
+	  "player_id": 0,
+	  "ship_type": "frigate_38",
+	  "position": {"q": -4, "r": 3},
+	  "facing": 0,
+	  "speed": 0,
+	  "movement_points": 0,
+	  "acceleration": 0,
+	  "sail_state": "FS",
+	  "crew_quality": "Trained",
+	  "crew_morale": 3
+	},
+	{
+	  "id": "enemy_ship_1",
+	  "ship_name": "Topaze",
+	  "player_id": 1,
+	  "ship_type": "frigate_32",
+	  "position": {"q": 5, "r": -2},
+	  "facing": 3,
+	  "speed": 0,
+	  "movement_points": 0,
+	  "acceleration": 0,
+	  "sail_state": "FS",
+	  "crew_quality": "Trained",
+	  "crew_morale": 4
+	},
+	{
+	  "id": "enemy_ship_2",
+	  "ship_name": "Hermione",
+	  "player_id": 1,
+	  "ship_type": "frigate_32",
+	  "position": {"q": 5, "r": 3},
+	  "facing": 3,
+	  "speed": 0,
+	  "movement_points": 0,
+	  "acceleration": 0,
+	  "sail_state": "FS",
+	  "crew_quality": "Trained",
+	  "crew_morale": 4
+	}
+  ]
+}

@@ -454,9 +454,9 @@ func _setup_scenario(scenario: Dictionary) -> void:
 	# Spawn ships (create both state and view)
 	if scenario.has("ships"):
 		for ship_data in scenario.ships:
-			_spawn_ship(ship_data)
+			_spawn_ship(ship_data, scenario.get("navies", {}))
 
-func _spawn_ship(ship_data: Dictionary) -> void:
+func _spawn_ship(ship_data: Dictionary, navies: Variant = {}) -> void:
 	var ship_type_id = ship_data.get("ship_type", "")
 	var type_def = DataManager.get_ship_definition(ship_type_id)
 
@@ -466,6 +466,11 @@ func _spawn_ship(ship_data: Dictionary) -> void:
 
 	# Create Ship (immutable identity + type data) from scenario + type definition
 	var ship_ref = Ship.initialize_from_scenario(ship_data, type_def.to_dict())
+	# 1.G.8: the navy using the ship, per ship or per side ("navies": {"0": "British", ...}).
+	var side := str(int(ship_data.get("player_id", 0)))  # JSON numbers are floats
+	if not ship_data.has("navy") and navies is Dictionary and navies.has(side):
+		ship_data = ship_data.duplicate()
+		ship_data["navy"] = str(navies[side])
 
 	# Create ship state (mutable game data only)
 	var ship_state = ShipState.new()
@@ -767,6 +772,7 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 		_clear_end_turn_ui()
 	if phase == GameState.GamePhase.PLANNING:
 		_clear_boarding_card()
+		_sync_all_views()  # a recapture at the start of the g-t (10.H.4) changes colours and flags
 	if crew_client:
 		if phase != GameState.GamePhase.PLANNING and crew_client.is_open:
 			crew_client.close()  # the map plays the turn; C reopens the overlay read-only
@@ -1356,7 +1362,7 @@ func _on_maintenance_orders_requested(player_id: int, step: String, options: Arr
 		combat_log_panel.auto_expand(false)  # keep the ships alongside visible
 
 
-func _on_maintenance_orders_submitted(step: String, pairs: Array, panel: MaintenanceOrdersPanel) -> void:
+func _on_maintenance_orders_submitted(step: String, pairs: Variant, panel: MaintenanceOrdersPanel) -> void:
 	var reason := "maintenance orders can only be submitted on the server"
 	# Single-player: submit player 0's orders under the server guard  SCV:ALLOW
 	if GameState.is_server and GameState.phase_controller:

@@ -31,8 +31,19 @@ var finished_turn: int = -1
 var outcome: String = ""
 ## The defender had struck before it was boarded (10.A.3: no reorganizing).
 var struck_target: bool = false
-## The prize crew has been put aboard (10.G.7).
+## The prize crew has been put aboard (10.G.7), or none is needed (a recapture, or the prize is
+## gone): the won action is finished once its boarders end their RO.
 var prize_aboard: bool = false
+## 10.G.5: the defender is a prize whose captors were reorganizing aboard it. helper_id is the
+## captor (the parent ship), helper_sections its reorganizing sections, now defending; the prize's
+## original crew joins the defence at CQ G when original_crew_joins (boarding spec §1.5, §3.4).
+## prize_action is the id of the action that took the prize (its RO starts again if they hold).
+var helper_id: String = ""
+var helper_sections: Array[int] = []
+var original_crew_joins: bool = false
+var prize_action: int = -1
+## The attacker took back a prize of its own side (no prize crew; the original crew is freed).
+var retaken: bool = false
 
 
 func is_live() -> bool:
@@ -67,7 +78,8 @@ func to_dict() -> Dictionary:
 		"attacker_sections": attacker_sections.duplicate(), "defender_sections": defender_sections.duplicate(),
 		"started_turn": started_turn, "rounds": rounds, "state": state, "prize_size": prize_size,
 		"finished_turn": finished_turn, "outcome": outcome, "struck_target": struck_target,
-		"prize_aboard": prize_aboard,
+		"prize_aboard": prize_aboard, "helper_id": helper_id, "helper_sections": helper_sections.duplicate(),
+		"original_crew_joins": original_crew_joins, "prize_action": prize_action, "retaken": retaken,
 	}
 
 
@@ -88,6 +100,12 @@ static func from_dict(data: Dictionary) -> BoardingAction:
 	a.outcome = str(data.get("outcome", ""))
 	a.struck_target = bool(data.get("struck_target", false))
 	a.prize_aboard = bool(data.get("prize_aboard", false))
+	a.helper_id = str(data.get("helper_id", ""))
+	for s in data.get("helper_sections", []):
+		a.helper_sections.append(int(s))
+	a.original_crew_joins = bool(data.get("original_crew_joins", false))
+	a.prize_action = int(data.get("prize_action", -1))
+	a.retaken = bool(data.get("retaken", false))
 	return a
 
 

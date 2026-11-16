@@ -12,8 +12,9 @@ signal game_over(result: Dictionary)
 ## Movement playback reached a potential collision of a prompted player's ship (6.D.3): the player
 ## answers with player_submit_bear_off.
 signal bear_off_decision_requested(situation: MovementTypes.BearOffSituation)
-## STATUS_ADJUSTMENT waits for a prompted player's grapple (SoP V.C) or ungrapple (V.D) orders:
-## `step` is "grapple" or "ungrapple", `options` that player's choices (see maintenance_options).
+## STATUS_ADJUSTMENT waits for a prompted player's grapple (SoP V.C) or ungrapple (V.D) orders, or
+## prize-crew sizes (10.G.6): `step` is "grapple", "ungrapple" or "prize_size", `options` that
+## player's choices (see maintenance_options).
 ## The player answers with player_submit_maintenance_orders.
 signal maintenance_orders_requested(player_id: int, step: String, options: Array)
 
@@ -35,8 +36,9 @@ enum GamePhase {
 enum CombatStep { NONE, DECLARE, RESOLVE }
 
 ## Waiting steps inside STATUS_ADJUSTMENT (Maintenance sub-phases C and D, 8.C): the phase waits in
-## GRAPPLE, then in UNGRAPPLE, only while a prompted player has a choice to make.
-enum MaintenanceStep { NONE, GRAPPLE, UNGRAPPLE }
+## GRAPPLE, then in UNGRAPPLE, only while a prompted player has a choice to make; PRIZE (10.G.6, after
+## the crew tasks are counted) when a reorganization has ended with more boarders than the minimum.
+enum MaintenanceStep { NONE, GRAPPLE, UNGRAPPLE, PRIZE }
 
 var current_phase: GamePhase = GamePhase.SETUP
 var current_turn: int = 0
@@ -561,6 +563,10 @@ func _begin_maintenance_step(step: MaintenanceStep) -> void:
 ## ungrappling), from GrapplingController's queries. Pure.
 func maintenance_options(player_id: int, step: MaintenanceStep) -> Array:
 	var out: Array = []
+	if step == MaintenanceStep.PRIZE:
+		# 10.G.6: prize-crew sizes (BoardingController.prize_size_options; boarding spec §4.3).
+		var boarding = game_state.get("boarding_controller")
+		return boarding.prize_size_options(player_id) if boarding != null else out
 	var grappling = game_state.get("grappling_controller")
 	if grappling == null:
 		return out
@@ -605,6 +611,8 @@ func player_submit_maintenance_orders(player_id: int, orders: Dictionary) -> Str
 	for k in orders:
 		if str(k) != key:
 			return "only %s orders are given now" % key
+	if maintenance_step == MaintenanceStep.PRIZE:
+		return _submit_prize_sizes(player_id, orders.get(key, {}))
 	var pairs = GrapplingController.parse_pairs(orders.get(key, []))
 	if pairs == null:
 		return "malformed %s orders" % key
@@ -632,15 +640,55 @@ func player_submit_maintenance_orders(player_id: int, orders: Dictionary) -> Str
 	return ""
 
 
+## {"prize_size": {action_id: size}} from a prompted player (10.G.6): each must be one of the
+## player's options and from the minimum to the surviving boarders; an action not named keeps the
+## minimum. All or nothing: nothing is recorded on a refusal.
+func _submit_prize_sizes(player_id: int, sizes: Variant) -> String:
+	if not sizes is Dictionary:
+		return "malformed prize_size orders"
+	var options := {}
+	for option in _maintenance_options.get(player_id, []):
+		options[int(option["action_id"])] = option
+	var parsed := {}
+	for k in sizes:
+		var key := str(k)
+		if not key.is_valid_int() or not (typeof(sizes[k]) == TYPE_INT or typeof(sizes[k]) == TYPE_FLOAT):
+			return "malformed prize_size orders"
+		if not options.has(int(key)):
+			return "no prize crew of action %s is to be chosen by player %d" % [key, player_id]
+		var n := int(sizes[k])
+		var option: Dictionary = options[int(key)]
+		if n < int(option["minimum"]) or n > int(option["maximum"]):
+			return "the prize crew must be %d to %d boxes (10.G.6)" % [int(option["minimum"]), int(option["maximum"])]
+		parsed[int(key)] = n
+	for action_id in parsed:
+		var why: String = game_state.boarding_controller.set_prize_size(action_id, parsed[action_id])
+		if why != "":
+			return why
+	_maintenance_waiting.erase(player_id)
+	Trace.trace_log("TurnPhase", "Player %d chose %d prize-crew sizes" % [player_id, parsed.size()])
+	if _maintenance_waiting.is_empty():
+		maintenance_step = MaintenanceStep.NONE
+		_resolve_maintenance_step(MaintenanceStep.PRIZE)
+	return ""
+
+
 ## Roll `step` with the prompted players' orders plus StubAI's for every other player's ships, then
 ## move on: ungrappling after grappling, the rest of the phase after ungrappling.
 func _resolve_maintenance_step(step: MaintenanceStep) -> void:
+	if step == MaintenanceStep.PRIZE:
+		_maintenance_orders = []
+		_maintenance_options = {}
+		if game_state.stub_ai:
+			var boarding: BoardingController = game_state.boarding_controller
+			var sizes: Dictionary = game_state.stub_ai.prize_sizes(_ai_players())
+			for action_id in sizes:
+				boarding.set_prize_size(int(action_id), int(sizes[action_id]))
+		_after_prize_step()
+		return
 	var orders: Array = _maintenance_orders.duplicate()
 	if game_state.stub_ai:
-		var ai_players: Array[int] = []
-		for p in game_state.ships_by_player.keys():
-			if not maintenance_prompt_player_ids.has(int(p)):
-				ai_players.append(int(p))
+		var ai_players := _ai_players()
 		orders.append_array(game_state.stub_ai.grapple_orders(ai_players) if step == MaintenanceStep.GRAPPLE
 				else game_state.stub_ai.ungrapple_orders(ai_players))
 	_maintenance_orders = []
@@ -653,7 +701,18 @@ func _resolve_maintenance_step(step: MaintenanceStep) -> void:
 		_finish_status_adjustment()
 
 
-## SoP V.E-G after grappling and ungrappling, then the next phase.
+## Players StubAI answers for (not prompted).
+func _ai_players() -> Array[int]:
+	var ai_players: Array[int] = []
+	for p in game_state.ships_by_player.keys():
+		if not maintenance_prompt_player_ids.has(int(p)):
+			ai_players.append(int(p))
+	return ai_players
+
+
+## SoP V.E-G after grappling and ungrappling; then, when a reorganization has ended with more
+## boarders than the minimum prize crew, the prize-crew size prompt (MaintenanceStep.PRIZE, 10.G.6);
+## then the prize crews go aboard and the next phase.
 func _finish_status_adjustment() -> void:
 	if game_state.fouling_controller:
 		game_state.fouling_controller.resolve_unfouling(current_phase)
@@ -667,6 +726,13 @@ func _finish_status_adjustment() -> void:
 	# take effect, 5.F.8) or cancelled.
 	if game_state.crew_task_controller:
 		game_state.crew_task_controller.advance_tasks(current_phase)
+	if game_state.get("boarding_controller") == null:
+		_after_prize_step()
+		return
+	_begin_maintenance_step(MaintenanceStep.PRIZE)
+
+
+func _after_prize_step() -> void:
 	# 10.G.7: prize crews of actions whose boarders finished reorganizing go aboard.
 	if game_state.get("boarding_controller") != null:
 		game_state.boarding_controller.advance_reorganizing(current_phase)
@@ -682,7 +748,12 @@ func _reset_maintenance() -> void:
 
 
 static func _step_name(step: MaintenanceStep) -> String:
-	return "grapple" if step == MaintenanceStep.GRAPPLE else "ungrapple"
+	match step:
+		MaintenanceStep.GRAPPLE:
+			return "grapple"
+		MaintenanceStep.PRIZE:
+			return "prize_size"
+	return "ungrapple"
 
 func _enter_morale_check_phase() -> void:
 	"""SERVER ONLY: Enter morale check phase"""
@@ -750,6 +821,9 @@ func _start_new_turn() -> void:
 	game_state.turn_log.turn = current_turn
 	turn_changed.emit(current_turn)
 	Trace.trace_log("TurnPhase", "=== Turn %d ===" % current_turn)
+	# 10.H.4: at the start of the g-t, a prize crew below the minimum may lose the ship.
+	if game_state.get("boarding_controller") != null:
+		game_state.boarding_controller.start_of_turn(GamePhase.ENVIRONMENT)
 	# Directly enter environment phase (we're already inside advance_phase() call chain)
 	_enter_environment_phase()
 

@@ -100,6 +100,12 @@ var ship_type: String:
 ## Boxes this ship detached as prize crews, per section (S1-S4, M): emptied sections that only lost
 ## men to a prize crew do not count as destroyed for victory points (boarding spec §8 Q4).
 @export var detached_boxes: Array[int] = [0, 0, 0, 0, 0]
+## The navy sailing the ship (1.G.8: its BGN at ranges 11-15); "" = the ship type's nationality.
+## From the scenario (per ship "navy", or per side "navies"); a prize takes its captor's.
+@export var navy: String = ""
+## The morale rating that fixes the ship's point value once a recapture (10.H.4) has set its MR to
+## 6; -1 = the live morale rating (or the original crew's while a prize).
+@export var value_morale_rating: int = -1
 @export var guns_dismounted: Array[int] = [0, 0]  # per side: PORT, STARBOARD
 @export var initial_broadside_fired: Array[bool] = [false, false]
 @export var moved_this_turn: bool = false
@@ -198,15 +204,54 @@ func is_captured() -> bool:
 func is_targetable() -> bool:
 	return status == Status.ACTIVE or status == Status.CAPTURED
 
-## May be boarded (10.A.2-3): in play or struck, and not on fire. A prize cannot be boarded until
-## prize operations exist (boarding spec B5).
+## May be boarded (10.A.2-3, 10.G.5): in play, struck or a prize, and not on fire.
 func can_be_boarded() -> bool:
-	return (status == Status.ACTIVE or status == Status.STRUCK) and not is_burning()
+	return (status == Status.ACTIVE or status == Status.STRUCK or status == Status.CAPTURED) \
+		and not is_burning()
 
-## The prize's original crew's morale rating (its point value, VI.B), else the current one.
+## The morale rating that fixes the ship's point value (VI.B): the original crew's while a prize,
+## the one before a recapture after it (value_morale_rating), else the current one.
 func original_morale_rating() -> int:
+	if value_morale_rating >= 0:
+		return value_morale_rating
 	var crew: Dictionary = prize.get("original_crew", {})
 	return int(crew.get("morale_rating", morale_rating))
+
+## A prize whose prize crew is aboard (10.G.7).
+func has_prize_crew() -> bool:
+	return is_captured() and bool(prize.get("prize_crew_aboard", false))
+
+## The live crew may be plotted to tasks: a ship in play, or a prize with its prize crew aboard
+## (which may plot only boarding and repairs, 10.H.2).
+func crew_can_act() -> bool:
+	return status == Status.ACTIVE or has_prize_crew()
+
+## Boxes of the prize's original crew locked below (10.H.3); 0 when not a prize.
+func original_crew_boxes() -> int:
+	var crew: Dictionary = prize.get("original_crew", {})
+	var total := int(crew.get("marine_count", 0))
+	for b in crew.get("crew_count", []):
+		total += int(b)
+	return total
+
+## The original crew's sections below with boxes (S1-S4, M), each able to fight one fire (10.H.3).
+func original_crew_sections() -> int:
+	var crew: Dictionary = prize.get("original_crew", {})
+	var n := 1 if int(crew.get("marine_count", 0)) > 0 else 0
+	for b in crew.get("crew_count", []):
+		if int(b) > 0:
+			n += 1
+	return n
+
+## The navy whose BGN the ship uses at ranges 11-15 (1.G.8: the navy using the ship).
+func gunnery_navy() -> String:
+	if navy != "":
+		return navy
+	return ship.nationality if ship else ""
+
+## 1.G.8: French BGN values at ranges 11-15 when the French navy sails the ship.
+func is_french_gunned() -> bool:
+	return gunnery_navy() == "French"
 
 ## Struck or destroyed: cannot move, fire, change sail, unfoul, fix or check morale, and is not a
 ## target. A struck ship still drifts; a destroyed one does not.
@@ -527,6 +572,8 @@ func serialize() -> Dictionary:
 		"controller_id": controller_id,
 		"prize": prize.duplicate(true),
 		"detached_boxes": detached_boxes.duplicate(),
+		"navy": navy,
+		"value_morale_rating": value_morale_rating,
 		"guns_dismounted": guns_dismounted,
 		"initial_broadside_fired": initial_broadside_fired,
 		"crew_auto": crew_auto,
@@ -610,6 +657,8 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.controller_id = int(data.get("controller_id", -1))
 	state.prize = prize_from(data.get("prize", {}))
 	state.detached_boxes = _int_array(data.get("detached_boxes", [0, 0, 0, 0, 0]))
+	state.navy = str(data.get("navy", ""))
+	state.value_morale_rating = int(data.get("value_morale_rating", -1))
 	state.guns_dismounted = _int_array(data.get("guns_dismounted", [0, 0]))
 	state.initial_broadside_fired.clear()
 	for fired in data.get("initial_broadside_fired", [false, false]):
@@ -788,6 +837,7 @@ func initialize_from_scenario(data: Dictionary, ship_ref: Ship) -> void:
 	morale_rating = int(data.get("morale_rating", data.get("crew_morale", 4)))
 	crew_quality = DataManager._normalize_crew_quality(str(data.get("crew_quality", "B")))
 	starting_crew_quality = crew_quality
+	navy = str(data.get("navy", ""))  # 1.G.8; GameController fills in the side's "navies" entry
 	crew_count.clear()
 	marine_count = 0
 	if ship_ref:

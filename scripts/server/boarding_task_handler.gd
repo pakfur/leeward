@@ -64,7 +64,7 @@ func on_started(ship: ShipState, task: Dictionary, phase: int) -> void:
 ## FB done: the section is readied and plots BR from the next g-t (10.B.3). BD done: free again.
 func on_complete(ship: ShipState, task: Dictionary, phase: int) -> void:
 	var c := str(task.get("code", ""))
-	if c == "FB" and game_state != null and not ship.is_out_of_play():
+	if c == "FB" and game_state != null and ship.crew_can_act():
 		var section := int((task.get("params", {}) as Dictionary).get("section", -1))
 		if section >= 0 and ship.section_alive(section):
 			game_state.ship_controller.add_task(ship.ship_id, {

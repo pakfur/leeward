@@ -606,3 +606,23 @@ func test_each_side_keeps_its_own_initial_broadside() -> void:
 	assert_true(previews[0].initial_broadside)
 	assert_true(previews[1].initial_broadside)
 	assert_eq(_mod(previews[0], "two_targets"), -12)
+
+
+# --- 1.G.8: the navy using the ship sets the BGN at ranges 11-15 ---
+
+func test_bgn_follows_the_navy_using_the_ship() -> void:
+	# 1.G.8c, EXAMPLE 2: a British-built ship sailed by the French uses the French BGN at 11-15.
+	target.hex_position = _steps(1, 12)
+	var british := calc.preview(_order(STARBOARD, "round", "high"))
+	assert_true(british.can_fire, british.reason)
+	var tables: CombatTables = DataManager.combat_tables
+	assert_eq(british.bgn, tables.basic_gunfire_number(british.tgf, british.range_hexes, false), "built and sailed British")
+	firer.navy = "French"
+	assert_true(firer.is_french_gunned())
+	var french := calc.preview(_order(STARBOARD, "round", "high"))
+	assert_eq(french.bgn, tables.basic_gunfire_number(french.tgf, french.range_hexes, true), "the French BGN column")
+	assert_ne(french.bgn, british.bgn, "the two columns differ here")
+	firer.navy = ""
+	firer.ship.nationality = "French"
+	firer.navy = "British"
+	assert_false(firer.is_french_gunned(), "a French-built ship sailed by the British uses the British BGN")

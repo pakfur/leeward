@@ -328,6 +328,31 @@ func set_controller(ship_id: String, controller_id: int) -> bool:
 	ship_state_changed.emit(ship_id)
 	return true
 
+## SERVER ONLY: the navy sailing the ship (1.G.8 BGN; "" = the ship type's nationality).
+func set_navy(ship_id: String, navy: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot change the navy on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.navy = navy
+	ship_state_changed.emit(ship_id)
+	return true
+
+## SERVER ONLY: the morale rating that fixes the ship's point value (a recapture, 10.H.4, sets her
+## MR to 6 but not her value; -1 = the live MR).
+func set_value_morale_rating(ship_id: String, morale: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot change the value morale rating on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.value_morale_rating = morale
+	ship_state_changed.emit(ship_id)
+	return true
+
 ## SERVER ONLY: the prize data (ShipState.prize; {} clears it). Keys not given keep their value
 ## unless `replace`.
 func set_prize(ship_id: String, prize: Dictionary, replace: bool = false) -> bool:

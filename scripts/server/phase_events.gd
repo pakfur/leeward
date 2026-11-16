@@ -37,6 +37,8 @@ enum Type {
 	BOARDING_RESULT,  # 10.D.5 the round's outcome: {special, side, d10, mr, mcs, result: fight_on/captured/repulsed/driven_off}
 	SHIP_CAPTURED,  # 10.E.2 ship_id is taken by target_id: {captor_id, struck_before, action}
 	PRIZE_CREW,  # 10.G.7 a prize crew from target_id goes aboard ship_id: {sailors, marines, cq, mr, crew_count, marine_count}
+	RECAPTURED,  # 10.H.4 ship_id is back with its own side: {cause: "rose"|"boarded", original_boxes, prize_boxes, cq, mr} (+ target_id: the boarding ship)
+	REORGANIZING_ABORTED,  # 10.G.5 ship_id's boarders reorganizing aboard prize target_id turn to defend her: {sections}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -362,6 +364,14 @@ class PhaseEvent extends RefCounted:
 			Type.PRIZE_CREW:
 				var n := int(data.get("sailors", 0)) + int(data.get("marines", 0))
 				return "Prize crew of %d (%s%s) from %s put aboard %s" % [n, _val("cq"), _val("mr"), other, who]
+			Type.RECAPTURED:
+				if str(data.get("cause", "")) == "boarded":
+					return "%s is retaken by %s: her crew is freed from below (%s%s)" % [who, other, _val("cq"), _val("mr")]
+				return "%s's crew rises and retakes the ship: %s below against a prize crew of %s (%s%s)" % [
+					who, _val("original_boxes"), _val("prize_boxes"), _val("cq"), _val("mr")]
+			Type.REORGANIZING_ABORTED:
+				return "%s's boarders stop reorganizing to defend the prize %s (%s)" % [who, other,
+					PhaseEvents.sections_text(data.get("sections", []))]
 			Type.DESTROYED:
 				var text := "%s explodes and is destroyed" % who
 				if target_id != "":
@@ -846,6 +856,8 @@ class PhaseEvent extends RefCounted:
 		for section in data.get("sections", []):
 			names.append(ShipState.SECTION_NAMES[int(section)])
 		var crew := " ".join(names) if not names.is_empty() else "crew"
+		if data.get("below", false):
+			crew = "original crew below"  # 10.H.3
 		var roll := int(data.get("roll", 0))
 		var modifier := int(data.get("modifier", 0))
 		var needed := int(data.get("needed", 0))
