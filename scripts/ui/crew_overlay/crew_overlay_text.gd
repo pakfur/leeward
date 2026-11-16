@@ -152,6 +152,59 @@ static func guns_readout(ship: ShipState, plan: Dictionary) -> Dictionary:
 	return {"big": big, "bad": bad, "why": why_text, "marines": marines}
 
 
+## The Crew line caption on a ship card: "11/12 · Able Seaman, morale 4" (sailor boxes left of the
+## ship's full complement, crew quality by name).
+static func crew_caption(ship: ShipState) -> String:
+	var left := 0
+	var all := 0
+	for v in ship.crew_count:
+		left += int(v)
+	if ship.ship:
+		for v in ship.ship.crew_count:
+			all += int(v)
+	var quality: String = ShipStatusBars.SKILL_NAMES.get(ship.crew_quality, ship.crew_quality)
+	return "%d/%d · %s, morale %d" % [left, all, quality, ship.morale_rating]
+
+
+## What one section is doing, for the label under its part of the Crew line: {text, kind}.
+## kind "default" (at the guns or muskets), "task", "fire" or "lost".
+static func section_job(ship: ShipState, section: int, entry: Dictionary) -> Dictionary:
+	if not ship.section_alive(section):
+		return {"text": "lost", "kind": "lost"}
+	var st := CrewRules.station_of(section, entry)
+	if st == CrewRules.STATION_GUNS:
+		return {"text": "guns", "kind": "default"}
+	if st == CrewRules.STATION_MARINE_FIRE:
+		return {"text": "muskets", "kind": "default"}
+	if st.begins_with(CrewRules.STATION_FIRE_PREFIX):
+		var seq := int(st.trim_prefix(CrewRules.STATION_FIRE_PREFIX))
+		if seq < 0:
+			return {"text": "fire watch", "kind": "fire"}
+		return {"text": "fire %d" % (ship.fire_seqs().find(seq) + 1), "kind": "fire"}
+	var word: String = CrewRules.SUMMARY_WORDS.get(st, st.to_upper())
+	return {"text": word, "kind": "task"}
+
+
+## The Marines line caption: "2/2 · muskets at the rail" (boxes left, then what they are doing).
+static func marines_caption(ship: ShipState, plan: Dictionary) -> String:
+	var full: int = ship.ship.marine_count if ship.ship else ship.marine_count
+	var doing := str(guns_readout(ship, plan)["marines"]).trim_prefix("Marines: ").trim_suffix(".")
+	return "%d/%d · %s" % [ship.marine_count, full, doing]
+
+
+## One row per broadside for the Guns line: the gun factors by kind (`Ship.gun_factors`, the same
+## on both sides), the guns dismounted on that side and its status ("ready", "2 dismounted · −2").
+static func gun_rows(ship: ShipState) -> Array[Dictionary]:
+	var gf: Dictionary = ship.ship.gun_factors if ship.ship else {}
+	var rows: Array[Dictionary] = []
+	for side in [ShipState.PORT, ShipState.STARBOARD]:
+		var off := int(ship.guns_dismounted[side]) if side < ship.guns_dismounted.size() else 0
+		rows.append({"side": "Port" if side == ShipState.PORT else "Starboard",
+			"lg": int(gf.get("lg", 0)), "mg": int(gf.get("mg", 0)), "cr": int(gf.get("cr", 0)),
+			"dismounted": off, "status": "ready" if off == 0 else "%d dismounted · −%d" % [off, off]})
+	return rows
+
+
 static func _doing(code: String) -> String:
 	match code:
 		SailController.CODE:

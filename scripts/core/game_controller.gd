@@ -38,7 +38,6 @@ var _leaving: bool = false  # Leave game confirmed: playback is abandoned, nothi
 ## planning panel's crew block. View code; changes go through the server's crew requests.
 var crew_client: CrewOverlayClient = null
 var crew_overlay: CrewOverlay = null
-var crew_side_panel: CrewSidePanel = null
 const COMBAT_REVEAL_SECONDS := 0.6
 
 const NO_SHOT_HEADLINE := "No broadside bears on an enemy this turn."
@@ -808,10 +807,6 @@ func _enter_planning_phase() -> void:
 		context_panel.set_context_content(current_planning_ui)
 
 	# Setup with player ships (after adding to tree so @onready nodes are initialized)
-	if crew_client:
-		crew_side_panel = CrewSidePanel.new()
-		current_planning_ui.attach_crew_panel(crew_side_panel)
-		crew_side_panel.setup(crew_client, crew_overlay)
 	current_planning_ui.setup_for_player(player_0_ships)
 	if crew_client:
 		crew_client.follow_ship(current_planning_ui.selected_ship_id)

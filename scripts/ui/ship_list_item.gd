@@ -1,16 +1,17 @@
 extends PanelContainer
-## ShipListItem - Compact display of a ship in the planning phase list
+## ShipListItem - A ship's card in the planning panel. The cards are an accordion (planning panel
+## rework C2, prototypes/planning_panel/planning_panel.html): the selected card is expanded (title,
+## crew chips, Movement / Crew & damage / Status, then the ShipCardStatus box: hull, rigging, crew,
+## marines and guns); every other card is one row: health icon, name, badge, speed.
 
 signal selected()
 signal action_button_pressed(action_type: String)
 signal status_pressed()  ## the Status button: open this ship's status panel
 signal crew_pressed()  ## the "Crew & damage" button: open the crew overlay for this ship
 
-@onready var ship_icon: TextureRect = %ShipIcon
 @onready var ship_name_label: Label = %ShipNameLabel
 @onready var badge_label: Label = %BadgeLabel
 @onready var speed_label: Label = %SpeedLabel
-@onready var stats_label: Label = %StatsLabel
 @onready var movement_button: Button = %MovementButton
 @onready var crew_button: Button = %CrewButton
 @onready var maintenance_button: Button = %MaintenanceButton
@@ -18,16 +19,14 @@ signal crew_pressed()  ## the "Crew & damage" button: open the crew overlay for 
 
 var ship_state: ShipState = null
 var crew_summary_row: HFlowContainer = null  ## the crew summary chips (CrewRules.summary)
+var health_icon: ShipHealthIcon = null
+var status_box: ShipCardStatus = null  ## hull, rigging, crew, marines, guns (expanded card only)
+var chevron_label: Label = null  ## "▸" on a collapsed card
+var action_row: HBoxContainer = null
 var is_selected: bool = false
 var is_submitted: bool = false
-
-# Default icons by ship type
-const ICON_PATHS = {
-	"corvette": "res://assets/ui/ship_icons/corvette_icon.svg",
-	"frigate": "res://assets/ui/ship_icons/frigate_icon.svg",
-	"ship_of_line": "res://assets/ui/ship_icons/ship_of_line_icon.svg",
-	"default": "res://assets/ui/ship_icons/default_ship_icon.svg"
-}
+var _chips: Array = []
+var _plan: Dictionary = {}
 
 # Style themes
 var normal_style: StyleBoxFlat
@@ -73,13 +72,27 @@ func _ready() -> void:
 		maintenance_button.visible = false
 	if crew_button:
 		crew_button.pressed.connect(func(): crew_pressed.emit())
-	if stats_label:
-		crew_summary_row = HFlowContainer.new()
-		crew_summary_row.name = "CrewSummary"
-		crew_summary_row.add_theme_constant_override("h_separation", 4)
-		crew_summary_row.add_theme_constant_override("v_separation", 4)
-		crew_summary_row.mouse_filter = Control.MOUSE_FILTER_PASS
-		stats_label.add_sibling(crew_summary_row)
+	var top_row: HBoxContainer = ship_name_label.get_parent()
+	health_icon = ShipHealthIcon.new()
+	health_icon.name = "HealthIcon"
+	health_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top_row.add_child(health_icon)
+	top_row.move_child(health_icon, 0)
+	chevron_label = Label.new()
+	chevron_label.name = "Chevron"
+	chevron_label.text = "▸"
+	chevron_label.add_theme_color_override("font_color", CrewStyle.MUTED)
+	chevron_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top_row.add_child(chevron_label)
+	crew_summary_row = HFlowContainer.new()
+	crew_summary_row.name = "CrewSummary"
+	crew_summary_row.add_theme_constant_override("h_separation", 4)
+	crew_summary_row.add_theme_constant_override("v_separation", 4)
+	crew_summary_row.mouse_filter = Control.MOUSE_FILTER_PASS
+	top_row.add_sibling(crew_summary_row)
+	action_row = movement_button.get_parent()
+	status_box = ShipCardStatus.new()
+	action_row.add_sibling(status_box)
 	if maintenance_button:
 		maintenance_button.pressed.connect(_on_maintenance_pressed)
 
@@ -89,6 +102,7 @@ func _ready() -> void:
 
 	# Make the panel clickable
 	gui_input.connect(_on_gui_input)
+	_apply_expanded()
 
 func setup(state: ShipState) -> void:
 	ship_state = state
@@ -107,11 +121,6 @@ func _update_display() -> void:
 		speed_label.text = "Speed %d" % ship_state.speed
 		speed_label.tooltip_text = "Speed last turn"
 
-	# Detail lines: hull and rigging per section, sail by name, crew quality and morale
-	if stats_label:
-		var lines := PlanningText.card_lines(ship_state)
-		stats_label.text = "\n".join(lines)
-
 	# Status badge (fouled / struck / dismasted) locks out movement plotting
 	var badge := PlanningSailUi.card_badge(ship_state)
 	if badge_label:
@@ -128,38 +137,57 @@ func _update_display() -> void:
 		movement_button.disabled = not can_move
 		movement_button.tooltip_text = "" if can_move else PlanningSailUi.movement_block_reason(ship_state)
 
-	# Ship icon
-	if ship_icon:
-		var icon_path = _get_icon_path_for_ship_type(ship_state.ship_type)
-		if ResourceLoader.exists(icon_path):
-			ship_icon.texture = load(icon_path)
+	if health_icon:
+		health_icon.show_ship(ship_state)
+	_render_status()
 
-func _get_icon_path_for_ship_type(ship_type: String) -> String:
-	var type_lower = ship_type.to_lower()
-
-	for key in ICON_PATHS.keys():
-		if key in type_lower:
-			return ICON_PATHS[key]
-
-	return ICON_PATHS["default"]
-
+## Selected = expanded (C2): only one card is open at a time; the panel selects one card.
 func set_selected_state(selected_state: bool) -> void:
 	is_selected = selected_state
 	_apply_panel_style()
+	_apply_expanded()
+	if ship_name_label and ship_state:
+		ship_name_label.text = _title()
+
+
+## The expanded card shows its chips, buttons and status box; a collapsed one only its top row.
+func _apply_expanded() -> void:
+	if crew_summary_row:
+		crew_summary_row.visible = is_selected and not _chips.is_empty()
+	if action_row:
+		action_row.visible = is_selected
 	if crew_button:
-		crew_button.visible = selected_state
+		crew_button.visible = is_selected
+	if status_box:
+		status_box.visible = is_selected
+	if chevron_label:
+		chevron_label.visible = not is_selected
+	tooltip_text = "" if is_selected else "Select to show this ship's orders"
+	_render_status()
 
 
 ## The crew summary line (spec §4.8): chips [{"text", "kind"}]; hidden when `chips` is empty.
 func set_crew_summary(chips: Array) -> void:
+	_chips = chips
 	if crew_summary_row == null:
 		return
 	for c in crew_summary_row.get_children():
 		crew_summary_row.remove_child(c)
 		c.queue_free()
-	crew_summary_row.visible = not chips.is_empty()
+	crew_summary_row.visible = is_selected and not chips.is_empty()
 	for chip in chips:
 		crew_summary_row.add_child(crew_chip(chip))
+
+
+## The ship's crew plan (CrewTaskController.current_plan): the status box's crew and guns lines read it.
+func set_crew_plan(plan: Dictionary) -> void:
+	_plan = plan
+	_render_status()
+
+
+func _render_status() -> void:
+	if status_box and ship_state and is_selected:
+		status_box.render(ship_state, _plan)
 
 
 static func crew_chip(chip: Dictionary) -> Label:
@@ -200,8 +228,11 @@ func set_submitted_state(submitted: bool) -> void:
 	if ship_name_label and ship_state:
 		ship_name_label.text = _title()
 
-## "HMS Lively — 38-gun Frigate", with "(orders given)" once the ship has its orders.
+## Expanded: "HMS Lively — 38-gun Frigate", with "(orders given)" once the ship has its orders.
+## Collapsed: the name alone, with "✓" once it has its orders.
 func _title() -> String:
+	if not is_selected:
+		return ship_state.ship_name + (" ✓" if is_submitted else "")
 	var text := PlanningText.name_and_type(ship_state)
 	return text + " (orders given)" if is_submitted else text
 

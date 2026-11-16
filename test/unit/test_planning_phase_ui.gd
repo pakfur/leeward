@@ -110,3 +110,30 @@ func test_allowance_note_shows_under_the_readout_and_hides_when_empty() -> void:
 	assert_eq(ui.allowance_note_label.text, "Allowance changed on the new heading (broad reach → close hauled)")
 	ui.set_allowance_note("")
 	assert_false(ui.allowance_note_label.visible)
+
+
+func test_only_the_selected_card_is_expanded() -> void:
+	var open = ui.ship_list_items["p1"]
+	var shut = ui.ship_list_items["p2"]
+	assert_true(open.status_box.visible, "the selected card shows hull, rigging, crew and guns")
+	assert_true(open.action_row.visible, "and its buttons")
+	assert_false(shut.status_box.visible, "a collapsed card hides the status box")
+	assert_false(shut.action_row.visible, "and its buttons")
+	assert_true(shut.health_icon.visible, "but keeps the health icon")
+	assert_eq(shut.ship_name_label.text, "HMS Phoebe", "a collapsed card shows the name alone")
+	ui.select_ship("p2")
+	assert_true(shut.status_box.visible, "selecting a card expands it")
+	assert_false(open.status_box.visible, "and collapses the other")
+
+
+func test_collapsed_card_marks_orders_given() -> void:
+	ui.mark_ship_submitted("p2")
+	assert_eq(ui.ship_list_items["p2"].ship_name_label.text, "HMS Phoebe ✓")
+	ui.select_ship("p2")
+	assert_eq(ui.ship_list_items["p2"].ship_name_label.text, "HMS Phoebe — 38-gun Frigate (orders given)")
+
+
+func test_status_box_draws_every_line() -> void:
+	var box: ShipCardStatus = ui.ship_list_items["p1"].status_box
+	for line in ["HullLine", "RiggingLine", "CrewLine", "MarinesLine", "GunsLine"]:
+		assert_not_null(box.find_child(line, true, false), "%s is drawn" % line)

@@ -50,7 +50,6 @@ var total_player_ships: int = 0
 var ship_states: Dictionary = {}  # ship_id -> ShipState (read-only references)
 var _plot_max: int = 0  # most the plotting ship can spend this turn; fixed for the plot
 var crew_overlay_open: bool = false  # the selected card hides its summary line while the overlay is open
-var _crew_panel: Control = null  # the crew block; hidden while a move is plotted (the controls need the room)
 
 func _ready() -> void:
 	if undo_button:
@@ -80,21 +79,13 @@ func setup_for_player(player_ships: Array[ShipState]) -> void:
 	_update_instructions()
 	refresh_crew_summaries()
 
-## Puts the crew block (Guns readout, DAMAGE, roster) under the ship cards.
-func attach_crew_panel(panel: Control) -> void:
-	var parent := ship_list_container.get_parent()
-	if panel.get_parent():
-		panel.get_parent().remove_child(panel)
-	parent.add_child(panel)
-	parent.move_child(panel, ship_list_container.get_index() + 1)
-	_crew_panel = panel
-
 ## The crew plan changed (crew overlay): the sail row and the summary lines follow it.
 func refresh_crew_orders() -> void:
 	_refresh_sail_row()
 	refresh_crew_summaries()
 
-## The crew summary line on every card (CrewRules.summary of the stored plan, a read-only query).
+## The crew summary line and the status box on every card (CrewRules.summary of the stored plan,
+## a read-only query); the cards redraw their hull, rigging, crew and guns from the ship too.
 func refresh_crew_summaries() -> void:
 	for ship_id in ship_list_items:
 		var ship: ShipState = ship_states.get(ship_id)
@@ -102,10 +93,12 @@ func refresh_crew_summaries() -> void:
 		if ship == null or GameState.crew_task_controller == null:
 			item.set_crew_summary([])
 			continue
+		var plan: Dictionary = GameState.crew_task_controller.current_plan(ship_id)
+		item.setup(ship)
+		item.set_crew_plan(plan)
 		if crew_overlay_open and ship_id == selected_ship_id:
 			item.set_crew_summary([])
 			continue
-		var plan: Dictionary = GameState.crew_task_controller.current_plan(ship_id)
 		item.set_crew_summary(CrewRules.summary(ship, plan, CrewRules.context(GameState, ship)))
 
 func clear_ships() -> void:
@@ -287,8 +280,6 @@ func show_plotting_controls(ship_id: String, remaining_ma_val: int, table_ma: in
 	_plot_max = remaining_ma_val
 	if ship_list_items.has(ship_id) and ship_id != selected_ship_id:
 		_select_ship(ship_id)  # the controls shown always belong to the selected ship
-	if _crew_panel and is_instance_valid(_crew_panel):
-		_crew_panel.set("suppressed", true)
 	if plotting_controls:
 		plotting_controls.visible = true
 		_update_ma_display(remaining_ma_val)
@@ -302,12 +293,20 @@ func show_plotting_controls(ship_id: String, remaining_ma_val: int, table_ma: in
 			ma_limit_label.visible = note != ""
 		if ma_label:
 			ma_label.tooltip_text = note if note != "" else "The most this ship can move this turn."
+		_scroll_plotting_into_view.call_deferred()
+
+## The expanded card (C2) keeps its status box while plotting, so the panel scrolls down to bring
+## the plotting controls and their buttons into view.
+func _scroll_plotting_into_view() -> void:
+	var scroll := plotting_controls.get_parent().get_parent() as ScrollContainer if plotting_controls else null
+	if scroll and plotting_controls.visible:
+		await get_tree().process_frame  # let the container lay the controls out first
+		scroll.ensure_control_visible(plotting_controls)
+
 
 func hide_plotting_controls() -> void:
 	if plotting_controls:
 		plotting_controls.visible = false
-	if _crew_panel and is_instance_valid(_crew_panel):
-		_crew_panel.set("suppressed", false)
 	set_allowance_note("")
 	if tacking_label:
 		tacking_label.visible = false

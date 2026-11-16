@@ -19,14 +19,6 @@ func _ship(id: String = "a", ship_name: String = "Alpha", hex: Vector2i = Vector
 	return s
 
 
-func test_card_lines_show_all_four_sections_names_and_no_codes() -> void:
-	var lines := PlanningText.card_lines(_ship())
-	assert_eq(lines, ["Hull 4/5 5/5 5/5 6/6", "Rigging 5/5 5/5 6/6 6/6", "Fighting sail",
-		"Crew quality D, morale 4"] as Array[String])
-	for line in lines:
-		assert_false(line.contains("["), "no raw arrays: %s" % line)
-
-
 func test_movement_line_reads_n_of_m_left() -> void:
 	assert_eq(PlanningText.movement_line(3, 3), "Movement: 3 of 3 left")
 	assert_eq(PlanningText.movement_line(2, 3), "Movement: 2 of 3 left")

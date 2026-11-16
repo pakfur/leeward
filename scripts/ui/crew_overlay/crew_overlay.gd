@@ -29,6 +29,7 @@ var _big_deck: Control
 var _other_decks: VBoxContainer
 var _inset: CrewTacticalInset
 var _caption: Label
+var _footer: CrewOverlayFooter  ## roster and DAMAGE list along the bottom (planning panel rework C7-C8)
 var _msg: PanelContainer
 var _msg_timer: Timer
 var _menu: PopupMenu
@@ -226,6 +227,10 @@ func _build() -> void:
 	cap.add_child(_caption)
 	iv.add_child(cap)
 
+	_footer = CrewOverlayFooter.new()
+	_footer.setup(client, self)
+	ov.add_child(_footer)
+
 	_msg = PanelContainer.new()
 	_msg.visible = false
 	_msg.set_anchors_preset(PRESET_CENTER_BOTTOM)
@@ -319,6 +324,9 @@ func _render() -> void:
 		client.game_state.environment.wind_direction if client.game_state.environment else -1)
 	_caption.text = CrewOverlayText.tactical_caption(_ship, client.game_state.get_all_ships(),
 		client.game_state.fire_geometry, client.game_state.environment)
+	if _footer.client == null:
+		_footer.setup(client, self)
+	_footer.render()
 
 
 # =====================================================================

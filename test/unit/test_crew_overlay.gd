@@ -393,6 +393,41 @@ func test_guns_readout_text() -> void:
 	assert_eq(g["why"], "S1 lost · S4 altering sail")
 
 
+# --- Ship card status box (planning panel rework C3-C6) ---
+
+func test_crew_caption_names_the_quality() -> void:
+	ship.crew_count = [3, 2, 3, 3] as Array[int]
+	ship.morale_rating = 4
+	assert_eq(CrewOverlayText.crew_caption(ship), "11/12 · Able Seaman, morale 4")
+
+
+func test_section_job_words_and_kinds() -> void:
+	assert_eq(CrewOverlayText.section_job(ship, 0, {}), {"text": "guns", "kind": "default"})
+	assert_eq(CrewOverlayText.section_job(ship, 3, {"code": "SAIL", "params": {"target": "FS"}}),
+		{"text": "sails", "kind": "task"})
+	assert_eq(CrewOverlayText.section_job(ship, 2, {"code": "T", "params": {}}), {"text": "braces", "kind": "task"})
+	assert_eq(CrewOverlayText.section_job(ship, 1, {"code": "FF", "params": {"fire": -1}}),
+		{"text": "fire watch", "kind": "fire"})
+	ship.crew_count = [0, 3, 3, 3] as Array[int]
+	assert_eq(CrewOverlayText.section_job(ship, 0, {}), {"text": "lost", "kind": "lost"})
+
+
+func test_marines_caption_carries_their_task() -> void:
+	assert_eq(CrewOverlayText.marines_caption(ship, {"assignments": {}}), "2/2 · muskets at the rail")
+	ship.marine_count = 0
+	assert_eq(CrewOverlayText.marines_caption(ship, {"assignments": {}}), "0/2 · lost")
+
+
+func test_gun_rows_per_side_with_dismounted_guns() -> void:
+	ship.guns_dismounted = [0, 2] as Array[int]
+	var rows := CrewOverlayText.gun_rows(ship)
+	assert_eq(rows.size(), 2)
+	assert_eq(rows[0], {"side": "Port", "lg": 6, "mg": 0, "cr": 4, "dismounted": 0, "status": "ready"})
+	assert_eq(rows[1]["side"], "Starboard")
+	assert_eq(rows[1]["dismounted"], 2)
+	assert_eq(rows[1]["status"], "2 dismounted · −2", "a dismounted gun is -1 on that side's fire")
+
+
 func test_guns_silent() -> void:
 	var a := {}
 	for s in range(4):

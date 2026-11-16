@@ -13,19 +13,6 @@ static func name_and_type(ship: ShipState) -> String:
 	return "%s — %s" % [ship.ship_name, type_name]
 
 
-## The ship card's detail lines: hull and rigging as boxes per section (as in the status panel),
-## the sail by name, and crew quality and morale spelled out.
-static func card_lines(ship: ShipState) -> Array[String]:
-	var t: Ship = ship.ship
-	var no_max: Array[int] = []
-	return [
-		ShipStatusPanel.box_line("Hull", ship.hull_current_hp, t.hull_hp if t else no_max),
-		ShipStatusPanel.box_line("Rigging", ship.rigging_current_hp, t.rigging_hp if t else no_max),
-		PlanningSailUi.sail_label(ship.sail_state),
-		"Crew quality %s, morale %d" % [ship.crew_quality, ship.morale_rating],
-	]
-
-
 ## "Movement: N of M left" — M is the most the ship can spend this turn and stays fixed for the plot.
 static func movement_line(remaining: int, maximum: int) -> String:
 	return "Movement: %d of %d left" % [remaining, maximum]

@@ -1,80 +1,74 @@
-class_name CrewSidePanel
-extends VBoxContainer
-## The planning panel's crew block for the selected ship (crew-tasks spec §4.6): hull and rigging
-## bars, the Guns readout, the collapsible DAMAGE (N) list and, while the overlay is open, the
-## roster (a row per section with a draggable counter). Ported from the prototype's left panel.
-## View only: reads through the CrewOverlayClient; drags land on the overlay's stations.
+class_name CrewOverlayFooter
+extends PanelContainer
+## The bottom strip of the crew & damage overlay (planning panel rework C7-C8): the roster of crew
+## sections (a row per section with a draggable counter, its task, progress and where it stands)
+## and the collapsible DAMAGE (N) list. Both moved here from the planning panel's old crew block.
+## View only: reads through the CrewOverlayClient; counters come from the overlay so drags and
+## clicks land on its stations.
 
 const Style = preload("res://scripts/ui/crew_overlay/crew_style.gd")
 
 var client: CrewOverlayClient = null
-var overlay: CrewOverlay = null  # drag previews and counter clicks go through the overlay
+var overlay: CrewOverlay = null
 
-var _status: VBoxContainer
-var _guns: VBoxContainer
+var _roster: HFlowContainer
 var _dmg_btn: Button
 var _dmg_list: VBoxContainer
 var _dmg_open := true
-var _roster_panel: VBoxContainer
-var _roster: VBoxContainer
-var _render_queued := false
-## Hidden while a move is plotted (the planning panel needs the room for its controls).
-var suppressed := false:
-	set(value):
-		suppressed = value
-		visible = not value and client != null and client.ship() != null
 
 
 func setup(p_client: CrewOverlayClient, p_overlay: CrewOverlay) -> void:
 	client = p_client
 	overlay = p_overlay
-	client.changed.connect(refresh)
-	client.open_changed.connect(func(_on): refresh())
-	refresh()
 
 
 func _ready() -> void:
-	name = "CrewSidePanel"
-	add_theme_constant_override("separation", Style.px(8))
+	name = "CrewOverlayFooter"
+	var sb := Style.box(Color.TRANSPARENT, Style.LINE, 0, 0)
+	sb.border_width_top = 1
+	sb.content_margin_left = Style.px(18)
+	sb.content_margin_right = Style.px(18)
+	sb.content_margin_top = Style.px(12)
+	sb.content_margin_bottom = Style.px(12)
+	add_theme_stylebox_override("panel", sb)
 	mouse_filter = MOUSE_FILTER_IGNORE
-	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", Style.box(Style.PANEL_2, Style.LINE, 1, 6, Style.px(10)))
-	card.mouse_filter = MOUSE_FILTER_IGNORE
-	add_child(card)
-	var cv := _vbox(6)
-	card.add_child(cv)
-	_status = _vbox(8)
-	cv.add_child(_status)
-	cv.add_child(_hrule())
-	cv.add_child(Style.caption("Guns"))
-	_guns = _vbox(3)
-	cv.add_child(_guns)
+	var h := _hbox(18)
+	add_child(h)
+
+	var rv := _vbox(6)
+	rv.size_flags_horizontal = SIZE_EXPAND_FILL
+	rv.size_flags_stretch_ratio = 3.0
+	rv.add_child(Style.caption("Crew sections · drag onto the deck"))
+	_roster = HFlowContainer.new()
+	_roster.name = "Roster"
+	_roster.add_theme_constant_override("h_separation", Style.px(6))
+	_roster.add_theme_constant_override("v_separation", Style.px(6))
+	_roster.mouse_filter = MOUSE_FILTER_IGNORE
+	rv.add_child(_roster)
+	h.add_child(rv)
 
 	var dmg := PanelContainer.new()
 	dmg.add_theme_stylebox_override("panel", Style.box(Style.PANEL_2, Style.LINE, 1, 6, Style.px(10)))
 	dmg.mouse_filter = MOUSE_FILTER_IGNORE
-	add_child(dmg)
+	dmg.size_flags_horizontal = SIZE_EXPAND_FILL
+	dmg.size_flags_stretch_ratio = 2.0
+	dmg.size_flags_vertical = SIZE_SHRINK_BEGIN
+	h.add_child(dmg)
 	var dv := _vbox(8)
 	dmg.add_child(dv)
 	_dmg_btn = Button.new()
+	_dmg_btn.name = "DamageToggle"
 	_dmg_btn.flat = true
 	_dmg_btn.focus_mode = FOCUS_NONE
 	_dmg_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_dmg_btn.add_theme_font_size_override("font_size", Style.px(11))
 	_dmg_btn.add_theme_font_override("font", Style.theme_font(Style.STRONG))
 	_dmg_btn.add_theme_color_override("font_color", Style.FG)
-	_dmg_btn.pressed.connect(func(): _dmg_open = not _dmg_open; refresh())
+	_dmg_btn.pressed.connect(func(): _dmg_open = not _dmg_open; render())
 	dv.add_child(_dmg_btn)
 	_dmg_list = _vbox(6)
+	_dmg_list.name = "DamageList"
 	dv.add_child(_dmg_list)
-
-	_roster_panel = _vbox(8)
-	_roster_panel.add_child(Style.caption("Crew sections · drag onto the deck"))
-	_roster = _vbox(6)
-	_roster.name = "Roster"
-	_roster_panel.add_child(_roster)
-	add_child(_roster_panel)
-	refresh()
 
 
 func _vbox(sep_css: float) -> VBoxContainer:
@@ -91,84 +85,15 @@ func _hbox(sep_css: float) -> HBoxContainer:
 	return h
 
 
-func _hrule() -> Control:
-	var r := ColorRect.new()
-	r.color = Style.LINE
-	r.custom_minimum_size.y = 1
-	r.mouse_filter = MOUSE_FILTER_IGNORE
-	return r
-
-
-func refresh() -> void:
-	if not _render_queued and is_inside_tree():
-		_render_queued = true
-		_render.call_deferred()
-
-
-func _render() -> void:
-	_render_queued = false
-	if client == null or _status == null:
+## Redraws both parts for the client's ship (called from CrewOverlay._render).
+func render() -> void:
+	if client == null or _roster == null:
 		return
 	var ship := client.ship()
-	visible = ship != null and not suppressed
 	if ship == null:
 		return
-	var plan := client.plan()
-	_render_status(ship)
-	_render_guns(ship, plan)
+	_render_roster(ship, client.plan())
 	_render_damage(ship)
-	_roster_panel.visible = client.is_open
-	if client.is_open:
-		_render_roster(ship, plan)
-
-
-func _render_status(ship: ShipState) -> void:
-	CrewOverlay._clear(_status)
-	if ship.ship == null:
-		return
-	for spec in [["Hull", ship.hull_current_hp, ship.ship.hull_hp, "hull", Style.DECK],
-			["Rigging", ship.rigging_current_hp, ship.ship.rigging_hp, "rigging", Color("#e4dbc4")]]:
-		var cur: Array = spec[1]
-		var mx: Array = spec[2]
-		var bar := _vbox(4)
-		var h := _hbox(6)
-		var b := Style.label(spec[0], 12, Style.FG, true)
-		b.size_flags_horizontal = SIZE_EXPAND_FILL
-		h.add_child(b)
-		h.add_child(Style.label(CrewOverlayText.boxes_caption(ship, spec[3]), 12, Style.MUTED))
-		bar.add_child(h)
-		var secs := _hbox(5)
-		for i in mini(cur.size(), mx.size()):
-			var empty := int(cur[i]) == 0
-			var sec := PanelContainer.new()
-			sec.add_theme_stylebox_override("panel", Style.box(Color.TRANSPARENT, Style.BAD if empty else Color.TRANSPARENT, 1 if empty else 0, 3, 2))
-			sec.size_flags_horizontal = SIZE_EXPAND_FILL
-			sec.mouse_filter = MOUSE_FILTER_PASS
-			sec.tooltip_text = "%s section %d: %d of %d boxes" % [spec[0], i + 1, int(cur[i]), int(mx[i])]
-			var segs := _hbox(2)
-			segs.add_theme_constant_override("separation", 2)
-			for k in int(mx[i]):
-				var seg := Panel.new()
-				seg.mouse_filter = MOUSE_FILTER_IGNORE
-				seg.size_flags_horizontal = SIZE_EXPAND_FILL
-				seg.custom_minimum_size.y = Style.px(11)
-				var lost: bool = k >= int(cur[i])
-				seg.add_theme_stylebox_override("panel", Style.box(Color.TRANSPARENT if lost else spec[4], Color("#4a5868") if lost else Color.TRANSPARENT, 1 if lost else 0, 2))
-				segs.add_child(seg)
-			sec.add_child(segs)
-			secs.add_child(sec)
-		bar.add_child(secs)
-		_status.add_child(bar)
-
-
-func _render_guns(ship: ShipState, plan: Dictionary) -> void:
-	CrewOverlay._clear(_guns)
-	var g := CrewOverlayText.guns_readout(ship, plan)
-	var big := Style.label(g["big"], 20, Style.BAD_TEXT if g["bad"] else Style.FG, true)
-	big.name = "GunsReadout"
-	_guns.add_child(big)
-	_guns.add_child(Style.label(g["why"], 12.5, Style.MUTED, false, true))
-	_guns.add_child(Style.label(g["marines"], 12.5, Style.MUTED, false, true))
 
 
 func _render_damage(ship: ShipState) -> void:
@@ -177,6 +102,8 @@ func _render_damage(ship: ShipState) -> void:
 	var items := CrewOverlayText.damage_lines(ship, int(turn) if turn != null else -1, client.plan())
 	_dmg_btn.text = ("▾ " if _dmg_open else "▸ ") + "DAMAGE (%d)" % items.size()
 	_dmg_list.visible = _dmg_open
+	if items.is_empty():
+		_dmg_list.add_child(Style.label("No damage.", 13, Style.MUTED))
 	for it in items:
 		var row := _hbox(8)
 		var dot := ColorRect.new()
@@ -203,6 +130,7 @@ func _render_roster(ship: ShipState, plan: Dictionary) -> void:
 		row.name = "Roster_" + CrewOverlayText.section_name(section)
 		row.add_theme_stylebox_override("panel", Style.box(Style.PANEL, Style.LINE, 1, 6, Style.px(4)))
 		row.mouse_filter = MOUSE_FILTER_PASS
+		row.custom_minimum_size.x = Style.px(230)
 		var hb := _hbox(10)
 		row.add_child(hb)
 		_roster.add_child(row)
@@ -235,7 +163,7 @@ func _render_roster(ship: ShipState, plan: Dictionary) -> void:
 			prog.add_child(Style.label("Turn %d of %d" % [pr["now"], pr["total"]], 13, Style.WARN, true))
 			var tb := _hbox(2)
 			tb.add_theme_constant_override("separation", 2)
-			tb.custom_minimum_size.x = Style.px(110)
+			tb.custom_minimum_size.x = Style.px(80)
 			tb.size_flags_vertical = SIZE_SHRINK_CENTER
 			for k in int(pr["total"]):
 				var seg := ColorRect.new()
