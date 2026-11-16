@@ -1436,9 +1436,11 @@ func _show_phase_panel(title: String, node_name: String, lines: Array[String], h
 
 func _on_fire_pressed(orders: Array) -> void:
 	var panel := fire_panel
+	var marine_orders: Array = []
 	if panel:
 		panel.fire_button.disabled = true  # no double submit while the server decides
-	var reason := _submit_fire_orders(orders)
+		marine_orders = panel.get_marine_orders()
+	var reason := _submit_fire_orders(orders, marine_orders)
 	if reason != "":
 		# Rejected: the panel stays open (re-enabled) with the reason.
 		if is_instance_valid(panel) and panel == fire_panel:
@@ -1446,14 +1448,14 @@ func _on_fire_pressed(orders: Array) -> void:
 		return
 	# Accepted: the declare step is over, so the panel must not stay interactive.
 	_close_fire_panel()
-	var lines: Array[String] = [orders_summary_line(orders)]
+	var lines: Array[String] = [orders_summary_line(orders, marine_orders.size())]
 	_show_combat_panel(lines)
 
 
 ## "Your orders: Fire 2 half broadsides." for the accepted order dictionaries (a split side is two
 ## half broadsides, not two broadsides).
-static func orders_summary_line(orders: Array) -> String:
-	return "Your orders: %s." % FirePanelScript.fire_button_text_for(orders)
+static func orders_summary_line(orders: Array, marine_count: int = 0) -> String:
+	return "Your orders: %s." % FirePanelScript.fire_button_text_with_marines(orders, marine_count)
 
 
 ## Remove the fire panel (if any) and its arcs. Safe to call on any path out of the declare step.
@@ -1466,10 +1468,10 @@ func _close_fire_panel() -> void:
 
 
 ## Returns "" when the server accepted the orders, otherwise its rejection reason.
-func _submit_fire_orders(orders: Array) -> String:
+func _submit_fire_orders(orders: Array, marine_orders: Array = []) -> String:
 	# Single-player: submit player 0's orders under the server guard  SCV:ALLOW
 	if GameState.is_server and GameState.phase_controller:
-		return GameState.phase_controller.player_submit_fire_orders(HUMAN_PLAYER_ID, orders)
+		return GameState.phase_controller.player_submit_fire_orders(HUMAN_PLAYER_ID, orders, marine_orders)
 	push_warning("Client fire submission not yet implemented - needs network layer")
 	return "fire orders can only be submitted on the server"
 

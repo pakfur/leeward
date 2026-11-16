@@ -16,6 +16,12 @@ extends Control
 ## order set, so the numbers and the breakdown are those the resolver will roll (two targets, half
 ## broadside, initial broadside once per broadside). No popups. The panel never mutates game
 ## state: pressing the main button only emits the assembled order dictionaries.
+## Marine fire (7.G, boarding spec §4.4): each own ship whose marines may fire gets a "Marines" block
+## with one row per adjacent enemy (MarineFireResolver.eligible_marine_shots, a pure query) showing
+## the Marine Fire column and the chance of a hit, plus "Hold musket fire"; one choice at most (7.G.2).
+## The best shot is chosen by default. A ship with a marine shot but no gun shot is still listed, so
+## the panel opens. The controller reads get_marine_orders() and sends them with the gun orders in
+## the same server request (player_submit_fire_orders).
 
 signal fire_pressed(orders: Array)
 ## A ship row was chosen (the controller draws that ship's arcs).
@@ -66,11 +72,63 @@ var _building: bool = false
 ## panel is open (fire is declared, not resolved), so a set's previews never go stale; _clear()
 ## empties it. Saves re-previewing every unchosen row's order set on each refresh.
 var _preview_cache: Dictionary = {}
+## ship_id -> {"options": Array[Dictionary] (MarineFireResolver previews), "target": String ("" holds),
+##             "default": String, "rows": {target_id: Button} ("" = hold row)}
+var _marines: Dictionary = {}
+var _marine_order: Array[String] = []
 
 
 # ============================================================================
 # Pure presentation helpers (unit tested)
 # ============================================================================
+
+## "Hermione — 7 marines, column 7-8, alongside −1 — hits on 4 or less (67%)" for a marine-fire
+## preview (MarineFireResolver.preview). A shot that cannot hit says so.
+static func marine_option_text(target_name: String, preview: Dictionary) -> String:
+	var parts: Array[String] = [target_name]
+	var head := "%s, column %s" % [PhaseEvents.plural(int(preview.get("boxes", 0)), "marine"),
+		str(preview.get("column", ""))]
+	for m in preview.get("modifiers", []):
+		var v := int(m.get("value", 0))
+		head += ", %s %s%d" % [PhaseEvents.modifier_label(str(m.get("name", "?"))), "−" if v < 0 else "+", absi(v)]
+	parts.append(head)
+	var hit_max := int(preview.get("hit_max", 0))
+	if hit_max <= 0:
+		parts.append("cannot hit")
+	else:
+		var odds := "hits on %s (%d%%)" % ["any roll" if hit_max >= 6 else "%d or less" % hit_max,
+			int(preview.get("chance", 0))]
+		if int(preview.get("most", 0)) > 1:
+			odds += ", up to %d boxes" % int(preview["most"])
+		parts.append(odds)
+	return SEPARATOR.join(parts)
+
+
+## The default marine target among previews: the best chance of a hit, then the lower DRM total,
+## then the target id; "" when no shot can hit.
+static func default_marine_target(previews: Array) -> String:
+	var best: Dictionary = {}
+	for p: Dictionary in previews:
+		if int(p.get("hit_max", 0)) <= 0:
+			continue
+		if best.is_empty() or int(p["hit_max"]) > int(best["hit_max"]) \
+				or (int(p["hit_max"]) == int(best["hit_max"]) and int(p["modifier"]) < int(best["modifier"])) \
+				or (int(p["hit_max"]) == int(best["hit_max"]) and int(p["modifier"]) == int(best["modifier"])
+					and str(p["target_id"]) < str(best["target_id"])):
+			best = p
+	return "" if best.is_empty() else str(best["target_id"])
+
+
+## The main button's text with marine fire: "Fire 1 broadside and muskets", "Fire muskets",
+## or fire_button_text_for() alone when no marines fire.
+static func fire_button_text_with_marines(orders: Array, marine_count: int) -> String:
+	var guns := fire_button_text_for(orders)
+	if marine_count <= 0:
+		return guns
+	if orders.is_empty():
+		return "Fire muskets"
+	return guns + " and muskets"
+
 
 ## The footer under the ship list, matching the current choice.
 static func footer_text(order_count: int, changed: bool) -> String:
@@ -462,27 +520,40 @@ func setup(ship_ids: Array) -> int:
 	_clear()
 	_building = true
 	var calculator: GunneryCalculator = GameState.gunnery_calculator
+	var marines = GameState.get("marine_fire_resolver")
 	var no_shot: Array[ShipState] = []
+	var marine_only: Array[ShipState] = []
 	for ship_id in ship_ids:
 		var ship_state: ShipState = GameState.get_ship(ship_id)
 		if ship_state == null:
 			continue
 		var options := options_by_target(calculator.eligible_shots(ship_id))
+		var marine_shots: Array = marines.eligible_marine_shots(ship_id) if marines != null else []
 		if options.is_empty():
 			no_shot.append(ship_state)
+			if not marine_shots.is_empty():
+				marine_only.append(ship_state)
 			continue
-		_add_ship(ship_state, options)
+		_add_ship(ship_state, options, marine_shots)
 	var grid: HexGrid = GameState.fire_geometry.hex_grid if GameState.fire_geometry else null
 	for ship_state in no_shot:
 		_add_no_shot_row(no_shot_line(ship_state.ship_name,
 			ship_no_shot_reason(ship_state, GameState.get_all_ships(), calculator, grid)))
+	for ship_state in marine_only:
+		_add_marine_only_ship(ship_state, marines.eligible_marine_shots(ship_state.ship_id))
 	_building = false
 	for ship_id in _ship_order:
 		_refresh_ship(ship_id)
+	for ship_id in _marine_order:
+		_refresh_marines(ship_id)
 	_update_fire_button()
 	if not _ship_order.is_empty():
 		focus_ship(_ship_order[0])
-	return _ship_order.size()
+	var listed := _ship_order.size()
+	for ship_id in _marine_order:
+		if not _ships.has(ship_id):
+			listed += 1
+	return listed
 
 
 ## The greyed no-shot lines, in list order.
@@ -529,6 +600,33 @@ func get_batteries(ship_id: String, side: int) -> Array[String]:
 	if state["stern"] != "":
 		batteries.append(GunneryTypes.BATTERY_STERN)
 	return batteries
+
+
+## Marine fire orders as {ship_id, target_id} dictionaries, one per ship whose marines fire.
+func get_marine_orders() -> Array:
+	var orders: Array = []
+	for ship_id in _marine_order:
+		var target := str(_marines[ship_id]["target"])
+		if target != "":
+			orders.append({"ship_id": ship_id, "target_id": target})
+	return orders
+
+
+## The marine target chosen for a ship ("" while its marines hold fire or it has no block).
+func get_marine_target(ship_id: String) -> String:
+	return str(_marines[ship_id]["target"]) if _marines.has(ship_id) else ""
+
+
+## Pick the marines' target (7.G.2: one ship); "" holds musket fire. Same effect as clicking the row.
+func select_marine_target(ship_id: String, target_id: String) -> void:
+	if not _marines.has(ship_id):
+		return
+	if target_id != "" and not (_marines[ship_id]["rows"] as Dictionary).has(target_id):
+		return
+	_marines[ship_id]["target"] = target_id
+	_refresh_marines(ship_id)
+	_update_fire_button()
+	error_label.visible = false
 
 
 func get_all_orders() -> Array:
@@ -590,6 +688,9 @@ func show_submitted() -> void:
 				button.disabled = true
 			w["high"].disabled = true
 			w["dismantling"].disabled = true
+	for ship_id in _marine_order:
+		for button: Button in (_marines[ship_id]["rows"] as Dictionary).values():
+			button.disabled = true
 
 
 func _clear() -> void:
@@ -598,6 +699,8 @@ func _clear() -> void:
 	_ships.clear()
 	_ship_order.clear()
 	_preview_cache.clear()
+	_marines.clear()
+	_marine_order.clear()
 	_focused_ship_id = ""
 	_group = ButtonGroup.new()
 	error_label.visible = false
@@ -606,7 +709,7 @@ func _clear() -> void:
 	instructions_label.text = footer_text(1, false)
 
 
-func _add_ship(ship_state: ShipState, options: Dictionary) -> void:
+func _add_ship(ship_state: ShipState, options: Dictionary, marine_shots: Array = []) -> void:
 	var ship_id := ship_state.ship_id
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 4)
@@ -650,7 +753,71 @@ func _add_ship(ship_state: ShipState, options: Dictionary) -> void:
 		entry["sides"][side] = {"bow": start["bow"], "stern": start["stern"],
 			"want_high": false, "want_dismantling": false}
 		entry["widgets"][side] = _build_side(box, ship_id, side, display_order(ranked))
+	if not marine_shots.is_empty():
+		_build_marines(box, ship_id, marine_shots)
 	box.add_child(HSeparator.new())
+
+
+## A ship with a marine shot but no gun shot: its name and its Marines block (its no-shot line for
+## the guns is listed with the others).
+func _add_marine_only_ship(ship_state: ShipState, marine_shots: Array) -> void:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	ship_list_container.add_child(box)
+	var header := Label.new()
+	header.text = PlanningText.name_and_type(ship_state)
+	box.add_child(header)
+	_build_marines(box, ship_state.ship_id, marine_shots)
+	box.add_child(HSeparator.new())
+
+
+## The "Marines" block: one row per adjacent enemy the marines may fire on, then "Hold musket fire".
+func _build_marines(parent: VBoxContainer, ship_id: String, marine_shots: Array) -> void:
+	var title := Label.new()
+	title.text = "Marines (muskets, adjacent ships only)"
+	parent.add_child(title)
+	var rows := VBoxContainer.new()
+	rows.name = "MarineRows"
+	rows.add_theme_constant_override("separation", 2)
+	parent.add_child(rows)
+	var buttons := {}
+	for p: Dictionary in marine_shots:
+		var target_id := str(p["target_id"])
+		buttons[target_id] = _marine_row(rows, ship_id, target_id)
+	buttons[""] = _marine_row(rows, ship_id, "")
+	var default := default_marine_target(marine_shots)
+	_marines[ship_id] = {"options": marine_shots, "target": default, "default": default, "rows": buttons}
+	_marine_order.append(ship_id)
+
+
+func _marine_row(parent: VBoxContainer, ship_id: String, target_id: String) -> Button:
+	var button := Button.new()
+	button.toggle_mode = true
+	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	button.theme_type_variation = &"SecondaryButton"
+	button.focus_mode = Control.FOCUS_NONE
+	button.pressed.connect(func(): select_marine_target(ship_id, target_id))
+	button.set_meta("marine_target_id", target_id)
+	parent.add_child(button)
+	return button
+
+
+func _refresh_marines(ship_id: String) -> void:
+	var entry: Dictionary = _marines[ship_id]
+	var names := target_names(GameState.get_all_ships())
+	var by_target := {}
+	for p: Dictionary in entry["options"]:
+		by_target[str(p["target_id"])] = p
+	for target_id: String in entry["rows"]:
+		var button: Button = entry["rows"][target_id]
+		var chosen := str(entry["target"]) == target_id
+		button.set_pressed_no_signal(chosen)
+		if target_id == "":
+			button.text = row_marker(chosen) + "Hold musket fire"
+		else:
+			button.text = row_marker(chosen) + marine_option_text(str(names.get(target_id, target_id)),
+				by_target.get(target_id, {}))
 
 
 ## A greyed, unclickable line for an own ship with no shot this turn.
@@ -801,8 +968,9 @@ func _on_side_changed(ship_id: String, _side: int) -> void:
 func _update_fire_button() -> void:
 	if fire_button.text != "Orders submitted":
 		var orders := get_all_orders()
-		fire_button.text = fire_button_text_for(orders)
-		instructions_label.text = footer_text(orders.size(), targets_changed())
+		var marine_orders := get_marine_orders()
+		fire_button.text = fire_button_text_with_marines(orders, marine_orders.size())
+		instructions_label.text = footer_text(orders.size() + marine_orders.size(), targets_changed())
 	if two_target_label:
 		two_target_label.text = two_target_note(DataManager.combat_tables.flat_modifier("two_targets")) \
 			if DataManager.combat_tables else ""
@@ -818,6 +986,9 @@ func targets_changed() -> bool:
 			for key in ["bow", "stern"]:
 				if entry["sides"][side][key] != default[key]:
 					return true
+	for ship_id in _marine_order:
+		if str(_marines[ship_id]["target"]) != str(_marines[ship_id]["default"]):
+			return true
 	return false
 
 

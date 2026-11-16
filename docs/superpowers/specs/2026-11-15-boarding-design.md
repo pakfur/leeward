@@ -344,6 +344,22 @@ Each phase: GUT tests with `ScriptedDice`, `make test`, both validators, the `fe
 - **B5 Prizes.** The prize-crew size choice, the prize's overlay and its boarding and repair tasks, a prize being boarded during RO (10.G.5), 10.H.4 recapture, 1.G.8 BGN, the status-panel lines.
 - **B6 Multi-ship (10.F)** and the sixth-ship rule; log wording; CLAUDE.md ("Not implemented", the new controllers and statuses); `feature_diff.md` §1 item 5 and §2.1 → **Fixed**, §5 lines; `scv-reviewer`.
 
+**B1 as built (2026-11-15).**
+- The three tables are as §2.1, checked against the scans (p.109, p.110). `marine_fire_table.json` stores `columns` as `[min, max]` pairs (`[11, null]` = 11+) and rows `"1"` (≤ 1) … `"6"` (6+), 0 for the chart's dot; its DRMs are `grappled_or_fouled`, `cq_e_f`, `cq_g`, `target_boarders`, `larger_class`, `optional_range_2`.
+- Extra `CombatTables` helpers beyond §2.1: `boarding_loss_bcf(pct, roller_tbcf)` (static; nearest BCF, halves up, integers only, 0.4 #1), `marine_fire_column(boxes)`, `marine_fire_column_label(boxes)` ("7-8") and `marine_fire_drm(name)`. `boarding_row(dr)` returns the row plus its clamped `dr`. `boarding_class_drm` gives class 4 defenders 0 (no chart line).
+- The FB/BR/BA/BD rows are data only: no handler is registered, so nothing can plot them before B4. `validate_combat.py` checks them, the three tables and the ungrappling DRMs (rows 4–12, rising %, odds ladder strictly rising by +1 with 1:1 = 0, the class and prize values, marine-fire hits never rising with the die nor falling with more boxes, 6+ never hits).
+
+**B2 as built (2026-11-15).**
+- **Request path:** marine orders are the optional third argument of `player_submit_fire_orders(player_id, orders, marine_orders := [])`, `{ship_id, target_id}` dictionaries, validated with the gun orders (nothing stored on rejection). The fire panel's `fire_pressed` signal is unchanged; `GameController` reads `panel.get_marine_orders()`.
+- **Where the queries live:** on `MarineFireResolver` (`preview`, `eligible_marine_shots`, `any_eligible_marine_shot`, `validate_orders`), not on `GunneryCalculator`; eligibility is the pure static `FireRules.marine_error(firer, target, range)` plus `marine_orders_error` (7.G.2). The resolver is split into `prepare(orders)` (before the gunfire: boxes and DRMs at the start of the step, 7.G.5) and `resolve(shots, phase)` (after all gunfire dice, §3.3).
+- **Targets:** struck and destroyed ships are refused, as for gunfire. B4's `is_targetable()` should replace the test in `marine_error` so prizes become targets.
+- **Crew losses:** new `DamageController.apply_crew_losses(ship_id, count, cause, phase, source_id, damage_cause)` rolls a Crew Loss d6 per box only while the target has both crew types (§3.3); gunfire's `apply_hits` still rolls a d6 per box even with one type (unchanged, so gunfire dice orders stay as they were). The row is always "All Other Causes" until B4 adds 10.D.7 (`BoardingRules.crew_loss_cause`).
+- **DRMs not yet live:** "target has boarders" reads live FB/BR/BA tasks through `MarineFireResolver.has_boarders` (B4 should point it at `ShipState.has_boarders()`); "grappled" reads `grappled_with` when that field exists (B3). The optional range 2 is not offered.
+- **Panel:** the default marine target is the best chance of a hit, then the lower DRM total, then the target id; rows read "Hermione — 7 marines, column 7-8, alongside −1 — hits on 5 or less (83%)". The main button reads "Fire muskets" / "… and muskets". No HOLD_FIRE line is logged for marines that could fire and did not.
+- **AI:** as §3.6, and it never fires a shot that cannot mark out a box on any roll.
+- **Overlay:** the Marine fire station note is always shown: "Adjacent enemy: Hermione. Targets are chosen with the guns." or "No enemy alongside."; with Automatic holding the marines back the held-back reason comes first. `CrewRules.context` gains `adjacent_enemies` (names, by ship_id).
+- **Log:** MARINE_FIRE `{boxes, column, modifiers, modifier, d6, total, crew}` (appended to `PhaseEvents.Type`), "Vengeance's marines fire on Hermione (7 boxes, column 7-8) — d6 5, alongside −1 → 4: 1 crew box", then DAMAGE with cause `marine_fire` ("Hermione loses 1 sailor to musketry").
+
 ---
 
 ## 6. Tests (expected values from the rules and charts)

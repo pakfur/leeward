@@ -216,3 +216,120 @@ func test_poor_maneuvering_numbers() -> void:
 func test_poor_maneuvering_unknown_input() -> void:
 	assert_eq(ct.poor_maneuvering_number("H", "a"), -1)
 	assert_push_error("poor maneuvering")
+
+# --- Boarding Combat and Skill Factors (p.109), boarding spec B1 ---
+
+func test_bcf_skill_factors() -> void:
+	# Skill Factors: BCF S / M per crew box.
+	assert_eq(ct.bcf("A", false), 8)
+	assert_eq(ct.bcf("A", true), 10)
+	assert_eq(ct.bcf("D", false), 5)
+	assert_eq(ct.bcf("D", true), 7)
+	assert_eq(ct.bcf("G", false), 2)
+	assert_eq(ct.bcf("G", true), 4)
+
+func test_boarding_rows_pct_and_specials() -> void:
+	# Boarding Combat (2d6): <=4 2 %, 7 8 %, 8 10 %, 9 15 %, >=12 30 %; special results by roller.
+	assert_eq(ct.boarding_row(2)["pct"], 2, "<= 4 row")
+	assert_eq(ct.boarding_row(4)["defender"], "none")
+	assert_eq(ct.boarding_row(5)["defender"], "repulse_if_lt_mr", "5-7: d10 < attacker's MR")
+	assert_eq(ct.boarding_row(7)["pct"], 8)
+	assert_eq(ct.boarding_row(7)["attacker"], "none")
+	assert_eq(ct.boarding_row(8)["pct"], 10)
+	assert_eq(ct.boarding_row(8)["defender"], "repulse_mc1")
+	assert_eq(ct.boarding_row(9)["pct"], 15)
+	assert_eq(ct.boarding_row(9)["attacker"], "capture_if_lt_mr", "9-10: d10 < defender's MR")
+	assert_eq(ct.boarding_row(10)["pct"], 20)
+	assert_eq(ct.boarding_row(11)["attacker"], "capture")
+	assert_eq(ct.boarding_row(11)["defender"], "repulse_mc2")
+	assert_eq(ct.boarding_row(15)["pct"], 30, ">= 12 row")
+	assert_eq(ct.boarding_row(15)["dr"], 12)
+
+func test_boarding_loss_rounds_to_nearest_bcf() -> void:
+	# 10.D.4 / spec §1.4 and test 29: 8 % of 62 = 4.96 -> 5; 10 % of 44 = 4.4 -> 4.
+	assert_eq(CombatTables.boarding_loss_bcf(8, 62), 5)
+	assert_eq(CombatTables.boarding_loss_bcf(10, 44), 4)
+	# Spec 0.4 #1 and test 33: halves round up, 10 % of 45 = 4.5 -> 5.
+	assert_eq(CombatTables.boarding_loss_bcf(10, 45), 5)
+
+func test_odds_drm_rounds_down_to_listed_ratio() -> void:
+	# 10.D.2, spec test 27: 62:44 -> 1:1 = 0; 44:62 -> 2:3 = -1; 40:10 -> 4:1 = +4; 10:45 -> <=1:4 = -4.
+	assert_eq(ct.odds_drm(62, 44), 0)
+	assert_eq(ct.odds_drm(44, 62), -1)
+	assert_eq(ct.odds_drm(40, 10), 4)
+	assert_eq(ct.odds_drm(10, 45), -4)
+	# Exact ratios: 3:2 +1, 2:1 +2, 1:2 -2, 1:3 -3.
+	assert_eq(ct.odds_drm(30, 20), 1)
+	assert_eq(ct.odds_drm(20, 10), 2)
+	assert_eq(ct.odds_drm(10, 20), -2)
+	assert_eq(ct.odds_drm(10, 30), -3)
+	assert_eq(ct.odds_drm(29, 20), 0, "just under 3:2 rounds down to 1:1")
+
+func test_boarding_class_drm() -> void:
+	# Other DRMs, spec test 28: a frigate (3) boarding a 74 (2): -2 -1 = -3; a 74 boarding a frigate: -1 +1 = 0.
+	assert_eq(ct.boarding_class_drm(2, 3), -3)
+	assert_eq(ct.boarding_class_drm(3, 2), 0)
+	assert_eq(ct.boarding_class_drm(2, 2), -2, "same class: the class line only")
+	assert_eq(ct.boarding_class_drm(1, 3), -5, "class 1 defender two classes larger")
+
+func test_prize_minimum_by_class() -> void:
+	# 10.G.7: class 1 = 4 boxes, 2 = 3, 3 = 2, 4 = 1.
+	assert_eq(ct.prize_minimum(1), 4)
+	assert_eq(ct.prize_minimum(2), 3)
+	assert_eq(ct.prize_minimum(3), 2)
+	assert_eq(ct.prize_minimum(4), 1)
+
+func test_grappling_table() -> void:
+	# Grappling (d10): <= 2 succeeds; DRMs fouled -1, tow -1, marines not avail. +1, WS 4 +1, target did not move -1.
+	assert_eq(ct.grapple_success_max(), 2)
+	assert_eq(ct.grapple_drm("fouled"), -1)
+	assert_eq(ct.grapple_drm("towing"), -1)
+	assert_eq(ct.grapple_drm("marines_unavailable"), 1)
+	assert_eq(ct.grapple_drm("ws4"), 1)
+	assert_eq(ct.grapple_drm("target_did_not_move"), -1)
+
+func test_ungrappling_drms() -> void:
+	# Unfouling, DRMs (Ungrappling Only): each CQ > enemy -1, friendly ships -2, WS 4 -1.
+	assert_eq(ct.ungrapple_drm("per_cq_better"), -1)
+	assert_eq(ct.ungrapple_drm("friendly"), -2)
+	assert_eq(ct.ungrapple_drm("ws4"), -1)
+
+func test_boarding_crew_tasks() -> void:
+	# 10.B-10.C: FB, BR, BA, BD take one section for one g-t.
+	for code in ["FB", "BR", "BA", "BD"]:
+		assert_eq(ct.task_sections(code), [1, 1], code)
+		assert_eq(ct.task_turns(code, "D"), 1, code)
+
+# --- Marine Fire (d6, p.110), boarding spec B1 ---
+
+func test_marine_fire_table_cells() -> void:
+	# <= 1: 1 box in every column, 2 at 11+.
+	assert_eq(ct.marine_fire_result(1, 1), 1)
+	assert_eq(ct.marine_fire_result(-2, 11), 2, "a roll below 1 uses the <= 1 row")
+	assert_eq(ct.marine_fire_result(1, 10), 1)
+	# Spec test 48: 7 boxes, modified 4 -> column 7-8: 1 box.
+	assert_eq(ct.marine_fire_result(4, 7), 1)
+	assert_eq(ct.marine_fire_result(5, 8), 0)
+	# Spec test 49: 2 boxes, 2 -> no effect; 11 boxes, 3 -> 1 box.
+	assert_eq(ct.marine_fire_result(2, 2), 0)
+	assert_eq(ct.marine_fire_result(3, 11), 1)
+	assert_eq(ct.marine_fire_result(5, 9), 1)
+	assert_eq(ct.marine_fire_result(6, 12), 0, "6+ never hits")
+	assert_eq(ct.marine_fire_result(9, 12), 0)
+	assert_eq(ct.marine_fire_result(1, 0), 0, "no marines, no fire")
+
+func test_marine_fire_columns() -> void:
+	assert_eq(ct.marine_fire_column_label(1), "1-2")
+	assert_eq(ct.marine_fire_column_label(4), "3-4")
+	assert_eq(ct.marine_fire_column_label(10), "9-10")
+	assert_eq(ct.marine_fire_column_label(14), "11+")
+	assert_eq(ct.marine_fire_column_label(0), "")
+
+func test_marine_fire_drms() -> void:
+	# Marine Fire DRMs: grappled/fouled -1, CQ E/F +1, CQ G +2, target boarders -1, larger class -1, [opt] range 2 +1.
+	assert_eq(ct.marine_fire_drm("grappled_or_fouled"), -1)
+	assert_eq(ct.marine_fire_drm("cq_e_f"), 1)
+	assert_eq(ct.marine_fire_drm("cq_g"), 2)
+	assert_eq(ct.marine_fire_drm("target_boarders"), -1)
+	assert_eq(ct.marine_fire_drm("larger_class"), -1)
+	assert_eq(ct.marine_fire_drm("optional_range_2"), 1)

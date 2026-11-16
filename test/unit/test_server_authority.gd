@@ -1,7 +1,7 @@
 extends GutTest
 ## Server authority over game state (CLAUDE.md "Server Authority"): view-side code
 ## (scripts/ui, scripts/view, scripts/core) reads state and sends requests that the server
-## validates (player_submit_*, player_clear_movement, player_plot_crew, player_set_crew_auto,
+## validates (player_submit_*, including player_submit_fire_orders with its marine fire orders, player_clear_movement, player_plot_crew, player_set_crew_auto,
 ## player_plot_sail_change, dev_commands.*, including dev_commands.start_fire and
 ## dev_commands.damage_ship). It never calls a state mutator or writes a ShipState field itself.
 ## This test scans the source so a violation fails `make test`.
@@ -38,6 +38,15 @@ const FORBIDDEN := [
 	["\\bFireController\\.new\\b", "a FireController made in view code"],
 	["(?<!dev_commands\\.)\\b(start_fire|explode|add_fire|remove_fire|clear_fires|set_explosion_checks)\\(",
 			"a fire mutator called from view code"],
+	# gunfire and marine fire (7.G): the view previews through GunneryCalculator and
+	# MarineFireResolver's queries (preview, eligible_marine_shots, any_eligible_marine_shot,
+	# validate_orders); orders go through phase_controller.player_submit_fire_orders
+	["\\bmarine_fire_resolver\\.(?!preview\\(|eligible_marine_shots\\(|any_eligible_marine_shot\\(|validate_orders\\()",
+			"a MarineFireResolver mutator called from view code (use player_submit_fire_orders)"],
+	["\\b(MarineFireResolver|GunneryResolver)\\.new\\b", "a fire resolver made in view code"],
+	["\\bgunnery_resolver\\.", "a GunneryResolver call from view code (use player_submit_fire_orders)"],
+	["\\b(apply_crew_losses|apply_crew_boxes|remove_crew_box)\\(", "a crew-loss mutator called from view code"],
+	["\\.(prepare|resolve)\\(", "a resolver step run from view code"],
 	["\\.(fire_list|crew_tasks|critical_effects|plotted_sections)\\.(append|append_array|clear|erase|remove_at|push_back|push_front|pop_back|pop_front|insert|resize|sort|sort_custom|fill)\\(",
 			"a ShipState array changed in place from view code"],
 	["\\b(_?ship|ship_state|ss|state|s)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots|crew_auto|plotted_sections|task_seq|fire_list|fire_seq|explosion_checks|checked_sections|mp_used_this_turn)\\s*(=|\\+=|-=)[^=]",
@@ -88,3 +97,41 @@ func test_dev_commands_refuse_unknown_property() -> void:
 		return
 	var sid: String = GameState.ships.keys()[0]
 	assert_ne(dc.set_ship_property(sid, "hull_current_hp", 0), "", "an unlisted property is refused")
+
+
+func _dev_ship(id: String, player: int, hex: Vector2i, facing: int) -> ShipState:
+	var state := ShipState.new()
+	state.ship = Ship.from_dict({"ship_id": id, "player_id": player, "ship_name": id,
+		"ship_type": "frigate_38", "class": 3, "crew_count": [3, 3, 3, 3], "marine_count": 2,
+		"rigging_hp": [5, 5, 6, 6], "hull_hp": [5, 5, 5, 6]})
+	state.hex_position = hex
+	state.facing = facing
+	state.rigging_current_hp = [5, 5, 6, 6] as Array[int]
+	state.hull_current_hp = [5, 5, 5, 6] as Array[int]
+	state.crew_count = [3, 3, 3, 3] as Array[int]
+	GameState.ships[id] = state
+	GameState.ships_by_player[player].append(id)
+	return state
+
+
+func test_dev_place_ship_moves_through_the_server_and_refuses_held_hexes() -> void:
+	var old_ships: Dictionary = GameState.ships.duplicate()
+	var old_by_player: Dictionary = GameState.ships_by_player.duplicate(true)
+	var old_scenario: Dictionary = GameState.active_scenario
+	GameState.ships = {}
+	GameState.ships_by_player = {0: [], 1: []}
+	GameState.active_scenario = {"map_bounds": {"width": 20, "height": 20}}
+	var a := _dev_ship("dev_a", 0, Vector2i.ZERO, 0)
+	_dev_ship("dev_b", 1, Vector2i(4, 4), 0)
+	var dc := DevCommands.new(GameState)
+	assert_ne(dc.place_ship("nope", Vector2i.ZERO, 0), "", "an unknown ship is refused")
+	assert_string_contains(dc.place_ship("dev_a", Vector2i(4, 4), 0), "held by", "a ship's hex is refused")
+	assert_string_contains(dc.place_ship("dev_a", Vector2i(5, 4), 0), "held by", "the stern on a ship is refused")
+	assert_string_contains(dc.place_ship("dev_a", Vector2i(30, 0), 0), "off the map")
+	assert_ne(dc.place_ship("dev_a", Vector2i.ZERO, 7), "", "a bad facing is refused")
+	assert_eq(dc.place_ship("dev_a", Vector2i(3, 5), 3), "", "alongside dev_b")
+	assert_eq(a.hex_position, Vector2i(3, 5))
+	assert_eq(a.facing, 3)
+	GameState.ships = old_ships
+	GameState.ships_by_player = old_by_player
+	GameState.active_scenario = old_scenario

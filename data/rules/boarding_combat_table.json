@@ -1,0 +1,17 @@
+{
+  "_doc": "Boarding Combat (2d6, 1997 chart p.109). rows: modified 2d6 DR ('4' = <=4 ... '12' = >=12) -> pct = enemy loses this % of the ROLLER's TBCF (fractions round to the nearest whole BCF); attacker = special result when rolled by the attacker ('none', 'capture_if_lt_mr' = roll d10, if DR < defender's MR the defending ship is captured, 'capture'); defender = special result when rolled by the defender ('none', 'repulse_if_lt_mr' = roll d10, if DR < attacker's MR the attacker is repulsed, 'repulse_mc1' / 'repulse_mc2' = attacker repulsed and takes 1 / 2 MC). odds_drm: TBCF odds DRMs (F:E, applies to both sides) as [num, den, drm] from 1:4 up to 4:1; a ratio is rounded down to the next lower listed ratio, below 1:4 is -4, and 1:1 = 0 (left off the printed chart). class_drm: Other DRMs (attacker only): defending ship class 1/2/3, plus per_class_larger per class the defender is larger (lower class #), per_class_smaller per class it is smaller. prize_minimum: prize crew minimum boxes by the prize's class (10.G.7).",
+  "rows": {
+    "4":  {"pct": 2,  "attacker": "none",             "defender": "none"},
+    "5":  {"pct": 4,  "attacker": "none",             "defender": "repulse_if_lt_mr"},
+    "6":  {"pct": 6,  "attacker": "none",             "defender": "repulse_if_lt_mr"},
+    "7":  {"pct": 8,  "attacker": "none",             "defender": "repulse_if_lt_mr"},
+    "8":  {"pct": 10, "attacker": "none",             "defender": "repulse_mc1"},
+    "9":  {"pct": 15, "attacker": "capture_if_lt_mr", "defender": "repulse_mc1"},
+    "10": {"pct": 20, "attacker": "capture_if_lt_mr", "defender": "repulse_mc1"},
+    "11": {"pct": 25, "attacker": "capture",          "defender": "repulse_mc2"},
+    "12": {"pct": 30, "attacker": "capture",          "defender": "repulse_mc2"}
+  },
+  "odds_drm": [[1, 4, -4], [1, 3, -3], [1, 2, -2], [2, 3, -1], [1, 1, 0], [3, 2, 1], [2, 1, 2], [3, 1, 3], [4, 1, 4]],
+  "class_drm": {"1": -3, "2": -2, "3": -1, "per_class_larger": -1, "per_class_smaller": 1},
+  "prize_minimum": {"1": 4, "2": 3, "3": 2, "4": 1}
+}

@@ -266,6 +266,10 @@ def check_small_tables(tables, r):
         arr = uf.get("success_max")
         if not isinstance(arr, list) or len(arr) != 3 or arr != sorted(arr):
             r.err("unfouling_table.json", "success_max must be 3 non-decreasing ints")
+        ug = uf.get("ungrapple_drm")
+        if ug != {"per_cq_better": -1, "friendly": -2, "ws4": -1}:
+            r.err("unfouling_table.json.ungrapple_drm",
+                  "must be per_cq_better -1, friendly -2, ws4 -1 (Ungrappling Only DRMs, p.109)")
         mu = uf.get("marines_unavailable")
         if mu != 1:
             r.err("unfouling_table.json", "marines_unavailable must be 1 (chart DRM 'Marines not avail.: +1')")
@@ -401,6 +405,10 @@ def check_crew_tasks(t, r):
             v = next(iter(turns.values()))
             if not isinstance(v, int) or v < 1:
                 r.err(path, "turn count must be an int >= 1")
+    for code in ("FB", "BR", "BA", "BD"):
+        row = t.get(code)
+        if not isinstance(row, dict) or row.get("sections") != [1, 1] or row.get("turns") != {"fixed": 1}:
+            r.err(f"{name}.{code}", "boarding tasks must be sections [1, 1], turns {fixed: 1} (10.B-10.C)")
     for code in ("SAIL_MAJOR", "SAIL_MINOR"):
         if code not in t:
             r.err(name, f"missing {code}")
@@ -431,6 +439,120 @@ def check_fire_table(t, r):
         prev = row
 
 
+BOARDING_ROWS = [str(n) for n in range(4, 13)]
+ATTACKER_SPECIALS = {"none", "capture_if_lt_mr", "capture"}
+DEFENDER_SPECIALS = {"none", "repulse_if_lt_mr", "repulse_mc1", "repulse_mc2"}
+
+
+def is_int(v):
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def check_boarding(t, r):
+    name = "boarding_combat_table.json"
+    rows = t.get("rows")
+    if not isinstance(rows, dict) or sorted(rows, key=int) != BOARDING_ROWS:
+        r.err(f"{name}.rows", "must have rows 4-12 (<=4 ... >=12)")
+        rows = rows if isinstance(rows, dict) else {}
+    prev = None
+    for key in BOARDING_ROWS:
+        row = rows.get(key)
+        if not isinstance(row, dict):
+            continue
+        pct = row.get("pct")
+        if not is_int(pct) or pct <= 0:
+            r.err(f"{name}.rows.{key}", "pct must be a positive int")
+        elif prev is not None and pct <= prev:
+            r.err(f"{name}.rows.{key}", f"pct {pct} must rise with the roll (previous {prev})")
+        else:
+            prev = pct
+        if row.get("attacker") not in ATTACKER_SPECIALS:
+            r.err(f"{name}.rows.{key}", f"attacker must be one of {sorted(ATTACKER_SPECIALS)}")
+        if row.get("defender") not in DEFENDER_SPECIALS:
+            r.err(f"{name}.rows.{key}", f"defender must be one of {sorted(DEFENDER_SPECIALS)}")
+    ladder = t.get("odds_drm")
+    if not isinstance(ladder, list) or not ladder:
+        r.err(f"{name}.odds_drm", "must be a non-empty list of [num, den, drm]")
+    else:
+        prev_ratio = None
+        prev_drm = None
+        saw_even = False
+        for i, step in enumerate(ladder):
+            p = f"{name}.odds_drm[{i}]"
+            if not (isinstance(step, list) and len(step) == 3 and all(is_int(v) for v in step)
+                    and step[0] > 0 and step[1] > 0):
+                r.err(p, "must be [num, den, drm] with positive num and den")
+                prev_ratio = None
+                continue
+            ratio = (step[0], step[1])
+            if prev_ratio is not None and ratio[0] * prev_ratio[1] <= prev_ratio[0] * ratio[1]:
+                r.err(p, "ratios must rise strictly (1:4 first, 4:1 last)")
+            if prev_drm is not None and step[2] != prev_drm + 1:
+                r.err(p, f"drm {step[2]} must be one more than the previous {prev_drm}")
+            if step[0] == step[1]:
+                saw_even = True
+                if step[2] != 0:
+                    r.err(p, "1:1 must be 0")
+            prev_ratio, prev_drm = ratio, step[2]
+        if not saw_even:
+            r.err(f"{name}.odds_drm", "must list 1:1 = 0")
+    cd = t.get("class_drm")
+    want = {"1": -3, "2": -2, "3": -1, "per_class_larger": -1, "per_class_smaller": 1}
+    if cd != want:
+        r.err(f"{name}.class_drm", f"must be {want} (Other DRMs, p.109)")
+    pm = t.get("prize_minimum")
+    if pm != {"1": 4, "2": 3, "3": 2, "4": 1}:
+        r.err(f"{name}.prize_minimum", "must be class 1-4 -> 4, 3, 2, 1 (10.G.7)")
+
+
+def check_grappling(t, r):
+    name = "grappling_table.json"
+    if t.get("success_max") != 2:
+        r.err(f"{name}.success_max", "must be 2 (Grappling: <= 2 succeeds)")
+    want = {"fouled": -1, "towing": -1, "marines_unavailable": 1, "ws4": 1, "target_did_not_move": -1}
+    if t.get("drm") != want:
+        r.err(f"{name}.drm", f"must be {want} (Grappling DRMs, p.109)")
+
+
+def check_marine_fire(t, r):
+    name = "marine_fire_table.json"
+    cols = t.get("columns")
+    if not isinstance(cols, list) or len(cols) != 6:
+        r.err(f"{name}.columns", "must have 6 columns (1-2 ... 11+)")
+        return
+    expect_lo = 1
+    for i, col in enumerate(cols):
+        last = i == len(cols) - 1
+        if (not isinstance(col, list) or len(col) != 2 or col[0] != expect_lo
+                or (last and col[1] is not None) or (not last and (not is_int(col[1]) or col[1] < col[0]))):
+            r.err(f"{name}.columns[{i}]", "columns must run 1-2, 3-4 ... with the last [n, null]")
+            return
+        if not last:
+            expect_lo = col[1] + 1
+    rows = t.get("rows")
+    keys = [str(n) for n in range(1, 7)]
+    if not isinstance(rows, dict) or sorted(rows, key=int) != keys:
+        r.err(f"{name}.rows", "must have rows 1-6 (<=1 ... 6+)")
+        return
+    for key in keys:
+        row = rows[key]
+        if not isinstance(row, list) or len(row) != len(cols) or not all(is_int(v) and v >= 0 for v in row):
+            r.err(f"{name}.rows.{key}", f"must be {len(cols)} non-negative ints")
+            return
+        if any(row[i] > row[i + 1] for i in range(len(row) - 1)):
+            r.err(f"{name}.rows.{key}", "hits must not fall as more boxes fire")
+    for c in range(len(cols)):
+        col = [rows[k][c] for k in keys]
+        if any(col[i] < col[i + 1] for i in range(len(col) - 1)):
+            r.err(f"{name} column {c}", "hits must never rise with the die (low rolls are better)")
+    if any(v != 0 for v in rows["6"]):
+        r.err(f"{name}.rows.6", "6+ never hits")
+    want = {"grappled_or_fouled": -1, "cq_e_f": 1, "cq_g": 2, "target_boarders": -1,
+            "larger_class": -1, "optional_range_2": 1}
+    if t.get("drm") != want:
+        r.err(f"{name}.drm", f"must be {want} (Marine Fire DRMs, p.110)")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     default_dir = Path(__file__).resolve().parents[4] / "data" / "rules"
@@ -445,6 +567,7 @@ def main():
         "unfouling_table.json", "crew_quality_table.json",
         "critical_hits_table.json", "poor_maneuvering_table.json",
         "crew_tasks.json", "fire_table.json",
+        "boarding_combat_table.json", "grappling_table.json", "marine_fire_table.json",
     ]
     tables = {n: load(args.rules_dir, n, r) for n in names}
     checks = {
@@ -456,6 +579,9 @@ def main():
         "poor_maneuvering_table.json": check_poor_maneuvering,
         "crew_tasks.json": check_crew_tasks,
         "fire_table.json": check_fire_table,
+        "boarding_combat_table.json": check_boarding,
+        "grappling_table.json": check_grappling,
+        "marine_fire_table.json": check_marine_fire,
     }
     for n, fn in checks.items():
         if tables[n] is not None:

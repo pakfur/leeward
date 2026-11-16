@@ -93,6 +93,36 @@ func damage_ship(ship_id: String, rigging: int, hull: int) -> String:
 	return ""
 
 
+## Moves a ship to bow `bow` facing `facing` (ShipStateController.set_ship_position / set_ship_facing),
+## for setting up a situation in a running game, e.g. ships alongside for marine fire. Its movement
+## plot, made for the old position, is cleared (the ship holds its place this turn). Refused when
+## either hex is off the map or held by another ship, or the ship is out of play.
+func place_ship(ship_id: String, bow: Vector2i, facing: int) -> String:
+	var reason := _refusal()
+	if reason != "":
+		return reason
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null:
+		return "no ship %s" % ship_id
+	if ship.is_out_of_play():
+		return "%s is out of play" % ship_id
+	if facing < 0 or facing > 5:
+		return "facing must be 0-5"
+	var hexes: Array[Vector2i] = [bow, HexGrid.stern_of(bow, facing)]
+	var held := Occupancy.build(game_state.get_all_ships(), [ship_id])
+	for h in hexes:
+		if not Occupancy.in_bounds(h, game_state.active_scenario):
+			return "hex %s is off the map" % h
+		if held.has(h):
+			return "hex %s is held by %s" % [h, held[h]]
+	var sc: ShipStateController = game_state.ship_controller
+	if not sc.set_ship_position(ship_id, bow) or not sc.set_ship_facing(ship_id, facing):
+		return "the server refused to move %s" % ship_id
+	sc.set_plotted_movement(ship_id, [])
+	Trace.trace_log("DevCommands", "Placed %s at %s facing %d" % [ship_id, bow, facing])
+	return ""
+
+
 ## Skips to the next phase.
 func advance_phase() -> String:
 	var reason := _refusal()

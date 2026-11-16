@@ -487,7 +487,7 @@ func _build_deck(deck: Dictionary, small: bool, portrait: bool) -> Control:
 				panel.content.add_child(_station_note(why, true))
 			elif warn != "":
 				panel.content.add_child(_station_note(warn, true))
-			elif id == CrewRules.STATION_GUNS or id == CrewRules.STATION_REORGANIZING or id == CrewRules.STATION_RH or (id == CrewRules.STATION_MARINE_FIRE and str(st.get("note", "")).begins_with("Marines held back")):
+			elif id == CrewRules.STATION_GUNS or id == CrewRules.STATION_REORGANIZING or id == CrewRules.STATION_RH or id == CrewRules.STATION_MARINE_FIRE:
 				panel.content.add_child(_station_note(st.get("note", ""), false))
 		panel.tooltip_text = why if why != "" else str(st.get("warning", "")) if str(st.get("warning", "")) != "" else str(st.get("note", ""))
 		if id == CrewRules.STATION_BRACES:

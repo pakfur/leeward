@@ -445,3 +445,18 @@ func test_deck_layouts_by_ship_type() -> void:
 	assert_eq(CrewDeckLayouts.station_decks(sol, "guns"), ["gun_up", "gun_low"], "guns on every gun deck")
 	assert_eq(CrewDeckLayouts.station_decks(frigate, "braces"), ["upper"])
 	assert_eq(CrewDeckLayouts.station_rect("guns"), [190.0, 118.0, 620.0, 124.0])
+
+
+# --- Marine fire station note (boarding spec §4.1, 7.G.1) ---
+
+func test_marine_fire_note_names_the_adjacent_enemy() -> void:
+	ship.crew_auto = false
+	var marine := _station(CrewRules.stations(ship, CrewRules.plan_of(ship), _ctx()), CrewRules.STATION_MARINE_FIRE)
+	assert_eq(marine["note"], "No enemy alongside.")
+	_make_ship("Hermione", 1, Vector2i(-1, 1), 3)  # abeam, adjacent
+	marine = _station(CrewRules.stations(ship, CrewRules.plan_of(ship), _ctx()), CrewRules.STATION_MARINE_FIRE)
+	assert_eq(marine["note"], "Adjacent enemy: Hermione. Targets are chosen with the guns.")
+
+
+func test_marine_fire_note_lists_several_enemies() -> void:
+	assert_eq(CrewRules.marine_fire_note(["A", "B"]), "Adjacent enemies: A, B. Targets are chosen with the guns.")

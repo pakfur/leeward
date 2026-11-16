@@ -61,6 +61,42 @@ func apply_hits(ship_id: String, rigging: int, hull: int, crew: int, crew_cause:
 	_drain_checks(phase)
 
 
+## Marks out `count` crew boxes, each rolled on the Crew Loss table row `crew_cause`
+## ("gunfire_at_hull" or "other"), one d6 per box, except that no d6 is rolled while the ship has only
+## one type of crew left (7.D.9, 7.G.3: the loss is that type). Marine fire uses it (7.G.3). Emptied
+## sections note morale checks and cancel their tasks, and a ship left with no crew strikes, as for
+## gunfire. Logged as DAMAGE with `damage_cause` (e.g. "marine_fire"). Returns the boxes marked out.
+func apply_crew_losses(ship_id: String, count: int, crew_cause: String, phase: int,
+		source_id: String = "", damage_cause: String = "") -> int:
+	if not is_server:
+		push_error("DamageController: Cannot apply crew losses on client")
+		return 0
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if not ship:
+		push_error("[Server] Ship not found: %s" % ship_id)
+		return 0
+	if ship.is_destroyed():
+		return 0  # a wreck takes no damage
+	var struck_before := ship.is_struck()
+	var damage_index: int = game_state.turn_log.events.size()
+	var marines_before := ship.marine_count
+	var rolls: Array = []
+	var applied := _apply_crew(ship, ship_id, count, crew_cause, phase, struck_before, rolls, false)
+	var marines_lost := marines_before - ship.marine_count
+	var data := {
+		"rigging": 0,
+		"hull": 0,
+		"crew": applied,
+		"sailors_lost": applied - marines_lost,
+		"marines_lost": marines_lost,
+		"crew_rolls": rolls,
+	}
+	if damage_cause != "":
+		data["cause"] = damage_cause
+	game_state.turn_log.insert(damage_index, PhaseEvents.Type.DAMAGE, phase, ship_id, data, source_id)
+	return applied
+
+
 ## Marks out `count` crew boxes directly, with no Crew Loss roll (critical-hit crew losses:
 ## leadership casualties, mast falls on deck, men sent to the pumps). Takes marines first when
 ## `marines_first`, else sailors from the lowest-numbered section; when one type runs out the
@@ -225,14 +261,20 @@ func _apply_hull(ship: ShipState, ship_id: String, amount: int, phase: int,
 
 
 func _apply_crew(ship: ShipState, ship_id: String, amount: int, cause: String, phase: int,
-		struck_before: bool, rolls: Array) -> int:
+		struck_before: bool, rolls: Array, roll_single_type: bool = true) -> int:
 	var applied := 0
 	for i in range(amount):
 		if ship.total_crew_boxes() == 0:
 			break
-		var roll: int = game_state.dice.d6()
-		rolls.append(roll)
-		var sailor: bool = DataManager.combat_tables.crew_loss_is_sailor(cause, roll)
+		var sailor: bool
+		var sailors_left := ship.total_crew_boxes() - ship.marine_count
+		if not roll_single_type and (ship.marine_count == 0 or sailors_left == 0):
+			# 7.D.9, 7.G.3: only one type of crew remains, so the loss is that type; no roll.
+			sailor = ship.marine_count == 0
+		else:
+			var roll: int = game_state.dice.d6()
+			rolls.append(roll)
+			sailor = DataManager.combat_tables.crew_loss_is_sailor(cause, roll)
 		var emptied: int = game_state.ship_controller.remove_crew_box(ship_id, not sailor)
 		applied += 1
 		if emptied >= 0 and game_state.get("crew_task_controller") != null:

@@ -63,6 +63,7 @@ const HOLD_ENEMY := "enemy alongside"
 ## station is open (MovementResolver.plots_ma0_turn, the test the Tacking roll uses).
 static func context(game_state: Node, ship: ShipState) -> Dictionary:
 	var nearest := -1
+	var adjacent: Array = []  # [ship_id, ship_name] of enemies in play alongside (7.G.1)
 	if game_state != null and game_state.get("fire_geometry") != null:
 		for other: ShipState in game_state.get_all_ships():
 			if other.player_id == ship.player_id or other.is_out_of_play():
@@ -70,6 +71,12 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 			var r: int = game_state.fire_geometry.range_between(ship.occupied_hexes(), other.occupied_hexes())
 			if r >= 0 and (nearest < 0 or r < nearest):
 				nearest = r
+			if r == FireRules.MARINE_RANGE:
+				adjacent.append([other.ship_id, other.ship_name])
+	adjacent.sort_custom(func(a: Array, b: Array) -> bool: return str(a[0]) < str(b[0]))
+	var adjacent_names: Array[String] = []
+	for pair in adjacent:
+		adjacent_names.append(str(pair[1]))
 	var turn = game_state.get("current_turn") if game_state != null else null
 	var ma0_turn := false
 	var steps: Array = ship.plotted_actions.get("movement", [])
@@ -88,6 +95,8 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 		"nearest_enemy": nearest,
 		"enemy_in_gun_range": nearest >= 0 and nearest <= FireRules.MAX_RANGE,
 		"enemy_adjacent": nearest == 1,
+		# Names of the enemy ships the marines could fire on (7.G.1), by ship_id.
+		"adjacent_enemies": adjacent_names,
 		"turn": int(turn) if turn != null else 0,
 	}
 
@@ -123,6 +132,19 @@ static func locked_sections(ship: ShipState) -> Dictionary:
 				result[int(section)] = {"code": str(task["code"]),
 					"params": (task.get("params", {}) as Dictionary).duplicate(true)}
 	return result
+
+
+## The Marine fire station's note (boarding spec §4.1): the muskets' possible targets, chosen with
+## the guns in the fire panel (marine fire is not plotted, 4.A.1). "Adjacent enemy: Hermione",
+## "Adjacent enemies: A, B" or "No enemy alongside".
+static func marine_fire_note(adjacent_names: Array) -> String:
+	if adjacent_names.is_empty():
+		return "No enemy alongside."
+	var names := PackedStringArray()
+	for n in adjacent_names:
+		names.append(str(n))
+	return "Adjacent %s: %s. Targets are chosen with the guns." % [
+		"enemy" if names.size() == 1 else "enemies", ", ".join(names)]
 
 
 ## Why the marines are kept free (spec §3.3), or "": a fire aboard, a fixable critical effect,
@@ -519,10 +541,10 @@ static func stations(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Arra
 	out.append(make.call(STATION_GUNS, "", ShipState.SAILOR_SECTIONS, 0, "sailor",
 		"Both broadsides. Unassigned sailors work the guns (4.B.4)."))
 	var marine: Dictionary = make.call(STATION_MARINE_FIRE, "", 1, 0, "marine",
-		"Muskets at the quarterdeck rail (marine fire is not yet in play).")
+		marine_fire_note(ctx.get("adjacent_enemies", []) as Array))
 	var held := marines_held_back(ship, ctx)
 	if ship.crew_auto and held != "":
-		marine["note"] = "Marines held back: %s." % held
+		marine["note"] = "Marines held back: %s. %s" % [held, marine["note"]]
 	out.append(marine)
 	var choices := sail_choices(ship)
 	if not choices.is_empty() or ship.has_sail_change():

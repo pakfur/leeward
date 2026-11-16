@@ -1,0 +1,13 @@
+{
+  "_doc": "Marine Fire (d6, 1997 chart p.110). columns: # marine boxes firing as [min, max] (max null = and up: 1-2, 3-4, 5-6, 7-8, 9-10, 11+). rows: modified d6 DR ('1' = <=1 ... '6' = 6+) -> crew boxes the target loses, one entry per column (0 = the chart's dot). drm: firing ship grappled or fouled to the target -1, firing marines CQ E or F +1, CQ G +2, target has boarders preparing or prepared -1, firing class # < target class # -1, [optional] range 2 +1.",
+  "columns": [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, null]],
+  "rows": {
+    "1": [1, 1, 1, 1, 1, 2],
+    "2": [0, 1, 1, 1, 1, 1],
+    "3": [0, 0, 1, 1, 1, 1],
+    "4": [0, 0, 0, 1, 1, 1],
+    "5": [0, 0, 0, 0, 1, 1],
+    "6": [0, 0, 0, 0, 0, 0]
+  },
+  "drm": {"grappled_or_fouled": -1, "cq_e_f": 1, "cq_g": 2, "target_boarders": -1, "larger_class": -1, "optional_range_2": 1}
+}

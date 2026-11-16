@@ -37,6 +37,7 @@ var is_server: bool = true  # Set to true on server, false on clients
 var _pending_resolution_log: MovementTypes.ResolutionLog = null
 var combat_step: CombatStep = CombatStep.NONE
 var _fire_orders: Array = [[], []]  # per player: Array[GunneryTypes.FireOrder]
+var _marine_orders: Array = [[], []]  # per player: Array of {ship_id, target_id} (7.G)
 var _fire_ready: Array[bool] = [false, false]
 ## Players whose ships' bear-off decisions are asked for (6.D.3); everyone else's ships decide by
 ## StubAI.bear_off_choice. Empty (no prompts) unless the game wires a human player in.
@@ -66,6 +67,7 @@ func start_new_game() -> void:
 	players_ready = [false, false] as Array[bool]
 	combat_step = CombatStep.NONE
 	_fire_orders = [[], []]
+	_marine_orders = [[], []]
 	_fire_ready = [false, false]
 	_pending_resolution_log = null
 	_bear_off_decisions = {}
@@ -356,7 +358,7 @@ func on_playback_completed() -> void:
 
 func _enter_combat_resolution_phase() -> void:
 	"""SERVER ONLY: Enter combat resolution phase.
-	Skipped entirely when no ship has a legal shot. Otherwise waits in DECLARE for both
+	Skipped entirely when no ship has a legal gun shot or marine shot (7.G). Otherwise waits in DECLARE for both
 	players' fire orders, then resolves them (RESOLVE) and waits for the view to finish
 	playback via on_combat_playback_completed()."""
 	current_phase = GamePhase.COMBAT_RESOLUTION
@@ -364,20 +366,25 @@ func _enter_combat_resolution_phase() -> void:
 	Trace.trace_log("TurnPhase", "Phase: COMBAT_RESOLUTION")
 
 	var calculator = game_state.gunnery_calculator
-	if calculator == null or not calculator.any_eligible_shot():
+	var marines = game_state.get("marine_fire_resolver")
+	var any_gun: bool = calculator != null and calculator.any_eligible_shot()
+	var any_marine: bool = marines != null and marines.any_eligible_marine_shot()
+	if not any_gun and not any_marine:
 		combat_step = CombatStep.NONE
 		advance_phase()
 		return
 
 	combat_step = CombatStep.DECLARE
 	_fire_orders = [[], []]
+	_marine_orders = [[], []]
 	_fire_ready = [false, false]
 	fire_declaration_requested.emit()
 	if game_state.stub_ai:
 		game_state.stub_ai.submit_fire_orders()
 
-func player_submit_fire_orders(player_id: int, orders: Array) -> String:
-	"""SERVER ONLY: Validate and store a player's fire orders (Array of FireOrder dictionaries).
+func player_submit_fire_orders(player_id: int, orders: Array, marine_orders: Array = []) -> String:
+	"""SERVER ONLY: Validate and store a player's fire orders (Array of FireOrder dictionaries) and
+	marine fire orders (Array of {ship_id, target_id}, 7.G; MarineFireResolver.validate_orders).
 	Returns "" on success, otherwise the reason it was rejected (nothing changes on rejection).
 	A later valid submission replaces an earlier one until both players are ready."""
 	if not is_server:
@@ -399,24 +406,43 @@ func player_submit_fire_orders(player_id: int, orders: Array) -> String:
 	var reason: String = game_state.gunnery_calculator.validate_orders(player_id, typed)
 	if reason != "":
 		return reason
+	var marines: Array = []
+	for entry in marine_orders:
+		if not entry is Dictionary:
+			return "malformed marine fire order"
+		marines.append({"ship_id": str(entry.get("ship_id", "")), "target_id": str(entry.get("target_id", ""))})
+	if not marines.is_empty():
+		reason = game_state.marine_fire_resolver.validate_orders(player_id, marines)
+		if reason != "":
+			return reason
 
 	_fire_orders[player_id] = typed
+	_marine_orders[player_id] = marines
 	_fire_ready[player_id] = true
-	Trace.trace_log("TurnPhase", "Player %d declared %d fire orders" % [player_id, typed.size()])
+	Trace.trace_log("TurnPhase", "Player %d declared %d fire orders, %d marine fire orders" % [
+		player_id, typed.size(), marines.size()])
 
 	if _fire_ready.all(func(is_ready): return is_ready):
 		_resolve_combat()
 	return ""
 
 func _resolve_combat() -> void:
-	"""SERVER ONLY: Resolve all declared fire simultaneously, then wait for playback."""
+	"""SERVER ONLY: Resolve all declared fire simultaneously, then wait for playback.
+	Marine fire is simultaneous with gunfire (7.G.5): its shots are taken from the state before any
+	gunfire damage, and rolled after all the gunfire dice (boarding spec §3.3)."""
 	combat_step = CombatStep.RESOLVE
 	var all_orders: Array[GunneryTypes.FireOrder] = []
 	for player_orders in _fire_orders:
 		all_orders.append_array(player_orders)
+	var all_marine: Array = []
+	for player_marines in _marine_orders:
+		all_marine.append_array(player_marines)
 	_log_held_fire(all_orders)
+	var marine_shots: Array[Dictionary] = game_state.marine_fire_resolver.prepare(all_marine)
 	game_state.gunnery_resolver.resolve(all_orders, GamePhase.COMBAT_RESOLUTION)
-	Trace.trace_log("TurnPhase", "COMBAT_RESOLUTION resolved", {"orders": all_orders.size()})
+	game_state.marine_fire_resolver.resolve(marine_shots, GamePhase.COMBAT_RESOLUTION)
+	Trace.trace_log("TurnPhase", "COMBAT_RESOLUTION resolved", {"orders": all_orders.size(),
+		"marine_orders": marine_shots.size()})
 	combat_log_ready.emit(game_state.turn_log)
 
 func _log_held_fire(orders: Array[GunneryTypes.FireOrder]) -> void:

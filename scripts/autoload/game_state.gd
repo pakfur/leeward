@@ -61,6 +61,7 @@ var gunnery_calculator: GunneryCalculator = null
 var damage_controller: DamageController = null
 var critical_hit_controller: CriticalHitController = null
 var gunnery_resolver: GunneryResolver = null
+var marine_fire_resolver: MarineFireResolver = null
 var sail_controller: SailController = null
 var crew_task_controller: CrewTaskController = null
 var fire_controller: FireController = null
@@ -102,6 +103,7 @@ func _initialize_server_controllers() -> void:
 	damage_controller = DamageController.new(self)
 	critical_hit_controller = CriticalHitController.new(self)
 	gunnery_resolver = GunneryResolver.new(self)
+	marine_fire_resolver = MarineFireResolver.new(self)
 	sail_controller = SailController.new(self)
 	crew_task_controller = CrewTaskController.new(self)
 	crew_task_controller.register_handler(SailController.CODE, sail_controller)

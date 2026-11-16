@@ -542,3 +542,66 @@ func test_panel_rows_list_nearest_target_first() -> void:
 	assert_eq(keys.slice(0, 3), [FirePanel.row_key(listed[0], "full"), FirePanel.row_key(listed[0], "bow"),
 		FirePanel.row_key(listed[0], "stern")])
 	GameState.ships.clear()
+
+
+# --- Marine fire block (7.G; boarding spec §4.4) ---------------------------------------------------
+
+func test_marine_option_text() -> void:
+	var p := {"boxes": 7, "column": "7-8", "modifiers": [{"name": "grappled_or_fouled", "value": -1}],
+		"modifier": -1, "hit_max": 5, "chance": 83, "most": 1}
+	assert_eq(FirePanel.marine_option_text("Hermione", p),
+		"Hermione — 7 marines, column 7-8, alongside −1 — hits on 5 or less (83%)")
+	var big := {"boxes": 11, "column": "11+", "modifiers": [], "modifier": 0, "hit_max": 5, "chance": 83, "most": 2}
+	assert_eq(FirePanel.marine_option_text("X", big), "X — 11 marines, column 11+ — hits on 5 or less (83%), up to 2 boxes")
+	var none := {"boxes": 1, "column": "1-2", "modifiers": [{"name": "cq_g", "value": 2}], "modifier": 2,
+		"hit_max": 0, "chance": 0, "most": 0}
+	assert_eq(FirePanel.marine_option_text("Y", none), "Y — 1 marine, column 1-2, crew +2 — cannot hit")
+
+
+func test_default_marine_target_best_chance_then_drm_then_id() -> void:
+	var rows := [
+		{"target_id": "b", "hit_max": 1, "modifier": 0},
+		{"target_id": "c", "hit_max": 2, "modifier": -1},
+		{"target_id": "a", "hit_max": 2, "modifier": -1},
+	]
+	assert_eq(FirePanel.default_marine_target(rows), "a")
+	assert_eq(FirePanel.default_marine_target([{"target_id": "z", "hit_max": 0, "modifier": 2}]), "",
+		"a shot that cannot hit is not chosen")
+
+
+func test_fire_button_text_with_marines() -> void:
+	assert_eq(FirePanel.fire_button_text_with_marines([], 0), "Hold all fire")
+	assert_eq(FirePanel.fire_button_text_with_marines([], 1), "Fire muskets")
+	assert_eq(FirePanel.fire_button_text_with_marines([{"battery": "full"}], 1), "Fire 1 broadside and muskets")
+	const GameControllerScript = preload("res://scripts/core/game_controller.gd")
+	assert_eq(GameControllerScript.orders_summary_line([], 1), "Your orders: Fire muskets.")
+
+
+func test_panel_lists_a_ship_with_only_a_marine_shot() -> void:
+	# 7.G.1: an enemy dead ahead gives no broadside but is a marine target, so the panel opens.
+	GameState.ships.clear()
+	GameState.ships_by_player = {0: [], 1: []}
+	var env := EnvironmentState.new()
+	env.wind_speed = 2
+	env.sea_state = 1
+	GameState.environment = env
+	var firer := _armed("firer", 0, Vector2i.ZERO, 0)
+	firer.marine_count = 7
+	_armed("foe", 1, Vector2i(2, 0), 0)  # stern (1,0) alongside the firer's bow
+	var panel: Control = load("res://scenes/ui/fire_declaration_panel.tscn").instantiate()
+	add_child_autofree(panel)
+	assert_eq(panel.setup(["firer"]), 1, "listed for its marines")
+	assert_eq(panel.get_all_orders(), [], "no gun orders")
+	assert_eq(panel.get_marine_orders(), [{"ship_id": "firer", "target_id": "foe"}], "the marine shot is chosen")
+	assert_eq(panel.fire_button.text, "Fire muskets")
+	var hold: Button = panel._marines["firer"]["rows"][""]
+	hold.pressed.emit()
+	assert_eq(panel.get_marine_orders(), [], "hold musket fire")
+	assert_eq(panel.fire_button.text, "Hold all fire")
+	var row: Button = panel._marines["firer"]["rows"]["foe"]
+	row.pressed.emit()
+	assert_true(row.button_pressed)
+	assert_string_contains(row.text, "7 marines, column 7-8")
+	assert_eq(GameState.marine_fire_resolver.validate_orders(0, panel.get_marine_orders()), "",
+		"the panel's marine orders pass the server's validation")
+	GameState.ships.clear()

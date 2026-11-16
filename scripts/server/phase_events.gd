@@ -27,6 +27,7 @@ enum Type {
 	BLAST,  # 8.E.10 blast from ship_id on target_id: {range, mgn, d6, fgn, rigging, hull, crew}
 	DEBRIS,  # 8.E.11 flaming debris from ship_id on target_id: {range, roll | attached, afire}
 	REPAIR,  # 8.F.5 a repair completed: {code, kind: rigging/hull/shrouds, section (0-3, rigging/hull), sections}
+	MARINE_FIRE,  # 7.G marine fire from ship_id at target_id: {boxes, column, modifiers, modifier, d6, total, crew}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -47,6 +48,12 @@ const MODIFIER_LABELS := {
 	"wind_speed_4": "wind speed 4",
 	"dismasted": "dismasted",
 	"broadside_obscured": "broadside obscured",
+	# Marine Fire DRMs (7.G.4)
+	"grappled_or_fouled": "alongside",
+	"cq_e_f": "crew",
+	"cq_g": "crew",
+	"target_boarders": "target's boarders",
+	"larger_class": "larger ship",
 }
 
 const SIDE_NAMES := ["port", "starboard"]
@@ -296,6 +303,8 @@ class PhaseEvent extends RefCounted:
 				return "Flaming debris from %s falls clear of %s (d6 %d, range %d)" % [who, other, roll, r]
 			Type.REPAIR:
 				return _repair_text(who)
+			Type.MARINE_FIRE:
+				return _marine_fire_text(who, other)
 			Type.DESTROYED:
 				var text := "%s explodes and is destroyed" % who
 				if target_id != "":
@@ -582,7 +591,21 @@ class PhaseEvent extends RefCounted:
 			return "%s takes no damage" % who
 		if data.get("cause", "") == "fire":
 			return "%s loses %s to fire" % [who, hits]
+		if data.get("cause", "") == "marine_fire":
+			return "%s loses %s to musketry" % [who, hits]
 		return "%s loses %s" % [who, hits]
+
+	## "X's marines fire on Y (7 boxes, column 7-8) — d6 5, alongside −1 → 4: 1 crew box" (7.G).
+	func _marine_fire_text(who: String, other: String) -> String:
+		var calc := PackedStringArray(["d6 %s" % _val("d6")])
+		for m in data.get("modifiers", []):
+			calc.append("%s %s%d" % [PhaseEvents.modifier_label(str(m.get("name", "?"))),
+				"−" if int(m.get("value", 0)) < 0 else "+", absi(int(m.get("value", 0)))])
+		var crew := int(data.get("crew", 0))
+		var result := "no effect" if crew <= 0 else PhaseEvents.plural(crew, "crew box", "crew boxes")
+		return "%s's marines fire on %s (%s, column %s) — %s → %s: %s" % [who, other,
+			PhaseEvents.plural(int(data.get("boxes", 0)), "box", "boxes"), _val("column"),
+			", ".join(calc), _val("total"), result]
 
 	func _morale_check_text(who: String) -> String:
 		var text := "%s morale check: rolled %s, needed %s" % [who, _val("roll"), _val("rating")]

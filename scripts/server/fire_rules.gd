@@ -13,6 +13,8 @@ const MAX_RANGE := 15
 const MAX_DISMANTLING_RANGE := 7
 const HIGH_ONLY_RANGE := 10
 const MAX_TARGETS := 2
+## 7.G.1: marines fire only at adjacent ships (the optional range-2 rule is not offered).
+const MARINE_RANGE := 1
 
 
 ## Ranges from HIGH_ONLY_RANGE on allow only high fire.
@@ -148,3 +150,41 @@ static func battery_targets(sides: Dictionary) -> Dictionary:
 			if str(sides[side][key]) != "":
 				targets[str(sides[side][key])] = true
 	return targets
+
+
+## "" when `firer`'s marines may fire at `target` at `range_hexes` (7.G.1), else the reason. Pure:
+## - the firer is in play and has marine boxes;
+## - its marines are not plotted to a task that takes them away (any task but FB, BR, BD;
+##   ShipState.marines_busy, which also covers BA and an engaged boarding action);
+## - the target is another side's ship still in play (struck ships are not fired on, as for gunfire);
+## - the target is adjacent (MARINE_RANGE), whatever the ships' orientation.
+static func marine_error(firer: ShipState, target: ShipState, range_hexes: int) -> String:
+	if firer == null or target == null:
+		return "unknown ship"
+	if firer.is_destroyed() or target.is_destroyed():
+		return "a destroyed ship cannot fire or be fired on"
+	if firer.is_struck() or target.is_struck():
+		return "a struck ship cannot fire or be fired on"
+	if firer.player_id == target.player_id:
+		return "cannot fire on a ship of the same side"
+	if firer.marine_count <= 0:
+		return "no marines left"
+	if firer.marines_busy():
+		return "the marines are plotted to another task (7.G.1)"
+	if range_hexes < 1 or range_hexes > MARINE_RANGE:
+		return "marines fire only at an adjacent ship (7.G.1)"
+	return ""
+
+
+## "" when a set of marine orders ({ship_id, target_id} dictionaries) obeys 7.G.2 (one target per
+## ship per g-t), else the problem. Geometry and eligibility are checked by marine_error.
+static func marine_orders_error(orders: Array) -> String:
+	var seen := {}
+	for order in orders:
+		if not order is Dictionary or str(order.get("ship_id", "")) == "" or str(order.get("target_id", "")) == "":
+			return "malformed marine fire order"
+		var ship_id := str(order["ship_id"])
+		if seen.has(ship_id):
+			return "the marines of %s fire at one ship per turn (7.G.2)" % ship_id
+		seen[ship_id] = true
+	return ""

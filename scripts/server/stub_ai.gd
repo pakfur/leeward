@@ -9,7 +9,8 @@ extends RefCounted
 ##   "hold"    — submit immediately with empty path
 ##
 ## Fire: each ship fires each broadside at its best-odds target, splitting a side between two
-## targets when no full broadside bears (see choose_fire_orders).
+## targets when no full broadside bears (see choose_fire_orders); its marines fire at the adjacent
+## enemy with the best modified die (choose_marine_orders).
 
 ## A broadside shot at or inside this range scores as a firing position.
 const FIRING_RANGE := 5
@@ -95,7 +96,8 @@ static func _axial_distance(a: Vector2i, b: Vector2i) -> int:
 ## Declare fire for the AI side (player 1).
 func submit_fire_orders() -> void:
 	assert(game_state.is_server, "StubAI: Must only run on server")
-	var reason: String = game_state.phase_controller.player_submit_fire_orders(1, choose_fire_orders())
+	var reason: String = game_state.phase_controller.player_submit_fire_orders(1, choose_fire_orders(),
+		choose_marine_orders())
 	if reason != "":
 		push_error("StubAI: fire orders rejected: %s" % reason)
 
@@ -128,6 +130,37 @@ func choose_fire_orders() -> Array[Dictionary]:
 			for order in best["orders"]:
 				result.append(order.to_dict())
 	return result
+
+
+## Marine fire orders ({ship_id, target_id}) for every AI ship whose marines may fire (7.G, boarding
+## spec §3.6): the adjacent enemy with the best modified die (lowest DRM total); ties: one that has
+## boarders preparing or prepared, then the lower ship_id. A shot that cannot mark out a box on any
+## roll is not fired.
+func choose_marine_orders() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var marines: MarineFireResolver = game_state.get("marine_fire_resolver")
+	if marines == null:
+		return result
+	for ship_state in _get_ai_ships():
+		var best: Dictionary = {}
+		for shot in marines.eligible_marine_shots(ship_state.ship_id):
+			if int(shot["hit_max"]) <= 0:
+				continue
+			if best.is_empty() or _marine_shot_beats(shot, best):
+				best = shot
+		if not best.is_empty():
+			result.append({"ship_id": ship_state.ship_id, "target_id": str(best["target_id"])})
+	return result
+
+
+func _marine_shot_beats(a: Dictionary, b: Dictionary) -> bool:
+	if int(a["modifier"]) != int(b["modifier"]):
+		return int(a["modifier"]) < int(b["modifier"])
+	var boarders_a := MarineFireResolver.has_boarders(game_state.get_ship(str(a["target_id"])))
+	var boarders_b := MarineFireResolver.has_boarders(game_state.get_ship(str(b["target_id"])))
+	if boarders_a != boarders_b:
+		return boarders_a
+	return str(a["target_id"]) < str(b["target_id"])
 
 
 ## The order sets one side may fire: [] (hold), its best shot, and the split side when it has one.

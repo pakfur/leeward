@@ -1,5 +1,6 @@
 {
-  "_doc": "Unfouling table (d10, 1997 chart p.109). success_max[i] is the highest roll that succeeds on game-turn i+1 of the attempt (1, 2, 3+): <=2, <=3, <=4. marines_unavailable: the 'Marines not avail.: +1' DRM (All Uses: unfouling, fixing critical hits, firefighting, ungrappling).",
+  "_doc": "Unfouling table (d10, 1997 chart p.109). success_max[i] is the highest roll that succeeds on game-turn i+1 of the attempt (1, 2, 3+): <=2, <=3, <=4. marines_unavailable: the 'Marines not avail.: +1' DRM (All Uses: unfouling, fixing critical hits, firefighting, ungrappling). ungrapple_drm: the 'DRMs (Ungrappling Only)': -1 per CQ level the roller is better than the enemy (Each CQ > enemy), friendly ships -2, wind speed 4 -1.",
   "success_max": [2, 3, 4],
-  "marines_unavailable": 1
+  "marines_unavailable": 1,
+  "ungrapple_drm": {"per_cq_better": -1, "friendly": -2, "ws4": -1}
 }

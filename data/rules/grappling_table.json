@@ -1,0 +1,5 @@
+{
+  "_doc": "Grappling (d10, 1997 chart p.109): a modified roll <= success_max succeeds (3+ fails). DRMs, besides the roller's SK Mod.: ships are fouled -1, attempting to tow -1, marines not available +1, wind speed 4 +1, target did not move -1.",
+  "success_max": 2,
+  "drm": {"fouled": -1, "towing": -1, "marines_unavailable": 1, "ws4": 1, "target_did_not_move": -1}
+}

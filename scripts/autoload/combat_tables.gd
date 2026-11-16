@@ -22,6 +22,9 @@ var _critical_hits: Dictionary = {}
 var _poor_maneuvering: Dictionary = {}
 var _crew_tasks: Dictionary = {}
 var _fire: Dictionary = {}
+var _boarding: Dictionary = {}
+var _grappling: Dictionary = {}
+var _marine_fire: Dictionary = {}
 
 func load_all(dir: String = "res://data/rules/") -> bool:
 	var gf = _load_json(dir + "gunnery_factor_table.json")
@@ -36,8 +39,11 @@ func load_all(dir: String = "res://data/rules/") -> bool:
 	var poor_maneuvering = _load_json(dir + "poor_maneuvering_table.json")
 	var crew_tasks = _load_json(dir + "crew_tasks.json")
 	var fire = _load_json(dir + "fire_table.json")
+	var boarding = _load_json(dir + "boarding_combat_table.json")
+	var grappling = _load_json(dir + "grappling_table.json")
+	var marine_fire = _load_json(dir + "marine_fire_table.json")
 	for table in [gf, bgn, results, mods, crew_loss, drifting, unfouling, crew_quality,
-			critical_hits, poor_maneuvering, crew_tasks, fire]:
+			critical_hits, poor_maneuvering, crew_tasks, fire, boarding, grappling, marine_fire]:
 		if table == null:
 			return false
 
@@ -52,6 +58,9 @@ func load_all(dir: String = "res://data/rules/") -> bool:
 	_poor_maneuvering = _whole_numbers_to_int(poor_maneuvering)
 	_crew_tasks = _whole_numbers_to_int(crew_tasks)
 	_fire = _whole_numbers_to_int(fire)
+	_boarding = _whole_numbers_to_int(boarding)
+	_grappling = _whole_numbers_to_int(grappling)
+	_marine_fire = _whole_numbers_to_int(marine_fire)
 
 	_results.clear()
 	for row in results["rows"]:
@@ -200,6 +209,115 @@ func blast_mgn(ship_class: int, range_hexes: int) -> int:
 	if row == null or range_hexes < 1 or range_hexes > (row as Array).size():
 		return -1
 	return int(row[range_hexes - 1])
+
+## Boarding Combat Factor of one crew box (Skill Factors, p.109): BCF S or M by crew quality.
+## 0 (with an error) for an unknown crew quality.
+func bcf(crew_quality: String, marine: bool) -> int:
+	var entry = _lookup(_crew_quality, crew_quality, "crew quality")
+	return 0 if entry == null else int(entry["bcf_marine" if marine else "bcf_sailor"])
+
+
+## Boarding Combat table row (2d6, p.109) for a modified roll, clamped to <= 4 / >= 12:
+## {"dr", "pct", "attacker", "defender"} (see boarding_combat_table.json for the result codes).
+func boarding_row(dr: int) -> Dictionary:
+	var rows: Dictionary = _boarding["rows"]
+	var copy: Dictionary = (rows[str(clampi(dr, 4, 12))] as Dictionary).duplicate(true)
+	copy["dr"] = clampi(dr, 4, 12)
+	return copy
+
+
+## BCF lost for `pct` % of the roller's TBCF, rounded to the nearest whole BCF, halves up (10.D.4,
+## spec 0.4 #1). Integer arithmetic only.
+static func boarding_loss_bcf(pct: int, roller_tbcf: int) -> int:
+	@warning_ignore("integer_division")
+	return (pct * roller_tbcf * 2 + 100) / 200
+
+
+## TBCF odds DRM (10.D.2) for a side with `friendly` TBCF against `enemy`: the ratio F:E rounded
+## down to the next lower listed ratio (1:4 ... 4:1; 1:1 = 0); below 1:4 is the 1:4 DRM. Compared
+## as f * den >= e * num, no floats.
+func odds_drm(friendly: int, enemy: int) -> int:
+	var ladder: Array = _boarding["odds_drm"]
+	var drm: int = int(ladder[0][2])
+	for step in ladder:
+		if friendly * int(step[1]) >= enemy * int(step[0]):
+			drm = int(step[2])
+	return drm
+
+
+## The attacker's Other DRMs (p.109): the defending ship's class (1 -3, 2 -2, 3 -1, 4 none), plus
+## -1 per class the defender is larger (lower class #), +1 per class it is smaller.
+func boarding_class_drm(defender_class: int, attacker_class: int) -> int:
+	var table: Dictionary = _boarding["class_drm"]
+	var drm := int(table.get(str(defender_class), 0))
+	var diff := defender_class - attacker_class
+	if diff < 0:
+		drm += int(table["per_class_larger"]) * -diff
+	elif diff > 0:
+		drm += int(table["per_class_smaller"]) * diff
+	return drm
+
+
+## Prize crew minimum in boxes by the prize's class (10.G.7); 0 for an unknown class.
+func prize_minimum(ship_class: int) -> int:
+	return int((_boarding["prize_minimum"] as Dictionary).get(str(ship_class), 0))
+
+
+## Grappling (d10, p.109): the highest modified roll that succeeds.
+func grapple_success_max() -> int:
+	return int(_grappling["success_max"])
+
+
+## A Grappling DRM: "fouled", "towing", "marines_unavailable", "ws4", "target_did_not_move".
+func grapple_drm(name: String) -> int:
+	var value = _lookup(_grappling["drm"], name, "grappling DRM")
+	return 0 if value == null else int(value)
+
+
+## An Unfouling "Ungrappling Only" DRM: "per_cq_better" (per CQ level better than the enemy),
+## "friendly", "ws4".
+func ungrapple_drm(name: String) -> int:
+	var value = _lookup(_unfouling.get("ungrapple_drm", {}), name, "ungrappling DRM")
+	return 0 if value == null else int(value)
+
+
+## Marine Fire (d6, p.110): crew boxes the target loses for a modified roll `dr` (<= 1 and 6+ are
+## the end rows) fired by `boxes` marine boxes (0 boxes: 0).
+func marine_fire_result(dr: int, boxes: int) -> int:
+	var column := marine_fire_column(boxes)
+	if column < 0:
+		return 0
+	var row: Array = _marine_fire["rows"][str(clampi(dr, 1, 6))]
+	return int(row[column])
+
+
+## The Marine Fire column index (0 = 1-2 boxes ... 5 = 11+) for `boxes`; -1 for no boxes.
+func marine_fire_column(boxes: int) -> int:
+	if boxes < 1:
+		return -1
+	var columns: Array = _marine_fire["columns"]
+	for i in columns.size():
+		var top = columns[i][1]
+		if top == null or boxes <= int(top):
+			return i
+	return columns.size() - 1
+
+
+## The Marine Fire column heading for `boxes`: "1-2" ... "11+"; "" for no boxes.
+func marine_fire_column_label(boxes: int) -> String:
+	var i := marine_fire_column(boxes)
+	if i < 0:
+		return ""
+	var column: Array = _marine_fire["columns"][i]
+	return "%d+" % int(column[0]) if column[1] == null else "%d-%d" % [int(column[0]), int(column[1])]
+
+
+## A Marine Fire DRM: "grappled_or_fouled", "cq_e_f", "cq_g", "target_boarders", "larger_class",
+## "optional_range_2".
+func marine_fire_drm(name: String) -> int:
+	var value = _lookup(_marine_fire["drm"], name, "marine fire DRM")
+	return 0 if value == null else int(value)
+
 
 func skill_modifier(crew_quality: String) -> int:
 	var entry = _lookup(_crew_quality, crew_quality, "crew quality")
