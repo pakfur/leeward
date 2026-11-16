@@ -90,8 +90,9 @@ func test_default_stations_guns_marines_and_sails() -> void:
 	ship.crew_auto = false
 	var plan := CrewRules.normalize(ship, CrewRules.plan_of(ship), _ctx())
 	var stations := CrewRules.stations(ship, plan, _ctx())
-	assert_eq(_ids(stations), [CrewRules.STATION_GUNS, CrewRules.STATION_MARINE_FIRE, CrewRules.STATION_SAILS],
-		"no braces without a turn at MA 0, no reorganizing, no fires")
+	assert_eq(_ids(stations), [CrewRules.STATION_FIRE_WATCH, CrewRules.STATION_GUNS, CrewRules.STATION_MARINE_FIRE,
+		CrewRules.STATION_SAILS], "no braces without a turn at MA 0, no reorganizing, no fires; fire watch (8.E.2 HINT)")
+	assert_false(_station(stations, CrewRules.STATION_FIRE_WATCH)["menu_only"], "drawn while no fire burns")
 	var guns := _station(stations, CrewRules.STATION_GUNS)
 	assert_eq(guns["occupants"], [0, 1, 2, 3], "4.B.4: unplotted sailors serve the guns")
 	assert_eq(guns["capacity"], 4)
@@ -229,7 +230,7 @@ func test_fill_fires_ends_a_shared_sail_change() -> void:
 func test_automatic_fire_first_then_tasks_then_braces() -> void:
 	# Spec §8 #20: fire aboard, S1 on RR in progress, MA-0 turn plotted: fire S2, S1 keeps RR,
 	# braces S4 and S3 (M held back: fire), nothing left for a third.
-	ship.fires = 1
+	ship.fire_list = [{"seq": 1, "created_turn": 1, "started_turn": 1, "cause": "crit"}] as Array[Dictionary]
 	_task("RR", [0], 2)
 	var ctx := _ctx()
 	ctx["ma0_turn_plotted"] = true

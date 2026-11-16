@@ -113,10 +113,16 @@ func _update_display() -> void:
 		stats_label.text = "\n".join(lines)
 
 	# Status badge (fouled / struck / dismasted) locks out movement plotting
-	var badge := PlanningSailUi.status_badge(ship_state)
+	var badge := PlanningSailUi.card_badge(ship_state)
 	if badge_label:
 		badge_label.text = badge
 		badge_label.visible = badge != ""
+		if ship_state.is_burning() and not ship_state.is_destroyed():
+			badge_label.add_theme_color_override("font_color", CrewStyle.FIRE_TEXT)
+			badge_label.tooltip_text = "Afire: each fire costs 1 hull and 1 rigging box a turn until it is put out (8.E.8)"
+		else:
+			badge_label.add_theme_color_override("font_color", Color(1, 0.45, 0.35, 1))
+			badge_label.tooltip_text = ""
 	if movement_button:
 		var can_move := PlanningSailUi.can_plot_movement(ship_state)
 		movement_button.disabled = not can_move

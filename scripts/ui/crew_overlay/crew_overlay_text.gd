@@ -89,6 +89,14 @@ static func progress_of(ship: ShipState, section: int, entry: Dictionary) -> Dic
 
 ## The counter's band tag: "T2/4" for multi-g-t tasks ("" otherwise).
 static func progress_tag(ship: ShipState, section: int, entry: Dictionary) -> String:
+	if str(entry.get("code", "")) == CrewRules.CODE_FF:
+		# Fire parties show the Unfouling column they roll in: g-t's this section has fought it (0.2 Q5).
+		var fire := int(entry.get("params", {}).get("fire", -1))
+		if fire < 0:
+			return ""
+		var live := ship.fire_task(fire)
+		var done := int(live.get("done", 0)) if (live.get("sections", []) as Array).has(section) else 0
+		return ["1st", "2nd", "3rd+"][mini(done, 2)]
 	var p := progress_of(ship, section, entry)
 	return "" if p.is_empty() else "T%d/%d" % [p["now"], p["total"]]
 
@@ -134,15 +142,50 @@ static func _doing(code: String) -> String:
 
 ## DAMAGE (N) lines (spec §4.6): [{"text", "repairable"}]: fires, lasting critical effects, then
 ## the boxes lost that repairs could restore.
-static func damage_lines(ship: ShipState) -> Array[Dictionary]:
+static func damage_lines(ship: ShipState, turn: int = -1, plan: Dictionary = {}) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
+	var seqs := ship.fire_seqs()
+	for k in seqs.size():
+		out.append({"text": fire_line(ship, seqs[k], k + 1, turn, plan), "repairable": false, "fire": true})
 	for line in ShipStatusPanel.critical_lines(ship):
+		if line.begins_with("Afire"):
+			continue  # each fire has its own line above
 		out.append({"text": line, "repairable": false})
 	if ship.missing_boxes("rigging") > 0:
 		out.append({"text": "Rigging boxes lost: %d (repairs are not yet in play)" % ship.missing_boxes("rigging"), "repairable": true})
 	if ship.missing_boxes("hull") > 0:
 		out.append({"text": "Hull boxes lost: %d (repairs are not yet in play)" % ship.missing_boxes("hull"), "repairable": true})
 	return out
+
+
+## "Fire 1: burning 3 turns · 1 hull and 1 rigging a turn · fought by S2 (2nd turn)", or
+## "… · unfought: morale check each turn" (spec §4.6). `turn` < 0: the age is left out.
+## While planning, `plan` (the normalized crew plan) names the section that will fight it.
+static func fire_line(ship: ShipState, seq: int, number: int, turn: int = -1, plan: Dictionary = {}) -> String:
+	var text := "Fire %d: " % number
+	if turn >= 0:
+		var age := ship.fire_age(seq, turn)
+		text += "burning %d turn%s · " % [age, "" if age == 1 else "s"] if age > 0 else "breaks out · "
+	text += "1 hull and 1 rigging a turn · "
+	var task := ship.fire_task(seq)
+	var sections: Array = task.get("sections", [])
+	var done := int(task.get("done", 0))
+	var assignments: Dictionary = plan.get("assignments", {})
+	if not assignments.is_empty():
+		sections = []
+		for s in assignments:
+			var entry: Dictionary = assignments[s]
+			if str(entry.get("code", "")) == CrewRules.CODE_FF and int(entry.get("params", {}).get("fire", -1)) == seq:
+				sections.append(int(s))
+		if not (task.get("sections", []) as Array) == sections:
+			done = 0  # a new section starts in the first column (0.2 Q5)
+	if sections.is_empty():
+		return text + "unfought: morale check each turn"
+	var names: Array = []
+	for s in sections:
+		names.append(section_name(int(s)))
+	var attempt := mini(done + 1, 3)
+	return text + "fought by %s (%s turn)" % [" ".join(names), ["1st", "2nd", "3rd+"][attempt - 1]]
 
 
 ## "Rigging 19/22 · carries up to plain sail" / "Hull 21/21".

@@ -98,8 +98,36 @@ func test_hold_fire_text() -> void:
 
 
 func test_fire_started_text() -> void:
-	var ev := PhaseEvents.PhaseLog.new().add(PhaseEvents.Type.FIRE_STARTED, 4, "s1", {"fires": 1})
-	assert_eq(ev.to_text(NAMES), "Surprise is afire (not yet simulated)")
+	var log := PhaseEvents.PhaseLog.new()
+	var ev := log.add(PhaseEvents.Type.FIRE_STARTED, 4, "s1", {"fires": 1, "cause": "crit", "mc": true})
+	assert_eq(ev.to_text(NAMES), "Surprise catches fire (hull critical): morale check")
+	ev = log.add(PhaseEvents.Type.FIRE_STARTED, 7, "s2", {"fires": 1, "cause": "spread", "roll": 2, "needed": 4}, "s1")
+	assert_eq(ev.to_text(NAMES), "Renard catches fire (from Surprise, d10 2 ≤ 4)")
+	ev = log.add(PhaseEvents.Type.FIRE_STARTED, 7, "s1", {"fires": 2, "cause": "growth", "age": 5})
+	assert_eq(ev.to_text(NAMES), "Another fire breaks out aboard Surprise (2 burning) (the fire grows after 5 turns)")
+
+
+func test_fire_and_explosion_texts() -> void:
+	var log := PhaseEvents.PhaseLog.new()
+	var ev := log.add(PhaseEvents.Type.FIRE_FOUGHT, 7, "s1", {"fire": 1, "number": 1, "sections": [1],
+		"roll": 3, "modifier": -2, "needed": 2, "attempt": 1, "success": true})
+	assert_eq(ev.to_text(NAMES), "Surprise's S2 puts out fire 1 (3 −2 = 1 ≤ 2)")
+	ev = log.add(PhaseEvents.Type.FIRE_FOUGHT, 7, "s1", {"fire": 1, "number": 1, "sections": [1],
+		"roll": 8, "modifier": -2, "needed": 3, "attempt": 2, "success": false})
+	assert_eq(ev.to_text(NAMES), "Surprise's S2 fails to master fire 1 (8 −2 = 6 > 3, second turn)")
+	ev = log.add(PhaseEvents.Type.FIRE_UNFOUGHT, 7, "s1", {"fire": 2, "number": 2, "mc": true})
+	assert_eq(ev.to_text(NAMES), "Surprise has no crew to fight fire 2: morale check")
+	ev = log.add(PhaseEvents.Type.EXPLOSION_CHECK, 7, "s1", {"roll": 5, "needed": 3, "explodes": false})
+	assert_eq(ev.to_text(NAMES), "Burning hulk Surprise: explosion roll 5, needs 3 or less — she burns on")
+	ev = log.add(PhaseEvents.Type.BLAST, 7, "s1", {"range": 1, "mgn": 35, "d6": 4, "fgn": 39,
+		"rigging": 5, "hull": 1, "crew": 1}, "s2")
+	assert_eq(ev.to_text(NAMES), "The blast from Surprise strikes Renard (range 1: 35 + 4 = 39): 5 rigging, 1 hull, 1 crew")
+	ev = log.add(PhaseEvents.Type.DEBRIS, 7, "s1", {"range": 5, "roll": 4, "afire": false}, "s2")
+	assert_eq(ev.to_text(NAMES), "Flaming debris from Surprise falls clear of Renard (d6 4, range 5)")
+	ev = log.add(PhaseEvents.Type.FIRE_SPREAD, 7, "s1", {"roll": 5, "needed": 4, "spreads": false}, "s2")
+	assert_eq(ev.to_text(NAMES), "The fire aboard Surprise does not spread to Renard (d10 5 > 4)")
+	ev = log.add(PhaseEvents.Type.DAMAGE, 7, "s1", {"rigging": 1, "hull": 1, "crew": 0, "cause": "fire"})
+	assert_eq(ev.to_text(NAMES), "Surprise loses 1 rigging box, 1 hull box to fire")
 
 
 func test_destroyed_text() -> void:

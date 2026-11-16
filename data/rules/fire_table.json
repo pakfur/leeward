@@ -1,0 +1,9 @@
+{
+  "_doc": "Fires and explosions (1997 rules 8.E, Sequence of Play V.F; checked against PDF p.29, Rules Book p.26). spread_number: a fire spreads to a fouled/grappled ship on d10 <= spread_number + SK of that ship (8.E.4; SK subtracted from nothing: better crews resist, crew-tasks spec §9 Q1). growth_turns: a fire burning this many g-t's (counting its first) grows another, and again every growth_turns (8.E.5). explode_max: a burning ship with no hull boxes explodes on 2d6 <= explode_max, +1 for each earlier roll (8.E.8). blast_mgn: the blast table, exploding ship's class -> [range 1, range 2] used as the MGN on the 'firing high' side of the Gunfire Results table (8.E.10, table rb-p26-1.png). debris_radius: ships within this range roll d6 and catch fire on DR >= range (8.E.11); debris_never: that DR never causes a fire. Extinguishing (8.E.3) uses unfouling_table.json; the hull #10 fire roll (d10 + SK >= fire_at) is in critical_hits_table.json.",
+  "spread_number": 4,
+  "growth_turns": 5,
+  "explode_max": 2,
+  "blast_mgn": {"1": [40, 25], "2": [35, 20], "3": [30, 15], "4": [25, 10]},
+  "debris_radius": 6,
+  "debris_never": 1
+}

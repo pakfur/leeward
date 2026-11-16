@@ -90,7 +90,13 @@ var ship_type: String:
 @export var critical_seq: int = 0  # next seq; also makes crit morale triggers unique
 @export var rudder_destroyed: bool = false  # log box, permanent (hull #2)
 @export var wheel_shot_away: bool = false  # log box, permanent (hull #3)
-@export var fires: int = 0  # stored only; fire (8.E) is not simulated
+## Fires burning aboard (8.E; mutated only through ShipStateController). Each:
+## {"seq": int, "created_turn": int (g-t it broke out), "started_turn": int (first g-t it burns and
+## does damage: created_turn for a Combat Phase fire, created_turn + 1 for one made in the Fire &
+## Explosions sub-phase, crew-tasks spec 0.3 #5), "cause": "crit"|"spread"|"growth"|"debris"}.
+@export var fire_list: Array[Dictionary] = []
+@export var fire_seq: int = 0  # last fire seq given; seqs are never reused (morale triggers)
+@export var explosion_checks: int = 0  # 8.E.8: explosion rolls made so far (each later one is -1)
 ## Steering (6.F.4, hull #2): a turn carried over to this g-t's first MP after a failed
 ## Poor Maneuvering roll (-1 none, PORT, STARBOARD); it succeeds without a roll.
 @export var pending_turn: int = -1
@@ -250,10 +256,39 @@ func marines_available() -> bool:
 	return section_alive(MARINES) and not marines_busy()
 
 func fire_count() -> int:
-	return fires
+	return fire_list.size()
 
 func is_burning() -> bool:
-	return fires > 0
+	return not fire_list.is_empty()
+
+## Seqs of the fires burning, in seq order.
+func fire_seqs() -> Array[int]:
+	var seqs: Array[int] = []
+	for fire in fire_list:
+		seqs.append(int(fire.get("seq", -1)))
+	seqs.sort()
+	return seqs
+
+func fire_by_seq(seq: int) -> Dictionary:
+	for fire in fire_list:
+		if int(fire.get("seq", -1)) == seq:
+			return fire
+	return {}
+
+## G-t's the fire has burned on g-t `turn`, counting its first (8.E.5); 0 before it starts.
+func fire_age(seq: int, turn: int) -> int:
+	var fire := fire_by_seq(seq)
+	if fire.is_empty():
+		return 0
+	return maxi(0, turn - int(fire.get("started_turn", turn)) + 1)
+
+## The live FF task fighting fire `seq`, or {}.
+func fire_task(seq: int) -> Dictionary:
+	for task in crew_tasks:
+		if task.get("ended", "") == "" and task.get("code", "") == "FF" \
+				and int((task.get("params", {}) as Dictionary).get("fire", -1)) == seq:
+			return task
+	return {}
 
 ## Sections at the braces (the live T task), 0-3.
 func tack_sections() -> int:
@@ -397,7 +432,9 @@ func serialize() -> Dictionary:
 		"critical_seq": critical_seq,
 		"rudder_destroyed": rudder_destroyed,
 		"wheel_shot_away": wheel_shot_away,
-		"fires": fires,
+		"fire_list": fire_list.duplicate(true),
+		"fire_seq": fire_seq,
+		"explosion_checks": explosion_checks,
 		"pending_turn": pending_turn,
 		"last_step_direction": last_step_direction,
 		"plotted_actions": plotted_actions.duplicate(true)
@@ -486,7 +523,16 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.critical_seq = int(data.get("critical_seq", 0))
 	state.rudder_destroyed = bool(data.get("rudder_destroyed", false))
 	state.wheel_shot_away = bool(data.get("wheel_shot_away", false))
-	state.fires = int(data.get("fires", 0))
+	state.fire_list.clear()
+	for fire in data.get("fire_list", []):
+		state.fire_list.append(_fire_from(fire))
+	state.fire_seq = int(data.get("fire_seq", 0))
+	# Saves from before fire was simulated: "fires": n becomes n fires burning since g-t 0.
+	if not data.has("fire_list"):
+		for i in range(int(data.get("fires", 0))):
+			state.fire_seq += 1  # SCV:ALLOW deserialization builds a fresh state
+			state.fire_list.append({"seq": state.fire_seq, "created_turn": 0, "started_turn": 0, "cause": "crit"})
+	state.explosion_checks = int(data.get("explosion_checks", 0))
 	state.pending_turn = int(data.get("pending_turn", -1))
 	state.last_step_direction = int(data.get("last_step_direction", -1))
 	
@@ -540,6 +586,14 @@ static func _sail_task_from_old(state: ShipState, change: Dictionary) -> Diction
 		"params": {"target": target, "from": state.sail_state, "row": row},
 		"forced": false, "marines_available": false, "ended": "",
 	})
+
+## Copy of a serialized fire with its numeric fields as ints.
+static func _fire_from(fire: Dictionary) -> Dictionary:
+	var copy := fire.duplicate(true)
+	for key in ["seq", "created_turn", "started_turn"]:
+		copy[key] = int(copy.get(key, 0))
+	copy["cause"] = str(copy.get("cause", "crit"))
+	return copy
 
 ## Copy of a serialized effect with its numeric fields as ints (JSON round trips give floats).
 static func _critical_effect_from(effect: Dictionary) -> Dictionary:

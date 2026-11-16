@@ -401,13 +401,49 @@ func test_hull_eight_one_gun() -> void:
 	assert_eq(b.guns_dismounted, [1, 0] as Array[int])
 
 
-func test_hull_ten_minor_explosion_hull_and_guns_no_fire_roll() -> void:
-	# Spec Q10: 1H and -2 guns on the engaged broadside; fire roll deferred.
-	_crit([5, 5], _ctx("low"))
+## Hull #10 on b_ship (engaged starboard), then the fire d10 = `fire_d10`.
+func _hull_ten(fire_d10: int) -> void:
+	_dice.queue([1, 5, 5, fire_d10])
+	crits.hold()
+	crits.check_gunfire_crit(_ctx("low"), PHASE)
+	crits.release(PHASE)
+
+
+func test_hull_ten_minor_explosion_hull_guns_then_fire_roll_cq_d_six_afire() -> void:
+	# Spec §8 #27, hull #10: 1H, -2 guns on the engaged broadside, then d10 >= 6 (± SK): CQ D
+	# (SK 0), d10 6: afire, and the result's MC is the fire's MC (8.E.7), one only.
+	_hull_ten(6)
 	assert_eq(b.hull_current_hp, [4, 5, 5, 6] as Array[int])
 	assert_eq(b.guns_dismounted, [0, 2] as Array[int])
-	assert_eq(b.fires, 0)
-	assert_eq(_crit_events()[0].data["note"], "fire_not_simulated")
+	assert_eq(b.fire_count(), 1)
+	assert_eq(b.pending_morale_checks, 1, "one MC: the fire's")
+	assert_true(b.morale_triggers_used.has("fire_1"))
+	var data: Dictionary = _crit_events()[0].data
+	assert_eq(data["fire_roll"], {"roll": 6, "modifier": 0, "needed": 6, "afire": true})
+	assert_true(data.get("mc", false))
+	assert_false(data.has("note"))
+	var fire := _events(PhaseEvents.Type.FIRE_STARTED)
+	assert_eq(fire.size(), 1)
+	assert_eq(fire[0].data["cause"], "crit")
+	# A Combat Phase fire burns from this g-t (8.E.8 "including the g-t it catches fire").
+	assert_eq(int(b.fire_list[0]["started_turn"]), GameState.current_turn)
+
+
+func test_hull_ten_cq_d_five_no_fire() -> void:
+	# Spec §8 #27: CQ D, d10 5: 5 < 6, no fire and no MC.
+	_hull_ten(5)
+	assert_eq(b.fire_count(), 0)
+	assert_eq(b.pending_morale_checks, 0)
+	assert_false(_crit_events()[0].data["fire_roll"]["afire"])
+
+
+func test_hull_ten_better_crew_resists_fire() -> void:
+	# Spec §8 #28 (§9 Q1 reading: d10 + SK >= 6): CQ A (SK -3), d10 8: 5, no fire; d10 9: 6, afire.
+	b.crew_quality = "A"
+	_hull_ten(8)
+	assert_eq(b.fire_count(), 0)
+	_hull_ten(9)
+	assert_eq(b.fire_count(), 1)
 
 
 func test_row18_class_two_pumps_take_three_sailors_lowest_first() -> void:
@@ -437,6 +473,11 @@ func test_pumps_without_enough_crew_strike() -> void:
 
 # --- Hull #12 afire / major explosion (spec Q2, Q14) ---
 
+## a_ship out of blast and debris range, so an explosion rolls nothing for it.
+func _far_a() -> void:
+	a.hex_position = Vector2i(30, 0)
+
+
 ## Hull #12 on b_ship (class 3 unless changed), then the explosion 2d10 = `explosion`.
 func _hull_twelve(explosion: Array, ctx: Dictionary = {}) -> void:
 	_dice.queue([1, 6, 6])  # CH d6, then 2d6 = 12
@@ -448,7 +489,7 @@ func _hull_twelve(explosion: Array, ctx: Dictionary = {}) -> void:
 
 func test_hull_twelve_afire_hull_guns_both_sides_and_mc() -> void:
 	_hull_twelve([5, 5])  # 10 + 0 (CQ D) = 10, not < 3
-	assert_eq(b.fires, 1)
+	assert_eq(b.fire_count(), 1)
 	assert_eq(b.hull_current_hp, [4, 5, 5, 6] as Array[int])
 	assert_eq(b.guns_dismounted, [2, 2] as Array[int], "-2 on each broadside")
 	assert_eq(b.pending_morale_checks, 1)
@@ -460,6 +501,7 @@ func test_hull_twelve_afire_hull_guns_both_sides_and_mc() -> void:
 	var fire := _events(PhaseEvents.Type.FIRE_STARTED)
 	assert_eq(fire.size(), 1)
 	assert_eq(fire[0].data["fires"], 1)
+	assert_true(b.morale_triggers_used.has("fire_1"), "the result's MC is the fire's MC (8.E.7)")
 	assert_eq(_events(PhaseEvents.Type.DESTROYED).size(), 0)
 
 
@@ -472,6 +514,7 @@ func test_hull_twelve_engaged_side_never_rolled() -> void:
 func test_row34_hull_twelve_class_two_roll_one_explodes() -> void:
 	# Spec row 34: CQ D, no fires, class 2, 2d10 = 1: 1 < 2, the ship explodes and is destroyed.
 	b.ship.ship_class = 2
+	_far_a()
 	_hull_twelve([0, 1])
 	assert_true(b.is_destroyed())
 	assert_true(b.is_out_of_play())
@@ -496,21 +539,23 @@ func test_hull_twelve_crew_quality_drm() -> void:
 
 func test_hull_twelve_poor_crew_explodes() -> void:
 	b.crew_quality = "G"
+	_far_a()
 	_hull_twelve([2, 3])  # 5 - 3 = 2 < 3
 	assert_true(b.is_destroyed())
 
 
 func test_hull_twelve_existing_fire_drm_reads_fires_before_increment() -> void:
-	b.fires = 1
+	GameState.fire_controller.start_fire("b_ship", "crit", PHASE)
 	_hull_twelve([2, 3])  # 5 - 2 (one fire already) = 3, not < 3; -4 would have exploded
 	assert_false(b.is_destroyed())
 	assert_eq(_crit_events()[0].data["explosion"]["modifier"], -2)
-	assert_eq(b.fires, 2)
+	assert_eq(b.fire_count(), 2)
 
 
 func test_hull_twelve_year_1783_drm() -> void:
 	var old_scenario: Dictionary = GameState.active_scenario
 	GameState.active_scenario = {"year": 1783}
+	_far_a()
 	_hull_twelve([1, 2])  # 3 - 1 = 2 < 3
 	GameState.active_scenario = old_scenario
 	assert_true(b.is_destroyed())
@@ -532,17 +577,22 @@ func test_hull_twelve_dismantling_shot_ignored() -> void:
 	# [D]: a dismantling shot aimed low causes no hull crit roll at all (7.C.12b), so nothing.
 	_dice.queue([])
 	assert_false(crits.check_gunfire_crit(_ctx("low", "dismantling"), PHASE))
-	assert_eq(b.fires, 0)
+	assert_eq(b.fire_count(), 0)
 
 
 func test_hull_twelve_explosion_frees_fouled_partner() -> void:
+	# a_ship at range 3 (no blast); fouled to the exploding ship, it catches fire with no roll (8.E.11).
 	b.ship.ship_class = 2
+	a.hex_position = Vector2i(4, 0)
 	GameState.ship_controller.set_fouled_with("a_ship", "b_ship")
 	GameState.ship_controller.set_fouled_with("b_ship", "a_ship")
 	_hull_twelve([0, 0])
 	assert_true(b.is_destroyed())
 	assert_eq(a.fouled_with, "")
 	assert_eq(b.fouled_with, "")
+	assert_eq(b.fire_count(), 0, "a wreck does not burn (spec Q10)")
+	assert_eq(a.fire_count(), 1, "flaming debris always sets a fouled ship afire")
+	assert_eq(a.fire_list[0]["cause"], "debris")
 
 
 func test_hull_twelve_checks_queued_by_its_hull_box_skip_the_wreck() -> void:
@@ -550,6 +600,7 @@ func test_hull_twelve_checks_queued_by_its_hull_box_skip_the_wreck() -> void:
 	# rolled once the ship is destroyed.
 	b.ship.ship_class = 2
 	b.hull_current_hp = [1, 5, 5, 6] as Array[int]
+	_far_a()
 	_hull_twelve([0, 0])
 	assert_true(b.is_destroyed())
 	assert_eq(_crit_events().size(), 1, "no Hull Check rolled for the wreck")

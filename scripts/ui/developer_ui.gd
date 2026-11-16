@@ -12,6 +12,8 @@ extends Window
 
 signal hex_coords_toggled(enabled: bool)
 signal hex_labels_toggled(enabled: bool)
+## A developer command changed this ship's state (the views should redraw it).
+signal ship_changed(ship_id: String)
 
 @onready var turn_label: Label = %TurnLabel
 @onready var phase_label: Label = %PhaseLabel
@@ -270,6 +272,14 @@ func _on_ship_selected(index: int) -> void:
 	_add_ship_field(ship_fields_container, ship, "speed", 0, 10, "int")
 	_add_ship_field(ship_fields_container, ship, "sail_state", ["FS", "MS", "PS", "NS"], null, "string")
 
+	var fire_btn := Button.new()
+	fire_btn.name = "StartFireButton"
+	fire_btn.text = "Start a fire aboard"
+	fire_btn.tooltip_text = "Server request: a fire breaks out aboard this ship (8.E), with its morale check"
+	var sid: String = ship.ship_id
+	fire_btn.pressed.connect(func(): _on_start_fire_pressed(sid))
+	ship_fields_container.add_child(fire_btn)
+
 ## Field Creation
 
 func _add_field(container: Control, object: Object, property: String, min_val, max_val, type: String) -> void:
@@ -388,6 +398,15 @@ func _on_ship_field_changed(ship: Object, property: String, value) -> void:
 	_log("Ship %s.%s = %s" % [sid, property, value] if reason == "" else "ERROR: " + reason)
 
 ## Controls
+
+func _on_start_fire_pressed(ship_id: String) -> void:
+	if not game_state or not game_state.dev_commands:
+		return
+	var reason: String = game_state.dev_commands.start_fire(ship_id)
+	_log("Start fire aboard %s: %s" % [ship_id, "ok" if reason == "" else reason])
+	if reason == "":
+		ship_changed.emit(ship_id)
+
 
 func _update_turn_phase_display() -> void:
 	"""Update the turn and phase display"""

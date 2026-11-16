@@ -55,6 +55,25 @@ func set_environment_property(property: String, value: Variant) -> String:
 	return ""
 
 
+## Starts a fire aboard the ship (as a hull critical would: FireController.start_fire, with its
+## morale check). For trying out fire in a running game.
+func start_fire(ship_id: String) -> String:
+	var reason := _refusal()
+	if reason != "":
+		return reason
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null:
+		return "no ship %s" % ship_id
+	if ship.is_destroyed():
+		return "%s is destroyed" % ship_id
+	var seq: int = game_state.fire_controller.start_fire(ship_id, FireController.CAUSE_CRIT,
+		game_state.phase_controller.current_phase)
+	if seq < 0:
+		return "the server refused a fire aboard %s" % ship_id
+	Trace.trace_log("DevCommands", "Fire %d started aboard %s" % [seq, ship_id])
+	return ""
+
+
 ## Skips to the next phase.
 func advance_phase() -> String:
 	var reason := _refusal()

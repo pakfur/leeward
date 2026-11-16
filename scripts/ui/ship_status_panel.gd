@@ -186,8 +186,8 @@ static func critical_lines(s: ShipState) -> Array[String]:
 		lines.append("Rudder destroyed: one turn per turn, poor maneuvering")
 	if s.wheel_shot_away:
 		lines.append("Wheel shot away: one turn per turn, poor maneuvering")
-	if s.fires > 0:
-		lines.append("Afire ×%d (fire is not yet simulated)" % s.fires)
+	if s.is_burning():
+		lines.append("Afire ×%d: 1 hull and 1 rigging box a turn per fire (8.E.8)" % s.fire_count())
 	return lines
 
 

@@ -63,6 +63,7 @@ var critical_hit_controller: CriticalHitController = null
 var gunnery_resolver: GunneryResolver = null
 var sail_controller: SailController = null
 var crew_task_controller: CrewTaskController = null
+var fire_controller: FireController = null
 var drift_resolver: DriftResolver = null
 var fouling_controller: FoulingController = null
 var morale_controller: MoraleController = null
@@ -105,6 +106,8 @@ func _initialize_server_controllers() -> void:
 	crew_task_controller.register_handler(SailController.CODE, sail_controller)
 	crew_task_controller.register_handler(TackCrewHandler.CODE, TackCrewHandler.new(self))
 	crew_task_controller.register_handler(ReorganizeHandler.CODE, ReorganizeHandler.new(self))
+	fire_controller = FireController.new(self)
+	crew_task_controller.register_handler(FireController.CODE, fire_controller)
 	drift_resolver = DriftResolver.new(self)
 	fouling_controller = FoulingController.new(self)
 	morale_controller = MoraleController.new(self)

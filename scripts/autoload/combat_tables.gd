@@ -21,6 +21,7 @@ var _crew_quality: Dictionary = {}
 var _critical_hits: Dictionary = {}
 var _poor_maneuvering: Dictionary = {}
 var _crew_tasks: Dictionary = {}
+var _fire: Dictionary = {}
 
 func load_all(dir: String = "res://data/rules/") -> bool:
 	var gf = _load_json(dir + "gunnery_factor_table.json")
@@ -34,8 +35,9 @@ func load_all(dir: String = "res://data/rules/") -> bool:
 	var critical_hits = _load_json(dir + "critical_hits_table.json")
 	var poor_maneuvering = _load_json(dir + "poor_maneuvering_table.json")
 	var crew_tasks = _load_json(dir + "crew_tasks.json")
+	var fire = _load_json(dir + "fire_table.json")
 	for table in [gf, bgn, results, mods, crew_loss, drifting, unfouling, crew_quality,
-			critical_hits, poor_maneuvering, crew_tasks]:
+			critical_hits, poor_maneuvering, crew_tasks, fire]:
 		if table == null:
 			return false
 
@@ -49,6 +51,7 @@ func load_all(dir: String = "res://data/rules/") -> bool:
 	_critical_hits = _whole_numbers_to_int(critical_hits)
 	_poor_maneuvering = _whole_numbers_to_int(poor_maneuvering)
 	_crew_tasks = _whole_numbers_to_int(crew_tasks)
+	_fire = _whole_numbers_to_int(fire)
 
 	_results.clear()
 	for row in results["rows"]:
@@ -182,6 +185,21 @@ func task_turns(code: String, crew_quality: String) -> int:
 func task_sections(code: String) -> Array:
 	var row := crew_task(code)
 	return row.get("sections", [])
+
+## Fires and explosions (8.E), data/rules/fire_table.json: spread_number, growth_turns,
+## explode_max, debris_radius, debris_never. 0 for an unknown name.
+func fire_rule(name: String) -> int:
+	var value = _lookup(_fire, name, "fire rule")
+	return 0 if value == null or not (value is int or value is float) else int(value)
+
+## 8.E.10 blast table: the MGN for a ship of `ship_class` (1-4) exploding at `range_hexes`;
+## -1 beyond range 2 (no blast) or for an unknown class.
+func blast_mgn(ship_class: int, range_hexes: int) -> int:
+	var rows: Dictionary = _fire.get("blast_mgn", {})
+	var row = rows.get(str(ship_class))
+	if row == null or range_hexes < 1 or range_hexes > (row as Array).size():
+		return -1
+	return int(row[range_hexes - 1])
 
 func skill_modifier(crew_quality: String) -> int:
 	var entry = _lookup(_crew_quality, crew_quality, "crew quality")

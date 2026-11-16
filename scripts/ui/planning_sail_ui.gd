@@ -48,6 +48,23 @@ static func status_badge(ship: ShipState) -> String:
 	return ""
 
 
+## "AFIRE" / "AFIRE ×2" for a burning ship (8.E), else "". Not a movement lock: shown beside
+## status_badge.
+static func fire_badge(ship: ShipState) -> String:
+	if ship.is_destroyed() or not ship.is_burning():
+		return ""
+	return "AFIRE" if ship.fire_count() == 1 else "AFIRE ×%d" % ship.fire_count()
+
+
+## The card badge text: the status badge and the fire badge, joined.
+static func card_badge(ship: ShipState) -> String:
+	var parts: PackedStringArray = []
+	for b in [status_badge(ship), fire_badge(ship)]:
+		if b != "":
+			parts.append(b)
+	return " · ".join(parts)
+
+
 static func can_plot_movement(ship: ShipState) -> bool:
 	return status_badge(ship) == ""
 

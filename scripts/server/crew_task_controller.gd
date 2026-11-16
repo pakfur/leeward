@@ -273,6 +273,27 @@ func cancel_code(ship_id: String, code: String, reason: String, phase: int, log_
 		cancel_task(ship_id, int(task["seq"]), reason, phase, log_it)
 
 
+## Every live task but those with code `keep` ends (a ship that strikes keeps fighting its fires
+## and does nothing else, 8.E.3, 9.C.3).
+func cancel_all_except(ship_id: String, keep: String, reason: String, phase: int) -> void:
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null:
+		return
+	for task in _live_tasks(ship):
+		if str(task["code"]) != keep:
+			cancel_task(ship_id, int(task["seq"]), reason, phase)
+
+
+## Tells every handler that a fire broke out aboard the ship (8.E.2; spec §3.9 hook).
+func notify_fire_breaks_out(ship_id: String) -> void:
+	var seen := {}
+	for code in _handlers:
+		var h: CrewTaskHandler = _handlers[code]
+		if not seen.has(h):
+			seen[h] = true
+			h.on_fire_breaks_out(ship_id)
+
+
 ## Every live task ends without a log line (the ship is destroyed); the crew plot is cleared.
 func drop_all(ship_id: String, reason: String) -> void:
 	if not is_server:

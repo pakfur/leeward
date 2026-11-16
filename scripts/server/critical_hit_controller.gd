@@ -61,7 +61,6 @@ const CANCEL_DISORGANIZED := "crew disorganized"
 
 ## CRITICAL_HIT "note" values (deferred or unimplemented parts of a result)
 const NOTE_NOT_SIMULATED := "not_simulated"
-const NOTE_FIRE_NOT_SIMULATED := "fire_not_simulated"
 const NOTE_NOT_IMPLEMENTED := "not_implemented"
 const NOTE_SINKING_NOT_SIMULATED := "sinking_not_simulated"
 
@@ -468,10 +467,9 @@ func _resolve_hull(ship_id: String, row: Dictionary, data: Dictionary, ctx: Dict
 		"guns_dismounted":
 			_guns(ship_id, int(row.get("guns", 1)), data, ctx, phase)
 		"minor_explosion":
-			# Deferred (spec Q10): 1H and the guns; no fire roll.
 			_hull_boxes(ship_id, int(row.get("hull", 1)), ctx, phase)
 			_guns(ship_id, int(row.get("guns", 2)), data, ctx, phase)
-			data["note"] = NOTE_FIRE_NOT_SIMULATED
+			_minor_explosion_fire(ship_id, row, data, ctx, phase)
 		"waterline_damage":
 			var needed := int(row.get("pumps_by_class", {}).get(str(_ship_class(ship)), 0))
 			data["pumps"] = needed
@@ -490,25 +488,53 @@ func _resolve_hull(ship_id: String, row: Dictionary, data: Dictionary, ctx: Dict
 			push_error("CriticalHitController: unknown hull result '%s'" % row.get("id", ""))
 
 
-## Hull #12: afire (fires + 1; fire itself is not simulated, spec §3.3), 1H, guns dismounted on
-## each broadside, an MC, then the explosion roll: 2d10 (0-18) + explosion_modifier() < the ship's
-## class explodes and destroys the ship (spec Q2). Rolled even if the 1H made the ship strike.
+## Hull #10, after the 1H and the guns: d10; afire when d10 + SK >= fire_at (6). Better crews
+## resist (crew-tasks spec §9 Q1; SK is CQ G once struck, 9.C.4). The MC the result names is the
+## fire's own MC (8.E.7), not a second one. data gets "fire_roll": {roll, modifier, needed, afire}.
+func _minor_explosion_fire(ship_id: String, row: Dictionary, data: Dictionary, ctx: Dictionary,
+		phase: int) -> void:
+	var ship: ShipState = game_state.get_ship(ship_id)
+	var fc: FireController = game_state.get("fire_controller")
+	if ship == null or fc == null or ship.is_destroyed():
+		return
+	var roll: int = game_state.dice.d10()
+	var modifier := fc.skill(ship)
+	var needed := int(row.get("fire_at", 6))
+	var afire := roll + modifier >= needed
+	data["sub_rolls"].append(roll)
+	data["fire_roll"] = {"roll": roll, "modifier": modifier, "needed": needed, "afire": afire}
+	if afire:
+		var seq := fc.start_fire(ship_id, FireController.CAUSE_CRIT, phase, str(ctx.get("source_id", "")),
+			false, {"result_id": str(row.get("id", ""))})
+		if seq >= 0 and ship.morale_triggers_used.has("fire_%d" % seq):
+			data["mc"] = true
+
+
+## Hull #12: afire (FireController.start_fire; its MC is the one the result names, 8.E.7), 1H,
+## guns dismounted on each broadside, then the explosion roll: 2d10 (0-18) + explosion_modifier()
+## < the ship's class explodes (spec Q2): FireController.explode destroys the ship and does blast
+## and flaming debris ("after doing all appropriate blast damage, etc."; spec 0.2 Q9). Rolled even
+## if the 1H made the ship strike.
 ## data gets "guns", side SIDE_BOTH and "explosion": {roll, modifier, total, needed, explodes}.
 func _afire_major_explosion(ship_id: String, row: Dictionary, data: Dictionary, ctx: Dictionary,
 		phase: int) -> void:
 	var ship: ShipState = game_state.get_ship(ship_id)
 	var sc: ShipStateController = game_state.ship_controller
-	var fires_before := ship.fires  # the "each existing fire" DRM counts fires before this one
-	sc.add_fire(ship_id)
-	game_state.turn_log.add(PhaseEvents.Type.FIRE_STARTED, phase, ship_id,
-			{"fires": ship.fires, "result_id": str(row.get("id", ""))}, str(ctx.get("source_id", "")))
+	var fc: FireController = game_state.get("fire_controller")
+	var fires_before := ship.fire_count()  # the "each existing fire" DRM counts fires before this one
+	if fc != null:
+		var seq := fc.start_fire(ship_id, FireController.CAUSE_CRIT, phase, str(ctx.get("source_id", "")),
+			false, {"result_id": str(row.get("id", ""))})
+		if seq >= 0 and ship.morale_triggers_used.has("fire_%d" % seq):
+			data["mc"] = true
 	_hull_boxes(ship_id, int(row.get("hull", 1)), ctx, phase)
 	var guns := int(row.get("guns_both", 2))
 	data["side"] = SIDE_BOTH
 	data["guns"] = guns
 	sc.add_guns_dismounted(ship_id, guns)
 	game_state.turn_log.add(PhaseEvents.Type.GUNS_DISMOUNTED, phase, ship_id, {"amount": guns})
-	_note_crit_morale(ship_id, data, phase)
+	if fc == null:
+		_note_crit_morale(ship_id, data, phase)
 	if ship.is_destroyed():
 		return
 	var roll: int = game_state.dice.two_d10()
@@ -518,7 +544,10 @@ func _afire_major_explosion(ship_id: String, row: Dictionary, data: Dictionary, 
 	data["explosion"] = {"roll": roll, "modifier": modifier, "total": roll + modifier,
 			"needed": needed, "explodes": explodes}
 	if explodes:
-		game_state.damage_controller.destroy(ship_id, REASON_EXPLOSION, phase)
+		if fc != null:
+			fc.explode(ship_id, phase)
+		else:
+			game_state.damage_controller.destroy(ship_id, REASON_EXPLOSION, phase)
 
 
 ## Hull #12 explosion DRM: crew quality (A +3 ... G -3), -2 per fire already burning

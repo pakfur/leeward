@@ -38,6 +38,12 @@ const WRECK_DEBRIS_COUNT := 7
 const WRECK_DEBRIS_COLOR := Color(0.13, 0.10, 0.07)
 var _wrecked := false
 var _wreck_debris: Node3D = null
+## Fire on the map (crew-tasks spec §9 Q6): flame and smoke while the ship burns, more with more
+## fires; a flash and a ring of debris when it explodes. Read from the ship's state only.
+const FIRE_POLL_SECONDS := 0.25
+var _fire_effect: ShipFireEffect = null
+var _seen_afloat := false  ## synced at least once before it was destroyed (so the explosion is new)
+var _fire_poll := 0.0
 
 static func owner_color(player_id: int) -> Color:
 	"""Owner colour for a player id (matches the minimap ship icons)."""
@@ -46,10 +52,18 @@ static func owner_color(player_id: int) -> Color:
 func _ready() -> void:
 	wave_calculator = WaveCalculator.new()
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	# Visual update only - wave bobbing
 	if wave_calculator != null:
 		_update_wave_position()
+	# Fires break out and go out between view syncs (the Fire & Explosions sub-phase, a developer
+	# command): read the count from the state now and then.
+	_fire_poll -= delta
+	if _fire_poll <= 0.0 and state_id != "":
+		_fire_poll = FIRE_POLL_SECONDS
+		var s: ShipState = GameState.get_ship(state_id)
+		if s != null:
+			_update_fire_visual(0 if s.is_destroyed() else s.fire_count())
 
 func initialize(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	"""Initialize view from state"""
@@ -77,8 +91,13 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	_update_rotation_from_state(ship_state)
 
 	if ship_state.is_destroyed():
+		if _seen_afloat and not _wrecked:
+			_play_explosion()
+		_update_fire_visual(0)
 		_apply_wreck(ship_state)
 		return
+	_seen_afloat = true
+	_update_fire_visual(ship_state.fire_count())
 
 	# Masts still standing and sails set; the pennant flies from the highest mast left
 	if _spec:
@@ -166,6 +185,38 @@ func _update_struck_visual(struck: bool) -> void:
 	else:
 		_struck_flag.queue_free()
 		_struck_flag = null
+
+## Number of fires the flame effect shows (0 when none), for tests.
+func fire_visual_count() -> int:
+	return _fire_effect.fires if _fire_effect != null else 0
+
+func _update_fire_visual(count: int) -> void:
+	if count <= 0 and _fire_effect == null:
+		return
+	if _fire_effect == null:
+		if model_node == null:
+			return
+		_fire_effect = ShipFireEffect.new()
+		_fire_effect.name = "FireEffect"
+		if _spec:
+			_fire_effect.ship_length = _spec.length
+			_fire_effect.deck_height = _spec.hull_height * 0.6
+			_fire_effect.smoke_height = _spec.masthead_y() * 0.5
+		var env: EnvironmentState = GameState.environment
+		if env != null and hex_grid_ref != null:
+			# The wind blows from wind_direction; smoke drifts the other way.
+			var to: Vector2i = HexGrid.DIRECTIONS[(env.wind_direction + 3) % 6]
+			var drift := hex_grid_ref.axial_to_world(to.x, to.y) - hex_grid_ref.axial_to_world(0, 0)
+			drift.y = 0.0
+			_fire_effect.smoke_drift = drift.normalized() * (0.3 + 0.25 * env.wind_speed)
+		model_node.add_child(_fire_effect)
+	if _fire_effect.fires != count:
+		_fire_effect.set_fires(count)
+
+func _play_explosion() -> void:
+	var boom := ShipExplosionEffect.new()
+	boom.name = "Explosion"
+	add_child(boom)  # on the ship root: level with the water, frees itself when done
 
 func is_wrecked() -> bool:
 	return _wrecked

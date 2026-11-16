@@ -173,13 +173,14 @@ func _render_guns(ship: ShipState, plan: Dictionary) -> void:
 
 func _render_damage(ship: ShipState) -> void:
 	CrewOverlay._clear(_dmg_list)
-	var items := CrewOverlayText.damage_lines(ship)
+	var turn = client.game_state.get("current_turn") if client.game_state != null else null
+	var items := CrewOverlayText.damage_lines(ship, int(turn) if turn != null else -1, client.plan())
 	_dmg_btn.text = ("▾ " if _dmg_open else "▸ ") + "DAMAGE (%d)" % items.size()
 	_dmg_list.visible = _dmg_open
 	for it in items:
 		var row := _hbox(8)
 		var dot := ColorRect.new()
-		dot.color = Color("#a07a4c") if it["repairable"] else Style.BAD
+		dot.color = Style.FIRE if it.get("fire", false) else (Color("#a07a4c") if it["repairable"] else Style.BAD)
 		dot.custom_minimum_size = Vector2(8, 8)
 		dot.mouse_filter = MOUSE_FILTER_IGNORE
 		var dot_wrap := MarginContainer.new()

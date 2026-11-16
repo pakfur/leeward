@@ -406,6 +406,31 @@ def check_crew_tasks(t, r):
             r.err(name, f"missing {code}")
 
 
+def check_fire_table(t, r):
+    name = "fire_table.json"
+    for key, want in (("spread_number", 4), ("growth_turns", 5), ("explode_max", 2),
+                      ("debris_radius", 6), ("debris_never", 1)):
+        if t.get(key) != want:
+            r.err(f"{name}.{key}", f"must be {want} (8.E.4-8.E.11, PDF p.29)")
+    blast = t.get("blast_mgn")
+    if not isinstance(blast, dict) or sorted(blast) != ["1", "2", "3", "4"]:
+        r.err(f"{name}.blast_mgn", "must have rows for classes 1-4")
+        return
+    prev = None
+    for cls in ("1", "2", "3", "4"):
+        row = blast[cls]
+        if (not isinstance(row, list) or len(row) != 2
+                or not all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in row)):
+            r.err(f"{name}.blast_mgn.{cls}", "must be [range 1, range 2] positive ints")
+            prev = None
+            continue
+        if row[0] <= row[1]:
+            r.err(f"{name}.blast_mgn.{cls}", "blast must fall with range")
+        if prev is not None and (row[0] >= prev[0] or row[1] >= prev[1]):
+            r.err(f"{name}.blast_mgn.{cls}", "blast must fall with class")
+        prev = row
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     default_dir = Path(__file__).resolve().parents[4] / "data" / "rules"
@@ -419,7 +444,7 @@ def main():
         "crew_loss_table.json", "drifting_table.json",
         "unfouling_table.json", "crew_quality_table.json",
         "critical_hits_table.json", "poor_maneuvering_table.json",
-        "crew_tasks.json",
+        "crew_tasks.json", "fire_table.json",
     ]
     tables = {n: load(args.rules_dir, n, r) for n in names}
     checks = {
@@ -430,6 +455,7 @@ def main():
         "critical_hits_table.json": check_critical_hits,
         "poor_maneuvering_table.json": check_poor_maneuvering,
         "crew_tasks.json": check_crew_tasks,
+        "fire_table.json": check_fire_table,
     }
     for n, fn in checks.items():
         if tables[n] is not None:

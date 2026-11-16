@@ -18,8 +18,11 @@ const STATION_SAILS := "sails"
 const STATION_BRACES := "braces"
 ## Sections in RO (crew disorganized) sit here; not a drop target (spec §4.3).
 const STATION_REORGANIZING := "reorganizing"
-## Fire stations are "fire_<seq>" (phase 4 lists them; the fire draft works on fake fires now).
+## Fire stations are "fire_<seq>", one per fire burning (8.E.2).
 const STATION_FIRE_PREFIX := "fire_"
+## Fire watch (8.E.2 HINT): FF with no fire, any number of sections; drawn in the fire zone while no
+## fire burns, offered in the assign menu only (menu_only) while fires burn.
+const STATION_FIRE_WATCH := "fire_-1"
 const CODE_FF := "FF"
 const CODE_RO := "RO"
 ## Codes a fire never calls a section away from (8.E.2: RO, engaged boarding). Forced tasks too.
@@ -70,8 +73,8 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 			game_state.ship_controller.get_movement_allowance(ship.ship_id))
 	return {
 		"ma0_turn_plotted": ma0_turn,
-		# Fires as fire seqs (phase 4 fills this from fire_list; empty until then).
-		"fires": [],
+		# Fires burning, as fire seqs in seq order (8.E.2: each needs one section).
+		"fires": Array(ship.fire_seqs()),
 		# final: End Planning (finalize_plots, begin_turn_tasks). While planning, braces placed
 		# before the MA-0 turn is plotted are kept (with a warning) rather than dropped.
 		"final": false,
@@ -223,6 +226,8 @@ static func refusal(ship: ShipState, plan: Dictionary, ctx: Dictionary, section:
 			return ""
 		STATION_REORGANIZING:
 			return "Sections reorganize only after Crew Disorganized (hull critical #4); it cannot be plotted."
+	if station_id == STATION_FIRE_WATCH:
+		return ""
 	if station_id.begins_with(STATION_FIRE_PREFIX):
 		var seq := int(station_id.trim_prefix(STATION_FIRE_PREFIX))
 		if not (ctx.get("fires", []) as Array).has(seq):
@@ -258,7 +263,7 @@ static func assign(ship: ShipState, plan: Dictionary, ctx: Dictionary, section: 
 		_:
 			if station_id.begins_with(STATION_FIRE_PREFIX):
 				result["assignments"][section] = {"code": CODE_FF,
-					"params": {"fire": int(station_id.trim_prefix(STATION_FIRE_PREFIX))}}
+					"params": ff_params(int(station_id.trim_prefix(STATION_FIRE_PREFIX)), section)}
 	return result
 
 
@@ -273,9 +278,15 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 		assignments[int(section)] = (plan["assignments"][section] as Dictionary).duplicate(true)
 	var result := {"assignments": {}, "orders": orders, "auto": [], "warnings": [], "dropped": []}
 	if ship.is_out_of_play():
-		# A struck ship keeps only firefighting (phase 4); a destroyed ship has no crew tasks.
+		# (6) A destroyed ship has no crew tasks. A struck ship only fights its fires (8.E.3, 9.C.3),
+		# always by the automatic allocation (rule A1; spec 0.3 #8).
 		result["orders"] = {"sail_target": ""}
-		result["dropped"] = assignments.keys()
+		if ship.is_struck():
+			result["assignments"] = CrewAuto.fire_assignments(ship, ctx, {})
+			result["auto"] = result["assignments"].keys()
+		for section in assignments.keys():
+			if not result["assignments"].has(section):
+				result["dropped"].append(section)
 		return result
 	# (1) eliminated sections
 	for section in assignments.keys():
@@ -332,7 +343,7 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 			if fire >= 0 and not (ctx.get("fires", []) as Array).has(fire):
 				why = "That fire is out"
 			else:
-				entry["params"] = {"fire": fire}
+				entry["params"] = ff_params(fire, section)
 		else:
 			var live := ship.task_of(section)
 			if live.is_empty() or str(live.get("code", "")) != code:
@@ -355,6 +366,14 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 			"section" if needed == 1 else "sections", on_sails])
 	result["assignments"] = assignments
 	return result
+
+
+## FF params: {"fire": seq}, or for fire watch (seq < 0) {"fire": -1, "section": s} so that each
+## section on watch is its own task (one section per fire once a fire breaks out, 8.E.2).
+static func ff_params(fire: int, section: int) -> Dictionary:
+	if fire < 0:
+		return {"fire": -1, "section": section}
+	return {"fire": fire}
 
 
 ## The Guns readout (spec §4.6): sailor sections the plan leaves at the guns and their modifier.
@@ -448,13 +467,21 @@ static func stations(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Arra
 	fires.sort()
 	for seq in fires:
 		var n := fires.find(seq) + 1
-		var st: Dictionary = make.call(STATION_FIRE_PREFIX + str(seq), CODE_FF, 1, 0, "any", "")
+		var st: Dictionary = make.call(STATION_FIRE_PREFIX + str(seq), CODE_FF, 1, 0, "any",
+			"1 hull and 1 rigging box a turn until it is out (8.E.8). One section per fire (8.E.2).")
 		st["label"] = "Fire %d" % n
 		st["short"] = "FF%d" % n
-		st["fire"] = {"seq": int(seq), "number": n}
+		st["fire"] = {"seq": int(seq), "number": n, "age": ship.fire_age(int(seq), int(ctx.get("turn", 0)))}
 		if (st["occupants"] as Array).is_empty():
 			st["warning"] = "Unfought: morale check each turn (8.E.6)"
 		out.append(st)
+	# Fire watch (8.E.2 HINT): drawn while no fire burns; with fires, offered in the menu only.
+	var watch: Dictionary = make.call(STATION_FIRE_WATCH, CODE_FF, 0, 0, "any",
+		"A head start if fire breaks out (8.E.2).")
+	watch["label"] = "Fire watch"
+	watch["short"] = "FF"
+	watch["menu_only"] = not fires.is_empty()
+	out.append(watch)
 	out.append(make.call(STATION_GUNS, "", ShipState.SAILOR_SECTIONS, 0, "sailor",
 		"Both broadsides. Unassigned sailors work the guns (4.B.4)."))
 	var marine: Dictionary = make.call(STATION_MARINE_FIRE, "", 1, 0, "marine",

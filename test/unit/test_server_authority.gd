@@ -2,7 +2,7 @@ extends GutTest
 ## Server authority over game state (CLAUDE.md "Server Authority"): view-side code
 ## (scripts/ui, scripts/view, scripts/core) reads state and sends requests that the server
 ## validates (player_submit_*, player_clear_movement, player_plot_crew, player_set_crew_auto,
-## player_plot_sail_change, dev_commands.*). It never calls a state mutator or writes a ShipState field itself.
+## player_plot_sail_change, dev_commands.*, including dev_commands.start_fire). It never calls a state mutator or writes a ShipState field itself.
 ## This test scans the source so a violation fails `make test`.
 
 const VIEW_DIRS := ["res://scripts/ui", "res://scripts/view", "res://scripts/core"]
@@ -23,7 +23,15 @@ const FORBIDDEN := [
 	["(?<!player_)\\b(plot_crew|set_auto|set_crew_auto|set_crew_assignments|set_crew_orders|add_task|update_task|end_task|set_plotted_sections)\\(",
 			"a crew plot or task mutator called from view code (use player_plot_crew / player_set_crew_auto)"],
 	["\\bphase_controller\\.advance_phase\\(", "phase advanced from view code (use dev_commands)"],
-	["\\b(_?ship|ship_state|ss|state|s)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots|crew_auto|plotted_sections|task_seq)\\s*(=|\\+=|-=)[^=]",
+	# fires (8.E): the view reads fire_list / fire_count() / is_burning(); the only request is
+	# dev_commands.start_fire (Developer UI)
+	["\\bfire_controller\\.(?!skill\\()", "a FireController mutator called from view code (use dev_commands.start_fire)"],
+	["\\bFireController\\.new\\b", "a FireController made in view code"],
+	["(?<!dev_commands\\.)\\b(start_fire|explode|add_fire|remove_fire|clear_fires|set_explosion_checks)\\(",
+			"a fire mutator called from view code"],
+	["\\.(fire_list|crew_tasks|critical_effects|plotted_sections)\\.(append|append_array|clear|erase|remove_at|push_back|push_front|pop_back|pop_front|insert|resize|sort|sort_custom|fill)\\(",
+			"a ShipState array changed in place from view code"],
+	["\\b(_?ship|ship_state|ss|state|s)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots|crew_auto|plotted_sections|task_seq|fire_list|fire_seq|explosion_checks)\\s*(=|\\+=|-=)[^=]",
 			"a ShipState field written from view code"],
 ]
 

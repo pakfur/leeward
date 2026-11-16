@@ -393,13 +393,13 @@ func test_critical_lines_one_per_lasting_effect() -> void:
 		{"seq": 2, "id": "signal_halyards_cut", "side": -1},
 	] as Array[Dictionary]
 	s.wheel_shot_away = true
-	s.fires = 1
+	s.fire_list = [{"seq": 1, "created_turn": 1, "started_turn": 1, "cause": "crit"}] as Array[Dictionary]
 	assert_eq(StatusPanel.critical_lines(s), [
 		"Starboard broadside −2: obscured by fallen rigging (fix roll in maintenance)",
 		"Rudder jammed to port (fix roll in maintenance)",
 		"Signal halyards cut: no new signals (fix roll in maintenance)",
 		"Wheel shot away: one turn per turn, poor maneuvering",
-		"Afire ×1 (fire is not yet simulated)",
+		"Afire ×1: 1 hull and 1 rigging box a turn per fire (8.E.8)",
 	] as Array[String])
 
 

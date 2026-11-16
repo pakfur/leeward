@@ -462,10 +462,14 @@ func _enter_status_adjustment_phase() -> void:
 		game_state.fouling_controller.resolve_unfouling(current_phase)
 	if game_state.critical_hit_controller:
 		game_state.critical_hit_controller.resolve_fixes(current_phase)
+	# SoP V.F: the Fire & Explosions sub-phase (firefighting, damage, growth and spread,
+	# explosions, unfought fires).
+	if game_state.get("fire_controller") != null:
+		game_state.fire_controller.resolve(current_phase)
 	# SoP V.G: crew tasks counted, completed (sail changes take effect, 5.F.8) or cancelled.
 	if game_state.crew_task_controller:
 		game_state.crew_task_controller.advance_tasks(current_phase)
-	# TODO: Resolve explosions, sinking, repairs, anchors
+	# TODO: sinking, repairs, anchors
 	advance_phase()
 
 func _enter_morale_check_phase() -> void:

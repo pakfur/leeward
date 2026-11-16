@@ -17,9 +17,15 @@ enum Type {
 	CRITICAL_FIXED,  # 8.D.5 fix roll: {result_id, side, roll, modifier, needed, attempt, success}
 	CRITICAL_ENDED,  # a lasting critical effect ended without a roll: {result_id, side, reason}
 	POOR_MANEUVERING,  # 6.F.3 roll for a plotted turn: {roll, needed, success, outcome}
-	FIRE_STARTED,  # a ship is afire (hull #12; fire is not simulated): {fires, result_id}
+	FIRE_STARTED,  # a fire breaks out (8.E.1): {fire, fires, cause, mc, result_id | roll, needed | range | from_fire, age}; target_id: its source
 	DESTROYED,  # the ship blew up (hull #12) and is out of play: {reason}; target_id: freed fouling partner
 	CREW_TASK,  # a crew task other than a sail change: {code, sections, params, state, done, needed, reason}
+	FIRE_FOUGHT,  # 8.E.3 firefighting roll: {fire, number, sections, roll, modifier, needed, attempt, success}
+	FIRE_UNFOUGHT,  # 8.E.6: a fire nobody fought this g-t: {fire, number, mc}
+	FIRE_SPREAD,  # 8.E.4 spread roll from ship_id to target_id: {roll, needed, spreads}
+	EXPLOSION_CHECK,  # 8.E.8 a burning hulk rolls to explode: {roll, needed, explodes}
+	BLAST,  # 8.E.10 blast from ship_id on target_id: {range, mgn, d6, fgn, rigging, hull, crew}
+	DEBRIS,  # 8.E.11 flaming debris from ship_id on target_id: {range, roll | attached, afire}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -94,7 +100,6 @@ const CRITICAL_RESULT_NAMES := {
 
 const CRITICAL_NOTES := {
 	"not_simulated": "not yet simulated",
-	"fire_not_simulated": "fire roll not yet simulated",
 	"not_implemented": "not yet implemented",
 	"sinking_not_simulated": "sinking not yet simulated",
 }
@@ -182,6 +187,10 @@ static func morale_trigger_text(trigger: String) -> String:
 		return "all marines lost"
 	if trigger.begins_with("crit_"):
 		return "critical hit"
+	if trigger.begins_with("fire_"):
+		return "fire breaks out"
+	if trigger.begins_with("unfought_"):
+		return "a fire with no one to fight it"
 	if trigger.begins_with("hull_") and trigger.substr(5).is_valid_int():
 		return "%s hull section lost" % _ordinal(int(trigger.substr(5)) - 1)
 	if trigger.begins_with("crew_") and trigger.substr(5).is_valid_int():
@@ -256,7 +265,34 @@ class PhaseEvent extends RefCounted:
 			Type.MORALE_CHECK:
 				return _morale_check_text(who)
 			Type.FIRE_STARTED:
-				return "%s is afire (not yet simulated)" % who
+				return _fire_started_text(who, other)
+			Type.FIRE_FOUGHT:
+				return _fire_fought_text(who)
+			Type.FIRE_UNFOUGHT:
+				return "%s has no crew to fight fire %d" % [who, int(data.get("number", 1))] \
+					+ (": morale check" if data.get("mc", false) else "")
+			Type.FIRE_SPREAD:
+				var roll := int(data.get("roll", 0))
+				var needed := int(data.get("needed", 0))
+				if data.get("spreads", false):
+					return "The fire aboard %s spreads to %s (d10 %d ≤ %d)" % [who, other, roll, needed]
+				return "The fire aboard %s does not spread to %s (d10 %d > %d)" % [who, other, roll, needed]
+			Type.EXPLOSION_CHECK:
+				var verdict := "she explodes!" if data.get("explodes", false) else "she burns on"
+				return "Burning hulk %s: explosion roll %s, needs %s or less — %s" % [
+					who, _val("roll"), _val("needed"), verdict]
+			Type.BLAST:
+				var hits := _hits_text(["rigging", "hull", "crew"], {}, "no damage")
+				return "The blast from %s strikes %s (range %s: %s + %s = %s): %s" % [
+					who, other, _val("range"), _val("mgn"), _val("d6"), _val("fgn"), hits]
+			Type.DEBRIS:
+				if data.get("attached", false):
+					return "Flaming debris from %s falls on %s, fouled alongside: afire" % [who, other]
+				var roll := int(data.get("roll", 0))
+				var r := int(data.get("range", 0))
+				if data.get("afire", false):
+					return "Flaming debris from %s sets %s afire (d6 %d, range %d)" % [who, other, roll, r]
+				return "Flaming debris from %s falls clear of %s (d6 %d, range %d)" % [who, other, roll, r]
 			Type.DESTROYED:
 				var text := "%s explodes and is destroyed" % who
 				if target_id != "":
@@ -375,6 +411,14 @@ class PhaseEvent extends RefCounted:
 			"guns_dismounted", "minor_explosion":
 				if data.has("guns"):
 					result += " −%d" % int(data["guns"])
+				if data.has("fire_roll"):
+					var fr: Dictionary = data["fire_roll"]
+					var total := int(fr["roll"]) + int(fr["modifier"])
+					var detail := "d10 %d %+d = %d" % [int(fr["roll"]), int(fr["modifier"]), total]
+					if fr.get("afire", false):
+						result += " — afire (%s ≥ %d)" % [detail, int(fr["needed"])]
+					else:
+						result += " — no fire (%s < %d)" % [detail, int(fr["needed"])]
 			"afire_major_explosion":
 				if data.has("guns"):
 					result += " −%d guns" % int(data["guns"])
@@ -533,6 +577,8 @@ class PhaseEvent extends RefCounted:
 		var hits := _hits_text(keys, units, "")
 		if hits == "":
 			return "%s takes no damage" % who
+		if data.get("cause", "") == "fire":
+			return "%s loses %s to fire" % [who, hits]
 		return "%s loses %s" % [who, hits]
 
 	func _morale_check_text(who: String) -> String:
@@ -625,6 +671,44 @@ class PhaseEvent extends RefCounted:
 		return "%s begins changing sail %s → %s (%s)" % [who, _val("from"), _val("to"),
 			PhaseEvents.plural(turns, "turn")]
 
+	## "Vengeance catches fire (hull critical)", "...: a second fire breaks out", "... catches fire
+	## from Fougueux (d10 2 ≤ 4)".
+	func _fire_started_text(who: String, other: String) -> String:
+		var fires := int(data.get("fires", 1))
+		var head := "%s catches fire" % who if fires <= 1 else "Another fire breaks out aboard %s (%d burning)" % [who, fires]
+		var why := ""
+		match str(data.get("cause", "")):
+			"crit":
+				why = "hull critical"
+			"spread":
+				why = "from %s" % other if target_id != "" else "spread"
+				if data.has("roll"):
+					why += ", d10 %d ≤ %d" % [int(data["roll"]), int(data.get("needed", 0))]
+			"growth":
+				why = "the fire grows after %s" % PhaseEvents.plural(int(data.get("age", 5)), "turn")
+			"debris":
+				why = "flaming debris from %s" % other if target_id != "" else "flaming debris"
+		var text := head + (" (%s)" % why if why != "" else "")
+		if data.get("mc", false):
+			text += ": morale check"
+		return text
+
+	## "Vengeance's S2 puts out fire 1 (3 −2 = 1 ≤ 2)" / "... fails to master fire 1 (8 −2 = 6 > 2)" (8.E.3).
+	func _fire_fought_text(who: String) -> String:
+		var names: Array = []
+		for section in data.get("sections", []):
+			names.append(ShipState.SECTION_NAMES[int(section)])
+		var crew := " ".join(names) if not names.is_empty() else "crew"
+		var roll := int(data.get("roll", 0))
+		var modifier := int(data.get("modifier", 0))
+		var needed := int(data.get("needed", 0))
+		var sum := "%d %s = %d" % [roll, ("%+d" % modifier).replace("-", "−"), roll + modifier] if modifier != 0 else str(roll)
+		var number := int(data.get("number", 1))
+		if data.get("success", false):
+			return "%s's %s puts out fire %d (%s ≤ %d)" % [who, crew, number, sum, needed]
+		return "%s's %s fails to master fire %d (%s > %d, %s turn)" % [who, crew, number, sum, needed,
+			PhaseEvents._ordinal(int(data.get("attempt", 1)) - 1)]
+
 	## "Vengeance: S3 begins to repair rigging (4 turns)", "...: S3 stops: abandoned".
 	func _crew_task_text(who: String) -> String:
 		var names: Array = []
@@ -633,8 +717,12 @@ class PhaseEvent extends RefCounted:
 		var crew := " ".join(names) if not names.is_empty() else "the crew"
 		var code := str(data.get("code", ""))
 		var task: String = PhaseEvents.CREW_TASK_NAMES.get(code, code)
+		if code == "FF" and int((data.get("params", {}) as Dictionary).get("fire", -1)) < 0:
+			task = "stand by as fire watch"
 		var needed := int(data.get("needed", -1))
 		match str(data.get("state", "")):
+			"attached":
+				return "%s: %s, on fire watch, turns to the new fire at once" % [who, crew]
 			"started":
 				var length := " (%s)" % PhaseEvents.plural(needed, "turn") if needed > 0 else ""
 				return "%s: %s begins to %s%s" % [who, crew, task, length]

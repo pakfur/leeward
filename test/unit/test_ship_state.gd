@@ -333,7 +333,8 @@ func test_new_ship_has_no_criticals() -> void:
 	assert_eq(state.critical_seq, 0)
 	assert_false(state.rudder_destroyed)
 	assert_false(state.wheel_shot_away)
-	assert_eq(state.fires, 0)
+	assert_eq(state.fire_count(), 0)
+	assert_false(state.is_burning())
 	assert_false(state.has_critical("braces_cut"))
 	assert_eq(state.critical_mp_loss(), 0)
 	assert_false(state.is_poor_maneuvering())
@@ -392,8 +393,11 @@ func test_serialize_round_trip_keeps_critical_fields() -> void:
 	state.critical_seq = 5
 	state.rudder_destroyed = true
 	state.wheel_shot_away = true
-	state.fires = 2
-	var restored := ShipState.deserialize(state.serialize())
+	state.fire_list = [{"seq": 1, "created_turn": 2, "started_turn": 2, "cause": "crit"},
+		{"seq": 3, "created_turn": 4, "started_turn": 5, "cause": "growth"}] as Array[Dictionary]
+	state.fire_seq = 3
+	state.explosion_checks = 1
+	var restored := ShipState.deserialize(JSON.parse_string(JSON.stringify(state.serialize())))
 	assert_eq(restored.critical_effects.size(), 1)
 	assert_eq(restored.critical_effects[0]["id"], "rudder_jammed")
 	assert_eq(restored.critical_effects[0]["side"], ShipState.STARBOARD)
@@ -402,20 +406,35 @@ func test_serialize_round_trip_keeps_critical_fields() -> void:
 	assert_eq(restored.critical_seq, 5)
 	assert_true(restored.rudder_destroyed)
 	assert_true(restored.wheel_shot_away)
-	assert_eq(restored.fires, 2)
+	assert_eq(restored.fire_seqs(), [1, 3] as Array[int], "spec §8 #57: fires round-trip")
+	assert_eq(restored.fire_by_seq(3), {"seq": 3, "created_turn": 4, "started_turn": 5, "cause": "growth"})
+	assert_eq(restored.fire_seq, 3)
+	assert_eq(restored.explosion_checks, 1)
 	restored.critical_effects[0]["attempts"] = 9
 	assert_eq(state.critical_effects[0]["attempts"], 2, "restored effects are copies")
 
 
 func test_deserialize_old_snapshot_has_no_criticals() -> void:
 	var data := state.serialize()
-	for key in ["critical_effects", "critical_seq", "rudder_destroyed", "wheel_shot_away", "fires"]:
+	for key in ["critical_effects", "critical_seq", "rudder_destroyed", "wheel_shot_away", "fire_list",
+			"fire_seq", "explosion_checks"]:
 		data.erase(key)
 	var restored := ShipState.deserialize(data)
 	assert_eq(restored.critical_effects.size(), 0)
 	assert_eq(restored.critical_seq, 0)
 	assert_false(restored.rudder_destroyed)
-	assert_eq(restored.fires, 0)
+	assert_eq(restored.fire_count(), 0)
+
+
+func test_deserialize_old_fires_count_becomes_fire_list() -> void:
+	# Saves from before fire was simulated stored only "fires": n.
+	var data := state.serialize()
+	for key in ["fire_list", "fire_seq", "explosion_checks"]:
+		data.erase(key)
+	data["fires"] = 2
+	var restored := ShipState.deserialize(data)
+	assert_eq(restored.fire_seqs(), [1, 2] as Array[int])
+	assert_eq(restored.fire_seq, 2)
 
 
 func test_snapshot_does_not_share_critical_effects() -> void:
@@ -472,9 +491,18 @@ func test_steering_and_fire_mutators() -> void:
 	assert_true(state.rudder_destroyed)
 	assert_true(c.set_wheel_shot_away("ss_ship", true))
 	assert_true(state.wheel_shot_away)
-	assert_true(c.add_fire("ss_ship"))
-	assert_true(c.add_fire("ss_ship"))
-	assert_eq(state.fires, 2)
+	assert_eq(c.add_fire("ss_ship", "crit"), 1)
+	assert_eq(c.add_fire("ss_ship", "spread", true), 2)
+	assert_eq(state.fire_count(), 2)
+	var turn: int = GameState.current_turn
+	assert_eq(state.fire_by_seq(1)["started_turn"], turn, "a Combat Phase fire burns this g-t")
+	assert_eq(state.fire_by_seq(2)["started_turn"], turn + 1, "a Fire sub-phase fire burns from the next (0.3 #5)")
+	assert_true(c.remove_fire("ss_ship", 1))
+	assert_eq(state.fire_seqs(), [2] as Array[int])
+	assert_true(c.set_explosion_checks("ss_ship", 2))
+	assert_eq(state.explosion_checks, 2)
+	assert_true(c.clear_fires("ss_ship"))
+	assert_false(state.is_burning())
 
 
 func test_cross_out_rigging_section_takes_current_section() -> void:
@@ -497,7 +525,7 @@ func test_critical_mutators_refused_on_client() -> void:
 	assert_false(c.remove_critical_effect("ss_ship", 0))
 	assert_false(c.set_rudder_destroyed("ss_ship", true))
 	assert_false(c.set_wheel_shot_away("ss_ship", true))
-	assert_false(c.add_fire("ss_ship"))
+	assert_eq(c.add_fire("ss_ship", "crit"), -1)
 	assert_eq(c.cross_out_rigging_section("ss_ship"), -1)
 	c.is_server = true
 	assert_push_error(7, "seven client refusals")
@@ -505,5 +533,5 @@ func test_critical_mutators_refused_on_client() -> void:
 	assert_eq(state.critical_effects[0]["attempts"], 0)
 	assert_false(state.rudder_destroyed)
 	assert_false(state.wheel_shot_away)
-	assert_eq(state.fires, 0)
+	assert_eq(state.fire_count(), 0)
 	assert_eq(state.rigging_current_hp, [3, 3, 3, 3] as Array[int])

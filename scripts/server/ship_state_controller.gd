@@ -614,15 +614,60 @@ func set_wheel_shot_away(ship_id: String, shot_away: bool) -> bool:
 	ship_state_changed.emit(ship_id)
 	return true
 
-## Adds one fire (stored only until 8.E exists).
-func add_fire(ship_id: String) -> bool:
+## --- Fires (8.E; FireController drives these) ---
+
+## Adds a fire (cause "crit", "spread", "growth", "debris"). It burns from this g-t, or from the
+## next when it breaks out in the Fire & Explosions sub-phase (crew-tasks spec 0.3 #5). Returns
+## its seq, or -1.
+func add_fire(ship_id: String, cause: String, in_fire_subphase: bool = false) -> int:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify fires on client")
+		return -1
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return -1
+	var turn := current_turn()
+	ship.fire_seq += 1
+	ship.fire_list.append({"seq": ship.fire_seq, "created_turn": turn,
+		"started_turn": turn + (1 if in_fire_subphase else 0), "cause": cause})
+	ship_state_changed.emit(ship_id)
+	return ship.fire_seq
+
+## Removes the fire with this seq (put out).
+func remove_fire(ship_id: String, seq: int) -> bool:
 	if not is_server:
 		push_error("ShipStateController: Cannot modify fires on client")
 		return false
 	var ship = _server_ship(ship_id)
 	if not ship:
 		return false
-	ship.fires += 1
+	for k in range(ship.fire_list.size()):
+		if int(ship.fire_list[k].get("seq", -1)) == seq:
+			ship.fire_list.remove_at(k)
+			ship_state_changed.emit(ship_id)
+			return true
+	return false
+
+## Every fire goes (the ship has blown up: a wreck does not burn, spec Q10).
+func clear_fires(ship_id: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify fires on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.fire_list.clear()
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_explosion_checks(ship_id: String, checks: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify explosion checks on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.explosion_checks = checks
 	ship_state_changed.emit(ship_id)
 	return true
 

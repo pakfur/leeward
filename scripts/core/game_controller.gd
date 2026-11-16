@@ -144,6 +144,7 @@ func _ready() -> void:
 	if developer_ui:
 		developer_ui.hex_coords_toggled.connect(_on_hex_coords_toggled)
 		developer_ui.hex_labels_toggled.connect(_on_hex_labels_toggled)
+		developer_ui.ship_changed.connect(_on_dev_ship_changed)
 
 	# Start the game
 	GameState.start_new_game(scenario)
@@ -242,6 +243,19 @@ func _fit_crew_overlay() -> void:
 		left = context_panel.panel_container.get_global_rect().end.x
 	if absf(crew_overlay.offset_left - left) > 0.5:
 		crew_overlay.offset_left = left
+
+
+## A Developer UI command changed a ship (e.g. started a fire): redraw what shows it.
+func _on_dev_ship_changed(ship_id: String) -> void:
+	var ship_state: ShipState = GameState.get_ship(ship_id)
+	if ship_state == null:
+		return
+	if current_planning_ui and is_instance_valid(current_planning_ui):
+		current_planning_ui.update_ship_display(ship_state)
+		current_planning_ui.refresh_crew_orders()
+	if crew_client:
+		crew_client.refresh()
+	_sync_all_views()
 
 
 func _on_crew_changed() -> void:

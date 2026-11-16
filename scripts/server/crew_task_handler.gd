@@ -70,10 +70,17 @@ func on_cancel(ship: ShipState, task: Dictionary, reason: String, phase: int) ->
 	_log(ship, task, "cancelled" if reason != CrewTaskController.ABANDONED else "abandoned", reason, phase)
 
 
+## 8.E.2, 10.B.5: a fire broke out aboard the ship (the boarding handler disbands unengaged boarders).
+func on_fire_breaks_out(_ship_id: String) -> void:
+	pass
+
+
 ## A reason the task ends now (checked in advance_tasks), or "".
 func cancel_reason(ship: ShipState, task: Dictionary) -> String:
 	if ship.is_destroyed():
 		return "destroyed"
+	if ship.is_struck() and str(task.get("code", "")) != "FF":
+		return "struck"  # a struck ship only fights fires (9.C.3)
 	for section in task.get("sections", []):
 		if not ship.section_alive(int(section)):
 			return "crew lost"

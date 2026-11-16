@@ -431,7 +431,8 @@ func _station_rect(st: Dictionary) -> Array:
 		return CrewDeckLayouts.station_rect(id)
 	# Fires split the fire zone: up to two side by side, more in two rows.
 	var z := CrewDeckLayouts.station_rect(FIRE_ZONE_ID)
-	var fires := _stations.filter(func(s): return (s["id"] as String).begins_with(CrewRules.STATION_FIRE_PREFIX))
+	var fires := _stations.filter(func(s): return (s["id"] as String).begins_with(CrewRules.STATION_FIRE_PREFIX) \
+		and not s.get("menu_only", false))
 	var n := fires.size()
 	var i := fires.find(st)
 	var cols := mini(n, 2)
@@ -449,7 +450,7 @@ func _build_deck(deck: Dictionary, small: bool, portrait: bool) -> Control:
 	var fs_label := 10.0 if small else 11.0
 	for st in _stations:
 		var id: String = st["id"]
-		if not _station_decks(id).has(deck["id"]):
+		if not _station_decks(id).has(deck["id"]) or st.get("menu_only", false):
 			continue
 		var rect := _station_rect(st)
 		if rect.size() < 4:
@@ -468,6 +469,9 @@ func _build_deck(deck: Dictionary, small: bool, portrait: bool) -> Control:
 			var turns: int = st.get("turns", 0)
 			if id == CrewRules.STATION_BRACES:
 				right = _braces_header(occ.size())
+			elif panel.fire:
+				var age := int(st["fire"].get("age", 0))
+				right = "burning %d turn%s" % [age, "" if age == 1 else "s"] if age > 0 else "breaks out"
 			elif cap > 0:
 				right = "%d/%d%s" % [occ.size(), cap, (" · %d turn%s" % [turns, "" if turns == 1 else "s"]) if turns > 0 else ""]
 		panel.content.add_child(_station_header(title, right, fs_label, _rect_width_px(rect, small, portrait)))
