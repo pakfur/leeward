@@ -284,10 +284,7 @@ func _open_crew_overlay(ship_id: String) -> void:
 		return  # enemy plots are secret
 	# Movement plotting needs the map: a plot in progress is cancelled.
 	if movement_client and movement_client.is_plotting():
-		var plotting_id := movement_client.get_active_ship_id()
 		movement_client.cancel()
-		if current_planning_ui:
-			current_planning_ui.deactivate_movement_button(plotting_id)
 	_clear_hover()
 	crew_client.open_for(ship_id)
 
@@ -780,11 +777,6 @@ func _enter_planning_phase() -> void:
 
 		# Connect signals
 		current_planning_ui.ship_selected.connect(_on_planning_ship_selected)
-		current_planning_ui.action_toggled.connect(_on_planning_action_toggled)
-		current_planning_ui.undo_pressed.connect(_on_plotting_undo_pressed)
-		current_planning_ui.undo_all_pressed.connect(_on_plotting_undo_all_pressed)
-		current_planning_ui.submit_pressed.connect(_on_plotting_submit_pressed)
-		current_planning_ui.cancel_pressed.connect(_on_plotting_cancel_pressed)
 		current_planning_ui.end_planning_pressed.connect(_on_end_planning_pressed)
 		current_planning_ui.crew_overlay_requested.connect(_open_crew_overlay)
 
@@ -811,10 +803,7 @@ func _on_planning_ship_selected(ship_id: String) -> void:
 
 	# The plotting controls belong to the selected ship: a plot left open for another ship ends.
 	if movement_client and movement_client.is_plotting() and movement_client.get_active_ship_id() != ship_id:
-		var plotting_id := movement_client.get_active_ship_id()
 		movement_client.cancel()
-		if current_planning_ui:
-			current_planning_ui.deactivate_movement_button(plotting_id)
 
 	# Bring the ship into view only if it is off-screen or near the edge: a smooth pan,
 	# never a rotation or zoom change (north stays up unless the player turns the camera).
@@ -826,47 +815,8 @@ func _on_planning_ship_selected(ship_id: String) -> void:
 	if crew_client:
 		crew_client.follow_ship(ship_id)
 
-func _on_planning_action_toggled(ship_id: String, action_type: String, active: bool) -> void:
-	Trace.trace_log("GameController", "Action '%s' toggled to %s for ship %s" % [action_type, active, ship_id])
-
-	# Store action state locally
-	if not selected_actions.has(ship_id):
-		selected_actions[ship_id] = {}
-	selected_actions[ship_id][action_type] = active
-
-	# Handle movement action
-	if action_type == "movement" and movement_client:
-		if active and crew_client and crew_client.is_open:
-			crew_client.close()  # plotting a move needs the map
-		if active:
-			# If re-plotting a submitted ship, clear the old submission first
-			if current_planning_ui and current_planning_ui.is_ship_submitted(ship_id):
-				submitted_paths.erase(ship_id)
-				current_planning_ui.mark_ship_unsubmitted(ship_id)
-				# Clear the submitted path overlay
-				if hex_overlay:
-					hex_overlay.clear_submitted_path(ship_id)
-				# Ask the server to withdraw the old movement plot (any sail order is kept).
-				if GameState.is_server and GameState.phase_controller:
-					var reason: String = GameState.phase_controller.player_clear_movement(HUMAN_PLAYER_ID, ship_id)
-					if reason != "":
-						Trace.trace_log("GameController", "Re-plot of %s refused: %s" % [ship_id, reason])
-				Trace.trace_log("GameController", "Re-plotting ship %s — cleared previous submission" % ship_id)
-
-			var ship_state = GameState.get_ship(ship_id)
-			if ship_state:
-				movement_client.start_plotting(ship_state.player_id, ship_id)
-		else:
-			if movement_client.is_plotting_ship(ship_id):
-				movement_client.cancel()
-
 func _on_end_planning_pressed() -> void:
-	# Double-check all ships are submitted
-	if current_planning_ui and not current_planning_ui.are_all_ships_submitted():
-		push_warning("End Planning pressed but not all ships submitted")
-		return
-
-	Trace.trace_log("GameController", "End Planning pressed — all player-0 ships submitted")
+	Trace.trace_log("GameController", "End Planning pressed")
 
 	# Cancel any stale plotting session
 	if movement_client and movement_client.is_plotting():
@@ -877,30 +827,6 @@ func _on_end_planning_pressed() -> void:
 		GameState.phase_controller.player_submit_plan(HUMAN_PLAYER_ID)
 	else:
 		push_warning("Client plan submission not yet implemented — needs network layer")
-
-# ============================================================================
-# Movement Plotting UI Callbacks
-# ============================================================================
-
-func _on_plotting_undo_pressed() -> void:
-	if movement_client:
-		movement_client.undo()
-
-func _on_plotting_undo_all_pressed() -> void:
-	if movement_client:
-		movement_client.undo_all()
-
-func _on_plotting_submit_pressed() -> void:
-	if movement_client:
-		movement_client.submit()
-
-func _on_plotting_cancel_pressed() -> void:
-	if movement_client:
-		var ship_id = movement_client.get_active_ship_id()
-		movement_client.cancel()
-		# Deactivate the movement toggle button
-		if current_planning_ui and not ship_id.is_empty():
-			current_planning_ui.deactivate_movement_button(ship_id)
 
 # ============================================================================
 # Movement Plotting Response Handlers
@@ -922,18 +848,6 @@ func _on_plotting_started(ship_id: String, valid_hexes: Variant, remaining_ma_va
 			var blocked = blocked_hexes_for(vnh, ship_state.hex_position, ship_state.facing, hex_grid)
 			hex_overlay.show_blocked_hexes(blocked, hex_grid)
 
-	if current_planning_ui:
-		# Read-only queries for the "limited by acceleration" note  SCV:ALLOW
-		var table_ma: int = GameState.ship_controller.get_movement_allowance(ship_id) if ship_state else remaining_ma_val
-		var speed_last_turn: int = ship_state.speed if ship_state else 0
-		var accel := 0
-		if ship_state and ship_state.ship:
-			accel = GameState.ship_controller.get_speed_change_limits(ship_id).accel  # read-only  SCV:ALLOW
-		var can_submit_val: bool = movement_client.can_submit if movement_client else false
-		current_planning_ui.show_plotting_controls(ship_id, remaining_ma_val, table_ma, speed_last_turn, accel,
-			can_submit_val)
-		_update_tacking_display(is_tacking)
-		_update_steering_display()
 	_rebuild_hover_candidates(vnh)
 	_show_collision_warning(_last_hover_hex)
 
@@ -965,12 +879,6 @@ func _show_plot_step(plotted_path: Array, vnh: MovementTypes.ValidNextHexes, can
 		var blocked = blocked_hexes_for(vnh, current_hex, current_facing, hex_grid)
 		hex_overlay.show_blocked_hexes(blocked, hex_grid)
 
-	if current_planning_ui:
-		current_planning_ui.update_plotting_state(plotted_path, remaining_ma_val, can_submit_val)
-		current_planning_ui.set_allowance_note(PlanningText.plot_note(
-			_track_allowance_change(plotted_path, remaining_ma_val), _plotted_heading_code(plotted_path)))
-		_update_tacking_display(is_tacking)
-		_update_steering_display()
 	_rebuild_hover_candidates(vnh)
 	_show_collision_warning(_last_hover_hex)
 
@@ -1077,14 +985,9 @@ static func path_entered_hexes(plotted_path: Array, start_bow: Vector2i, start_f
 		facing = step.facing
 	return result
 
-## The plotting area's warning: the hovered hex's, otherwise the plotted path's ("" hides it).
-func _show_collision_warning(hover_hex: Vector2i) -> void:
-	if not current_planning_ui:
-		return
-	var text := _path_collision_text
-	if _collision_warnings.has(hover_hex):
-		text = _collision_warnings[hover_hex]
-	current_planning_ui.set_collision_warning(text)
+## The plotting area's warning (Task 6 shows it on the card's Course block).
+func _show_collision_warning(_hover_hex: Vector2i) -> void:
+	pass
 
 func _rebuild_hover_candidates(valid_hexes: MovementTypes.ValidNextHexes) -> void:
 	_hover_candidates.clear()
@@ -1103,9 +1006,6 @@ func _on_plotting_cancelled(ship_id: String) -> void:
 	if hex_overlay:
 		hex_overlay.clear_all()
 
-	if current_planning_ui:
-		current_planning_ui.hide_plotting_controls()
-
 func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
 	_hover_candidates.clear()
 	_collision_warnings.clear()
@@ -1122,53 +1022,11 @@ func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
 		hex_overlay.clear_plotted_path()
 		hex_overlay.show_submitted_path(ship_id, final_path, hex_map.get_hex_grid())
 
-	if current_planning_ui:
-		current_planning_ui.hide_plotting_controls()
-		current_planning_ui.mark_ship_submitted(ship_id)
 	if crew_client:
 		crew_client.refresh()  # an MA-0 turn opens the braces
 
 func _on_plotting_error(error_code: String, message: String) -> void:
 	Trace.trace_log("GameController", "Plotting error: %s - %s" % [error_code, message])
-
-
-func _update_tacking_display(is_tacking: bool) -> void:
-	if not current_planning_ui or not movement_client:
-		return
-	if not is_tacking:
-		current_planning_ui.update_tacking_state(false)
-		return
-
-	var ship_state = GameState.get_ship(movement_client.active_ship_id)
-	if not ship_state or not ship_state.ship:
-		current_planning_ui.update_tacking_state(false)
-		return
-
-	# Read-only queries: the sections the crew plan puts at the braces for a turn at MA 0, and the
-	# Tacking chart with this ship's DRMs for that many and for a full crew of 3 (5.D.2a).
-	var sections: int = GameState.crew_task_controller.planned_tack_sections(ship_state.ship_id)
-	var probability: float = GameState.movement_resolver.tacking_chance(ship_state, sections)
-	var full: float = GameState.movement_resolver.tacking_chance(ship_state, TackCrewHandler.max_sections())
-	Trace.trace_log("GameController", "Turn at MA=0: %s, %d at the braces, success chance %.0f%%" % [
-		ship_state.ship_id, sections, probability * 100.0
-	])
-	current_planning_ui.update_tacking_state(true,
-		PlanningText.tacking_note(probability, sections, full, TackCrewHandler.max_sections()))
-
-
-## Steering damage (hull #2, #3; 6.F): the Poor Maneuvering chance for a turn, a turn left over from
-## last g-t, or the direction a jammed rudder holds. Hidden for a ship with sound steering.
-func _update_steering_display() -> void:
-	if not current_planning_ui or not movement_client:
-		return
-	var ship_state = GameState.get_ship(movement_client.active_ship_id)
-	if not ship_state or not ship_state.ship:
-		current_planning_ui.update_steering_state("")
-		return
-	# Read-only query: the Poor Maneuvering chart, as the resolver will roll it  SCV:ALLOW
-	var chance: float = GameState.movement_resolver.poor_maneuvering_chance(ship_state)
-	current_planning_ui.update_steering_state(PlanningText.steering_note(ship_state.is_poor_maneuvering(),
-		chance, ship_state.pending_turn, ship_state.rudder_jam_direction(), ship_state.rudder_destroyed))
 
 
 ## Hexes to mark as blocked around the plotting ship: the forward / port / starboard neighbours the

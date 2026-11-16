@@ -31,12 +31,9 @@ func test_movement_limit_note_only_when_the_table_allows_more() -> void:
 		"Limited by acceleration: speed last turn 0, may gain 3 (wind and sail allow 7).")
 
 
-func test_instructions_singular_plural_and_done() -> void:
-	assert_eq(PlanningText.instructions(1, 2, 0), "1 ship still needs orders. Select it and press Movement.")
-	assert_eq(PlanningText.instructions(2, 2, 0), "2 ships still need orders. Select each and press Movement.")
-	assert_eq(PlanningText.instructions(0, 2, 0), "All ships have orders. Press End Planning.")
-	assert_eq(PlanningText.instructions(0, 2, 1), "All ships have orders. Press End Planning.")
-	assert_eq(PlanningText.instructions(0, 2, 2), "No ship can move this turn. Press End Planning.")
+func test_instructions_text() -> void:
+	assert_eq(PlanningText.instructions(),
+		"Click a ship's highlighted hexes to plot its course. Click a hex on its course to cut it back.")
 
 
 func test_occupied_hexes_names_other_ships_only() -> void:

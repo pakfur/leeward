@@ -46,99 +46,6 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
-[node name="OrdersSeparator" type="HSeparator" parent="VBoxContainer/ScrollContainer/ScrollContent"]
-layout_mode = 2
-
-[node name="PlottingControls" type="VBoxContainer" parent="VBoxContainer/ScrollContainer/ScrollContent"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_constants/separation = 4
-
-[node name="PlottingHeader" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
-layout_mode = 2
-text = "Movement plotting"
-
-[node name="MALabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
-unique_name_in_owner = true
-layout_mode = 2
-mouse_filter = 0
-text = "Movement: 0 of 0 left"
-
-[node name="AllowanceNoteLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_type_variation = &"SecondaryLabel"
-theme_override_colors/font_color = Color(0.85, 0.85, 0.7, 1)
-autowrap_mode = 2
-
-[node name="MALimitLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_type_variation = &"SecondaryLabel"
-theme_override_colors/font_color = Color(0.85, 0.85, 0.7, 1)
-autowrap_mode = 2
-
-[node name="CollisionLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.55, 0.15, 1)
-autowrap_mode = 2
-
-[node name="PathLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"SecondaryLabel"
-text = "Path: (none)"
-autowrap_mode = 2
-
-[node name="TackingLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.8, 0.2, 1)
-text = "Tacking: 0%"
-
-[node name="SteeringLabel" type="Label" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.8, 0.2, 1)
-autowrap_mode = 3
-text = "Steering"
-
-[node name="ButtonRow" type="HBoxContainer" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls"]
-layout_mode = 2
-theme_override_constants/separation = 4
-alignment = 1
-
-[node name="UndoButton" type="Button" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls/ButtonRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Undo"
-
-[node name="UndoAllButton" type="Button" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls/ButtonRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Undo All"
-
-[node name="SubmitButton" type="Button" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls/ButtonRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Submit"
-
-[node name="CancelButton" type="Button" parent="VBoxContainer/ScrollContainer/ScrollContent/PlottingControls/ButtonRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Cancel"
-
 [node name="HSeparator3" type="HSeparator" parent="VBoxContainer"]
 layout_mode = 2
 
@@ -146,13 +53,31 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"SecondaryLabel"
-text = "Select a ship and press Movement to plot its course."
+text = "Click a ship's highlighted hexes to plot its course. Click a hex on its course to cut it back."
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="EndPlanningButton" type="Button" parent="VBoxContainer"]
-unique_name_in_owner = true
+[node name="FooterRow" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="EndPlanningButton" type="Button" parent="VBoxContainer/FooterRow"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 44)
-disabled = true
-text = "End Planning (0/0)"
+layout_mode = 2
+size_flags_horizontal = 3
+text = "End Planning"
+
+[node name="CancelButton" type="Button" parent="VBoxContainer/FooterRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+tooltip_text = "Reset every order this turn to how it was at the start of the turn"
+text = "Cancel"
+
+[node name="ResetDialog" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "Reset orders"
+ok_button_text = "Reset"
+cancel_button_text = "Keep orders"
+dialog_text = "Reset all orders for this turn? Courses, crew, sail and boarding orders go back to how they were at the start of the turn."

@@ -78,16 +78,9 @@ static func plot_note(allowance_note: String, heading_code: String) -> String:
 	return IRONS_NOTE if allowance_note == "" else allowance_note + "\n" + IRONS_NOTE
 
 
-## The instruction line under the ship list. `needing`: ships still without orders;
-## `unable`: ships that cannot move at all (fouled, struck, dismasted).
-static func instructions(needing: int, total: int, unable: int) -> String:
-	if needing == 1:
-		return "1 ship still needs orders. Select it and press Movement."
-	if needing > 1:
-		return "%d ships still need orders. Select each and press Movement." % needing
-	if total > 0 and unable == total:
-		return "No ship can move this turn. Press End Planning."
-	return "All ships have orders. Press End Planning."
+## The instruction line under the ship list.
+static func instructions() -> String:
+	return "Click a ship's highlighted hexes to plot its course. Click a hex on its course to cut it back."
 
 
 ## Hexes that currently hold another ship (its bow or stern): hex -> that ship's name.

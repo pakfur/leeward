@@ -39,63 +39,54 @@ func after_each() -> void:
 	GameState.clear_ships()
 
 
-func test_movement_on_another_card_selects_that_ship() -> void:
-	assert_eq(ui.selected_ship_id, "p1")
+func test_cards_have_no_movement_button() -> void:
+	for id in ["p1", "p2"]:
+		assert_null(ui.ship_list_items[id].find_child("MovementButton", true, false), "no Movement button on %s" % id)
+	assert_null(ui.find_child("PlottingControls", true, false), "no shared plotting box")
+
+
+func test_end_planning_is_enabled_with_no_orders_given() -> void:
+	assert_false(ui.end_planning_button.disabled)
+	assert_eq(ui.end_planning_button.text, "End Planning")
 	watch_signals(ui)
-	ui._on_action_button_pressed("p2", "movement")
-	assert_eq(ui.selected_ship_id, "p2", "the ship whose Movement was pressed is selected")
-	assert_true(ui.ship_list_items["p2"].is_selected, "its card is highlighted")
-	assert_false(ui.ship_list_items["p1"].is_selected, "the other card is not")
-	assert_signal_emitted_with_parameters(ui, "ship_selected", ["p2"])
-	assert_signal_emitted_with_parameters(ui, "action_toggled", ["p2", "movement", true])
+	ui.end_planning_button.pressed.emit()
+	assert_signal_emitted(ui, "end_planning_pressed")
 
 
-func test_movement_on_a_new_ship_releases_the_other_ships_movement_button() -> void:
-	ui._on_action_button_pressed("p1", "movement")
-	ui._on_action_button_pressed("p2", "movement")
-	assert_false(ui.get_action_state("p1", "movement"), "only one ship plots at a time")
-	assert_true(ui.get_action_state("p2", "movement"))
+func test_cancel_asks_before_resetting() -> void:
+	watch_signals(ui)
+	ui.cancel_button.pressed.emit()
+	assert_true(ui.reset_dialog.visible, "the dialog is shown")
+	assert_signal_not_emitted(ui, "reset_planning_confirmed")
+	assert_eq(ui.reset_dialog.ok_button_text, "Reset")
+	assert_eq(ui.reset_dialog.cancel_button_text, "Keep orders")
+	ui.reset_dialog.confirmed.emit()
+	assert_signal_emit_count(ui, "reset_planning_confirmed", 1)
 
 
-func test_plotting_controls_select_their_ship() -> void:
-	ui.show_plotting_controls("p2", 4, 4, 2, 1, true)
-	assert_eq(ui.selected_ship_id, "p2")
+func test_keeping_orders_emits_nothing() -> void:
+	watch_signals(ui)
+	ui.cancel_button.pressed.emit()
+	ui.reset_dialog.canceled.emit()
+	assert_signal_not_emitted(ui, "reset_planning_confirmed")
 
 
-func test_submit_follows_the_server_on_an_empty_path() -> void:
-	ui.show_plotting_controls("p1", 4, 4, 2, 1, true)
-	assert_false(ui.submit_button.disabled, "staying put is allowed: Submit is enabled")
-	assert_eq(ui.submit_button.text, "Submit (hold position)")
-	assert_true(ui.undo_button.disabled, "nothing to undo")
-	assert_true(ui.undo_all_button.disabled, "nothing to undo")
+func test_course_info_on_the_selected_card() -> void:
+	ui.select_ship("p2")
+	ui.set_course_info("p2", {"used": 3, "allowance": 5, "tacking": "", "steering": "Steering note", "collision": ""})
+	var card = ui.ship_list_items["p2"]
+	assert_eq(card.course_line.text, "Course: 3 of 5 MP")
+	assert_true(card.steering_label.visible)
+	assert_eq(card.steering_label.text, "Steering note")
+	assert_false(card.tacking_label.visible, "an empty note hides its line")
+	assert_false(card.collision_label.visible)
 
 
-func test_submit_disabled_when_server_refuses() -> void:
-	ui.show_plotting_controls("p1", 4, 4, 2, 1, false)
-	assert_true(ui.submit_button.disabled)
-
-
-func test_submit_and_undo_after_a_step() -> void:
-	ui.show_plotting_controls("p1", 4, 4, 2, 1, true)
-	var step := MovementTypes.PlotStep.new()
-	step.hex = Vector2i(1, 0)
-	ui.update_plotting_state([step], 3, true)
-	assert_eq(ui.submit_button.text, "Submit")
-	assert_false(ui.submit_button.disabled)
-	assert_false(ui.undo_button.disabled)
-	assert_false(ui.undo_all_button.disabled)
-	ui.update_plotting_state([], 4, true)
-	assert_eq(ui.submit_button.text, "Submit (hold position)")
-	assert_true(ui.undo_button.disabled)
-
-
-func test_allowance_note_shows_under_the_readout_and_hides_when_empty() -> void:
-	ui.show_plotting_controls("p1", 4, 4)
-	ui.set_allowance_note("Allowance changed on the new heading (broad reach → close hauled)")
-	assert_true(ui.allowance_note_label.visible)
-	assert_eq(ui.allowance_note_label.text, "Allowance changed on the new heading (broad reach → close hauled)")
-	ui.set_allowance_note("")
-	assert_false(ui.allowance_note_label.visible)
+func test_reset_course_button_asks_for_that_ship() -> void:
+	ui.select_ship("p2")
+	watch_signals(ui)
+	ui.ship_list_items["p2"].reset_course_button.pressed.emit()
+	assert_signal_emitted_with_parameters(ui, "reset_course_requested", ["p2"])
 
 
 func test_only_the_selected_card_is_expanded() -> void:
@@ -112,11 +103,10 @@ func test_only_the_selected_card_is_expanded() -> void:
 	assert_false(open.status_box.visible, "and collapses the other")
 
 
-func test_collapsed_card_marks_orders_given() -> void:
-	ui.mark_ship_submitted("p2")
-	assert_eq(ui.ship_list_items["p2"].ship_name_label.text, "HMS Phoebe ✓")
+func test_card_titles_carry_no_orders_marks() -> void:
+	assert_eq(ui.ship_list_items["p2"].ship_name_label.text, "HMS Phoebe")
 	ui.select_ship("p2")
-	assert_eq(ui.ship_list_items["p2"].ship_name_label.text, "HMS Phoebe — 38-gun Frigate (orders given)")
+	assert_eq(ui.ship_list_items["p2"].ship_name_label.text, "HMS Phoebe — 38-gun Frigate")
 
 
 func test_card_speed_shows_the_movement_allowance() -> void:
