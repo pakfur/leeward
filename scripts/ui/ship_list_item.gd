@@ -4,6 +4,7 @@ extends PanelContainer
 signal selected()
 signal action_button_pressed(action_type: String)
 signal status_pressed()  ## the Status button: open this ship's status panel
+signal crew_pressed()  ## the "Crew & damage" button: open the crew overlay for this ship
 
 @onready var ship_icon: TextureRect = %ShipIcon
 @onready var ship_name_label: Label = %ShipNameLabel
@@ -16,6 +17,7 @@ signal status_pressed()  ## the Status button: open this ship's status panel
 @onready var status_button: Button = %StatusButton
 
 var ship_state: ShipState = null
+var crew_summary_row: HFlowContainer = null  ## the crew summary chips (CrewRules.summary)
 var is_selected: bool = false
 var is_submitted: bool = false
 
@@ -54,15 +56,30 @@ func _ready() -> void:
 
 	add_theme_stylebox_override("panel", normal_style)
 
-	# Connect button signals. Crew and Maintenance orders belong to a later milestone: hidden.
+	# Connect button signals. Maintenance orders belong to a later milestone: hidden. The crew
+	# button opens the crew overlay; it shows on the selected ship's card only.
 	if movement_button:
 		movement_button.pressed.connect(_on_movement_pressed)
 	if crew_button:
 		crew_button.visible = false
+		crew_button.text = "Crew & damage  (C)"
+		crew_button.toggle_mode = false
+		crew_button.disabled = false
+		crew_button.focus_mode = Control.FOCUS_NONE
+		crew_button.tooltip_text = "Open the crew overlay: place crew sections on tasks (C)"
+		crew_button.add_theme_stylebox_override("normal", CrewStyle.box(CrewStyle.BTN_PRIMARY, CrewStyle.BTN_PRIMARY_EDGE, 1, 4, 6))
+		crew_button.add_theme_stylebox_override("hover", CrewStyle.box(Color("#376f95"), CrewStyle.BTN_PRIMARY_EDGE, 1, 4, 6))
 	if maintenance_button:
 		maintenance_button.visible = false
 	if crew_button:
-		crew_button.pressed.connect(_on_crew_pressed)
+		crew_button.pressed.connect(func(): crew_pressed.emit())
+	if stats_label:
+		crew_summary_row = HFlowContainer.new()
+		crew_summary_row.name = "CrewSummary"
+		crew_summary_row.add_theme_constant_override("h_separation", 4)
+		crew_summary_row.add_theme_constant_override("v_separation", 4)
+		crew_summary_row.mouse_filter = Control.MOUSE_FILTER_PASS
+		stats_label.add_sibling(crew_summary_row)
 	if maintenance_button:
 		maintenance_button.pressed.connect(_on_maintenance_pressed)
 
@@ -123,6 +140,53 @@ func _get_icon_path_for_ship_type(ship_type: String) -> String:
 func set_selected_state(selected_state: bool) -> void:
 	is_selected = selected_state
 	_apply_panel_style()
+	if crew_button:
+		crew_button.visible = selected_state
+
+
+## The crew summary line (spec §4.8): chips [{"text", "kind"}]; hidden when `chips` is empty.
+func set_crew_summary(chips: Array) -> void:
+	if crew_summary_row == null:
+		return
+	for c in crew_summary_row.get_children():
+		crew_summary_row.remove_child(c)
+		c.queue_free()
+	crew_summary_row.visible = not chips.is_empty()
+	for chip in chips:
+		crew_summary_row.add_child(crew_chip(chip))
+
+
+static func crew_chip(chip: Dictionary) -> Label:
+	var kind := str(chip.get("kind", ""))
+	var l := Label.new()
+	l.text = str(chip.get("text", ""))
+	l.add_theme_font_size_override("font_size", 14)
+	var bg := CrewStyle.BTN
+	var edge := Color.TRANSPARENT
+	var fg := CrewStyle.FG
+	match kind:
+		"auto":
+			bg = CrewStyle.BTN_PRIMARY
+		"default":
+			bg = Color("#1f2a36")
+			fg = CrewStyle.MUTED
+		"fire":
+			bg = CrewStyle.FIRE
+			fg = Color("#1b0d05")
+		"warn":
+			bg = Color.TRANSPARENT
+			edge = CrewStyle.BAD
+			fg = CrewStyle.BAD_TEXT
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l.custom_minimum_size.x = 300
+	var sb := CrewStyle.box(bg, edge, 1 if edge.a > 0 else 0, 8)
+	sb.content_margin_left = 6
+	sb.content_margin_right = 6
+	l.add_theme_stylebox_override("normal", sb)
+	l.add_theme_color_override("font_color", fg)
+	l.mouse_filter = Control.MOUSE_FILTER_PASS
+	l.tooltip_text = l.text
+	return l
 
 func set_submitted_state(submitted: bool) -> void:
 	is_submitted = submitted

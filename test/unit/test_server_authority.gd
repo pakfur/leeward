@@ -1,8 +1,8 @@
 extends GutTest
 ## Server authority over game state (CLAUDE.md "Server Authority"): view-side code
 ## (scripts/ui, scripts/view, scripts/core) reads state and sends requests that the server
-## validates (player_submit_*, player_clear_movement, plot_sail_change(player_id, ...),
-## dev_commands.*). It never calls a state mutator or writes a ShipState field itself.
+## validates (player_submit_*, player_clear_movement, player_plot_crew, player_set_crew_auto,
+## player_plot_sail_change, dev_commands.*). It never calls a state mutator or writes a ShipState field itself.
 ## This test scans the source so a violation fails `make test`.
 
 const VIEW_DIRS := ["res://scripts/ui", "res://scripts/view", "res://scripts/core"]
@@ -13,8 +13,17 @@ const FORBIDDEN := [
 	["\\bship_controller\\.(?!get_|is_|can_|has_)", "a ShipStateController mutator called from view code"],
 	["\\bShipStateController\\b", "ShipStateController used from view code"],
 	["\\benvironment_controller\\.set_", "an EnvironmentController mutator called from view code"],
+	# the crew overlay reads plans through these queries only; crew plots go through
+	# phase_controller.player_plot_crew / player_set_crew_auto
+	["\\bcrew_task_controller\\.(?!current_plan\\(|planned_tack_sections\\(|handler\\()", "a CrewTaskController mutator called from view code"],
+	["\\bsail_controller\\.(plot_sail_change|cancel_change)\\(", "a SailController mutator called from view code (use player_plot_sail_change)"],
+	["\\bCrewTaskController\\.new\\b", "a CrewTaskController made in view code"],
+	["\\b(register_handler|finalize_plots|begin_turn_tasks|advance_tasks|cancel_section|cancel_task|cancel_code|force_task|reset_progress|drop_all)\\(",
+			"a crew-task engine call from view code"],
+	["(?<!player_)\\b(plot_crew|set_auto|set_crew_auto|set_crew_assignments|set_crew_orders|add_task|update_task|end_task|set_plotted_sections)\\(",
+			"a crew plot or task mutator called from view code (use player_plot_crew / player_set_crew_auto)"],
 	["\\bphase_controller\\.advance_phase\\(", "phase advanced from view code (use dev_commands)"],
-	["\\b(ship|ship_state|ss|state)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots)\\s*(=|\\+=|-=)[^=]",
+	["\\b(_?ship|ship_state|ss|state|s)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots|crew_auto|plotted_sections|task_seq)\\s*(=|\\+=|-=)[^=]",
 			"a ShipState field written from view code"],
 ]
 

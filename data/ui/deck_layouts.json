@@ -1,0 +1,36 @@
+{
+  "_doc": "Crew overlay deck drawings (presentation only; the rules engine never reads this file). Coordinates are landscape deck units, 1000 x 360, stern at x = 0 (the overlay draws the enlarged deck bow up). guns = gun ports drawn a side (decoration). armament = the ships.json armament key prefix whose long guns the deck card's note names (e.g. main_deck -> main_deck_port); omitted or absent in ships.json = no gun note. A station's decks is a list of deck ids or \"gun_decks\" (every deck in the layout's gun_decks).",
+  "ship_types": {"frigate_38": "frigate", "frigate_32": "frigate", "ship_of_line_74": "sol74"},
+  "default_layout": "frigate",
+  "layouts": {
+    "frigate": {
+      "decks": [
+        {"id": "upper", "name": "Upper deck", "note": "Quarterdeck, waist and forecastle", "guns": 4},
+        {"id": "gun", "name": "Gun deck", "note": "", "guns": 19, "armament": "main_deck"},
+        {"id": "orlop", "name": "Orlop", "note": "Below the waterline", "guns": 0}
+      ],
+      "gun_decks": ["gun"]
+    },
+    "sol74": {
+      "decks": [
+        {"id": "upper", "name": "Upper deck", "note": "Quarterdeck, waist and forecastle", "guns": 6},
+        {"id": "gun_up", "name": "Upper gun deck", "note": "", "guns": 14, "armament": "main_deck"},
+        {"id": "gun_low", "name": "Lower gun deck", "note": "", "guns": 14, "armament": "lower_deck"},
+        {"id": "orlop", "name": "Orlop", "note": "Below the waterline", "guns": 0}
+      ],
+      "gun_decks": ["gun_up", "gun_low"]
+    }
+  },
+  "stations": {
+    "guns":         {"decks": "gun_decks", "rect": [190, 118, 620, 124]},
+    "marine_fire":  {"decks": ["upper"], "rect": [78, 70, 170, 96]},
+    "boarders":     {"decks": ["upper"], "rect": [272, 64, 168, 98]},
+    "braces":       {"decks": ["upper"], "rect": [448, 64, 150, 98]},
+    "sails":        {"decks": ["upper"], "rect": [606, 92, 210, 176]},
+    "rs":           {"decks": ["upper"], "rect": [272, 196, 140, 96]},
+    "rr":           {"decks": ["upper"], "rect": [420, 196, 160, 96]},
+    "rh":           {"decks": ["orlop"], "rect": [330, 118, 300, 124]},
+    "fire_zone":    {"decks": ["upper"], "rect": [78, 192, 170, 106]},
+    "reorganizing": {"decks": ["upper"], "rect": [830, 120, 110, 120]}
+  }
+}

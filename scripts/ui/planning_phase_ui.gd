@@ -10,6 +10,7 @@ signal cancel_pressed()
 signal end_planning_pressed()
 signal sail_change_requested(ship_id: String, target: String)  ## target "" cancels the plotted order
 signal status_requested(ship_id: String)  ## a card's Status button: show that ship's status panel
+signal crew_overlay_requested(ship_id: String)  ## a card's "Crew & damage" button
 
 const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
 
@@ -48,6 +49,8 @@ var submitted_ships: Dictionary = {}  # ship_id -> bool
 var total_player_ships: int = 0
 var ship_states: Dictionary = {}  # ship_id -> ShipState (read-only references)
 var _plot_max: int = 0  # most the plotting ship can spend this turn; fixed for the plot
+var crew_overlay_open: bool = false  # the selected card hides its summary line while the overlay is open
+var _crew_panel: Control = null  # the crew block; hidden while a move is plotted (the controls need the room)
 
 func _ready() -> void:
 	if undo_button:
@@ -75,6 +78,35 @@ func setup_for_player(player_ships: Array[ShipState]) -> void:
 
 	_update_end_planning_state()
 	_update_instructions()
+	refresh_crew_summaries()
+
+## Puts the crew block (Guns readout, DAMAGE, roster) under the ship cards.
+func attach_crew_panel(panel: Control) -> void:
+	var parent := ship_list_container.get_parent()
+	if panel.get_parent():
+		panel.get_parent().remove_child(panel)
+	parent.add_child(panel)
+	parent.move_child(panel, ship_list_container.get_index() + 1)
+	_crew_panel = panel
+
+## The crew plan changed (crew overlay): the sail row and the summary lines follow it.
+func refresh_crew_orders() -> void:
+	_refresh_sail_row()
+	refresh_crew_summaries()
+
+## The crew summary line on every card (CrewRules.summary of the stored plan, a read-only query).
+func refresh_crew_summaries() -> void:
+	for ship_id in ship_list_items:
+		var ship: ShipState = ship_states.get(ship_id)
+		var item = ship_list_items[ship_id]
+		if ship == null or GameState.crew_task_controller == null:
+			item.set_crew_summary([])
+			continue
+		if crew_overlay_open and ship_id == selected_ship_id:
+			item.set_crew_summary([])
+			continue
+		var plan: Dictionary = GameState.crew_task_controller.current_plan(ship_id)
+		item.set_crew_summary(CrewRules.summary(ship, plan, CrewRules.context(GameState, ship)))
 
 func clear_ships() -> void:
 	for child in ship_list_container.get_children():
@@ -99,6 +131,7 @@ func _add_ship_to_list(ship_state: ShipState) -> void:
 	list_item.selected.connect(func(): _on_ship_item_selected(ship_state.ship_id))
 	list_item.action_button_pressed.connect(func(action_type): _on_action_button_pressed(ship_state.ship_id, action_type))
 	list_item.status_pressed.connect(func(): status_requested.emit(ship_state.ship_id))
+	list_item.crew_pressed.connect(func(): crew_overlay_requested.emit(ship_state.ship_id))
 
 	# Track the item
 	ship_list_items[ship_state.ship_id] = list_item
@@ -133,6 +166,7 @@ func _select_ship(ship_id: String) -> void:
 		ship_list_items[ship_id].set_selected_state(true)
 	sail_error_label.visible = false
 	_refresh_sail_row()
+	refresh_crew_summaries()
 
 func _on_action_button_pressed(ship_id: String, action_type: String) -> void:
 	if not action_states.has(ship_id):
@@ -195,6 +229,7 @@ func get_submitted_count() -> int:
 ## Shows the server's answer to a sail request: "" refreshes the row, anything else is the reason.
 func show_sail_result(reason: String) -> void:
 	_refresh_sail_row()
+	refresh_crew_summaries()
 	sail_error_label.text = reason
 	sail_error_label.visible = reason != ""
 
@@ -252,6 +287,8 @@ func show_plotting_controls(ship_id: String, remaining_ma_val: int, table_ma: in
 	_plot_max = remaining_ma_val
 	if ship_list_items.has(ship_id) and ship_id != selected_ship_id:
 		_select_ship(ship_id)  # the controls shown always belong to the selected ship
+	if _crew_panel and is_instance_valid(_crew_panel):
+		_crew_panel.set("suppressed", true)
 	if plotting_controls:
 		plotting_controls.visible = true
 		_update_ma_display(remaining_ma_val)
@@ -269,6 +306,8 @@ func show_plotting_controls(ship_id: String, remaining_ma_val: int, table_ma: in
 func hide_plotting_controls() -> void:
 	if plotting_controls:
 		plotting_controls.visible = false
+	if _crew_panel and is_instance_valid(_crew_panel):
+		_crew_panel.set("suppressed", false)
 	set_allowance_note("")
 	if tacking_label:
 		tacking_label.visible = false
@@ -315,6 +354,7 @@ func mark_ship_submitted(ship_id: String) -> void:
 	deactivate_movement_button(ship_id)
 	_update_end_planning_state()
 	_update_instructions()
+	refresh_crew_summaries()
 
 func mark_ship_unsubmitted(ship_id: String) -> void:
 	submitted_ships[ship_id] = false

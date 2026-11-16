@@ -252,7 +252,8 @@ The console auto-scrolls to show the latest messages.
 ## Keyboard Shortcuts
 
 - **F12**: Toggle Developer UI
-- **C**: Center camera on all ships (game controller)
+- **C**: Open or close the crew & damage overlay for the selected ship (game controller)
+- **Home**: Center camera on all ships (game controller)
 
 ## Related Documentation
 

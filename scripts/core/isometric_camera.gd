@@ -26,6 +26,9 @@ var is_tweening: bool = false  # Flag to enable continuous updates during camera
 var last_mouse_pos: Vector2 = Vector2.ZERO
 var mouse_down_pos: Vector2 = Vector2.ZERO
 var drag_threshold: float = 5.0  # pixels before considering it a drag
+## The left press reached the camera (the map): only then may a left drag pan. A press taken by
+## the UI (e.g. dragging a crew counter in the crew overlay) never pans the map.
+var _left_press_on_map: bool = false
 
 func _ready() -> void:
 	camera_distance = initial_distance
@@ -87,7 +90,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if event.pressed:
 				mouse_down_pos = event.position
 				last_mouse_pos = event.position
+				_left_press_on_map = true
 			else:
+				_left_press_on_map = false
 				# If we were panning, mark as handled so click doesn't propagate
 				if is_panning:
 					get_viewport().set_input_as_handled()
@@ -105,7 +110,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Mouse motion for panning or rotating
 	if event is InputEventMouseMotion:
 		# Check if left button is held and we've moved enough to start panning
-		if not is_panning and event.button_mask & MOUSE_BUTTON_MASK_LEFT:
+		if not (event.button_mask & MOUSE_BUTTON_MASK_LEFT):
+			_left_press_on_map = false
+		if not is_panning and _left_press_on_map and event.button_mask & MOUSE_BUTTON_MASK_LEFT:
 			if mouse_down_pos.distance_to(event.position) > drag_threshold:
 				is_panning = true
 

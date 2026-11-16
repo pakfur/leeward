@@ -18,6 +18,7 @@ const CombatLogPanelScene = preload("res://scenes/ui/combat_log_panel.tscn")
 const GameOverPanelScene = preload("res://scenes/ui/game_over_panel.tscn")
 const OceanViewScript = preload("res://scripts/view/ocean_view.gd")
 const PauseMenuScript = preload("res://scripts/ui/pause_menu.gd")
+const CrewOverlayScene = preload("res://scenes/ui/crew_overlay.tscn")
 var current_planning_ui: Control = null
 var fire_panel: Control = null  # FireDeclarationPanel while fire orders are being declared
 var combat_panel: Control = null  # "Movement" / "Combat" context content while a phase plays back
@@ -32,6 +33,11 @@ var _combat_playback_skip: bool = false
 var pause_menu: Control = null  # PauseMenu: Escape / the corner Menu button
 var menu_button: Button = null  # discreet corner button that opens the pause menu
 var _leaving: bool = false  # Leave game confirmed: playback is abandoned, nothing advances the game
+## The crew & damage overlay (crew-tasks spec §4): its client, the overlay over the map and the
+## planning panel's crew block. View code; changes go through the server's crew requests.
+var crew_client: CrewOverlayClient = null
+var crew_overlay: CrewOverlay = null
+var crew_side_panel: CrewSidePanel = null
 const COMBAT_REVEAL_SECONDS := 0.6
 
 const NO_SHOT_HEADLINE := "No broadside bears on an enemy this turn."
@@ -131,6 +137,7 @@ func _ready() -> void:
 		_connect_movement_signals()
 
 	_setup_pause_menu()
+	_setup_crew_overlay()
 
 	# Setup debug hex coordinate label
 	_setup_hex_coord_label()
@@ -209,6 +216,73 @@ func _setup_pause_menu() -> void:
 		add_child(pause_menu)
 
 
+func _setup_crew_overlay() -> void:
+	crew_client = CrewOverlayClient.new(GameState, HUMAN_PLAYER_ID)
+	crew_overlay = CrewOverlayScene.instantiate()
+	crew_overlay.name = "CrewOverlay"
+	crew_overlay.z_index = 60  # over the map, the minimap and the log bar; the side panel stays clear
+	if ui:
+		ui.add_child(crew_overlay)
+		if pause_menu:
+			ui.move_child(crew_overlay, pause_menu.get_index())
+	else:
+		add_child(crew_overlay)
+	crew_overlay.setup(crew_client)
+	crew_client.changed.connect(_on_crew_changed)
+	crew_client.open_changed.connect(func(_on): _on_crew_changed())
+	_fit_crew_overlay()
+
+
+## The overlay covers the map area only: right of the side panel (spec §4.1).
+func _fit_crew_overlay() -> void:
+	if not crew_overlay:
+		return
+	var left := 0.0
+	if context_panel and context_panel.visible and context_panel.get("panel_container"):
+		left = context_panel.panel_container.get_global_rect().end.x
+	if absf(crew_overlay.offset_left - left) > 0.5:
+		crew_overlay.offset_left = left
+
+
+func _on_crew_changed() -> void:
+	if current_planning_ui and is_instance_valid(current_planning_ui):
+		current_planning_ui.crew_overlay_open = crew_client.is_open
+		current_planning_ui.refresh_crew_orders()
+
+
+## C: open or close the crew overlay for the selected own ship (spec §4.1, §9 Q4).
+func _toggle_crew_overlay() -> void:
+	if not crew_client:
+		return
+	if crew_client.is_open:
+		crew_client.close()
+		return
+	var ship_id := selected_ship_id
+	if current_planning_ui and is_instance_valid(current_planning_ui) and current_planning_ui.selected_ship_id != "":
+		ship_id = current_planning_ui.selected_ship_id
+	if ship_id == "" and crew_client.ship_id != "":
+		ship_id = crew_client.ship_id
+	if ship_id == "":
+		var own := GameState.get_player_ships(HUMAN_PLAYER_ID)
+		if not own.is_empty():
+			ship_id = own[0].ship_id
+	_open_crew_overlay(ship_id)
+
+
+func _open_crew_overlay(ship_id: String) -> void:
+	var ship := GameState.get_ship(ship_id)
+	if ship == null or ship.player_id != HUMAN_PLAYER_ID:
+		return  # enemy plots are secret
+	# Movement plotting needs the map: a plot in progress is cancelled.
+	if movement_client and movement_client.is_plotting():
+		var plotting_id := movement_client.get_active_ship_id()
+		movement_client.cancel()
+		if current_planning_ui:
+			current_planning_ui.deactivate_movement_button(plotting_id)
+	_clear_hover()
+	crew_client.open_for(ship_id)
+
+
 func _open_pause_menu() -> void:
 	if game_over_panel or not pause_menu:
 		return
@@ -264,6 +338,11 @@ func _input(event: InputEvent) -> void:
 		return
 	if not pause_menu:
 		return
+	# Esc in the crew overlay drops a picked-up counter, then closes it (spec §4.1).
+	if not pause_menu.is_open() and crew_overlay and crew_overlay.visible and game_over_panel == null:
+		if crew_overlay.handle_escape():
+			get_viewport().set_input_as_handled()
+			return
 	match PauseMenuScript.escape_action(pause_menu.is_open(), game_over_panel != null):
 		PauseMenuScript.OPEN:
 			_open_pause_menu()
@@ -298,6 +377,7 @@ func _on_hex_labels_toggled(enabled: bool) -> void:
 
 func _process(_delta: float) -> void:
 	_update_status_hover()
+	_fit_crew_overlay()
 	if not hex_coords_enabled or not hex_coord_label or not camera or not hex_map:
 		return
 
@@ -414,6 +494,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if event.keycode == KEY_C:
+			_toggle_crew_overlay()
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_HOME:
 			_center_camera_on_all_ships()
 			get_viewport().set_input_as_handled()
 			return
@@ -567,6 +651,7 @@ func _update_status_hover() -> void:
 	# would cover those hexes), or while ships are moving (it is placed from where they stand).
 	status_overlay.set_suppressed((movement_client != null and movement_client.is_plotting())
 		or fire_panel != null
+		or (crew_client != null and crew_client.is_open)
 		or GameState.current_phase == GameState.GamePhase.MOVEMENT_RESOLUTION)
 	# The plate carries speed and point of sail; the floating label stands in only while it is hidden.
 	if indicator_overlay:
@@ -661,6 +746,11 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 	_close_fire_panel()
 	if phase != GameState.GamePhase.POST_COMBAT:
 		_clear_end_turn_ui()
+	if crew_client:
+		if phase != GameState.GamePhase.PLANNING and crew_client.is_open:
+			crew_client.close()  # the map plays the turn; C reopens the overlay read-only
+		else:
+			crew_client.refresh()
 	Trace.trace_log("GameController", "Phase changed to: %s" % GameState.get_phase_name())
 
 	match phase:
@@ -704,6 +794,7 @@ func _enter_planning_phase() -> void:
 		current_planning_ui.end_planning_pressed.connect(_on_end_planning_pressed)
 		current_planning_ui.sail_change_requested.connect(_on_sail_change_requested)
 		current_planning_ui.status_requested.connect(_on_info_toggled)
+		current_planning_ui.crew_overlay_requested.connect(_open_crew_overlay)
 
 	# Load into context panel (must be done before setup to ensure @onready nodes are available)
 	if context_panel:
@@ -711,7 +802,13 @@ func _enter_planning_phase() -> void:
 		context_panel.set_context_content(current_planning_ui)
 
 	# Setup with player ships (after adding to tree so @onready nodes are initialized)
+	if crew_client:
+		crew_side_panel = CrewSidePanel.new()
+		current_planning_ui.attach_crew_panel(crew_side_panel)
+		crew_side_panel.setup(crew_client, crew_overlay)
 	current_planning_ui.setup_for_player(player_0_ships)
+	if crew_client:
+		crew_client.follow_ship(current_planning_ui.selected_ship_id)
 
 	# Hide old planning panel (will be deprecated)
 	if planning_panel:
@@ -742,15 +839,17 @@ func _on_planning_ship_selected(ship_id: String) -> void:
 
 	# Select ship on map (highlight)
 	_select_ship(ship_id)
+	if crew_client:
+		crew_client.follow_ship(ship_id)
 
 func _on_sail_change_requested(ship_id: String, target: String) -> void:
-	# Single-player: plot player 0's sail change under the server guard  SCV:ALLOW
-	var reason := "Sail changes can only be ordered on the server"
-	if GameState.is_server and GameState.sail_controller:
-		reason = GameState.sail_controller.plot_sail_change(HUMAN_PLAYER_ID, ship_id, target)
+	# A request the server checks (phase, owner, plan not yet submitted).
+	var reason: String = GameState.phase_controller.player_plot_sail_change(HUMAN_PLAYER_ID, ship_id, target)
 	Trace.trace_log("GameController", "Sail change %s -> '%s': %s" % [ship_id, target, reason if reason != "" else "accepted"])
 	if current_planning_ui:
 		current_planning_ui.show_sail_result(reason)
+	if crew_client:
+		crew_client.refresh()
 
 func _on_planning_action_toggled(ship_id: String, action_type: String, active: bool) -> void:
 	Trace.trace_log("GameController", "Action '%s' toggled to %s for ship %s" % [action_type, active, ship_id])
@@ -762,6 +861,8 @@ func _on_planning_action_toggled(ship_id: String, action_type: String, active: b
 
 	# Handle movement action
 	if action_type == "movement" and movement_client:
+		if active and crew_client and crew_client.is_open:
+			crew_client.close()  # plotting a move needs the map
 		if active:
 			# If re-plotting a submitted ship, clear the old submission first
 			if current_planning_ui and current_planning_ui.is_ship_submitted(ship_id):
@@ -1064,6 +1165,8 @@ func _on_movement_submitted(ship_id: String, final_path: Array) -> void:
 	if current_planning_ui:
 		current_planning_ui.hide_plotting_controls()
 		current_planning_ui.mark_ship_submitted(ship_id)
+	if crew_client:
+		crew_client.refresh()  # an MA-0 turn opens the braces
 
 func _on_plotting_error(error_code: String, message: String) -> void:
 	Trace.trace_log("GameController", "Plotting error: %s - %s" % [error_code, message])

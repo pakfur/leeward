@@ -316,6 +316,24 @@ func test_manual_normalize_drops_braces_without_a_turn_at_ma0() -> void:
 		"orders": _orders("")}
 	var kept := CrewRules.normalize(ship, plan, _ma0_ctx())
 	assert_eq(CrewRules.tack_sections_in(kept), 2)
-	var dropped := CrewRules.normalize(ship, plan, _ctx())
+	# End Planning (ctx.final): braces with no MA-0 turn go back to the guns.
+	var final_ctx := _ctx()
+	final_ctx["final"] = true
+	var dropped := CrewRules.normalize(ship, plan, final_ctx)
 	assert_eq(dropped["assignments"], {})
 	assert_eq(dropped["warnings"].size(), 2)
+
+
+func test_manual_braces_kept_while_planning_without_a_turn_at_ma0() -> void:
+	# Phase 3 fix: braces manned before the MA-0 turn is (re)plotted are kept, with a warning,
+	# until End Planning.
+	ship.crew_auto = false
+	var plan := {"assignments": {3: {"code": "T", "params": {}}}, "orders": _orders("")}
+	var kept := CrewRules.normalize(ship, plan, _ctx())
+	assert_eq(CrewRules.tack_sections_in(kept), 1)
+	assert_eq(kept["warnings"].size(), 1)
+	assert_string_contains(kept["warnings"][0], "no turn at MA 0 is plotted")
+	var ids: Array = []
+	for st in CrewRules.stations(ship, kept, _ctx()):
+		ids.append(st["id"])
+	assert_true(ids.has(CrewRules.STATION_BRACES), "the braces stay drawn while sections are on them")

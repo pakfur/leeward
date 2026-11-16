@@ -5,7 +5,8 @@ extends RefCounted
 ## no hidden inputs. Applied in order; a section taken by an earlier rule is not available to a
 ## later one:
 ##   A0 locked tasks stay (a sail change in progress, forced tasks);
-##   A1 fires (phase 4);
+##   A1 fires, lowest seq first: the section already fighting it, else the fire draft
+##      (CrewRules.fire_draft; ctx.fires, which phase 4 fills);
 ##   A2 other tasks in progress continue with the same sections;
 ##   A3 the ordered sail change, 1 or 2 sections in worker order;
 ##   A4 tacking crew: when the movement plot holds a turn at MA 0, as many of 3 sections as are
@@ -22,6 +23,33 @@ static func allocate(ship: ShipState, orders: Dictionary, ctx: Dictionary) -> Di
 	var locked := CrewRules.locked_sections(ship)
 	for section in locked:
 		taken[section] = locked[section]
+	# A1: every fire gets a section (8.E.2): the one already fighting it, else the fire draft.
+	var fires: Array = (ctx.get("fires", []) as Array).duplicate()
+	fires.sort()
+	for seq in fires:
+		var keeper := -1
+		for task in ship.crew_tasks:
+			if task.get("ended", "") == "" and str(task.get("code", "")) == CrewRules.CODE_FF \
+					and int(task.get("params", {}).get("fire", -1)) == int(seq):
+				for section in task.get("sections", []):
+					if ship.section_alive(int(section)) and not taken.has(int(section)):
+						keeper = int(section)
+		if keeper < 0:
+			# The draft sees tasks in progress as plotted (A2 would keep them), so it takes a free
+			# section before calling one away from a task (spec §8 #20).
+			var preview := taken.duplicate(true)
+			for task in ship.crew_tasks:
+				if task.get("ended", "") != "":
+					continue
+				for section in task.get("sections", []):
+					if not preview.has(int(section)):
+						preview[int(section)] = {"code": str(task["code"]),
+							"params": (task.get("params", {}) as Dictionary).duplicate(true)}
+			var drafted := CrewRules.fire_draft(ship, preview, int(seq))
+			if drafted >= 0:
+				taken[drafted] = {"code": CrewRules.CODE_FF, "params": {"fire": int(seq)}}
+		else:
+			taken[keeper] = {"code": CrewRules.CODE_FF, "params": {"fire": int(seq)}}
 	# A2: tasks in progress, while every section still has boxes.
 	for task in ship.crew_tasks:
 		if task.get("ended", "") != "":

@@ -58,6 +58,10 @@ func plot_crew(player_id: int, ship_id: String, plan: Dictionary) -> String:
 		if not key.is_valid_int() or int(key) < 0 or int(key) > ShipState.MARINES \
 				or not plan["assignments"][section] is Dictionary:
 			return "Malformed crew plan"
+	# The sail target is an order: a new one must be a change the ship can make now (5.F.6).
+	var target := str(plan.get("orders", {}).get("sail_target", ""))
+	if target != "" and target != ship.ordered_sail_target() and not target in SailController.targets_for(ship):
+		return "Cannot change to %s from %s" % [target, ship.sail_state]
 	_store(ship, CrewRules.normalize(ship, plan, CrewRules.context(game_state, ship)))
 	return ""
 
@@ -81,12 +85,14 @@ func set_auto(player_id: int, ship_id: String, on: bool) -> String:
 
 
 ## The ship's crew plan as it stands, normalized ({"assignments", "orders", "auto", "warnings",
-## "dropped"}).
-func current_plan(ship_id: String) -> Dictionary:
+## "dropped"}). Pure query. `end_planning`: as End Planning makes it (braces with no MA-0 turn dropped).
+func current_plan(ship_id: String, end_planning: bool = false) -> Dictionary:
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
 		return {}
-	return CrewRules.normalize(ship, CrewRules.plan_of(ship), CrewRules.context(game_state, ship))
+	var ctx := CrewRules.context(game_state, ship)
+	ctx["final"] = end_planning
+	return CrewRules.normalize(ship, CrewRules.plan_of(ship), ctx)
 
 
 ## Sections the ship's crew plan puts at the braces (T) if its movement plot holds a turn at MA 0
@@ -108,7 +114,7 @@ func finalize_plots() -> void:
 	for ship_id in _sorted_ids():
 		var ship: ShipState = game_state.get_ship(ship_id)
 		if ship != null and not ship.is_destroyed():
-			_store(ship, current_plan(ship_id))
+			_store(ship, current_plan(ship_id, true))
 
 
 # --- Turn phases ---
@@ -125,7 +131,7 @@ func begin_turn_tasks(phase: int) -> void:
 		var ship: ShipState = game_state.get_ship(ship_id)
 		if ship == null:
 			continue
-		var plan := current_plan(ship_id)
+		var plan := current_plan(ship_id, true)
 		var assignments: Dictionary = plan.get("assignments", {})
 		var orders: Dictionary = plan.get("orders", {})
 		var plotted: Array[int] = []

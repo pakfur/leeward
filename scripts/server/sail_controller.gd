@@ -79,6 +79,7 @@ func plot_sail_change(player_id: int, ship_id: String, target: String) -> String
 		return "Sail changes can only be ordered during planning"
 	if target == "":
 		game_state.ship_controller.set_crew_orders(ship_id, {"sail_target": ""})
+		_place_manual_crew(ship, "")
 		return ""
 	if ship.is_destroyed():
 		return "Ship is destroyed"
@@ -93,7 +94,20 @@ func plot_sail_change(player_id: int, ship_id: String, target: String) -> String
 	if not target in available_targets(ship_id):
 		return "Cannot change to %s from %s" % [target, ship.sail_state]
 	game_state.ship_controller.set_crew_orders(ship_id, {"sail_target": target})
+	_place_manual_crew(ship, target)
 	return ""
+
+
+## Manual crew (Automatic off): the order also puts worker-order sections on Sails if the station
+## is short of them, and an order withdrawn sends them back (crew-tasks spec §4.8).
+func _place_manual_crew(ship: ShipState, target: String) -> void:
+	if ship.crew_auto or game_state.get("crew_task_controller") == null:
+		return
+	var ctx := CrewRules.context(game_state, ship)
+	var plan := CrewRules.with_sail_order(ship, CrewRules.plan_of(ship), ctx, target)
+	var normalized := CrewRules.normalize(ship, plan, ctx)
+	game_state.ship_controller.set_crew_assignments(ship.ship_id, normalized.get("assignments", {}))
+	game_state.ship_controller.set_crew_orders(ship.ship_id, normalized.get("orders", {"sail_target": target}))
 
 
 ## Abandons the change in progress at once (e.g. Lines Jammed, 5.F.9c) and logs SAIL_CHANGE

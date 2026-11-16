@@ -197,6 +197,58 @@ func player_clear_movement(player_id: int, ship_id: String) -> String:
 	return ""
 
 
+## SERVER ONLY: the player's crew plan for one ship (the crew overlay; crew-tasks spec §3.2, §4.4).
+## Checks the phase, the player, that the plan is not yet submitted and that the ship is theirs;
+## CrewTaskController.plot_crew normalizes and stores it. Returns "" or the reason it is refused.
+func player_plot_crew(player_id: int, ship_id: String, plan: Dictionary) -> String:
+	var why := _crew_request_error(player_id, ship_id)
+	if why != "":
+		return why
+	return game_state.crew_task_controller.plot_crew(player_id, ship_id, plan)
+
+
+## SERVER ONLY: the Automatic crew switch for one of the player's ships (spec §3.3). Same checks
+## as player_plot_crew. Returns "" or the reason it is refused.
+func player_set_crew_auto(player_id: int, ship_id: String, on: bool) -> String:
+	var why := _crew_request_error(player_id, ship_id)
+	if why != "":
+		return why
+	return game_state.crew_task_controller.set_auto(player_id, ship_id, on)
+
+
+## SERVER ONLY: the sail change ordered for one of the player's ships ("" withdraws it), with the
+## same checks as player_plot_crew; SailController.plot_sail_change validates the target (5.F.6).
+func player_plot_sail_change(player_id: int, ship_id: String, target: String) -> String:
+	var why := _crew_request_error(player_id, ship_id)
+	if why != "":
+		return why
+	return game_state.sail_controller.plot_sail_change(player_id, ship_id, target)
+
+
+func _crew_request_error(player_id: int, ship_id: String) -> String:
+	if not is_server:
+		push_error("TurnPhaseController: Cannot plot crew on client")
+		return "crew orders are given on the server only"
+	if not game_result.is_empty():
+		return "the game is over"
+	if current_phase != GamePhase.PLANNING:
+		return "crew orders are given in the planning phase"
+	if player_id < 0 or player_id >= players_ready.size():
+		return "invalid player %d" % player_id
+	if players_ready[player_id]:
+		return "this player's plan is already submitted"
+	if game_state.crew_task_controller == null:
+		return "no crew-task controller"
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null:
+		return "no ship %s" % ship_id
+	if ship.player_id != player_id:
+		return "%s is not this player's ship" % ship_id
+	if ship.is_destroyed():
+		return "%s is destroyed" % ship_id
+	return ""
+
+
 func _enter_movement_resolution_phase() -> void:
 	"""SERVER ONLY: Enter movement resolution phase.
 	Runs the resolver and emits resolution_log_ready. Does NOT auto-advance.

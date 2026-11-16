@@ -122,7 +122,10 @@ func test_manual_plan_any_section_may_alter_sail() -> void:
 	# 4.B.1: S1 may alter sail (manual plan).
 	ship.crew_auto = false
 	assert_eq(GameState.sail_controller.plot_sail_change(0, "crew_ship", "FS"), "")
-	var plan := CrewRules.assign(ship, CrewRules.plan_of(ship), {}, 0, CrewRules.STATION_SAILS)
+	# Spec §4.8: in manual mode the order puts the worker-order section (M) on Sails.
+	assert_eq(CrewRules.plan_of(ship)["assignments"].keys(), [ShipState.MARINES])
+	var plan := CrewRules.assign(ship, CrewRules.plan_of(ship), {}, ShipState.MARINES, CrewRules.STATION_MARINE_FIRE)
+	plan = CrewRules.assign(ship, plan, {}, 0, CrewRules.STATION_SAILS)
 	assert_eq(ctrl.plot_crew(0, "crew_ship", plan), "")
 	ctrl.begin_turn_tasks(MOVE)
 	assert_eq(ship.sail_change_info()["sections"], [0])
