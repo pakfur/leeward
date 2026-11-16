@@ -53,7 +53,7 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"SecondaryLabel"
-text = "Click a ship's highlighted hexes to plot its course. Click a hex on its course to cut it back."
+text = ""
 horizontal_alignment = 1
 autowrap_mode = 2
 

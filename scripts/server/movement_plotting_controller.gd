@@ -31,9 +31,6 @@ func _init(p_game_state: Node = null) -> void:
 	game_state = p_game_state if p_game_state else GameState
 	movement_validator = MovementValidator.new(game_state)
 
-
-## Movement is plotted only in PLANNING, before the game is over and before the player's plan
-## is submitted (TurnPhaseController.players_ready). SETUP (no turn loop running: set-up code and
 ## tests) is let through too. "" when the request may go ahead.
 ## The error code and text for a ship that cannot plot ([] when it can); same test as
 ## DefaultCourse.can_plot.
@@ -54,6 +51,9 @@ func _plot_refusal(ship_state: ShipState) -> Array:
 	return ["SHIP_DISMASTED", "Ship %s is dismasted and cannot move" % ship_id]
 
 
+
+## Movement is plotted only in PLANNING, before the game is over and before the player's plan
+## is submitted (TurnPhaseController.players_ready). SETUP (no turn loop running: set-up code and
 func _turn_refusal(player_id: int) -> String:
 	var pc = game_state.get("phase_controller") if game_state else null
 	if pc == null:
