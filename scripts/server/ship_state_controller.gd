@@ -957,6 +957,7 @@ func set_plotted_movement(ship_id: String, movement_commands: Array) -> bool:
 		return false
 
 	ship.plotted_actions["movement"] = movement_commands
+	ship.plotted_actions["movement_plotted"] = true
 	Trace.trace_log("ShipState", "Ship %s plotted movement: %s" % [ship_id, movement_commands])
 	return true
 

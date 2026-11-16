@@ -35,6 +35,25 @@ func _init(p_game_state: Node = null) -> void:
 ## Movement is plotted only in PLANNING, before the game is over and before the player's plan
 ## is submitted (TurnPhaseController.players_ready). SETUP (no turn loop running: set-up code and
 ## tests) is let through too. "" when the request may go ahead.
+## The error code and text for a ship that cannot plot ([] when it can); same test as
+## DefaultCourse.can_plot.
+func _plot_refusal(ship_state: ShipState) -> Array:
+	if DefaultCourse.can_plot(ship_state):
+		return []
+	var ship_id := ship_state.ship_id
+	if ship_state.is_captured():  # 10.H.2: a prize cannot sail
+		return ["SHIP_CAPTURED", "Ship %s is a prize and cannot sail (10.H.2)" % ship_id]
+	if ship_state.fouled_with != "":
+		return ["SHIP_FOULED", "Ship %s is fouled with %s and cannot move" % [ship_id, ship_state.fouled_with]]
+	if ship_state.is_grappled():  # 8.C.7: grappled ships cannot move or turn
+		return ["SHIP_GRAPPLED", "Ship %s is grappled to %s and cannot move" % [ship_id, ", ".join(ship_state.grappled_with)]]
+	if ship_state.is_destroyed():
+		return ["SHIP_DESTROYED", "Ship %s has been destroyed and cannot move" % ship_id]
+	if ship_state.is_struck():
+		return ["SHIP_STRUCK", "Ship %s has struck its colours and cannot move" % ship_id]
+	return ["SHIP_DISMASTED", "Ship %s is dismasted and cannot move" % ship_id]
+
+
 func _turn_refusal(player_id: int) -> String:
 	var pc = game_state.get("phase_controller") if game_state else null
 	if pc == null:
@@ -73,18 +92,9 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 		return MovementTypes.PlottingErrorResponse.create(request_id, "UNAUTHORIZED", "Player %d does not own ship %s" % [player_id, ship_id])
 
 	# Fouled, grappled, struck and dismasted ships cannot plot movement
-	if ship_state.is_captured():  # 10.H.2: a prize cannot sail
-		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_CAPTURED", "Ship %s is a prize and cannot sail (10.H.2)" % ship_id)
-	if ship_state.fouled_with != "":
-		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_FOULED", "Ship %s is fouled with %s and cannot move" % [ship_id, ship_state.fouled_with])
-	if ship_state.is_grappled():  # 8.C.7: grappled ships cannot move or turn
-		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_GRAPPLED", "Ship %s is grappled to %s and cannot move" % [ship_id, ", ".join(ship_state.grappled_with)])
-	if ship_state.is_destroyed():
-		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_DESTROYED", "Ship %s has been destroyed and cannot move" % ship_id)
-	if ship_state.is_struck():
-		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_STRUCK", "Ship %s has struck its colours and cannot move" % ship_id)
-	if ship_state.is_dismasted():
-		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_DISMASTED", "Ship %s is dismasted and cannot move" % ship_id)
+	var cannot := _plot_refusal(ship_state)
+	if not cannot.is_empty():
+		return MovementTypes.PlottingErrorResponse.create(request_id, cannot[0], cannot[1])
 
 	var refusal := _turn_refusal(player_id)
 	if refusal != "":

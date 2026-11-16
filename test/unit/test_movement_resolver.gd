@@ -144,17 +144,26 @@ func test_straight_movement_applies_position() -> void:
 	assert_eq(state.mp_used_this_turn, 2, "8.F.3b / 8.C.1: MPs used this g-t")
 
 
-func test_no_movement_plotted() -> void:
-	var state = _make_ship_state()
-	state.facing = 1
+func test_unplotted_ship_moves_on_its_6g2_course() -> void:
+	var state = _make_ship_state(Vector2i(5, 5), 3, 2)  # wind from E (0): facing W runs before it
 	var ships: Array[ShipState] = [state]
 
 	var log = resolver.run(ships, env)
 	var result = log.get_result("test_ship_1")
 
-	assert_eq(result.events.size(), 1, "Should have skip event")
-	assert_eq(result.events[0].event_type, MovementTypes.ResolutionEventType.SKIP_NO_PLOT)
-	assert_eq(result.final_hex, Vector2i(5, 5), "Position unchanged")
+	assert_eq(result.final_hex, Vector2i(3, 5), "Two hexes ahead on its default course")
+	for ev in result.events:
+		assert_ne(ev.event_type, MovementTypes.ResolutionEventType.SKIP_NO_PLOT)
+
+
+func test_explicit_empty_plot_holds_position() -> void:
+	var state = _make_ship_state(Vector2i(5, 5), 3, 2)
+	GameState.ship_controller.set_plotted_movement(state.ship_id, [])
+	var ships: Array[ShipState] = [state]
+
+	var log = resolver.run(ships, env)
+
+	assert_eq(log.get_result("test_ship_1").final_hex, Vector2i(5, 5), "Position unchanged")
 
 
 # ===========================================================================
@@ -1144,6 +1153,8 @@ func test_contest_drm_crew_quality_advantage() -> void:
 func test_contest_drm_class_advantage() -> void:
 	var state_a = _make_ship_state(Vector2i(5, 5), 0, 1, "C", "ship_a", 1, "C")
 	var state_b = _make_ship_state(Vector2i(6, 5), 3, 1, "C", "ship_b", 4, "C")
+	GameState.ship_controller.set_plotted_movement("ship_a", [])  # no 6.G.2 course: MPs count nothing
+	GameState.ship_controller.set_plotted_movement("ship_b", [])
 
 	var ship_map: Dictionary = {"ship_a": state_a, "ship_b": state_b}
 	var drm_a = resolver._calculate_contest_drm_relative("ship_a", ["ship_a", "ship_b"], ship_map)

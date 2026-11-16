@@ -161,6 +161,9 @@ var plotted_actions: Dictionary = empty_plot()
 static func empty_plot() -> Dictionary:
 	return {
 		"movement": [],  # Array of movement commands
+		# true once a movement plot was stored this turn (even an empty one: hold position); until
+		# then the resolver gives the ship its 6.G.2 default course (DefaultCourse)
+		"movement_plotted": false,
 		"crew_assignments": {},
 		"crew_orders": {"sail_target": ""},
 		# true once the crew plan was stored this turn; until then the plan is the carry-over

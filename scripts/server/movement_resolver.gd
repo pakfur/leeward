@@ -276,15 +276,6 @@ func _resolve_pass(
 					result.immobilized = true  # told after its tacking roll, on segment 0
 				else:
 					_remain_in_irons(ship_state, result, "in irons, no turn plotted")
-			elif not amended.has(sid):  # a plot amended to nothing is told by its rollback
-				var ev = MovementTypes.ResolutionEvent.new(
-					sid, 0, MovementTypes.ResolutionEventType.SKIP_NO_PLOT
-				)
-				ev.from_hex = ship_state.hex_position
-				ev.to_hex = ship_state.hex_position
-				ev.facing = ship_state.facing
-				ev.detail = "no movement plotted"
-				result.events.append(ev)
 			p.stopped[sid] = true
 		p.steps_by_ship[sid] = ship_steps
 
@@ -1660,7 +1651,10 @@ func _get_plotted_steps(ship_state: ShipState) -> Array:
 	## (defence behind the plotting check).
 	if ship_state.is_linked() or ship_state.is_out_of_play():
 		return []
-	return ship_state.plotted_actions.get("movement", [])
+	var plot: Array = ship_state.plotted_actions.get("movement", [])
+	if plot.is_empty() and not ship_state.plotted_actions.get("movement_plotted", false):
+		return DefaultCourse.as_dicts(DefaultCourse.for_ship(game_state, ship_state))  # 6.G.2
+	return plot
 
 
 ## Impulse of a turn plotted at MA=0, which must pass a Tacking roll (5.D.1): tacking from WF=L,
