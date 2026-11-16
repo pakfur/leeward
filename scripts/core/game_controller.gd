@@ -28,7 +28,8 @@ var combat_log_panel: CombatLogPanel = null
 var end_turn_panel: Control = null  # context-panel content while waiting in POST_COMBAT
 var end_turn_button: Button = null
 var game_over_panel: GameOverPanel = null  # modal result card; non-null once the game has ended
-var _boarding_card: BoardingCard = null  # the last boarding round, over the map (boarding spec §4.5)
+var _boarding_card: BoardingCard = null  # the boarding rounds of the last combat, over the map (boarding spec §4.5)
+var _boarding_card_log: PhaseEvents.PhaseLog = null  # the combat log the card shows
 var _combat_playback_active: bool = false  # true from combat_log_ready until playback finishes
 var _combat_playback_skip: bool = false
 var pause_menu: Control = null  # PauseMenu: Escape / the corner Menu button
@@ -1656,34 +1657,34 @@ func _play_combat_log(combat_log: PhaseEvents.PhaseLog) -> void:
 
 ## The boarding card for a BOARDING_ROUND event (boarding spec §4.5): shown over the map until the
 ## player closes it or the next turn's planning begins.
+## Several rounds in one combat log (several actions, 10.F) are stacked on the same card.
 func _show_boarding_card(combat_log: PhaseEvents.PhaseLog, ev: PhaseEvents.PhaseEvent) -> void:
-	_clear_boarding_card()
-	var result := {}
-	var start := combat_log.events.find(ev)
-	for k in range(start + 1, combat_log.events.size()):
-		var later: PhaseEvents.PhaseEvent = combat_log.events[k]
-		if later.type == PhaseEvents.Type.BOARDING_RESULT and later.ship_id == ev.ship_id:
-			result = later.data
-			break
 	var names := {}
 	for s in GameState.get_all_ships():
 		names[s.ship_id] = s.ship_name
-	var card := BoardingCard.new()
-	card.setup(ev.ship_id, ev.target_id, ev.data, result, names)
-	if ui:
-		ui.add_child(card)
+	var result := BoardingCard.result_for(combat_log, ev)
+	if _boarding_card != null and is_instance_valid(_boarding_card) and _boarding_card_log == combat_log:
+		_boarding_card.add_round(ev.ship_id, ev.target_id, ev.data, result, names)
 	else:
-		add_child(card)
-	card.reset_size()
+		_clear_boarding_card()
+		var card := BoardingCard.new()
+		card.setup(ev.ship_id, ev.target_id, ev.data, result, names)
+		if ui:
+			ui.add_child(card)
+		else:
+			add_child(card)
+		_boarding_card = card
+		_boarding_card_log = combat_log
+	_boarding_card.reset_size()
 	var area := get_viewport().get_visible_rect()
-	card.position = Vector2(area.size.x * 0.5 - card.size.x * 0.5, 70.0)
-	_boarding_card = card
+	_boarding_card.position = Vector2(area.size.x * 0.5 - _boarding_card.size.x * 0.5, 70.0)
 
 
 func _clear_boarding_card() -> void:
 	if _boarding_card != null and is_instance_valid(_boarding_card):
 		_boarding_card.queue_free()
 	_boarding_card = null
+	_boarding_card_log = null
 
 
 func _skip_combat_playback() -> void:

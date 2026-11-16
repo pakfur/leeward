@@ -121,8 +121,13 @@ static func progress_tag(ship: ShipState, section: int, entry: Dictionary) -> St
 	return "" if p.is_empty() else "T%d/%d" % [p["now"], p["total"]]
 
 
-## The Guns readout (spec §4.6): {"big", "bad", "why", "marines"}.
+## The Guns readout (spec §4.6): {"big", "bad", "why", "marines"}. A prize does not fight (10.H.2,
+## boarding spec §8 Q2): no modifier is shown for her.
 static func guns_readout(ship: ShipState, plan: Dictionary) -> Dictionary:
+	if ship.is_captured():
+		return {"big": "Guns silent · a prize", "bad": true,
+			"why": "A prize does not fight (10.H.2): neither broadside fires, whoever is at the guns.",
+			"marines": "Marines: no musketry from a prize (10.H.2)."}
 	var preview := CrewRules.guns_preview(ship, plan)
 	var n: int = preview["sections"]
 	var big := "Guns silent"

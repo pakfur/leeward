@@ -756,21 +756,6 @@ func test_all_defending_boxes_lost_is_a_capture() -> void:
 	assert_true((ships[1] as ShipState).is_captured(), "10.E.2e")
 
 
-func test_second_boarder_of_a_ship_in_action_is_refused() -> void:
-	var a := _ship("a", 0, Vector2i(5, 5), "D", 3, [3, 3, 3, 3], 2)
-	var b := _ship("b", 1, Vector2i(6, 5), "D", 3, [3, 3, 3, 3], 2)
-	var c := _ship("c", 0, Vector2i(6, 6), "D", 3, [3, 3, 3, 3], 2)
-	_link(a, b)
-	c.grappled_with.append("b")
-	b.grappled_with.append("c")
-	boarding.take_link_snapshot()
-	_task(a, "BA", M, "b")
-	_task(c, "BA", M, "b")
-	boarding.declare(PHASE)
-	assert_eq(GameState.boarding_actions.size(), 1, "10.F (multi-ship) is not simulated yet (B6)")
-	assert_true(c.is_readied(M), "the refused boarders stay ready")
-
-
 func test_engaged_marines_cannot_fire() -> void:
 	var a := _ship("a", 0, Vector2i(5, 5), "D", 3, [3, 3, 3, 3], 2)
 	var b := _ship("b", 1, Vector2i(6, 5), "D", 3, [3, 3, 3, 3], 2)

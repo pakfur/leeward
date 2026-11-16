@@ -27,7 +27,9 @@ var prize_size: int = 0
 ## The g-t the action was won (attacker_won / defender_won), else -1.
 var finished_turn: int = -1
 ## How it ended: "captured", "struck" (10.A.3), "undefended" (10.E.2b), "all_defenders_lost",
-## "repulsed", "attackers_lost", "surrendered" (10.D.6), "target_gone"; "" while live.
+## "struck_in_action" (10.E.2c), "overwhelmed" (10.F.2: a sixth ship boards her), "shared_capture"
+## (10.F: taken in another action), "repulsed", "attackers_lost", "surrendered" (10.D.6),
+## "target_gone"; "" while live.
 var outcome: String = ""
 ## The defender had struck before it was boarded (10.A.3: no reorganizing).
 var struck_target: bool = false
@@ -44,6 +46,10 @@ var original_crew_joins: bool = false
 var prize_action: int = -1
 ## The attacker took back a prize of its own side (no prize crew; the original crew is freed).
 var retaken: bool = false
+## 10.F: the defender was taken in another action (`shared_with`, its id) while this one was still
+## being fought: these boarders are aboard her as she is taken and reorganize too (10.G.2, the 10.F.3
+## example), then return; the prize crew comes from the action that took her only. -1 = not shared.
+var shared_with: int = -1
 
 
 func is_live() -> bool:
@@ -80,6 +86,7 @@ func to_dict() -> Dictionary:
 		"finished_turn": finished_turn, "outcome": outcome, "struck_target": struck_target,
 		"prize_aboard": prize_aboard, "helper_id": helper_id, "helper_sections": helper_sections.duplicate(),
 		"original_crew_joins": original_crew_joins, "prize_action": prize_action, "retaken": retaken,
+		"shared_with": shared_with,
 	}
 
 
@@ -106,6 +113,7 @@ static func from_dict(data: Dictionary) -> BoardingAction:
 	a.original_crew_joins = bool(data.get("original_crew_joins", false))
 	a.prize_action = int(data.get("prize_action", -1))
 	a.retaken = bool(data.get("retaken", false))
+	a.shared_with = int(data.get("shared_with", -1))
 	return a
 
 

@@ -312,21 +312,22 @@ func test_prize_crew_boards_an_enemy() -> void:
 
 # --- 10.G.5: a prize boarded while her captors reorganize ---
 
-## a (player 1, CQ B MR 3) takes b (player 0) and reorganizes; c (player 0, CQ C) boards b back.
-func _recapture_setup(a_crew: Array, a_marines: int, below: Array) -> Array:
+## a (player 1, CQ B MR 3) takes b (player 0) and reorganizes; c (player 0, CQ C) boards b back
+## with `goers`.
+func _recapture_setup(a_crew: Array, a_marines: int, below: Array, goers: Array = [M, 0]) -> Array:
 	var a := _ship("a", 1, Vector2i(5, 5), "B", 3, a_crew, a_marines, 3)
 	var b := _ship("b", 0, Vector2i(6, 5), "C", 3, below, 0, 4)
 	var taking := _take(a, b)
 	var c := _ship("c", 0, Vector2i(7, 5), "C", 3, [3, 3, 3, 3], 4, 4)
 	c.facing = 1
 	_link(c, b)
-	_task(c, "BA", M, "b")
-	_task(c, "BA", 0, "b")
+	for s in goers:
+		_task(c, "BA", int(s), "b")
 	return [a, b, c, taking]
 
 
-func test_10_g_5_captors_defend_with_the_original_crew_and_reorganize_again() -> void:
-	var r := _recapture_setup([4, 5, 6, 6], 6, [2, 6, 6, 6])
+func test_10_g_5_original_crew_joins_the_attack_and_captors_reorganize_again() -> void:
+	var r := _recapture_setup([4, 5, 6, 6], 6, [2, 6, 6, 6], [M])
 	var a: ShipState = r[0]
 	var b: ShipState = r[1]
 	var c: ShipState = r[2]
@@ -337,20 +338,25 @@ func test_10_g_5_captors_defend_with_the_original_crew_and_reorganize_again() ->
 	assert_eq(action.helper_id, "a", "10.G.5: the reorganizing boarders defend")
 	assert_eq(action.helper_sections, [0, M] as Array[int])
 	assert_true(action.original_crew_joins, "10.G.5: the original crew joins at CQ G")
+	assert_true(BoardingController.below_attacks(action), "with its own side's attackers (user decision 2026-11-15)")
 	assert_true(a.tasks_with("RO").is_empty(), "10.G.5: the reorganization is aborted")
 	assert_eq(a.tasks_with("FB").size(), 2)
 	assert_eq(_events(PhaseEvents.Type.REORGANIZING_ABORTED).size(), 1)
-	# TBCF (10.D.1): a's S1 4 x 7 + M 6 x 9 = 82, plus 20 below x 2 (CQ G) = 122; c: M 4 x 8 + S1 3 x 6 = 50.
-	assert_eq(boarding.defence_tbcf(action), 122)
-	# c 50:122 -> 1:3 -3, class 3 defender -1: -4; b 122:50 -> 2:1 +2.
-	# Dice: c 3+3 = 6 - 4 = 2 (2 % of 50 = 1 BCF); b 4+4 = 8 + 2 = 10 (20 % of 122 = 24 BCF;
-	# "attacker repulsed, 1 MC"). b's loss: both types in the defence, d6 1 = sailor: a's S1.
-	# c's loss: d6 1, 1, 1 three sailors (18), then marines only: one marine (26 >= 24).
-	_dice.queue([3, 3, 4, 4, 1, 1, 1, 1])
+	# TBCF (10.D.1, chart BCF: B 7/9, C 6/8, G 2/4): defence a's S1 4 x 7 + M 6 x 9 = 82; attack c's
+	# M 4 x 8 = 32 plus the 20 sailors below x 2 = 40: 72.
+	assert_eq(boarding.defence_tbcf(action), 82)
+	assert_eq(boarding.attack_tbcf(action), 72)
+	# c 72:82 -> 2:3 -1, class 3 defender -1: -2; b 82:72 -> 1:1 0.
+	# Dice: c 3+3 = 6 - 2 = 4 (2 % of 72 = 1 BCF); b 4+5 = 9 (15 % of 82 = 12 BCF; "attacker
+	# repulsed, 1 MC"). b's loss: both types in the defence, d6 1 = sailor: a's S1 (7). The attack's
+	# loss: both types on that side (c's marines, the sailors below): d6 4 = marine (c's, 8), d6 1 and
+	# 1 = two sailors from below (2 + 2): 12.
+	_dice.queue([3, 3, 4, 5, 1, 4, 1, 1])
 	boarding.resolve(COMBAT)
 	assert_eq(_dice.remaining(), 0, "dice order as documented")
-	assert_eq(a.crew_count[0], 3, "the loss fell on the captor's S1 (first with sailors)")
-	assert_eq(int(b.prize["original_crew"]["crew_count"][0]), 2, "none below")
+	assert_eq(a.crew_count[0], 3, "the defence's loss fell on the captor's S1")
+	assert_eq(c.marine_count, 3, "the attack's marine loss fell on c")
+	assert_eq(Array(b.prize["original_crew"]["crew_count"]), [0, 6, 6, 6], "two sailors lost below")
 	assert_eq(action.state, BoardingAction.DEFENDER_WON)
 	assert_true(b.is_captured(), "held")
 	var ro := a.tasks_with("RO")
@@ -358,12 +364,12 @@ func test_10_g_5_captors_defend_with_the_original_crew_and_reorganize_again() ->
 	for task in ro:
 		assert_eq(int(task["done"]), 0, "from the beginning")
 		assert_eq(int(task["params"]["action"]), taking.id)
-	assert_eq(c.pending_morale_checks, 2, "repulsed: 1 MC (10.D.5), and 1 for its emptied S1 (9.B)")
+	assert_eq(c.pending_morale_checks, 1, "repulsed: 1 MC (10.D.5)")
 
 
 func test_prize_boarded_back_is_retaken() -> void:
-	# a's boarders: S1 1 box; below 10 boxes. Defence 1 x 7 + 10 x 2 = 27; c sends M 2 + S1 1:
-	# 2 x 8 + 1 x 6 = 22. c 22:27 -> 2:3 -1, class -1: -2; b 27:22 -> 1:1 0.
+	# a's boarders: S1 1 box at CQ B: defence 7. c sends M 2 + S1 1 (2 x 8 + 1 x 6 = 22) with the 10
+	# sailors below at CQ G (20): attack 42. c 42:7 -> 4:1 +4, class -1: +3; b 7:42 -> 1:4 -4.
 	var r := _recapture_setup([1, 5, 6, 6], 0, [0, 4, 6, 0])
 	var a: ShipState = r[0]
 	var b: ShipState = r[1]
@@ -374,11 +380,11 @@ func test_prize_boarded_back_is_retaken() -> void:
 	b.prize["original_crew"]["morale_rating"] = 4
 	boarding.declare(COMBAT)
 	var action: BoardingAction = GameState.boarding_actions[1]
-	assert_eq(boarding.defence_tbcf(action), 27)
-	# c 6+6 = 12 - 2 = 10: 20 % of 22 = 4 BCF, "d10 < defender's MR: captured" (the captor's MR 3:
-	# no prize crew aboard yet); b 1+1 = 2: 2 % of 27 = 1 BCF. b's loss: sailors only, no d6: a's S1
-	# (7). c's loss: d6 4 = marine. Special d10 0 < 3: captured.
-	_dice.queue([6, 6, 1, 1, 4, 0])
+	assert_eq(boarding.defence_tbcf(action), 7)
+	assert_eq(boarding.attack_tbcf(action), 42)
+	# c 6+6 = 12 + 3 = 15 (row 12+): 30 % of 42 = 13 BCF, "defending ship captured"; b 1+1 = 2 - 4:
+	# 2 % of 7 = 0 BCF. b's loss: sailors only, no d6: a's S1 (7), then nothing left.
+	_dice.queue([6, 6, 1, 1])
 	boarding.resolve(COMBAT)
 	assert_eq(_dice.remaining(), 0)
 	assert_eq(a.crew_count[0], 0, "a's boarder lost")
@@ -398,7 +404,7 @@ func test_prize_boarded_back_is_retaken() -> void:
 	_finish_ro(c)
 	boarding.advance_reorganizing(STATUS)
 	assert_true(action.prize_aboard)
-	assert_eq(c.marine_count, 1, "nobody detached")
+	assert_eq(c.marine_count, 2, "nobody detached")
 	assert_eq(b.crew_count, [0, 4, 6, 0] as Array[int])
 	# Spec §8 Q5: she scores by her state at the end, at her original value (MR 4, not 6).
 	var vc := VictoryController.new(GameState)

@@ -69,6 +69,8 @@ func _process(delta: float) -> void:
 		var s: ShipState = GameState.get_ship(state_id)
 		if s != null:
 			_update_fire_visual(0 if s.is_destroyed() else s.fire_count())
+	if _prize_label != null:
+		_place_prize_label()
 
 func initialize(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	"""Initialize view from state"""
@@ -229,12 +231,96 @@ func _update_prize_visual(ship_state: ShipState) -> void:
 		_prize_label.pixel_size = 0.0011
 		_prize_label.font_size = 22
 		_prize_label.outline_size = 8
+		_prize_label.render_priority = LABEL_RENDER_PRIORITY  # drawn over the transparent ocean
 		add_child(_prize_label)
 	(_prize_flag.get_node("Top").material_override as StandardMaterial3D).albedo_color = color
 	_prize_flag.position = _masthead_position(0.3) - Vector3(0, 0.05, 0)
 	_prize_label.modulate = color
-	_prize_label.position = Vector3(0, 2.6, 0)
 	_prize_label.text = prize_caption(ship_state)
+	_place_prize_label()
+
+
+## Clear water beyond the hull for the prize label (world units, hex size 1): half the hull's
+## length (two hexes) and beam, plus a gap; the clearance kept from other ships' hexes; the
+## farthest the label is pushed out to find clear water.
+const LABEL_HALF_LENGTH := 1.75
+const LABEL_HALF_BEAM := 0.45
+const LABEL_GAP := 0.35
+const LABEL_HEIGHT := 0.5
+const LABEL_HULL_RADIUS := 0.9
+const LABEL_MAX_PUSH := 8.0
+const LABEL_PUSH_STEP := 0.5
+## Above the transparent ocean (priority 0), which otherwise hides a label this low.
+const LABEL_RENDER_PRIORITY := 1
+
+
+## Keeps the prize label beyond the hull, above it on screen (or below when other ships lie above),
+## clear of the other ships, so it never lies across a hull whatever the headings and the camera's
+## turn (re-placed every frame).
+func _place_prize_label() -> void:
+	if _prize_label == null or model_node == null:
+		return
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	var cam_basis := cam.global_transform.basis if cam != null else Basis.IDENTITY
+	var others: Array[Vector3] = []
+	var depth := 25.0
+	var me: ShipState = GameState.get_ship(state_id) if state_id != "" else null
+	if me != null and hex_grid_ref != null:
+		var centre := hex_grid_ref.ship_center_world(me.hex_position, me.facing)
+		for s: ShipState in GameState.get_all_ships():
+			if s.ship_id == me.ship_id:
+				continue
+			for h in s.occupied_hexes():
+				others.append(hex_grid_ref.axial_to_world(h.x, h.y) - centre)
+		if cam != null:
+			depth = maxf(1.0, cam.global_position.distance_to(global_position))
+	# Label3D with fixed_size: about pixel_size x font pixels x depth world units per line.
+	var line := _prize_label.pixel_size * _prize_label.font_size * depth
+	var half_width := _prize_label.text.length() * 0.3 * line
+	var place := prize_label_place(cam_basis, model_node.rotation.y, others, half_width, line * 1.2)
+	_prize_label.position = place["offset"]
+	_prize_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP if place["below"] else VERTICAL_ALIGNMENT_BOTTOM
+
+
+## The label's offset from the ship's centre with no other ship about (prize_label_place).
+static func prize_label_offset(camera_basis: Basis, heading_rad: float) -> Vector3:
+	return prize_label_place(camera_basis, heading_rad)["offset"]
+
+
+## Where the prize label goes: {"offset": Vector3 from the ship's centre, "below": bool}. Along the
+## screen's up laid flat on the water (the camera's up vector, else its forward one, projected on
+## XZ), far enough to clear the hull at heading `heading_rad` (the model's bow is local -Z); if the
+## label (`half_width` either side, `height` deep, world units) would cover one of `others` (other
+## ships' hex centres, relative to this ship's centre), the screen's down side is tried, then both
+## a step farther out, up to LABEL_MAX_PUSH; with no clear water, just above the hull. Pure.
+static func prize_label_place(camera_basis: Basis, heading_rad: float, others: Array[Vector3] = [],
+		half_width: float = 0.0, height: float = 0.0) -> Dictionary:
+	var up := Vector3(camera_basis.y.x, 0.0, camera_basis.y.z)
+	if up.length() < 0.05:
+		up = Vector3(-camera_basis.z.x, 0.0, -camera_basis.z.z)
+	up = up.normalized() if up.length() > 0.0001 else Vector3(0, 0, -1)
+	var right := Vector3(-up.z, 0.0, up.x)
+	var bow := Vector3(0, 0, -1).rotated(Vector3.UP, heading_rad)
+	var along := absf(bow.dot(up))
+	var across := sqrt(maxf(0.0, 1.0 - along * along))
+	var reach := along * LABEL_HALF_LENGTH + across * LABEL_HALF_BEAM + LABEL_GAP
+	var push := 0.0
+	while push <= LABEL_MAX_PUSH:
+		for side in [1.0, -1.0]:
+			var r := reach + push
+			var clear := true
+			for p in others:
+				var x := absf(p.dot(right))
+				var y: float = p.dot(up) * side
+				if x < half_width + LABEL_HULL_RADIUS and y > r - LABEL_HULL_RADIUS and y < r + height + LABEL_HULL_RADIUS:
+					clear = false
+					break
+			if clear:
+				return {"offset": up * (r * side) + Vector3(0, LABEL_HEIGHT, 0), "below": side < 0.0}
+		if others.is_empty():
+			break
+		push += LABEL_PUSH_STEP
+	return {"offset": up * reach + Vector3(0, LABEL_HEIGHT, 0), "below": false}
 
 
 ## "PRIZE · reorganizing 1/3" while the captor's boarders reorganize (10.G.4), else "PRIZE".

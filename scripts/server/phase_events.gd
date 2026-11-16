@@ -34,11 +34,12 @@ enum Type {
 	BOARDERS_AWAY,  # 10.C.1 ship_id's boarders go away onto target_id: {sections, action | joins}
 	MARINES_DEFEND,  # 10.C.3 ship_id's marines replotted to FB against boarders from target_id: {cancelled_task, done}
 	BOARDING_ROUND,  # 10.D one round, ship_id (attacker) onto target_id: {action, round, attacker: {...}, defender: {...}}
-	BOARDING_RESULT,  # 10.D.5 the round's outcome: {special, side, d10, mr, mcs, result: fight_on/captured/repulsed/driven_off}
-	SHIP_CAPTURED,  # 10.E.2 ship_id is taken by target_id: {captor_id, struck_before, action}
+	BOARDING_RESULT,  # 10.D.5 the round's outcome: {action, special, side, d10, mr, mcs, result: fight_on/captured/repulsed/driven_off} (no round fought: result captured (+ reason)/surrendered/attackers_lost/target_gone; 10.F: shared_capture + with, captor_id)
+	SHIP_CAPTURED,  # 10.E.2 ship_id is taken by target_id: {captor_id, struck_before, action, outcome}
 	PRIZE_CREW,  # 10.G.7 a prize crew from target_id goes aboard ship_id: {sailors, marines, cq, mr, crew_count, marine_count}
 	RECAPTURED,  # 10.H.4 ship_id is back with its own side: {cause: "rose"|"boarded", original_boxes, prize_boxes, cq, mr} (+ target_id: the boarding ship)
 	REORGANIZING_ABORTED,  # 10.G.5 ship_id's boarders reorganizing aboard prize target_id turn to defend her: {sections}
+	DEFENCE_SPLIT,  # 10.F.2 ship_id, boarded by several ships, shares out its defenders: {split: [{attacker_id, action, sections}]}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -358,9 +359,21 @@ class PhaseEvent extends RefCounted:
 			Type.BOARDING_ROUND:
 				return _boarding_round_text(who, other)
 			Type.BOARDING_RESULT:
-				return _boarding_result_text(who, other)
+				return _boarding_result_text(who, other, ship_names)
 			Type.SHIP_CAPTURED:
+				match str(data.get("outcome", "")):
+					"overwhelmed":
+						return "%s is overwhelmed by a sixth boarding ship and taken by %s (10.F.2)" % [who, other]
+					"undefended":
+						return "%s is taken by %s: no one is left to defend her (10.E.2b)" % [who, other]
 				return "%s is taken by %s%s" % [who, other, " (she had struck)" if data.get("struck_before", false) else ""]
+			Type.DEFENCE_SPLIT:
+				var parts := PackedStringArray()
+				for e in data.get("split", []):
+					var secs: Array = e.get("sections", [])
+					parts.append("%s against %s" % [PhaseEvents.sections_text(secs) if not secs.is_empty() else "no one",
+						_name(ship_names, str(e.get("attacker_id", "")))])
+				return "%s, boarded by %d ships, splits her defence: %s (10.F.2)" % [who, parts.size(), "; ".join(parts)]
 			Type.PRIZE_CREW:
 				var n := int(data.get("sailors", 0)) + int(data.get("marines", 0))
 				return "Prize crew of %d (%s%s) from %s put aboard %s" % [n, _val("cq"), _val("mr"), other, who]
@@ -696,17 +709,33 @@ class PhaseEvent extends RefCounted:
 		var side := func(x: Dictionary) -> String:
 			var drm := int(x.get("drm", 0))
 			return "%d %s%d = %d" % [int(x.get("roll", 0)), "−" if drm < 0 else "+", absi(drm), int(x.get("total", 0))]
-		return "Boarding, %s onto %s: %d v %d; attacker %s, defender %s" % [who, other, int(a.get("tbcf", 0)),
+		var round_no := int(data.get("round", 1))
+		return "Boarding, %s onto %s%s: %d v %d; attacker %s, defender %s" % [who, other,
+			" (round %d)" % round_no if round_no > 1 else "", int(a.get("tbcf", 0)),
 			int(d.get("tbcf", 0)), side.call(a), side.call(d)]
 
 	## "X's boarders are repulsed and take 1 MC" / "Y is captured!" / "The fight aboard Y goes on".
-	func _boarding_result_text(who: String, other: String) -> String:
+	func _boarding_result_text(who: String, other: String, ship_names: Dictionary) -> String:
 		var d10 := int(data.get("d10", -1))
 		var kind := "capture roll" if str(data.get("special", "")).begins_with("capture") else "repulse roll"
 		var roll := " (%s d10 %d %s MR %d)" % [kind, d10, "<" if d10 < int(data.get("mr", 0)) else "≥", int(data.get("mr", 0))] if d10 >= 0 else ""
 		match str(data.get("result", "")):
 			"captured":
+				match str(data.get("reason", "")):
+					"struck_in_action":
+						return "%s has struck with boarders aboard: she is captured (10.E.2c)" % other
+					"all_defenders_lost":
+						return "%s has no defenders left: she is captured (10.E.2e)" % other
 				return "%s is captured!%s" % [other, roll]
+			"shared_capture":
+				return "%s's boarders are aboard %s as %s takes her: they reorganize too (10.F)" % [who, other,
+					_name(ship_names, str(data.get("captor_id", "")))]
+			"surrendered":
+				return "%s's boarders aboard %s surrender with their ship (10.D.6)" % [who, other]
+			"attackers_lost":
+				return "%s's boarders are all lost: %s holds" % [who, other]
+			"target_gone":
+				return "The fight aboard %s ends: she is gone" % other
 			"repulsed":
 				var mcs := int(data.get("mcs", 0))
 				return "%s's boarders are repulsed%s%s" % [who, " and take %s" % PhaseEvents.plural(mcs, "MC") if mcs > 0 else "", roll]

@@ -199,11 +199,11 @@ func apply_boarding_losses(ship_id: String, bcf_required: int, sections: Array, 
 	return out
 
 
-## Boarding losses shared by several contingents defending one prize (10.G.5): `contingents` are
-## {"ship_id", "sections", "quality"} (the prize's live crew, the captor's boarders) or
-## {"ship_id", "below": true, "quality"} (the prize's original crew below). Boxes are removed one at
-## a time until `bcf_required` BCFs are gone (10.D.4): while both sailors and marines are left in
-## the whole defence one Crew Loss d6 ("All Other Causes") per box, else that type with no roll;
+## Boarding losses shared by several contingents fighting on one side (10.G.5): `contingents` are
+## {"ship_id", "sections", "quality"} (the prize's live crew, the captor's boarders, or the boarding
+## ship) or {"ship_id", "below": true, "quality"} (the prize's original crew below, which fights
+## with its own side's attackers). Boxes are removed one at a time until `bcf_required` BCFs are
+## gone (10.D.4): while both sailors and marines are left on that whole side one Crew Loss d6 ("All Other Causes") per box, else that type with no roll;
 ## the box comes from the first contingent, in the order given, that has that type (sailors from its
 ## lowest section). An emptied section of a ship in play loses its task and notes a morale check.
 ## Logged as one DAMAGE event per ship that lost boxes (cause "boarding"). Returns
@@ -284,7 +284,7 @@ func apply_boarding_losses_shared(contingents: Array, bcf_required: int, phase: 
 	return out
 
 
-## {"sailors", "marines"} boxes a defending contingent still has (apply_boarding_losses_shared).
+## {"sailors", "marines"} boxes a contingent (of either side) still has (apply_boarding_losses_shared).
 func _contingent_boxes(c: Dictionary) -> Dictionary:
 	var ship: ShipState = game_state.get_ship(str(c["ship_id"]))
 	var out := {"sailors": 0, "marines": 0}
