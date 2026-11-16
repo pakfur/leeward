@@ -244,9 +244,7 @@ func _restore_snapshot(ship_id: String, with_crew: bool) -> void:
 	if not course.is_empty():
 		game_state.ship_controller.set_plotted_movement(ship_id, course)
 	else:
-		var ship: ShipState = game_state.get_ship(ship_id)
-		game_state.ship_controller.set_plotted_movement(ship_id, [])
-		ship.plotted_actions["movement_plotted"] = false
+		game_state.ship_controller.clear_plotted_movement(ship_id)
 	if with_crew:
 		game_state.ship_controller.clear_crew_plot(ship_id)
 		game_state.ship_controller.set_crew_auto(ship_id, snap["crew_auto"])

@@ -112,6 +112,14 @@ func test_reset_restores_course_crew_and_sail() -> void:
 	assert_eq(ship.plotted_actions["crew_orders"]["sail_target"], "")
 
 
+func test_reset_to_an_empty_snapshot_course_leaves_no_movement_plotted() -> void:
+	_pc()._enter_planning_phase()
+	_pc().planning_snapshot["own"]["course"] = []
+	assert_eq(_pc().player_reset_course(0, "own"), "")
+	assert_eq(ship.plotted_actions["movement"], [])
+	assert_false(ship.plotted_actions["movement_plotted"])
+
+
 func test_reset_restores_auto_and_boarding_and_keeps_tasks_in_progress() -> void:
 	ship.crew_auto = true
 	_pc()._enter_planning_phase()

@@ -961,6 +961,23 @@ func set_plotted_movement(ship_id: String, movement_commands: Array) -> bool:
 	Trace.trace_log("ShipState", "Ship %s plotted movement: %s" % [ship_id, movement_commands])
 	return true
 
+## Back to "no movement plotted" (the resolver then sails the default course, 6.G.2).
+func clear_plotted_movement(ship_id: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot clear plotted movement on client")
+		return false
+
+	var ship = game_state.get_ship(ship_id)
+	if not ship:
+		push_error("[Server] Ship not found: %s" % ship_id)
+		return false
+
+	ship.plotted_actions["movement"] = []
+	ship.plotted_actions["movement_plotted"] = false
+	Trace.trace_log("ShipState", "Ship %s plotted movement cleared" % ship_id)
+	ship_state_changed.emit(ship_id)
+	return true
+
 func clear_plotted_actions(ship_id: String) -> bool:
 	if not is_server:
 		push_error("ShipStateController: Cannot clear plot on client")
