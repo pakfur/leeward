@@ -244,6 +244,7 @@ func _on_crew_changed() -> void:
 	if current_planning_ui and is_instance_valid(current_planning_ui):
 		current_planning_ui.crew_overlay_open = crew_client.is_open
 		current_planning_ui.refresh_crew_orders()
+	_click_refusals.clear()  # the crew or sail change may have made a refused move legal
 	_refresh_courses()  # a sail order can change the movement allowance
 
 
@@ -538,13 +539,14 @@ func _handle_course_click(hex: Vector2i) -> bool:
 ## Draw every own ship's stored course and the hexes it may extend to (the panel's selected ship at
 ## full strength), and rebuild the click routing, the hover candidates and each card's course readout.
 func _refresh_courses() -> void:
+	# Outside PLANNING the overlay is not ours to clear (a bear-off pause draws the other plots).
+	if GameState.current_phase != GameState.GamePhase.PLANNING or GameState.phase_controller == null:
+		return
 	_courses.clear()
 	_hover_candidates.clear()
 	if hex_overlay:
 		hex_overlay.clear_courses()
 		hex_overlay.clear_blocked_hexes()
-	if GameState.current_phase != GameState.GamePhase.PLANNING or GameState.phase_controller == null:
-		return
 	var selected := _course_selected_id()
 	var grid: HexGrid = hex_map.get_hex_grid() if hex_map else null
 	var ships: Array = GameState.get_all_ships()
@@ -567,15 +569,20 @@ func _refresh_courses() -> void:
 		if current_planning_ui and is_instance_valid(current_planning_ui):
 			current_planning_ui.set_course_info(id, _course_info(ship, options, ships))
 
-## The card's course readout for `ship`: MP used of the allowance, the tacking and steering notes
-## and the warning line (a refused click, else the path's collision, then a jammed rudder).
+## The card's course readout for `ship`: MP used of the allowance (the server's count), the tacking
+## and steering notes, the heading note (allowance change, irons) and the warning line (a refused
+## click, else the path's collision, then a jammed rudder).
 func _course_info(ship: ShipState, options: Dictionary, ships: Array) -> Dictionary:
-	# Read-only query: this turn's movement allowance  SCV:ALLOW
-	var allowance: int = GameState.ship_controller.get_movement_allowance(ship.ship_id) if GameState.ship_controller else 0
-	var info := CourseView.course_info(options, ship, allowance)
+	var info := CourseView.course_info(options)
+	var path: Array = options.get("path", [])
+	if hex_map and GameState.environment:
+		var grid: HexGrid = hex_map.get_hex_grid()
+		var wind: int = GameState.environment.wind_direction
+		var end_facing: int = path[-1].facing if not path.is_empty() else ship.facing
+		info["note"] = CourseView.course_note(options, grid.get_wind_facing(ship.facing, wind),
+			grid.get_wind_facing(end_facing, wind))
 	info["tacking"] = _tacking_text(ship, bool(options.get("is_tacking_attempt", false)))
 	info["steering"] = _steering_text(ship)
-	var path: Array = options.get("path", [])
 	var collision := path_collision_text(path, ship.hex_position, ship.facing, ships, ship.ship_id)
 	info["collision"] = CourseView.warning_text(str(_click_refusals.get(ship.ship_id, "")), collision,
 		str(options.get("rudder_error", "")))
@@ -652,6 +659,7 @@ func _update_plotting_hover(screen_pos: Vector2) -> void:
 	var model = ShipIndicatorModel.build_hover(
 		meta.resulting_hex, meta.resulting_facing, ship_state.speed,
 		env.wind_direction, env.wind_speed, hex_map.get_hex_grid())
+	model.ship_name = ship_state.ship_name  # several courses are drawn at once: say whose this is
 	if ship_indicators:
 		ship_indicators.show_hover(model)
 	if indicator_overlay:
@@ -877,9 +885,8 @@ func _enter_planning_phase() -> void:
 	current_planning_ui.setup_for_player(player_0_ships)
 	if crew_client:
 		crew_client.follow_ship(current_planning_ui.selected_ship_id)
-	# Every own ship's default course is on the map at once. The server announces PLANNING before it
-	# stores the default courses (TurnPhaseController._enter_planning_phase), so draw them once it is done.
-	_refresh_courses.call_deferred()
+	# Every own ship's default course (stored before the server announced PLANNING) is on the map at once.
+	_refresh_courses()
 
 func _on_planning_ship_selected(ship_id: String) -> void:
 	Trace.trace_log("GameController", "Planning UI: Ship selected - %s" % ship_id)

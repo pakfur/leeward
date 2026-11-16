@@ -20,6 +20,7 @@ class PlottingState extends RefCounted:
 	var remaining_ma: int = 0
 	var min_ma: int = 0
 	var max_ma: int = 0
+	var mp_spent: int = 0  ## movement points the path so far spends (turns included, free pivot not)
 	var pivots_used: int = 0
 	var forward_hexes_since_last_pivot: int = 0
 	var last_pivot_direction: MovementTypes.MoveType = MovementTypes.MoveType.NONE
@@ -52,6 +53,8 @@ func calculate_valid_moves(
 	var ps = _build_plotting_state(ship_state, current_hex, current_facing, path_so_far)
 	var result = MovementTypes.ValidMovesResult.new()
 	result.remaining_ma = ps.remaining_ma
+	result.max_ma = ps.max_ma
+	result.mp_spent = ps.mp_spent
 	result.can_submit = rudder_jam_error(ship_state, path_so_far) == ""
 	result.is_tacking_attempt = ps.is_tacking_attempt
 
@@ -188,6 +191,7 @@ func _build_plotting_state(
 				ma_spent += 1
 		replay_facing2 = step.facing
 
+	ps.mp_spent = ma_spent
 	ps.remaining_ma = max(0, ps.max_ma - ma_spent)
 
 	# A ship starting at MA=0 can only turn, and that turn needs a Tacking roll (5.D.1): the planning

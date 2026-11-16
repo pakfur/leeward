@@ -104,7 +104,7 @@ func update_ship_display(ship_state: ShipState) -> void:
 	if ship_list_items.has(ship_state.ship_id):
 		ship_list_items[ship_state.ship_id].setup(ship_state)
 
-## The selected ship's course readout (`info`: used, allowance, tacking, steering, collision; "" hides a line).
+## The selected ship's course readout (`info`: used, allowance, tacking, steering, note, collision; "" hides a line).
 func set_course_info(ship_id: String, info: Dictionary) -> void:
 	if ship_list_items.has(ship_id):
 		ship_list_items[ship_id].set_course_info(info)

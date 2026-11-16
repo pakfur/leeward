@@ -153,3 +153,22 @@ func test_course_options_lists_next_hexes_from_the_course_end() -> void:
 	assert_true(opts.has("remaining_ma"))
 	assert_true(opts.has("is_tacking_attempt"))
 	assert_eq(opts["rudder_error"], "")
+
+
+func test_course_options_count_the_mp_a_turn_spends() -> void:
+	# Ahead, a turn, ahead: three movement points, the turn included; used and left add up to the
+	# allowance at the course-end heading.
+	var opts := _pc().course_options("own")
+	assert_eq(opts["mp_used"], 0)
+	assert_eq(opts["start_max_ma"], opts["max_ma"], "no course: start and end headings are the same")
+	assert_eq(_pc().player_extend_course(0, "own", _ahead(ship.hex_position, 0)), "")
+	opts = _pc().course_options("own")
+	var turn: MovementTypes.ValidMove = opts["valid_next"].starboard
+	assert_not_null(turn, "a starboard turn must be offered")
+	assert_eq(_pc().player_extend_course(0, "own", turn.hex), "")
+	var turned := _pc().stored_course(ship)[1]
+	assert_eq(_pc().player_extend_course(0, "own", _ahead(turned.hex, turned.facing)), "")
+	opts = _pc().course_options("own")
+	assert_eq(opts["path"].size(), 3)
+	assert_eq(opts["mp_used"], 3, "two aheads and the turn")
+	assert_eq(opts["mp_used"] + opts["remaining_ma"], opts["max_ma"], "used and left add up")

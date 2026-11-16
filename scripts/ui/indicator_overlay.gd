@@ -93,6 +93,13 @@ static func label_position(center_px: Vector2, away: Vector2, clearance: float, 
 	return (label_center - label_size * 0.5).round()
 
 
+## The label's lines: the ship's name when the model carries one (the hover preview), then speed
+## and point of sail.
+static func label_text(model: ShipIndicatorModel) -> String:
+	var text := "Speed: %d\n%s" % [model.speed, model.point_of_sail]
+	return text if model.ship_name == "" else model.ship_name + "\n" + text
+
+
 ## `side` -1 puts the label astern (the selected ship: the offered hexes are all ahead of it),
 ## +1 ahead (the hover preview: past the hovered hex, away from the ship and its other options).
 ## `min_clearance` pushes the label further out.
@@ -103,7 +110,7 @@ func _update_label(model: ShipIndicatorModel, label: Label, side: float, min_cle
 	if _camera.is_position_behind(model.center_anchor):
 		label.visible = false
 		return
-	label.text = "Speed: %d\n%s" % [model.speed, model.point_of_sail]
+	label.text = label_text(model)
 	label.modulate = Color(1, 1, 1, model.opacity)
 	label.reset_size()
 	var center_px := _camera.unproject_position(model.center_anchor)

@@ -32,6 +32,7 @@ var course_line: Label = null
 var tacking_label: Label = null
 var steering_label: Label = null
 var collision_label: Label = null
+var note_label: Label = null  ## allowance change on the new heading, head to wind
 var reset_course_button: Button = null
 
 func _ready() -> void:
@@ -192,6 +193,7 @@ func _build_course_block() -> void:
 	course_box.add_child(course_line)
 	tacking_label = _course_note("TackingNote", CrewStyle.WARN)
 	steering_label = _course_note("SteeringNote", CrewStyle.WARN)
+	note_label = _course_note("CourseNote", CrewStyle.WARN)
 	collision_label = _course_note("CollisionNote", CrewStyle.FIRE_TEXT)
 	reset_course_button = Button.new()
 	reset_course_button.name = "ResetCourseButton"
@@ -214,12 +216,13 @@ func _course_note(node_name: String, color: Color) -> Label:
 	return l
 
 
-## `info`: used, allowance, tacking, steering, collision; "" hides a line.
+## `info`: used, allowance, tacking, steering, note, collision; "" hides a line.
 func set_course_info(info: Dictionary) -> void:
 	if course_line == null:
 		return
 	course_line.text = "Course: %d of %d MP" % [int(info.get("used", 0)), int(info.get("allowance", 0))]
-	for pair in [[tacking_label, "tacking"], [steering_label, "steering"], [collision_label, "collision"]]:
+	for pair in [[tacking_label, "tacking"], [steering_label, "steering"], [note_label, "note"],
+			[collision_label, "collision"]]:
 		var text := str(info.get(pair[1], ""))
 		pair[0].text = text
 		pair[0].visible = text != ""

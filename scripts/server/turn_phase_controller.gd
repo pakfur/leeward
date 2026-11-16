@@ -170,7 +170,6 @@ func _enter_environment_phase() -> void:
 func _enter_planning_phase() -> void:
 	"""SERVER ONLY: Enter planning phase"""
 	current_phase = GamePhase.PLANNING
-	phase_changed.emit(current_phase)
 	players_ready = [false, false]
 	Trace.trace_log("TurnPhase", "Phase: PLANNING - Players plot their actions")
 
@@ -183,6 +182,8 @@ func _enter_planning_phase() -> void:
 	for p in ai_player_ids:
 		if p >= 0 and p < players_ready.size():
 			players_ready[p] = true
+	# Announced last: listeners (the view) find the default courses stored and the AI's plan in.
+	phase_changed.emit(current_phase)
 
 ## Stores 6.G.2's default course for each human ship that can plot and records every human ship's
 ## planning start state (planning_snapshot).
@@ -364,9 +365,10 @@ func player_cut_course(player_id: int, ship_id: String, step_index: int) -> Stri
 
 
 ## Read-only: what the view needs to draw and extend a ship's course: `path` (the stored steps),
-## `valid_next` (MovementTypes.ValidNextHexes from the course end), `remaining_ma`,
-## `is_tacking_attempt`, `rudder_error` ("" or the jammed-rudder text: the course is kept, the view
-## warns). {} when the ship cannot plot.
+## `valid_next` (MovementTypes.ValidNextHexes from the course end), `remaining_ma`, `mp_used` (MPs
+## the course spends, turns included), `max_ma` (the most it may spend at the course-end heading),
+## `start_max_ma` (the same at the start heading), `is_tacking_attempt`, `rudder_error` ("" or the
+## jammed-rudder text: the course is kept, the view warns). {} when the ship cannot plot.
 func course_options(ship_id: String) -> Dictionary:
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null or not DefaultCourse.can_plot(ship):
@@ -376,10 +378,16 @@ func course_options(ship_id: String) -> Dictionary:
 	var cur_facing: int = ship.facing if path.is_empty() else path[-1].facing
 	var validator := MovementValidator.new(game_state)
 	var moves := validator.calculate_valid_moves(ship, cur_hex, cur_facing, path)
+	var empty: Array[MovementTypes.PlotStep] = []
+	var at_start := moves if path.is_empty() else \
+			validator.calculate_valid_moves(ship, ship.hex_position, ship.facing, empty)
 	return {
 		"path": path,
 		"valid_next": moves.valid_hexes,
 		"remaining_ma": moves.remaining_ma,
+		"mp_used": moves.mp_spent,
+		"max_ma": moves.max_ma,
+		"start_max_ma": at_start.max_ma,
 		"is_tacking_attempt": moves.is_tacking_attempt,
 		"rudder_error": validator.rudder_jam_error(ship, path),
 	}

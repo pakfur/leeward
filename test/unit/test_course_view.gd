@@ -64,17 +64,37 @@ func test_course_input_of_an_empty_course_ends_at_the_ship() -> void:
 
 
 func test_course_info_counts_mp_used_and_allowance() -> void:
-	var ship := _ship("a", Vector2i(0, 0), 0)
-	var path := [MovementTypes.PlotStep.new(Vector2i(1, 0), 0, T.FORWARD),
-		MovementTypes.PlotStep.new(Vector2i(2, 0), 0, T.FORWARD)]
-	var info := CourseView.course_info(_options(path, _offer(Vector2i(2, 0), 0), 3), ship, 5)
-	assert_eq(info["used"], 2, "allowance less what is left")
-	assert_eq(info["allowance"], 5)
-	var none := CourseView.course_info(_options([], null, 0), ship, 0)
-	assert_eq(none["used"], 0)
+	# The server's own count: a 3-MP course (ahead, turn, ahead) at a 3-MP allowance reads 3 of 3,
+	# whatever the table allowance is.
+	var opts := _options([], null, 0)
+	opts["mp_used"] = 3
+	opts["max_ma"] = 3
+	var info := CourseView.course_info(opts)
+	assert_eq(info["used"], 3)
+	assert_eq(info["allowance"], 3)
+	opts["mp_used"] = 2
+	opts["max_ma"] = 0
+	assert_eq(CourseView.course_info(opts)["allowance"], 2, "into irons: never less than spent")
+	var none := CourseView.course_info(_options([], null, 0))
+	assert_eq(none["used"], 0, "missing keys read as nothing")
 	assert_eq(none["allowance"], 0)
-	var odd := CourseView.course_info(_options([], null, 7), ship, 5)
-	assert_eq(odd["used"], 0, "never below nothing")
+
+
+func test_course_note_names_an_allowance_change_and_irons() -> void:
+	var opts := _options([], null, 0)
+	opts["start_max_ma"] = 3
+	opts["max_ma"] = 3
+	assert_eq(CourseView.course_note(opts, "B", "B"), "", "same heading, same allowance")
+	assert_eq(CourseView.course_note(opts, "B", "C"), "", "new heading, same allowance")
+	opts["max_ma"] = 1
+	assert_eq(CourseView.course_note(opts, "B", "C"),
+		"Allowance changed on the new heading (broad reach → close hauled)")
+	opts["max_ma"] = 0
+	assert_eq(CourseView.course_note(opts, "C", "L"),
+		"Allowance changed on the new heading (close hauled → in irons)\n" + PlanningText.IRONS_NOTE,
+		"head to wind: the change and the irons warning")
+	opts["start_max_ma"] = 0
+	assert_eq(CourseView.course_note(opts, "L", "L"), PlanningText.IRONS_NOTE, "still in irons")
 
 
 func test_hover_candidates_hold_the_move_metadata() -> void:

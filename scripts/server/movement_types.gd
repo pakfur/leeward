@@ -125,6 +125,8 @@ class ValidMovesResult extends RefCounted:
 	var valid_hexes: ValidNextHexes = null
 	var can_submit: bool = true
 	var remaining_ma: int = 0
+	var max_ma: int = 0  ## the most the ship may move this g-t at the plotted heading (acceleration capped)
+	var mp_spent: int = 0  ## movement points the path spends (turns included)
 	var is_tacking_attempt: bool = false
 
 	func _init() -> void:

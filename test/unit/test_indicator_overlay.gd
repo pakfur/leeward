@@ -51,3 +51,12 @@ func test_overlay_clamps_to_the_map_rect_it_is_given() -> void:
 	autofree(overlay)
 	overlay.map_rect_provider = func() -> Rect2: return Rect2(460, 0, 1460, 1000)
 	assert_eq(overlay._map_rect(), Rect2(460, 0, 1460, 1000))
+
+
+func test_hover_label_names_the_ship() -> void:
+	var model := ShipIndicatorModel.new()
+	model.speed = 3
+	model.point_of_sail = "Broad reach"
+	assert_eq(Overlay.label_text(model), "Speed: 3\nBroad reach", "no name: the old two lines")
+	model.ship_name = "HMS Lively"
+	assert_eq(Overlay.label_text(model), "HMS Lively\nSpeed: 3\nBroad reach")

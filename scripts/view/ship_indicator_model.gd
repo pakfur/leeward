@@ -17,6 +17,7 @@ var neighbor_anchors: Array[Vector3] = []      # the six neighbouring hex centre
 var heading: int = 0                           # heading the indicators show (0=E .. 5=NE)
 var speed: int = 0
 var point_of_sail: String = ""
+var ship_name: String = ""  ## the hover preview names the ship whose course it extends ("" for none)
 var opacity: float = 1.0
 
 const POS_LABELS := {

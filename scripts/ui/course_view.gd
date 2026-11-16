@@ -21,11 +21,22 @@ static func course_input(options: Dictionary, ship: ShipState) -> Dictionary:
 	return {"path_hexes": path_hexes, "next_hexes": next_hexes, "end_hex": end_hex}
 
 
-## The card's "Course: used of allowance MP": `allowance` is this turn's movement allowance, `used`
-## what the stored course spends of it (allowance less the server's remaining movement).
-static func course_info(options: Dictionary, _ship: ShipState, allowance: int) -> Dictionary:
-	var used := clampi(allowance - int(options.get("remaining_ma", 0)), 0, maxi(allowance, 0))
-	return {"used": used, "allowance": allowance}
+## The card's "Course: used of allowance MP", from the server's own count: `used` is what the stored
+## course spends (turns included), `allowance` the most it may spend at the course-end heading
+## (acceleration capped), so used and left add up. A course that ends head to wind has no allowance
+## left at its last heading: it reads "used of used" (the note says it is in irons).
+static func course_info(options: Dictionary) -> Dictionary:
+	var used := int(options.get("mp_used", 0))
+	return {"used": used, "allowance": maxi(int(options.get("max_ma", 0)), used)}
+
+
+## The card's note: the allowance changed between the start heading (`start_code`) and the
+## course-end heading (`end_code`, wind-facing codes L/C/B/R), and the irons warning when the course
+## ends head to wind ("" when neither).
+static func course_note(options: Dictionary, start_code: String, end_code: String) -> String:
+	var change := PlanningText.allowance_change_note(int(options.get("start_max_ma", 0)),
+		int(options.get("max_ma", 0)), start_code, end_code)
+	return PlanningText.plot_note(change, end_code)
 
 
 ## Click target -> MoveMetadata (resulting bow hex and facing) for the hover preview.
