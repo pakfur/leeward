@@ -52,6 +52,11 @@ var _fire_ready: Array[bool] = [false, false]
 ## Players whose ships' bear-off decisions are asked for (6.D.3); everyone else's ships decide by
 ## StubAI.bear_off_choice. Empty (no prompts) unless the game wires a human player in.
 var bear_off_prompt_player_ids: Array[int] = []
+## The human players (GameState.start_scenario). Their ships get a default course at planning start.
+var human_player_ids: Array[int] = []
+## ship_id -> {course: Array (step dicts), crew_auto: bool, boarding: String}: the planning start
+## state of every ship of a human player (Cancel / Reset course restore it). Cleared at END_TURN.
+var planning_snapshot: Dictionary = {}
 ## This turn's answers: ship_id -> {choice, segment} (see MovementResolver.run).
 var _bear_off_decisions: Dictionary = {}
 ## Players asked for their grapple and ungrapple orders (8.C); everyone else's ships are ordered by
@@ -172,11 +177,96 @@ func _enter_planning_phase() -> void:
 	# 10.A.2: boarding needs the two ships fouled or grappled at the start of the g-t.
 	if game_state.get("boarding_controller") != null:
 		game_state.boarding_controller.take_link_snapshot()
+	_store_default_courses()
 	if game_state.stub_ai:
 		game_state.stub_ai.plot_all_ai_ships()
 	for p in ai_player_ids:
 		if p >= 0 and p < players_ready.size():
 			players_ready[p] = true
+
+## Stores 6.G.2's default course for each human ship that can plot and records every human ship's
+## planning start state (planning_snapshot).
+func _store_default_courses() -> void:
+	planning_snapshot = {}
+	for ship in game_state.ships.values():
+		var s: ShipState = ship
+		if not human_player_ids.has(s.player_id):
+			continue
+		var course: Array = []
+		if DefaultCourse.can_plot(s):
+			course = DefaultCourse.as_dicts(DefaultCourse.for_ship(game_state, s))
+			game_state.ship_controller.set_plotted_movement(s.ship_id, course)
+		var orders = s.plotted_actions.get("crew_orders", {})
+		planning_snapshot[s.ship_id] = {
+			"course": course.duplicate(true),
+			"crew_auto": s.crew_auto,
+			"boarding": str(orders.get("boarding", "")) if orders is Dictionary else "",
+		}
+
+
+## Read-only: the course the ship had when planning began ([] when none).
+func start_of_turn_course(ship_id: String) -> Array:
+	var snap: Dictionary = planning_snapshot.get(ship_id, {})
+	return (snap.get("course", []) as Array).duplicate(true)
+
+
+## SERVER ONLY: Cancel. Puts every ship of the player back to its planning start state: course,
+## crew plot, sail order, Automatic switch and boarding order. Crew tasks in progress stay.
+## Returns "" or the reason it is refused.
+func player_reset_planning(player_id: int) -> String:
+	var why := _planning_request_error(player_id)
+	if why != "":
+		return why
+	for ship_id in planning_snapshot:
+		var ship: ShipState = game_state.get_ship(ship_id)
+		if ship == null or ship.player_id != player_id:
+			continue
+		_restore_snapshot(ship_id, true)
+	Trace.trace_log("TurnPhase", "Player %d reset the planning" % player_id)
+	return ""
+
+
+## SERVER ONLY: the card's Reset course: that ship's course back to its planning start course.
+func player_reset_course(player_id: int, ship_id: String) -> String:
+	var why := _course_request_error(player_id, ship_id)
+	if why != "":
+		return why
+	if not planning_snapshot.has(ship_id):
+		return "no planning start course for %s" % ship_id
+	_restore_snapshot(ship_id, false)
+	return ""
+
+
+func _restore_snapshot(ship_id: String, with_crew: bool) -> void:
+	var snap: Dictionary = planning_snapshot[ship_id]
+	var course: Array = (snap["course"] as Array).duplicate(true)
+	if not course.is_empty():
+		game_state.ship_controller.set_plotted_movement(ship_id, course)
+	else:
+		var ship: ShipState = game_state.get_ship(ship_id)
+		game_state.ship_controller.set_plotted_movement(ship_id, [])
+		ship.plotted_actions["movement_plotted"] = false
+	if with_crew:
+		game_state.ship_controller.clear_crew_plot(ship_id)
+		game_state.ship_controller.set_crew_auto(ship_id, snap["crew_auto"])
+		game_state.ship_controller.set_crew_orders(ship_id,
+				{"sail_target": "", "boarding": snap["boarding"]})
+
+
+func _planning_request_error(player_id: int) -> String:
+	if not is_server:
+		push_error("TurnPhaseController: Cannot reset planning on client")
+		return "planning is reset on the server only"
+	if not game_result.is_empty():
+		return "the game is over"
+	if current_phase != GamePhase.PLANNING:
+		return "planning can be reset in the planning phase only"
+	if player_id < 0 or player_id >= players_ready.size():
+		return "invalid player %d" % player_id
+	if players_ready[player_id]:
+		return "this player's plan is already submitted"
+	return ""
+
 
 func player_submit_plan(player_id: int) -> bool:
 	"""SERVER ONLY: Validate and accept player plan submission"""
@@ -885,6 +975,7 @@ func _enter_end_turn_phase() -> void:
 	current_phase = GamePhase.END_TURN
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: END_TURN")
+	planning_snapshot = {}
 
 	var result: Dictionary = game_state.victory_controller.check(current_turn)
 	if result.is_empty():

@@ -189,6 +189,7 @@ func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int]) -> 
 			sides.append(ship_state.player_id)
 	if phase_controller:
 		phase_controller.bear_off_prompt_player_ids = human_player_ids.duplicate()
+		phase_controller.human_player_ids = human_player_ids.duplicate()
 		phase_controller.maintenance_prompt_player_ids = human_player_ids.duplicate()
 		var ai: Array[int] = []
 		for side in sides:
