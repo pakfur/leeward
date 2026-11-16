@@ -107,6 +107,7 @@ func _ready() -> void:
 	_headline_label = Label.new()
 	_headline_label.name = "HeadlineLabel"
 	_headline_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_headline_label.theme_type_variation = &"DisplayLabel"
 	_headline_label.add_theme_font_size_override("font_size", 40)
 	_headline_label.add_theme_color_override("font_color", Color(0.95, 0.85, 0.5))
 	box.add_child(_headline_label)
@@ -156,11 +157,14 @@ func show_result(result: Dictionary, ships: Array) -> void:
 	for child in _grid.get_children():
 		child.queue_free()
 		_grid.remove_child(child)
-	for cell in ["", "You", "Enemy",
+	var cells := ["", "You", "Enemy",
 			"Points scored", text["player_points"], text["enemy_points"],
-			"Ships struck", text["player_struck"], text["enemy_struck"]]:
+			"Ships struck", text["player_struck"], text["enemy_struck"]]
+	for i in cells.size():
 		var label := Label.new()
-		label.text = cell
+		label.text = cells[i]
+		if i >= 3 and i % 3 != 0:
+			label.theme_type_variation = &"TabularLabel"  # number columns
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_grid.add_child(label)
 	visible = true

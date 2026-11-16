@@ -99,7 +99,8 @@ func _draw() -> void:
 	draw_style_box(CrewStyle.box(face_color, CrewStyle.CARD_EDGE, 1, rad), r)
 	# coloured band across the top; taller when it carries a tag (progress, AUTO), which sits in the
 	# band so it never covers the section number
-	var font := CrewStyle.bold_font()
+	var font := get_theme_font("font", CrewStyle.COUNTER)
+	var id_font := get_theme_font("font", CrewStyle.COUNTER_BOLD)
 	var tag_fs := maxi(9, int(s * 0.19))
 	var has_tag := prog_text != "" or auto_mark or disorganized
 	var band_h := maxf(s * 0.2, font.get_height(tag_fs) + 1.0) if has_tag else s * 0.2
@@ -119,8 +120,8 @@ func _draw() -> void:
 	# id, centred in the space between the band and the pips
 	var label := section_name()
 	var fs := int(s * (0.34 if has_tag else 0.38))
-	var tw := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-	draw_string(font, Vector2((s - tw) / 2.0, band_h + s * 0.04 + font.get_ascent(fs)), label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
+	var tw := id_font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	draw_string(id_font, Vector2((s - tw) / 2.0, band_h + s * 0.04 + id_font.get_ascent(fs)), label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
 		CrewStyle.CARD_INK if not disorganized else Color(CrewStyle.CARD_INK, 0.6))
 	# pips: one per box, at most 6, then a number
 	var pip := maxf(4.0, s * 0.1)

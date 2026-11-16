@@ -126,8 +126,7 @@ func _build() -> void:
 	var hh := _hbox(16)
 	head.add_child(hh)
 	var tv := _vbox(2)
-	_ov_title = Style.label("", 26)
-	_ov_title.add_theme_font_override("font", Style.display_font())
+	_ov_title = Style.label("", 26, Style.FG, false, false, Style.DISPLAY)
 	tv.add_child(_ov_title)
 	_ov_sub = Style.label("", 14, Style.MUTED)
 	tv.add_child(_ov_sub)
@@ -176,8 +175,7 @@ func _build() -> void:
 	var dv := _vbox(10)
 	dvp.add_child(dv)
 	var dl := _hbox(12)
-	_deck_name = Style.label("", 22)
-	_deck_name.add_theme_font_override("font", Style.display_font())
+	_deck_name = Style.label("", 22, Style.FG, false, false, Style.DISPLAY)
 	dl.add_child(_deck_name)
 	var bu := Style.label("bow up", 13, Style.MUTED)
 	bu.size_flags_vertical = SIZE_SHRINK_END
@@ -400,7 +398,7 @@ func _mini(section: int) -> Control:
 	var l := Label.new()
 	l.text = CrewOverlayText.section_name(section)
 	l.add_theme_font_size_override("font_size", Style.px(11))
-	l.add_theme_font_override("font", Style.bold_font())
+	l.theme_type_variation = Style.COUNTER_BOLD
 	l.add_theme_color_override("font_color", Style.CARD_INK)
 	var sb := Style.box(Style.CARD, Style.MARINE if section == ShipState.MARINES else Style.SAILOR, 0, 3)
 	sb.border_width_top = 3
@@ -658,7 +656,7 @@ func _rect_width_px(rect: Array, small: bool, portrait: bool) -> float:
 
 ## Label and count side by side; stacked when the station is too narrow.
 func _station_header(left: String, right: String, fs_css: float, avail: float) -> Control:
-	var font := Style.bold_font()
+	var font := get_theme_font("font", Style.COUNTER)
 	var fs := Style.px(fs_css)
 	var need := font.get_string_size(left.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x \
 			+ (font.get_string_size(right, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + Style.px(6) if right != "" else 0.0)
@@ -667,19 +665,26 @@ func _station_header(left: String, right: String, fs_css: float, avail: float) -
 		h = _hbox(6)
 	else:
 		h = _vbox(0)
-	var l := Style.label(left.to_upper(), fs_css, Style.CARD_INK, true, true)
+	var l := Style.label(left.to_upper(), fs_css, Style.CARD_INK, true, true, Style.COUNTER)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD
 	l.size_flags_horizontal = SIZE_EXPAND_FILL
 	h.add_child(l)
 	if right != "":
-		var r := Style.label(right, fs_css, Color(Style.CARD_INK, 0.75), true)
+		var r := Style.label(right, fs_css, Color(Style.CARD_INK, 0.75), true, false, Style.COUNTER)
 		r.size_flags_vertical = SIZE_SHRINK_BEGIN
 		h.add_child(r)
 	return h
 
 
+## Takes the station's spare height and ends in an ellipsis when it does not fit (the panel
+## clips; the full text is the station's tooltip), instead of a line cut through the middle.
 func _station_note(text: String, why: bool) -> Label:
-	return Style.label(text, 11.5, Color("#3a2a17"), why, true)
+	var l := Style.label(text, 11.5, Color("#3a2a17"), why, true)
+	l.clip_text = true
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	l.size_flags_vertical = SIZE_EXPAND_FILL
+	l.size_flags_stretch_ratio = 100.0
+	return l
 
 
 func _slots(small: bool) -> HFlowContainer:
@@ -703,7 +708,7 @@ func _build_deck_card(d: Dictionary) -> Control:
 	var v := _vbox(6)
 	card.add_child(v)
 	var nm := _hbox(6)
-	nm.add_child(Style.label(d["name"], 13, Style.FG, true))
+	nm.add_child(Style.label(d["name"], 13, Style.FG, true, false, Style.HEADER))
 	var deck_note := CrewOverlayText.deck_note(d, _ship.ship.armament if _ship.ship else {})
 	var note := Style.label("· " + ("shown large" if cur else deck_note), 12, Style.ACCENT if cur else Style.MUTED)
 	note.clip_text = true
@@ -753,7 +758,7 @@ func _deck_badges(d: Dictionary) -> Control:
 
 
 func _badge(text: String, bg: Color, fg: Color, tip: String) -> Label:
-	var l := Style.label(text, 12, fg, true)
+	var l := Style.label(text, 12, fg, true, false, Style.COUNTER)
 	var sb := Style.box(bg, Color.TRANSPARENT, 0, Style.px(9))
 	sb.content_margin_left = Style.px(5)
 	sb.content_margin_right = Style.px(5)

@@ -2,7 +2,9 @@ class_name CrewStyle
 extends RefCounted
 ## Palette, sizes and small UI helpers for the crew overlay (ported from the approved prototype,
 ## prototypes/crew_overlay/proto_style.gd). K scales the HTML prototype's CSS pixels to the game's
-## 1920x1080 canvas: 14 px body text becomes the theme's 18 px. Fonts are phase 6 (spec §5).
+## 1920x1080 canvas: 14 px body text becomes the theme's 18 px. Faces come from the project theme's
+## type variations (spec §5): DisplayLabel / HeaderLabel (IM Fell English SC), StrongLabel (Source
+## Sans 3 SemiBold), CounterLabel / CounterBoldLabel (Barlow Condensed).
 
 const K := 18.0 / 14.0
 
@@ -34,8 +36,11 @@ const BTN_EDGE := Color("#4a5d72")
 const BTN_PRIMARY := Color("#2f5f80")
 const BTN_PRIMARY_EDGE := Color("#4f86ad")
 
-static var _bold: FontVariation
-static var _display: FontVariation
+const STRONG := &"StrongLabel"
+const DISPLAY := &"DisplayLabel"
+const HEADER := &"HeaderLabel"
+const COUNTER := &"CounterLabel"
+const COUNTER_BOLD := &"CounterBoldLabel"
 
 
 ## Scaled pixel size from an HTML CSS-pixel size.
@@ -43,22 +48,14 @@ static func px(v: float) -> int:
 	return int(round(v * K))
 
 
-## The project ships no fonts, so all three HTML faces fall back to Godot's default
-## font: display is a lightly spaced regular, body as is, counter face emboldened.
-static func bold_font() -> Font:
-	if _bold == null:
-		_bold = FontVariation.new()
-		_bold.base_font = ThemeDB.fallback_font
-		_bold.variation_embolden = 0.9
-	return _bold
-
-
-static func display_font() -> Font:
-	if _display == null:
-		_display = FontVariation.new()
-		_display.base_font = ThemeDB.fallback_font
-		_display.spacing_glyph = 1
-	return _display
+## The font of a theme type variation in the project theme (for measuring text outside a Control,
+## or for a Button that should take a Label variation's face). Controls that draw text should use
+## their own get_theme_font("font", variation) instead.
+static func theme_font(variation: StringName) -> Font:
+	var theme := ThemeDB.get_project_theme()
+	if theme != null and theme.has_font(&"font", variation):
+		return theme.get_font(&"font", variation)
+	return ThemeDB.fallback_font
 
 
 static func box(bg: Color, border: Color = Color.TRANSPARENT, bw := 0, radius := 0, pad := -1.0) -> StyleBoxFlat:
@@ -72,13 +69,18 @@ static func box(bg: Color, border: Color = Color.TRANSPARENT, bw := 0, radius :=
 	return sb
 
 
-static func label(text: String, size_css: float, color: Color = FG, bold := false, wrapped := false) -> Label:
+## A label; `bold` gives it the StrongLabel face. `variation` (a theme type variation such as
+## DISPLAY or COUNTER) overrides that.
+static func label(text: String, size_css: float, color: Color = FG, bold := false, wrapped := false,
+		variation: StringName = &"") -> Label:
 	var l := Label.new()
 	l.text = text
 	l.add_theme_font_size_override("font_size", px(size_css))
 	l.add_theme_color_override("font_color", color)
-	if bold:
-		l.add_theme_font_override("font", bold_font())
+	if variation != &"":
+		l.theme_type_variation = variation
+	elif bold:
+		l.theme_type_variation = STRONG
 	if wrapped:
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -115,5 +117,5 @@ static func button(text: String, primary := false) -> Button:
 	b.add_theme_color_override("font_hover_color", FG)
 	b.add_theme_color_override("font_disabled_color", Color(FG, 0.55))
 	if primary:
-		b.add_theme_font_override("font", bold_font())
+		b.add_theme_font_override("font", theme_font(STRONG))
 	return b

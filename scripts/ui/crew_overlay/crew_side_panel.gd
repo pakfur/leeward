@@ -61,7 +61,7 @@ func _ready() -> void:
 	_dmg_btn.focus_mode = FOCUS_NONE
 	_dmg_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_dmg_btn.add_theme_font_size_override("font_size", Style.px(11))
-	_dmg_btn.add_theme_font_override("font", Style.bold_font())
+	_dmg_btn.add_theme_font_override("font", Style.theme_font(Style.STRONG))
 	_dmg_btn.add_theme_color_override("font_color", Style.FG)
 	_dmg_btn.pressed.connect(func(): _dmg_open = not _dmg_open; refresh())
 	dv.add_child(_dmg_btn)

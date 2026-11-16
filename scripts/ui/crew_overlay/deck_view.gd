@@ -51,7 +51,7 @@ func place(c: Control, rect: Array) -> void:
 
 
 func add_marker(x: float, y: float, text: String, info := false) -> void:
-	var l := Style.label(text, 12, Color.WHITE, true)
+	var l := Style.label(text, 12, Color.WHITE, true, false, Style.COUNTER)
 	var sb := Style.box(Color("#6b4a2a") if info else Style.BAD, Color(1, 1, 1, 0.2), 2, 4)
 	sb.content_margin_left = 5
 	sb.content_margin_right = 5

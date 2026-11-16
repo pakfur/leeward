@@ -1,4 +1,11 @@
-[gd_resource type="Theme" load_steps=3 format=3]
+[gd_resource type="Theme" load_steps=8 format=3]
+
+[ext_resource type="FontVariation" path="res://assets/ui/fonts/source_sans_3_regular.tres" id="1_ss_regular"]
+[ext_resource type="FontVariation" path="res://assets/ui/fonts/source_sans_3_semibold.tres" id="2_ss_semibold"]
+[ext_resource type="FontVariation" path="res://assets/ui/fonts/source_sans_3_tabular.tres" id="4_ss_tabular"]
+[ext_resource type="FontFile" path="res://assets/fonts/im_fell_english_sc/IMFeENsc28P.ttf" id="5_im_fell"]
+[ext_resource type="FontFile" path="res://assets/fonts/barlow_condensed/BarlowCondensed-SemiBold.ttf" id="6_barlow_semibold"]
+[ext_resource type="FontFile" path="res://assets/fonts/barlow_condensed/BarlowCondensed-Bold.ttf" id="7_barlow_bold"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_opaque_panel"]
 content_margin_left = 12.0
@@ -28,9 +35,18 @@ corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
 [resource]
+default_font = ExtResource("1_ss_regular")
 default_font_size = 18
+CounterBoldLabel/base_type = &"Label"
+CounterBoldLabel/fonts/font = ExtResource("7_barlow_bold")
+CounterLabel/base_type = &"Label"
+CounterLabel/fonts/font = ExtResource("6_barlow_semibold")
+DisplayLabel/base_type = &"Label"
+DisplayLabel/font_sizes/font_size = 26
+DisplayLabel/fonts/font = ExtResource("5_im_fell")
 HeaderLabel/base_type = &"Label"
 HeaderLabel/font_sizes/font_size = 21
+HeaderLabel/fonts/font = ExtResource("5_im_fell")
 MapLabel/base_type = &"Label"
 MapLabel/font_sizes/font_size = 16
 MapLabel/styles/normal = SubResource("StyleBoxFlat_map_label")
@@ -42,3 +58,7 @@ SecondaryCheckButton/base_type = &"CheckButton"
 SecondaryCheckButton/font_sizes/font_size = 16
 SecondaryLabel/base_type = &"Label"
 SecondaryLabel/font_sizes/font_size = 15
+StrongLabel/base_type = &"Label"
+StrongLabel/fonts/font = ExtResource("2_ss_semibold")
+TabularLabel/base_type = &"Label"
+TabularLabel/fonts/font = ExtResource("4_ss_tabular")
