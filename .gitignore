@@ -71,3 +71,6 @@ tmp/
 
 # Visual brainstorming companion
 .superpowers/
+
+# Written to the project root by the godot-mcp run tools (the real one is scripts/mcp_interaction_server.gd)
+/mcp_interaction_server.gd
