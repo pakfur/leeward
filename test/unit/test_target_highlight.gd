@@ -46,3 +46,27 @@ func test_target_colour_is_distinct_from_both_broadsides() -> void:
 		var diff := absf(target.r - arc.r) + absf(target.g - arc.g) + absf(target.b - arc.b)
 		assert_gt(diff, 0.35, "target vs side %d" % side)
 	assert_eq(target.a, 1.0, "an opaque outline, unlike the translucent arc fills")
+
+
+func test_show_course_keeps_one_layer_per_ship() -> void:
+	var grid := HexGrid.new()
+	var none: Array[Vector2i] = []
+	var path: Array[Vector2i] = [Vector2i(0, 0), Vector2i(1, 0)]
+	var next: Array[Vector2i] = [Vector2i(2, 0)]
+	overlay.show_course("a", path, next, none, grid, true)
+	overlay.show_course("b", path, next, none, grid, false)
+	assert_not_null(overlay.get_node_or_null("Courses/Course_a"))
+	assert_not_null(overlay.get_node_or_null("Courses/Course_b"))
+	overlay.clear_course("a")
+	await get_tree().process_frame
+	assert_null(overlay.get_node_or_null("Courses/Course_a"))
+	assert_not_null(overlay.get_node_or_null("Courses/Course_b"))
+	overlay.clear_courses()
+	await get_tree().process_frame
+	assert_eq(overlay.get_node("Courses").get_child_count(), 0)
+
+
+func test_hex_at_world_pos_returns_any_hex() -> void:
+	var grid := HexGrid.new()
+	var w := grid.axial_to_world(3, 2)
+	assert_eq(overlay.hex_at_world_pos(w, grid), Vector2i(3, 2))

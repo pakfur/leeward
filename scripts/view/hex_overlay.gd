@@ -28,6 +28,7 @@ var valid_hexes_node: Node3D = null
 var plotted_path_node: Node3D = null
 var submitted_paths_node: Node3D = null
 var blocked_hexes_node: Node3D = null
+var courses_node: Node3D = null
 var arcs_node: Node3D = null
 var targets_node: Node3D = null
 
@@ -45,6 +46,10 @@ var _blocked_material: StandardMaterial3D = null
 var _arc_materials: Dictionary = {}  # Color -> StandardMaterial3D
 var _target_material: StandardMaterial3D = null
 var _collision_material: StandardMaterial3D = null
+# Course layers of ships other than the selected one: the same colours at about half alpha.
+var _valid_material_dim: StandardMaterial3D = null
+var _plotted_material_dim: StandardMaterial3D = null
+var _collision_material_dim: StandardMaterial3D = null
 
 
 func _ready() -> void:
@@ -59,6 +64,10 @@ func _ready() -> void:
 	submitted_paths_node = Node3D.new()
 	submitted_paths_node.name = "SubmittedPaths"
 	add_child(submitted_paths_node)
+
+	courses_node = Node3D.new()
+	courses_node.name = "Courses"
+	add_child(courses_node)
 
 	blocked_hexes_node = Node3D.new()
 	blocked_hexes_node.name = "BlockedHexes"
@@ -80,6 +89,61 @@ func _ready() -> void:
 	# Draw order: ocean (0) < arcs and plotting hexes (1) < target outline (2) < owner rings (3, ShipView).
 	_target_material.render_priority = TARGET_RENDER_PRIORITY
 	_collision_material = _create_material(COLOR_COLLISION)
+	_valid_material_dim = _create_material(_half_alpha(COLOR_VALID))
+	_plotted_material_dim = _create_material(_half_alpha(COLOR_PLOTTED))
+	_collision_material_dim = _create_material(_half_alpha(COLOR_COLLISION))
+
+
+static func _half_alpha(c: Color) -> Color:
+	return Color(c.r, c.g, c.b, c.a * 0.5)
+
+
+## One ship's course layer (`Course_<ship_id>`): its plotted hexes in blue, the hexes it may
+## extend to in green (orange where another ship holds one), as `collision_hexes`. Unselected
+## ships draw at about half alpha. Replaces that ship's earlier layer.
+func show_course(ship_id: String, path_hexes: Array[Vector2i], next_hexes: Array[Vector2i],
+		collision_hexes: Array[Vector2i], hex_grid: HexGrid, selected: bool) -> void:
+	clear_course(ship_id)
+	if courses_node == null:
+		return
+	var container := Node3D.new()
+	container.name = "Course_" + ship_id
+	courses_node.add_child(container)
+	var path_mat := _plotted_material if selected else _plotted_material_dim
+	var next_mat := _valid_material if selected else _valid_material_dim
+	var hit_mat := _collision_material if selected else _collision_material_dim
+	for hex_pos in path_hexes:
+		var w := hex_grid.axial_to_world(hex_pos.x, hex_pos.y)
+		_add_hex_mesh(container, w, hex_grid.hex_size, path_mat)
+	for hex_pos in next_hexes:
+		var w := hex_grid.axial_to_world(hex_pos.x, hex_pos.y)
+		_add_hex_mesh(container, w, hex_grid.hex_size, hit_mat if collision_hexes.has(hex_pos) else next_mat)
+	for hex_pos in collision_hexes:
+		if not next_hexes.has(hex_pos):
+			var w := hex_grid.axial_to_world(hex_pos.x, hex_pos.y)
+			_add_hex_mesh(container, w, hex_grid.hex_size, hit_mat)
+
+
+func clear_course(ship_id: String) -> void:
+	if courses_node == null:
+		return
+	var node := courses_node.get_node_or_null("Course_" + ship_id)
+	if node:
+		courses_node.remove_child(node)
+		node.queue_free()
+
+
+func clear_courses() -> void:
+	if courses_node == null:
+		return
+	for child in courses_node.get_children():
+		courses_node.remove_child(child)
+		child.queue_free()
+
+
+## The hex under a world position, valid or not, so click routing can decide.
+func hex_at_world_pos(world_pos: Vector3, hex_grid: HexGrid) -> Vector2i:
+	return hex_grid.world_to_axial(world_pos)
 
 
 ## Offered moves in green; any listed in `collision_hexes` in orange. A collision hex that is not
