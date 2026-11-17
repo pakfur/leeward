@@ -104,9 +104,13 @@ func _ready() -> void:
 	# The ships are built by the server (GameState.start_scenario); their views follow on game_started.
 	GameState.game_started.connect(_on_game_started)
 
-	# Set up OceanView for water shader updates
+	# The shared sea (shader clock, swell, zoom intensity, look presets) and OceanView, which feeds it
 	if GameState.environment_controller and hex_map:
-		var ocean_view = OceanViewScript.new(GameState, hex_map)
+		var sea_model := SeaModel.new()
+		sea_model.name = "SeaModel"
+		sea_model.material = hex_map.ocean_material
+		add_child(sea_model)
+		var ocean_view = OceanViewScript.new(GameState, sea_model)
 		ocean_view.connect_to_controller(GameState.environment_controller)
 		add_child(ocean_view)
 		# Not updated here: GameState.environment is still the previous game's until the game

@@ -1,0 +1,116 @@
+extends GutTest
+## SeaModel (view): zoom intensity, grid fade, presets from data/ui/sea_presets.json, swell scaling
+## and the effective sea state. Pure parts only; the model is used outside the scene tree.
+
+var model: SeaModel
+
+
+func before_each() -> void:
+	model = SeaModel.new()
+
+
+func after_each() -> void:
+	model.free()
+
+
+func test_intensity_zero_at_flat_distance():
+	assert_eq(SeaModel.intensity_for(20.5, 20.5, 7.5), 0.0)
+	assert_eq(SeaModel.intensity_for(40.0, 20.5, 7.5), 0.0)
+
+
+func test_intensity_one_at_full_distance():
+	assert_eq(SeaModel.intensity_for(7.5, 20.5, 7.5), 1.0)
+	assert_eq(SeaModel.intensity_for(2.0, 20.5, 7.5), 1.0)
+
+
+func test_intensity_smooth_between():
+	assert_almost_eq(SeaModel.intensity_for(14.0, 20.5, 7.5), 0.5, 0.0001)
+	var near := SeaModel.intensity_for(10.0, 20.5, 7.5)
+	var far := SeaModel.intensity_for(18.0, 20.5, 7.5)
+	assert_true(near > 0.5 and near < 1.0, "closer than halfway is above 0.5")
+	assert_true(far > 0.0 and far < 0.5, "farther than halfway is below 0.5")
+
+
+func test_presets_match_table():
+	assert_eq(model.preset(4).glide_seconds, 1.5)
+	assert_eq(model.preset(5).whitecap_strength, 2.6)
+	assert_eq(model.preset(0).whitecap_strength, 0.0)
+	assert_eq(model.preset(3).swell_wavelength, 5.5)
+	assert_eq(model.preset(1).inertia_mult, 1.1)
+	for sea in range(EnvironmentState.SEA_STATE_MAX + 1):
+		assert_eq(model.preset(sea).size(), 10, "sea %d preset has every field" % sea)
+
+
+func test_globals_loaded():
+	assert_eq(model.flat_distance, 20.5)
+	assert_eq(model.full_distance, 7.5)
+	assert_eq(model.grid_fade_start, 0.5)
+	assert_eq(model.grid_fade_end, 1.0)
+	assert_eq(model.whitecap_min_sea, 1)
+
+
+func test_grid_opacity_fades():
+	model.intensity = 0.5
+	assert_eq(model.grid_opacity(), 1.0)
+	model.intensity = 0.75
+	assert_almost_eq(model.grid_opacity(), 0.5, 0.0001)
+	model.intensity = 1.0
+	assert_eq(model.grid_opacity(), 0.0)
+	model.intensity = 0.2
+	assert_eq(model.grid_opacity(), 1.0)
+
+
+func test_swell_zero_when_flat():
+	model.set_environment(2, 4, 5)
+	model.sea_time = 3.7
+	model.intensity = 0.0
+	model.recompute()
+	for p in [Vector2.ZERO, Vector2(3.2, -1.5), Vector2(-7.0, 11.0)]:
+		assert_eq(model.swell_height(p), 0.0)
+		assert_eq(model.swell_displacement(p), Vector3.ZERO)
+
+
+func test_swell_scales_with_intensity():
+	model.set_environment(2, 4, 5)
+	model.sea_time = 3.7
+	model.intensity = 1.0
+	model.recompute()
+	var p := Vector2(3.2, -1.5)
+	var full := model.swell_displacement(p)
+	assert_true(full.length() > 0.0, "full swell moves the surface")
+	model.intensity = 0.5
+	assert_almost_eq(model.swell_displacement(p).y, full.y * 0.5, 0.0001)
+
+
+func test_effective_sea_state_override_and_clamp():
+	model.set_environment(0, 2, 3)
+	assert_eq(model.effective_sea_state(), 3)
+	model.set_environment(0, 2, 9)
+	assert_eq(model.effective_sea_state(), 5)
+	model.set_environment(0, 2, -2)
+	assert_eq(model.effective_sea_state(), 0)
+	model.sea_state_override = 4
+	assert_eq(model.effective_sea_state(), 4)
+	model.sea_state_override = 7
+	assert_eq(model.effective_sea_state(), 5)
+
+
+func test_preset_loaded_on_sea_state_change():
+	model.set_environment(0, 2, 4)
+	model.apply_preset_if_changed()
+	assert_eq(model.glide_seconds, 1.5)
+	assert_eq(model.swell_height_mult, 1.6)
+	model.swell_height_mult = 0.1  # a live tweak holds until the sea state changes
+	model.apply_preset_if_changed()
+	assert_eq(model.swell_height_mult, 0.1)
+	model.sea_state_override = 0
+	model.apply_preset_if_changed()
+	assert_eq(model.glide_seconds, 0.8)
+	assert_eq(model.swell_height_mult, 0.5)
+
+
+func test_downwind_and_heel():
+	model.set_environment(3, 5, 2)  # wind from W blows toward E
+	assert_eq(model.downwind(), Vector2(1.0, 0.0))
+	model.heel_mult = 1.5
+	assert_almost_eq(model.beam_heel_deg(), 13.5, 0.0001)
