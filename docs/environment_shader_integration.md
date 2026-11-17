@@ -1,251 +1,56 @@
-# Environment-Shader Integration
+# Environment, Sea Model and Water Shader
 
 ## Overview
 
-The water shader is now dynamically responsive to server-authoritative environment state (wind direction, wind speed, and sea state). The shader parameters automatically update at the beginning of each turn's ENVIRONMENT phase to visually represent the current conditions.
+The water and the ships' motion follow the server's environment (wind direction, wind speed, sea state 0-5) through one shared presentation object, `SeaModel`. Everything here is view only: the model reads the environment and never writes `EnvironmentState` (server authority). Design: `docs/superpowers/specs/2026-11-16-sea-state-design.md`.
 
-## Architecture
+Sea state: 0 calm (an extension with no rule effect), 1 slight, 2 moderate, 3 rough, 4 very rough, 5 high (1-5 as rule 3.B.5).
 
-### Components
+## Components
 
-1. **EnvironmentState** (`scripts/state/environment_state.gd`)
-   - Pure data Resource
-   - Server-authoritative
-   - Contains: wind_direction (0-5), wind_speed (0-5), sea_state (0-3)
-   - Deterministic `tick_environment()` method
+1. **EnvironmentState** (`scripts/state/environment_state.gd`): server data, `wind_direction` 0-5, `wind_speed`, `sea_state` 0-5 (`SEA_STATE_MAX`).
+2. **EnvironmentController** (`scripts/server/environment_controller.gd`): rolls the changes and emits `environment_updated`.
+3. **OceanView** (`scripts/view/ocean_view.gd`): on `environment_updated` and at game start, calls `SeaModel.set_environment(wind_direction, wind_speed, sea_state)`.
+4. **SeaModel** (`scripts/view/sea_model.gd`, `SeaModel.instance`): the one sea. Owns the sea clock, three Gerstner swell components running downwind, the zoom intensity, the grid opacity, the look presets and the shader uniforms. Created in `GameController` with the HexMap's `ocean_material`.
+5. **Ocean shader** (`assets/shaders/ocean_water.gdshader`): the swell (vertex and normals), the chop (surface detail), the plain grid and whitecaps, driven by the model's uniforms.
+6. **ShipMotion** (`scripts/view/ship_motion.gd`) and **ShipView**: ships ride the same swell (heave, pitch, roll, heel to leeward).
+7. **Playback** (`scripts/view/movement_resolution_playback_controller.gd`): ships glide through their steps instead of stepping hex by hex.
 
-2. **EnvironmentController** (`scripts/server/environment_controller.gd`)
-   - Node that manages environment logic and visuals
-   - Owns RandomNumberGenerator for any future random environment changes
-   - Translates environment state to shader parameters
-   - Listens for phase changes
-
-3. **Ocean Shader** (`assets/shaders/ocean_water.gdshader`)
-   - Gerstner wave-based water rendering
-   - 8 wave parameters (direction, amplitude, frequency)
-   - time_factor (wave animation speed)
-   - noise_amp (surface roughness)
-
-4. **HexMap** (`scripts/core/hex_map.gd`)
-   - Owns the ocean_material (ShaderMaterial)
-   - Provides access to shader parameters
-
-### Data Flow
+## Data flow
 
 ```
-Turn Phase Controller (ENVIRONMENT phase) 		res://scripts/server/turn_phase_controller.gd
-    ↓
-EnvironmentController.tick_environment() 		res://scripts/server/environment_controller.gd
-    ↓
-EnvironmentState.tick_environment(turn_number)	res://scripts/state/environment_state.gd
-    ↓
-EnvironmentController.update_water_shader()		res://scripts/server/environment_controller.gd
-    ↓
-HexMap.ocean_material shader parameters updated
-    ↓
-Visual changes reflected in water rendering
+EnvironmentController (server)  --environment_updated-->  OceanView
+    OceanView -> SeaModel.set_environment(wind_dir, wind_speed, sea_state)
+    SeaModel (each frame: clock, camera distance -> zoom intensity)
+        -> ocean shader uniforms (swell, chop, whitecaps, grid_opacity, zoom_intensity)
+        -> ShipMotion.targets()/rendered() for each ShipView (view only)
 ```
 
-## Shader Parameter Mapping
+## Presets (`data/ui/sea_presets.json`)
 
-### Wind Direction → Wave Direction
+One preset per sea state 0-5 plus a `globals` block, loaded whenever the effective sea state changes (`SeaModel.apply_preset_if_changed`). Preset fields: `swell_height_mult`, `swell_wavelength`, `swell_speed`, `swell_shading`, `chop_strength`, `inertia_mult` (ship slowness), `heel_mult`, `glide_seconds` (playback seconds per moving segment), `whitecap_threshold`, `whitecap_strength`. Globals: `flat_distance`, `full_distance`, `grid_fade_start`, `grid_fade_end`, `whitecap_min_sea`. The Developer UI Sea tab (F12) edits them live and logs the values in this file's format; the sea-state override there changes the look only.
 
-Wind direction (hex facing 0-5) is converted to a 2D vector:
-- 0 (E):  (1.0, 0.0)
-- 1 (SE): (0.5, 0.866)
-- 2 (SW): (-0.5, 0.866)
-- 3 (W):  (-1.0, 0.0)
-- 4 (NW): (-0.5, -0.866)
-- 5 (NE): (0.5, -0.866)
+Fixed in code (`SeaModel`): `SWELL_AMP_BY_SEA` (swell amplitude by sea state), `WHITECAP_BY_SEA`, `HEEL_BY_WIND` (heel at a beam wind by wind speed), `COMPONENTS` (the three swell directions, shares, wavelengths and phases), `SWELL_Q` (crest sharpening), `G_MAP` (deep-water phase speed at map scale).
 
-Primary waves (wave_1, wave_3, wave_5, wave_7) are oriented based on this vector, with slight angular offsets for natural variation.
+## Zoom bands
 
-### Wind Speed + Sea State → Wave Amplitude
+The camera distance gives the zoom `intensity` (smoothstep): 0 at `flat_distance` and beyond (the flat, readable game board: no swell, no ship motion, plain hex grid), 1 at `full_distance` and closer (full swell and motion). In between everything fades together, so a ship is exactly level and on the board's plane when zoomed out. `grid_opacity()` is 1 up to intensity `grid_fade_start` and 0 from `grid_fade_end` (a step when the two meet); whitecaps keep 15 % at intensity 0.
 
-```
-base_amplitude = 0.05 + (wind_speed * 0.03) + (sea_state * 0.05)
-```
+## Chop and whitecaps
 
-**Range:**
-- Minimum (calm, speed=0, sea=0): 0.05
-- Maximum (gale, speed=5, sea=3): 0.35
+The chop (fine surface detail ships do not ride) grows with the wind speed; its base is always sized for sea state 1 (`CHOP_BASE_SEA`), because the presets were tuned there, and each preset's `chop_strength` carries the difference between sea states. Whitecaps appear from sea state `whitecap_min_sea` (default 1), scaled by `WHITECAP_BY_SEA` inside the preset's `whitecap_strength` and threshold.
 
-Different waves receive scaled versions of this base amplitude:
-- wave_1: 20% of base (primary swell)
-- wave_3: 15% of base (secondary)
-- wave_5: 10% of base (cross waves)
-- wave_7: 18% of base (larger swell)
-- waves 2, 4, 6, 8: 2-12% of base (detail waves)
+## Ship motion
 
-### Wind Speed + Sea State → Wave Speed
+`ShipMotion.targets` samples the swell at bow, stern and both beams for heave, pitch and roll. `ShipView` low-passes each toward its target with a time constant by ship class (a 74 is about 1.45 times slower than a frigate) times the preset's `inertia_mult`, then scales by zoom intensity (`ShipMotion.rendered`). The steady heel to leeward (the side `FireGeometry.leeward_side`) is `HEEL_BY_WIND` times `heel_mult`, times the beam component of the wind, times the sail carried (`SAIL_HEEL`: FS 0.6, MS 0.8, PS 1.0, bare poles 0.1); a dismasted or destroyed ship does not heel.
 
-```
-time_factor = 3.5 - (wind_speed * 0.25) - (sea_state * 0.15)
-Clamped to [1.5, 3.5]
-```
+## Playback
 
-**Effect:**
-- Higher wind_speed = lower time_factor = faster waves
-- Calm (speed=0, sea=0): time_factor = 3.5 (slow animation)
-- Gale (speed=5, sea=3): time_factor = 1.5 (fast animation)
-
-### Sea State → Surface Roughness
-
-```
-noise_amp = 0.05 + (sea_state * 0.03)
-```
-
-**Range:**
-- Calm (sea=0): 0.05
-- Storm (sea=3): 0.14
-
-## Implementation Files
-
-### Modified Files
-
-1. **`scripts/server/environment_controller.gd`**
-   - Added shader update logic
-   - Maps environment state to shader parameters
-   - Listens for phase changes
-
-2. **`scripts/autoload/game_state.gd`**
-   - Added `environment_controller` reference
-   - Instantiates controller in `_initialize_server_controllers()`
-
-3. **`scripts/core/game_controller.gd`**
-   - Sets hex_map reference on environment_controller
-   - Triggers initial shader update on game start
-
-4. **`scripts/server/turn_phase_controller.gd`**
-   - Updated `_enter_environment_phase()` to use EnvironmentController
-   - Ensures shader updates happen with environment state changes
-
-5. **`assets/materials/ocean_water.tres`**
-   - Added texture assignments for normal maps and foam
-
-## How It Works
-
-### At Game Start
-
-1. GameController calls `GameState.start_new_game(scenario)`
-2. GameState creates EnvironmentState from scenario data
-3. GameController sets hex_map reference on EnvironmentController
-4. EnvironmentController.force_update() triggers initial shader update
-5. Water renders with initial environment conditions
-
-### Each Turn (ENVIRONMENT Phase)
-
-1. TurnPhaseController enters ENVIRONMENT phase
-2. Calls `EnvironmentController.tick_environment(env_state, turn_number)`
-3. EnvironmentState.tick_environment() updates wind/sea state deterministically
-4. EnvironmentController.update_water_shader() translates new state to shader params
-5. Shader parameters updated via `material.set_shader_parameter()`
-6. Water visual appearance changes to match new conditions
-
-### Signal Flow
-
-```
-TurnPhaseController._enter_environment_phase()
-    ↓ emits
-phase_changed(ENVIRONMENT)
-    ↓ received by
-EnvironmentController._on_phase_changed()
-    ↓ triggers
-update_water_shader()
-```
-
-## Testing the Integration
-
-### Manual Testing
-
-1. **Start the game** - Water should reflect initial environment
-   - Check console for: "EnvironmentController: Updated water shader"
-
-2. **Advance turns** - Watch water change each turn
-   - Wind direction changes = wave direction shifts
-   - Wind speed increases = waves get taller and faster
-   - Sea state increases = rougher surface texture
-
-3. **Observe the compass** - Wind direction indicator should match wave direction
-
-### Console Output
-
-Look for these messages:
-```
-EnvironmentController initialized (server: true)
-EnvironmentController RNG seed: <number>
-EnvironmentController: Updated water shader - Wind: E (0), Speed: Moderate (2), Sea: Moderate (1)
-```
-
-### Visual Indicators
-
-- **Wave Direction**: Primary waves should flow in the current wind direction
-- **Wave Height**: Higher wind speed + sea state = taller waves
-- **Wave Speed**: Stormy conditions = faster wave animation
-- **Surface Detail**: Rougher seas = more surface texture variation
-
-## Future Enhancements
-
-### Potential Improvements
-
-1. **Smooth Transitions**: Add lerp/tween for gradual shader parameter changes
-2. **Wave Period Variation**: More complex frequency patterns based on wind history
-3. **Whitecaps**: Enhance foam rendering at high wind speeds
-4. **Depth-Based Effects**: Shallow water appearance in coastal environments
-5. **Time of Day Integration**: Link shader colors to environment.time_of_day
-6. **Weather Effects**: Rain/storm visual effects based on environment.precipitation
-
-### Advanced Features
-
-1. **Wind Gusts**: Temporary wave amplitude spikes
-2. **Fetch Distance**: Waves build over distance (environment tracking)
-3. **Current Visualization**: Show ocean currents independent of wind
-4. **Wake Effects**: Ship-generated waves that interact with environment waves
+Movement playback is split into stretches at every segment with an event (collision, contested hex, rollback, bear-off roll). Within a stretch each ship accelerates and decelerates along its steps and arrives exactly on its resolved pose; one clock covers all ships and counts only segments in which some ship moves, at `glide_seconds` each. After a bear-off pause the resumed log starts from the paused poses.
 
 ## Debugging
 
-### Common Issues
-
-**Shader not updating:**
-- Check console for warning: "Cannot update shader - missing references"
-- Verify hex_map reference is set in GameController._ready()
-- Verify environment_controller exists in GameState
-
-**Wrong wave direction:**
-- Check wind_direction value (0-5)
-- Verify HEX_DIRECTIONS mapping in environment_controller.gd
-- Check camera angle (visual perception vs actual wave direction)
-
-**No visual change:**
-- Environment values might not be changing each turn
-- Check EnvironmentState.tick_environment() logic
-- Verify wind_direction_change and wind_speed_change are set in scenario
-
-### Debug Commands
-
-Add to EnvironmentController for manual testing:
-```gdscript
-func set_test_conditions(wind_dir: int, wind_spd: int, sea: int) -> void:
-    var test_env = EnvironmentState.new()
-    test_env.wind_direction = wind_dir
-    test_env.wind_speed = wind_spd
-    test_env.sea_state = sea
-    game_state.environment = test_env
-    update_water_shader()
-```
-
-## Performance
-
-- Shader parameter updates are negligible cost (happens once per turn)
-- Gerstner wave calculations run on GPU (no CPU impact)
-- RNG operations minimal (only for random environment changes)
-- No per-frame updates (only on phase changes)
-
-## Conclusion
-
-The environment-shader integration provides a dynamic, responsive water surface that reflects game state conditions. The system is:
-- **Server-authoritative**: Environment changes controlled by server
-- **Deterministic**: Same inputs always produce same shader state
-- **Performant**: Updates only when needed
-- **Extensible**: Easy to add new environment→shader mappings
-- **Maintainable**: Clear separation of concerns (state, logic, visuals)
+- Water not following the environment: check that `OceanView` is connected (`GameController`) and that `SeaModel.instance` exists.
+- Ships level or the board flat: the camera is beyond `flat_distance` (intensity 0), by design.
+- Tuning: F12, Sea tab; copy the logged preset line into `data/ui/sea_presets.json`.
+- Tests: `test_sea_model.gd`, `test_ship_motion.gd`, `test_playback_glide.gd`.

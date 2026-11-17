@@ -55,7 +55,7 @@ scripts/
   core/           # Game controller, hex grid, hex map, camera, fire_geometry (arcs, rake, line of sight)
   state/          # Pure data objects: Ship (immutable), ShipState (mutable), EnvironmentState
   server/         # Server-authoritative controllers (phases, movement, gunnery, marine fire, damage, critical hits, crew tasks, fire, repairs, grappling, boarding, drift, morale, victory, AI)
-  view/           # 3D presentation (ShipView, HexOverlay)
+  view/           # 3D presentation (ShipView, HexOverlay); SeaModel (shared sea: shader clock, swell, zoom intensity, presets), ShipMotion (heave/pitch/roll/heel statics), OceanView (feeds SeaModel from the environment)
   ui/             # All UI scripts; crew_overlay/ is the crew & damage overlay
   commands/       # Command pattern (GameCommand, MoveCommand)
   util/, utils/   # Asset-generation helpers (compass, water texture) — not runtime code
@@ -66,7 +66,8 @@ scenes/
 data/
   rules/          # movement_allowance, ships, bearing_off_table, speed_change_table,
                   #   tacking_table, turning_table + the 1997 combat tables (see Key Data Formats) (all .json)
-  scenarios/      # Scenario definitions (test_basic.json, test_fleet.json, test_prizes.json)
+  scenarios/      # Scenario definitions (test_basic.json, test_fleet.json, test_prizes.json, test_heavy_weather.json)
+  ui/             # deck_layouts.json (crew overlay), sea_presets.json (SeaModel: one look preset per sea state 0-5 plus globals)
 docs/             # Design docs, game rules, architecture diagrams
 assets/           # Models, textures, shaders, UI art
 test/
@@ -273,8 +274,14 @@ Run the `scv-reviewer` agent as a **final step** before reporting any planned wo
 ### Known Limitations
 - Moves ahead are not limited to the map bounds (a bow may be plotted off the map), but a turn whose stern would leave the map is refused; drift treats the map edge as blocked.
 - The stub AI stalls instead of tacking when the wind blows straight against its approach.
-- Not implemented: signalling (signal halyards cut blocks nothing), the optional rules (14), towing (the `towing` flag is read but never set). Milestone 3 items (anchoring, lower-deck guns, chase guns, medium guns, class 4 ships) are also absent. Everything else of Milestone 2 is in: crew tasks (manual or Automatic), tacking crew, reorganizing, fire and explosions, repairs, marine fire, grappling, boarding, prizes, recapture and multi-ship boarding; `docs/rules/feature_diff.md` has the details.
+- Not implemented: signalling (signal halyards cut blocks nothing), the optional rules (14), towing (the `towing` flag is read but never set). Milestone 3 items (anchoring, chase guns, medium guns, class 4 ships) are also absent. Everything else of Milestone 2 is in: crew tasks (manual or Automatic), tacking crew, reorganizing, fire and explosions, repairs, marine fire, grappling, boarding, prizes, recapture and multi-ship boarding; `docs/rules/feature_diff.md` has the details.
 
 ### Developer UI
 - Press **F12** in-game to toggle the debug inspection panel
 - Shows ship state details, turn info, and environment data
+- **Sea** tab: live tuning of the sea look (`SeaModel`): a sea-state override (look only, never `EnvironmentState`), the preset sliders for the effective sea state, the globals (flat/full distance, grid fade, whitecap minimum), and a button that logs the values in the `data/ui/sea_presets.json` format. Sea state is 0-5 (0 calm is an extension; 1-5 as 3.B.5); sea state at or above a ship's freeboard shuts lower-deck guns (7.F.2, `lower_deck_closed`).
+
+### Sea look and ship motion (view only)
+- `SeaModel` (`scripts/view/sea_model.gd`, `SeaModel.instance`) is the one sea for the water shader and the ships: sea clock, three Gerstner swell components running downwind, zoom `intensity` (0 = flat board at `flat_distance`, 1 = full swell at `full_distance`, smoothstep), `grid_opacity()` (the plain grid fades out between `grid_fade_start` and `grid_fade_end`), whitecaps (from `whitecap_min_sea`), and the preset for the effective sea state loaded from `data/ui/sea_presets.json`. It is fed by `OceanView` and never writes game state.
+- `ShipMotion` (pure statics) samples the swell at bow, stern and beams for heave, pitch and roll; `ShipView` low-passes them (time constant by ship class and the preset's `inertia_mult`) and scales by zoom intensity; heel to leeward comes from the wind and the sail carried (none when dismasted or destroyed).
+- Movement playback glides each ship through its steps (`glide_seconds` per moving segment, from the preset), landing exactly on the event hexes. See `docs/environment_shader_integration.md`.
