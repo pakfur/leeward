@@ -20,6 +20,21 @@ func _steps(d: int, count: int) -> Vector2i:
 	return HexGrid.DIRECTIONS[d] * count
 
 
+# --- leeward_side (7.F.2) ---
+
+func test_leeward_side_all_facings() -> void:
+	# Wind from direction 0: r = facing, so 1,2 -> starboard; 4,5 -> port; 0,3 -> none.
+	assert_eq(FireGeometry.leeward_side(1, 0), ShipState.STARBOARD)
+	assert_eq(FireGeometry.leeward_side(2, 0), ShipState.STARBOARD)
+	assert_eq(FireGeometry.leeward_side(4, 0), ShipState.PORT)
+	assert_eq(FireGeometry.leeward_side(5, 0), ShipState.PORT)
+	assert_eq(FireGeometry.leeward_side(0, 0), -1)
+	assert_eq(FireGeometry.leeward_side(3, 0), -1)
+	# A rotated wind: wind from 2, facing 3 -> r = 1 -> starboard; facing 0 -> r = 4 -> port.
+	assert_eq(FireGeometry.leeward_side(3, 2), ShipState.STARBOARD)
+	assert_eq(FireGeometry.leeward_side(0, 2), ShipState.PORT)
+
+
 # --- bearing_side ---
 
 func test_bearing_side_starboard_neighbours() -> void:

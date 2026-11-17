@@ -182,6 +182,76 @@ func test_dismasted_subtracts_sea_state() -> void:
 	assert_eq(_mod(calc.preview(_order()), "dismasted"), -2)
 
 
+# --- lower-deck guns (7.F.2) ---
+# Wind from direction 0. Facing 1 is WF=C (r=1, starboard leeward); facing 2 is WF=B (starboard leeward);
+# facing 3 is WF=R; facing 0 is WF=L.
+
+func _lower_deck_setup(freeboard: int, ldgm: int, sea: int, facing: int) -> void:
+	firer.ship.freeboard = freeboard
+	firer.ship.lower_deck_modifier = ldgm
+	firer.facing = facing
+	GameState.environment.wind_direction = 0
+	GameState.environment.sea_state = sea
+
+
+## The lower_deck_closed modifier of a bow-battery shot on `side`, with the target moved abeam of it.
+func _ld(side: int) -> int:
+	target.hex_position = _steps((firer.facing + (1 if side == STARBOARD else 5)) % 6, 3)
+	var p := calc.preview(_order(side, "round", "low", "bow"))
+	assert_true(p.can_fire, p.reason)
+	return _mod(p, "lower_deck_closed")
+
+
+func test_sea_below_freeboard_no_modifier() -> void:
+	_lower_deck_setup(4, -5, 3, 1)
+	assert_eq(_ld(STARBOARD), 0)
+	assert_eq(_ld(PORT), 0)
+
+
+func test_equal_sea_leeward_broadside_closed() -> void:
+	_lower_deck_setup(4, -5, 4, 1)
+	assert_eq(_ld(STARBOARD), -5)
+
+
+func test_equal_sea_windward_broadside_open() -> void:
+	_lower_deck_setup(4, -5, 4, 1)
+	assert_eq(_ld(PORT), 0)
+
+
+func test_equal_sea_at_reach_has_no_effect() -> void:
+	_lower_deck_setup(4, -5, 4, 3)
+	assert_eq(_ld(STARBOARD), 0)
+	assert_eq(_ld(PORT), 0)
+	firer.facing = 0
+	assert_eq(_ld(STARBOARD), 0)
+	assert_eq(_ld(PORT), 0)
+
+
+func test_sea_above_freeboard_closes_both_sides() -> void:
+	_lower_deck_setup(4, -5, 5, 1)
+	assert_eq(_ld(STARBOARD), -5)
+	assert_eq(_ld(PORT), -5)
+	firer.facing = 3
+	assert_eq(_ld(STARBOARD), -5)
+	firer.facing = 0
+	assert_eq(_ld(PORT), -5)
+
+
+func test_frigate_at_sea_six_never() -> void:
+	_lower_deck_setup(6, -7, 5, 1)
+	assert_eq(_ld(STARBOARD), 0)
+	assert_eq(_ld(PORT), 0)
+
+
+func test_calm_never_closes_guns() -> void:
+	_lower_deck_setup(0, -5, 0, 1)
+	assert_eq(_ld(STARBOARD), 0)
+
+
+func test_label_lower_deck_closed() -> void:
+	assert_eq(PhaseEvents.modifier_label("lower_deck_closed"), "Lower deck guns closed")
+
+
 func test_modifier_order() -> void:
 	firer.crew_quality = "B"
 	firer.sail_state = "PS"

@@ -118,6 +118,7 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 		_add_modifier(p, "dismantling_shot", tables.flat_modifier("dismantling_shot"))
 	if wind_speed >= 4:
 		_add_modifier(p, "wind_speed_4", tables.flat_modifier("wind_speed_4"))
+	_add_modifier(p, "lower_deck_closed", _lower_deck_modifier(firer, order.side))
 	if firer.is_dismasted():
 		_add_modifier(p, "dismasted", -int(game_state.environment.sea_state))
 	# 7.C.14: a player may reduce the MGN by any amount (an FGN below 1 does no damage).
@@ -227,6 +228,23 @@ func _refuse(p: GunneryTypes.ShotPreview, reason: String) -> GunneryTypes.ShotPr
 	p.can_fire = false
 	p.reason = reason
 	return p
+
+
+## 7.F.2 (Freeboard Calculation): the LDGM when the sea has shut this broadside's lower-deck guns.
+## Sea below freeboard: none. Equal: the leeward broadside only, never at WF=L or WF=R. Above: all gunfire.
+func _lower_deck_modifier(firer: ShipState, side: int) -> int:
+	var sea: int = game_state.environment.sea_state
+	var freeboard: int = firer.ship.freeboard
+	var ldgm: int = firer.ship.lower_deck_modifier
+	if sea <= 0 or sea < freeboard:
+		return 0
+	if sea > freeboard:
+		return ldgm
+	var wind: int = game_state.environment.wind_direction
+	var wf: String = game_state.fire_geometry.hex_grid.get_wind_facing(firer.facing, wind)
+	if wf == "L" or wf == "R":
+		return 0
+	return ldgm if FireGeometry.leeward_side(firer.facing, wind) == side else 0
 
 
 func _add_modifier(p: GunneryTypes.ShotPreview, modifier_name: String, value: int) -> void:

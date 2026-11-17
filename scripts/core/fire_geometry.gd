@@ -25,6 +25,17 @@ func _init(p_hex_grid: HexGrid) -> void:
 
 ## Which broadside of a single battery hex `from_hex` (bow or stern) facing `facing` covers `to_hex`.
 ## Returns ShipState.PORT, ShipState.STARBOARD, or -1 if in neither broadside arc.
+## 7.F.2: the leeward broadside of a ship, `ShipState.STARBOARD` or `ShipState.PORT`, or -1 when she
+## is head to wind or running (WF=L or R). `wind_direction` is where the wind comes from.
+static func leeward_side(facing: int, wind_direction: int) -> int:
+	match (facing - wind_direction + 6) % 6:
+		1, 2:
+			return ShipState.STARBOARD
+		4, 5:
+			return ShipState.PORT
+	return -1
+
+
 func bearing_side(from_hex: Vector2i, facing: int, to_hex: Vector2i) -> int:
 	if from_hex == to_hex:
 		return -1

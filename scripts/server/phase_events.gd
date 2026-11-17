@@ -81,6 +81,7 @@ const MODIFIER_LABELS := {
 	"dismantling_shot": "dismantling shot",
 	"wind_speed_4": "wind speed 4",
 	"dismasted": "dismasted",
+	"lower_deck_closed": "Lower deck guns closed",
 	"broadside_obscured": "broadside obscured",
 	"voluntary_reduction": "Voluntary reduction",
 	# Marine Fire DRMs (7.G.4)
