@@ -4,7 +4,7 @@ extends RefCounted
 ## A side scores a fraction of each enemy ship's point value: all of it once the ship has
 ## struck, been destroyed (hull #12) or been captured (VI.B.2-3), otherwise a share for each rigging, hull and crew section
 ## that is completely destroyed. The game ends when a side has no ship left in play (every ship
-## struck or destroyed), or at the scenario's turn limit. Pure queries: nothing here mutates game state.
+## struck or destroyed), when it has none able to move or fight (2.A.1), or at the scenario's turn limit. Pure queries: nothing here mutates game state.
 
 ## Share of a ship's value lost per destroyed section (rigging 1-3, rigging 4, hull 1-3, hull 4)
 const RIGGING_SHARES: Array[float] = [0.05, 0.05, 0.05, 0.10]
@@ -49,6 +49,8 @@ func check(turn: int) -> Dictionary:
 	var reason := ""
 	if _is_defeated(0) or _is_defeated(1):
 		reason = "all struck"
+	elif _is_unable(0) or _is_unable(1):
+		reason = "no ship able to move or fight"
 	else:
 		var limit: int = int(game_state.active_scenario.get("turn_limit", 0))
 		if limit > 0 and turn >= limit:
@@ -74,6 +76,29 @@ func _is_defeated(player_id: int) -> bool:
 	## is out of play, so a side holding only prizes is defeated (boarding spec §2.6).
 	for ship: ShipState in game_state.get_player_ships(player_id):
 		if not ship.is_out_of_play():
+			return false
+	return true
+
+
+func can_move_or_fight(ship: ShipState) -> bool:
+	## 2.A.1, read as "move OR fight" (user decision 2026-11-16): in play and either still rigged
+	## or with a gun factor left on some side. Fouled, grappled and in-irons ships count as able.
+	if ship.is_out_of_play():
+		return false
+	if ship.rigging_level() > 0:
+		return true
+	var factors: int = 0
+	for gun_type: String in ["lg", "mg", "cr"]:
+		factors += int(ship.ship.gun_factors.get(gun_type, 0))
+	for side in range(2):
+		if factors - ship.guns_dismounted[side] > 0:
+			return true
+	return false
+
+
+func _is_unable(player_id: int) -> bool:
+	for ship: ShipState in game_state.get_player_ships(player_id):
+		if can_move_or_fight(ship):
 			return false
 	return true
 

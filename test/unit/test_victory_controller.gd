@@ -163,6 +163,72 @@ func test_all_enemy_ships_struck_player_wins() -> void:
 	assert_eq(result["points"][1], 0.0)
 
 
+# --- 2.A.1: no ship able to move or fight ---------------------------------------
+
+func _dismast(ship: ShipState) -> void:
+	for i in range(ship.rigging_current_hp.size()):
+		ship.rigging_current_hp[i] = 0
+
+
+func _arm(ship: ShipState, factors: int = 10) -> void:
+	ship.ship.gun_factors = {"lg": factors, "mg": 0, "cr": 0}
+
+
+func test_side_with_only_dismasted_gunless_ships_ends_game() -> void:
+	# 2.A.1: a side with no ship that can move or fight is beaten.
+	_arm(_make_ship("a", 0))
+	var wreck := _make_ship("b", 1)
+	_dismast(wreck)
+	_arm(wreck)
+	wreck.guns_dismounted = [10, 10]
+	var result: Dictionary = controller.check(3)
+	assert_eq(result["reason"], "no ship able to move or fight")
+	assert_eq(result["winner"], 0, "the dismasted side has scored points lost")
+
+
+func test_dismasted_but_armed_side_is_not_defeated() -> void:
+	# User decision 2026-11-16: "move OR fight"; a dismasted ship that can still fire keeps the game on.
+	_arm(_make_ship("a", 0))
+	var armed := _make_ship("b", 1)
+	_dismast(armed)
+	_arm(armed)
+	assert_true(controller.check(3).is_empty())
+
+
+func test_armless_but_sailing_side_is_not_defeated() -> void:
+	_arm(_make_ship("a", 0))
+	var sailor := _make_ship("b", 1)
+	_arm(sailor)
+	sailor.guns_dismounted = [10, 10]
+	assert_true(controller.check(3).is_empty())
+
+
+func test_one_side_of_guns_left_counts_as_armed() -> void:
+	_arm(_make_ship("a", 0))
+	var ship := _make_ship("b", 1)
+	_dismast(ship)
+	_arm(ship)
+	ship.guns_dismounted = [10, 4]
+	assert_true(controller.can_move_or_fight(ship))
+
+
+func test_fouled_or_grappled_ship_counts_as_able() -> void:
+	var fouled := _make_ship("a", 0)
+	fouled.fouled_with = "b"
+	var grappled := _make_ship("b", 1)
+	grappled.grappled_with = ["a"]
+	assert_true(controller.can_move_or_fight(fouled))
+	assert_true(controller.can_move_or_fight(grappled))
+	assert_true(controller.check(3).is_empty())
+
+
+func test_all_struck_reason_still_wins_precedence() -> void:
+	_make_ship("a", 0)
+	var b := _make_ship("b", 1)
+	_strike(b)
+	assert_eq(controller.check(3)["reason"], "all struck")
+
+
 func test_both_sides_struck_equal_is_a_draw() -> void:
 	_strike(_make_ship("a", 0))
 	_strike(_make_ship("b", 1))
