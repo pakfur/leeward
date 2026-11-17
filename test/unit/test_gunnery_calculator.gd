@@ -662,3 +662,46 @@ func test_enemy_ship_makes_no_blocking_hexes() -> void:
 	var p := calc.preview(_order())
 	assert_true(p.can_fire, p.reason)
 	assert_eq(p.range_hexes, 8)
+
+
+# --- voluntary MGN reduction (7.C.14) ---
+
+func _reduced(amount: int) -> GunneryTypes.FireOrder:
+	var order := _order()
+	order.mgn_reduction = amount
+	return order
+
+
+func test_reduction_lowers_mgn() -> void:
+	# 7.C.14: the MGN may be reduced by any amount.
+	var plain := calc.preview(_order())
+	var reduced := calc.preview(_reduced(4))
+	assert_eq(reduced.mgn, plain.mgn - 4)
+	assert_eq(_mod(reduced, "Voluntary reduction"), -4)
+	assert_true(_names(reduced).has("Voluntary reduction"))
+
+
+func test_zero_reduction_adds_no_modifier() -> void:
+	assert_false(_names(calc.preview(_order())).has("Voluntary reduction"))
+
+
+func test_negative_reduction_refused() -> void:
+	var orders: Array[GunneryTypes.FireOrder] = [_reduced(-1)]
+	assert_eq(calc.validate_orders(0, orders), "Reduction cannot be negative")
+
+
+func test_reduction_round_trips_through_dict() -> void:
+	var back := GunneryTypes.FireOrder.from_dict(_reduced(3).to_dict())
+	assert_eq(back.mgn_reduction, 3)
+	assert_eq(GunneryTypes.FireOrder.from_dict({"ship_id": "x"}).mgn_reduction, 0)
+
+
+func test_preview_orders_keeps_reduction() -> void:
+	var orders: Array[GunneryTypes.FireOrder] = [_reduced(2)]
+	assert_eq(_mod(calc.preview_orders(orders)[0], "Voluntary reduction"), -2)
+
+
+func test_make_order_carries_reduction() -> void:
+	var order := FireRules.make_order("firer", STARBOARD, "target", "full", false, false, 3, 5)
+	assert_eq(order.mgn_reduction, 5)
+	assert_eq(FireRules.make_order("firer", STARBOARD, "target", "full", false, false, 3).mgn_reduction, 0)

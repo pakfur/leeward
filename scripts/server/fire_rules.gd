@@ -69,7 +69,7 @@ static func side_shots(bow_target: String, stern_target: String) -> Array:
 
 ## An order with the aim and ammunition it must carry at `range_hexes`.
 static func make_order(ship_id: String, side: int, target_id: String, battery: String,
-		want_high: bool, want_dismantling: bool, range_hexes: int) -> GunneryTypes.FireOrder:
+		want_high: bool, want_dismantling: bool, range_hexes: int, mgn_reduction: int = 0) -> GunneryTypes.FireOrder:
 	var order := GunneryTypes.FireOrder.new()
 	order.ship_id = ship_id
 	order.side = side
@@ -77,6 +77,7 @@ static func make_order(ship_id: String, side: int, target_id: String, battery: S
 	order.battery = battery
 	order.aim = effective_aim(GunneryTypes.AIM_HIGH if want_high else GunneryTypes.AIM_LOW, high_only(range_hexes))
 	order.ammo = effective_ammo(want_dismantling, range_hexes)
+	order.mgn_reduction = mgn_reduction
 	return order
 
 

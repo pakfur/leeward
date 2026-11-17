@@ -114,6 +114,9 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 		_add_modifier(p, "wind_speed_4", tables.flat_modifier("wind_speed_4"))
 	if firer.is_dismasted():
 		_add_modifier(p, "dismasted", -int(game_state.environment.sea_state))
+	# 7.C.14: a player may reduce the MGN by any amount (an FGN below 1 does no damage).
+	if order.mgn_reduction > 0:
+		_add_modifier(p, "Voluntary reduction", -order.mgn_reduction)
 
 	p.mgn = p.bgn
 	for m in p.modifiers:
@@ -200,6 +203,8 @@ func validate_orders(player_id: int, orders: Array[GunneryTypes.FireOrder]) -> S
 	if declaration != "":
 		return declaration
 	for order in orders:
+		if order.mgn_reduction < 0:
+			return "Reduction cannot be negative"
 		if order.aim != GunneryTypes.AIM_LOW and order.aim != GunneryTypes.AIM_HIGH:
 			return "unknown aim '%s'" % order.aim
 		if order.ammo != GunneryTypes.AMMO_ROUND and order.ammo != GunneryTypes.AMMO_DISMANTLING:

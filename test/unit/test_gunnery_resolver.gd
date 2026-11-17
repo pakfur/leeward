@@ -393,3 +393,16 @@ func test_split_first_fire_earns_initial_broadside_once() -> void:
 				ib[e.target_id] = m["value"]
 	assert_eq(ib, {"b_ship": DataManager.combat_tables.range_bonus("initial_broadside", 2), "c_ship": 0})
 	assert_true(a.initial_broadside_fired[STARBOARD])
+
+
+func test_reduction_below_one_does_no_damage_and_no_crit() -> void:
+	# 7.C.14: an FGN below 1 has no result; a natural 6 then rolls no critical hit either.
+	var order := _order("a_ship", "b_ship")
+	order.mgn_reduction = 60
+	_dice.queue([6])
+	_fire([order])
+	var ev := _fire_event_for("a_ship")
+	assert_true(ev.data["fgn"] < 1)
+	assert_eq(ev.data["rigging"] + ev.data["hull"] + ev.data["crew"], 0)
+	assert_true(ev.data["modifiers"].any(func(m): return m["name"] == "Voluntary reduction"))
+	assert_eq(GameState.turn_log.events.filter(func(e): return e.type == PhaseEvents.Type.CRITICAL_ROLL).size(), 0)

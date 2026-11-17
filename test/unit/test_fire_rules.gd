@@ -43,7 +43,7 @@ func test_side_shots_full_when_both_batteries_name_one_target() -> void:
 func test_make_order_carries_forced_aim_and_ammo() -> void:
 	var o := FireRules.make_order("me", 1, "foe", "bow", false, true, 12)
 	assert_eq(o.to_dict(), {"ship_id": "me", "side": 1, "target_id": "foe",
-		"aim": "high", "ammo": "round", "battery": "bow"})
+		"aim": "high", "ammo": "round", "battery": "bow", "mgn_reduction": 0})
 	o = FireRules.make_order("me", 0, "foe", "full", true, true, 4)
 	assert_eq([o.aim, o.ammo], ["high", "dismantling"])
 

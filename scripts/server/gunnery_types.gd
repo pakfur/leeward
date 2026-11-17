@@ -21,6 +21,8 @@ class FireOrder extends RefCounted:
 	var aim: String = "low"      # "low" | "high"
 	var ammo: String = "round"   # "round" | "dismantling"
 	var battery: String = "full" # "full" | "bow" | "stern"
+	## Voluntary reduction of the MGN (7.C.14), 0 or more; applied as a modifier by the calculator.
+	var mgn_reduction: int = 0
 
 	static func from_dict(d: Dictionary) -> FireOrder:
 		var order := FireOrder.new()
@@ -30,6 +32,7 @@ class FireOrder extends RefCounted:
 		order.aim = String(d.get("aim", "low"))
 		order.ammo = String(d.get("ammo", "round"))
 		order.battery = String(d.get("battery", BATTERY_FULL))
+		order.mgn_reduction = int(d.get("mgn_reduction", 0))
 		return order
 
 	func to_dict() -> Dictionary:
@@ -40,6 +43,7 @@ class FireOrder extends RefCounted:
 			"aim": aim,
 			"ammo": ammo,
 			"battery": battery,
+			"mgn_reduction": mgn_reduction,
 		}
 
 
