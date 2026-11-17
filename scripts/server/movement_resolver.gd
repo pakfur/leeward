@@ -1441,9 +1441,10 @@ func _tack_succeeds(d10: int, drm: int, number: int) -> bool:
 
 ## Tacking DRMs from the chart (5.D.2, 5.D.6). 5.D.2a: the chart assumes 3 crew sections plotted
 ## to "T"; +2 for each one short, up to +6 (the chart's "up to +8" is a misprint). `sections` is the
-## count at the braces; -1 reads the ship's live T task (ShipState.tack_sections()). Reversing tack
-## does not exist yet.
-func _calculate_tacking_drm(ship_state: ShipState, sections: int = -1) -> int:
+## count at the braces; -1 reads the ship's live T task (ShipState.tack_sections()). 5.D.3b: +3 for
+## a reverse tack. `turn_direction` is the way the ship turns (PORT, STARBOARD); NO_STEP reads it
+## from the first step of the ship's plot.
+func _calculate_tacking_drm(ship_state: ShipState, sections: int = -1, turn_direction: int = NO_STEP) -> int:
 	var drm: int = DataManager.combat_tables.skill_modifier(ship_state.crew_quality)
 	drm += tack_crew_drm(ship_state.tack_sections() if sections < 0 else sections)
 
@@ -1460,6 +1461,8 @@ func _calculate_tacking_drm(ship_state: ShipState, sections: int = -1) -> int:
 		drm -= 2  # ship not at WF=L (errata 5.D.2b)
 	elif ship_state.speed == 0:
 		drm += 1  # in irons (5.D.6)
+	if is_reverse_tack(ship_state, _turn_direction_or_plotted(ship_state, turn_direction)):
+		drm += REVERSE_TACK_DRM
 
 	if ship_state.towing:
 		drm += 1
@@ -1468,6 +1471,37 @@ func _calculate_tacking_drm(ship_state: ShipState, sections: int = -1) -> int:
 		drm += 3  # Rudder Destroyed (hull #2)
 
 	return drm
+
+
+## Reversing Tack DRM (5.D.3b, chart).
+const REVERSE_TACK_DRM := 3
+
+## 5.D.3b: a ship at WF=L that turns back the way it turned in is reverse tacking. A ship that got
+## to WF=L without turning (a wind shift) has no entry turn, so it never is.
+func is_reverse_tack(ship_state: ShipState, turn_direction: int) -> bool:
+	if ship_state.irons_entry_turn == -1 or turn_direction == -1 or turn_direction == NO_STEP:
+		return false
+	return _get_ship_wind_facing(ship_state) == "L" and turn_direction != ship_state.irons_entry_turn
+
+
+## `direction` when given, else the direction of the first step of the ship's plot (NO_STEP if it
+## has none, or the first step is ahead).
+func _turn_direction_or_plotted(ship_state: ShipState, direction: int) -> int:
+	if direction != NO_STEP:
+		return direction
+	var steps: Array = _get_plotted_steps(ship_state)
+	if steps.is_empty():
+		return NO_STEP
+	var step := MovementTypes.PlotStep.from_dict(steps[0])
+	match step.move_type:
+		MovementTypes.MoveType.PORT:
+			return ShipState.PORT
+		MovementTypes.MoveType.STARBOARD:
+			return ShipState.STARBOARD
+	# Plots stored without a move type: read the turn from the facing change.
+	if step.facing == ship_state.facing:
+		return NO_STEP
+	return ShipState.PORT if step.facing == (ship_state.facing + 5) % 6 else ShipState.STARBOARD
 
 
 ## Bearing Off DRMs (6.D.2): MPs plotted this g-t 4-6 = +1, 7+ = +2. `mps` is the steps the pass
@@ -1725,6 +1759,11 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			sc.set_mp_used(sid, _count_steps_executed(result))
 			sc.set_ship_position(sid, result.final_hex)
 			sc.set_ship_facing(sid, result.final_facing)
+			# 5.D.3b: remember the way a ship turned into WF=L; leaving WF=L forgets it.
+			if hex_grid.get_wind_facing(result.final_facing, _wind_direction()) != "L":
+				sc.set_irons_entry_turn(sid, -1)
+			elif last_step == ShipState.PORT or last_step == ShipState.STARBOARD:
+				sc.set_irons_entry_turn(sid, last_step)
 			if result.immobilized:
 				sc.set_immobilized(sid, true)
 			# A ship with its rudder destroyed that enters WF=L is in irons at once (hull #2): stopped.

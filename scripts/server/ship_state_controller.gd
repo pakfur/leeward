@@ -748,6 +748,18 @@ func set_last_step_direction(ship_id: String, direction: int) -> bool:
 	ship_state_changed.emit(ship_id)
 	return true
 
+## The way the ship turned to come to WF=L (-1 none, PORT, STARBOARD); a reverse tack is 5.D.3b.
+func set_irons_entry_turn(ship_id: String, direction: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot modify irons entry turn on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.irons_entry_turn = direction
+	ship_state_changed.emit(ship_id)
+	return true
+
 func set_rudder_destroyed(ship_id: String, destroyed: bool) -> bool:
 	if not is_server:
 		push_error("ShipStateController: Cannot modify rudder on client")

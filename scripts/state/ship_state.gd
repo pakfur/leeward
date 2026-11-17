@@ -135,6 +135,9 @@ var ship_type: String:
 ## The last step the ship executed (-1 straight or none, PORT, STARBOARD); kept across a g-t
 ## in which it made no step. Rudder Jammed jams in this direction (spec Q15).
 @export var last_step_direction: int = -1
+## The way the ship turned (PORT, STARBOARD) to come to WF=L, -1 when it is not at WF=L or got
+## there without turning (wind shift). Turning back the other way is a reverse tack (5.D.3b).
+@export var irons_entry_turn: int = -1
 
 # Crew tasks (4.A.3, 4.B; crew-tasks spec §2.2; mutated only through ShipStateController)
 ## Automatic crew allocation (spec §3.3): the server places the sections by CrewAuto's rules.
@@ -598,6 +601,7 @@ func serialize() -> Dictionary:
 		"explosion_checks": explosion_checks,
 		"pending_turn": pending_turn,
 		"last_step_direction": last_step_direction,
+		"irons_entry_turn": irons_entry_turn,
 		"plotted_actions": plotted_actions.duplicate(true)
 	}
 	return data
@@ -708,6 +712,7 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.explosion_checks = int(data.get("explosion_checks", 0))
 	state.pending_turn = int(data.get("pending_turn", -1))
 	state.last_step_direction = int(data.get("last_step_direction", -1))
+	state.irons_entry_turn = int(data.get("irons_entry_turn", -1))
 	
 	state.plotted_actions = plot_from(data.get("plotted_actions", {}))
 

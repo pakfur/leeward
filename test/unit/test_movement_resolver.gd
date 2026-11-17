@@ -393,6 +393,68 @@ func test_tacking_drm_in_irons() -> void:
 	assert_eq(resolver._calculate_tacking_drm(state), -1, "SK -2, in irons +1")
 
 
+# 5.D.3b: reverse tack. Wind from E (0): facing 0 is WF=L, facing 5 and 1 are not.
+
+func test_turning_into_luffing_records_entry_turn() -> void:
+	# A STARBOARD turn (facing 5 -> 0) ends the g-t at WF=L.
+	var state = _make_ship_state(Vector2i(5, 5), 5, 3, "D")
+	_plot_turn(state, 0)
+	var ships: Array[ShipState] = [state]
+	resolver.apply_results(resolver.run(ships, env), ships)
+	assert_eq(state.facing, 0)
+	assert_eq(state.irons_entry_turn, ShipState.STARBOARD)
+
+
+func test_leaving_luffing_clears_entry_turn() -> void:
+	var state = _make_ship_state(Vector2i(5, 5), 0, 0, "D")
+	state.irons_entry_turn = ShipState.STARBOARD
+	_plot_turn(state, 1)
+	var ships: Array[ShipState] = [state]
+	resolver.apply_results(resolver.run(ships, env), ships)
+	assert_eq(state.irons_entry_turn, -1)
+
+
+func test_wind_shift_into_luffing_has_no_entry_turn() -> void:
+	# WF=L reached with no turn executed: no entry turn, and no +3 either way.
+	var state = _make_ship_state(Vector2i(5, 5), 0, 0, "D")
+	assert_eq(state.irons_entry_turn, -1)
+	assert_false(resolver.is_reverse_tack(state, ShipState.PORT))
+	assert_false(resolver.is_reverse_tack(state, ShipState.STARBOARD))
+
+
+func test_reverse_tack_adds_three() -> void:
+	# 5.D.3b: turning back the way it came takes the Reversing Tack DRM (+3, chart).
+	var state = _make_ship_state(Vector2i(5, 5), 0, 2, "D")
+	state.irons_entry_turn = ShipState.STARBOARD
+	var same: int = resolver._calculate_tacking_drm(state, 3, ShipState.STARBOARD)
+	var back: int = resolver._calculate_tacking_drm(state, 3, ShipState.PORT)
+	assert_eq(back - same, 3)
+
+
+func test_reverse_tack_reads_the_plotted_turn() -> void:
+	# The first plotted step is a PORT turn (facing 0 -> 5); the ship came in by STARBOARD.
+	var state = _make_ship_state(Vector2i(5, 5), 0, 2, "D")
+	state.irons_entry_turn = ShipState.STARBOARD
+	var same: int = resolver._calculate_tacking_drm(state)  # no plot: no turn, no +3
+	_plot_turn(state, 5)
+	assert_eq(resolver._calculate_tacking_drm(state) - same, 3)
+	_plot_turn(state, 1)  # starboard: continues the way it came
+	assert_eq(resolver._calculate_tacking_drm(state), same)
+
+
+func test_reverse_tack_stacks_with_in_irons() -> void:
+	# Speed 0 at WF=L (in irons, +1) and reversing (+3): both apply (SK -2).
+	var state = _make_ship_state(Vector2i(5, 5), 0, 0, "D")
+	state.irons_entry_turn = ShipState.STARBOARD
+	assert_eq(resolver._calculate_tacking_drm(state, 3, ShipState.PORT), -2 + 1 + 3)
+
+
+func test_irons_entry_turn_is_serialized() -> void:
+	var state = _make_ship_state(Vector2i(5, 5), 0, 0, "D")
+	state.irons_entry_turn = ShipState.PORT
+	assert_eq(ShipState.deserialize(state.serialize()).irons_entry_turn, ShipState.PORT)
+
+
 func test_tacking_drm_healthy_ship_not_luffing() -> void:
 	var state = _make_ship_state(Vector2i(5, 5), 3, 3)
 	assert_eq(resolver._calculate_tacking_drm(state), -4, "SK -2, not at WF=L -2")
