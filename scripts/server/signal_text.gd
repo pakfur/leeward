@@ -27,7 +27,7 @@ static func words(text: String, ship_names: Array[String]) -> Dictionary:
 	for up in names:
 		var bare := _without_prefix(up)
 		var re := RegEx.new()
-		var pattern := "(?<![A-Z0-9])(?:(?:(?:[A-Z]+\\.)+|HMS|USS)\\s+)?" + _escape(bare).replace("\\ ", "\\s+") + "(?![A-Z0-9])"
+		var pattern := "(?<![A-Z0-9])(?:(?:(?:[A-Z]\\.){2,}|HMS|USS)\\s+)?" + _escape(bare).replace("\\ ", "\\s+") + "(?![A-Z0-9])"
 		if re.compile(pattern) != OK:
 			continue
 		var m := re.search(work)

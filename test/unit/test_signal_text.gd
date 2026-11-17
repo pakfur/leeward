@@ -39,6 +39,13 @@ func test_ship_name_canonical_form() -> void:
 		assert_eq(r["words"][1], "HMS LIVELY", text)
 
 
+func test_dotted_words_before_a_name_are_kept() -> void:
+	var names: Array[String] = ["HMS Lively"]
+	var r := SignalText.words("FIRE. LIVELY", names)
+	assert_eq(r["words"], ["FIRE", ".", "HMS LIVELY"] as Array[String])
+	assert_eq(SignalText.words("FIRE. FIRE. LIVELY", names)["words"].size(), 5)
+
+
 func test_newlines_split_words() -> void:
 	assert_eq(SignalText.words("A\nB\nC\nD", [] as Array[String])["words"].size(), 4)
 	assert_eq(SignalText.words("A\r\nB", [] as Array[String])["words"].size(), 2)
