@@ -30,6 +30,11 @@ extends Resource
 # Weather change patterns (optional, for more complex scenarios)
 @export var precipitation: String = "none"  # "none", "rain", "snow", "storm"
 
+## True in the g-t the wind rose from a calm: no ship is in irons then (3.D.4, 5.D.4c).
+func calm_just_ended(turn: int) -> bool:
+	return calm_ended_turn >= 0 and calm_ended_turn == turn
+
+
 func has_pending_wind_change() -> bool:
 	return pending_wind_direction >= 0 or pending_wind_speed >= 0
 

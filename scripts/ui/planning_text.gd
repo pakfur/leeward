@@ -71,9 +71,10 @@ const IRONS_NOTE := "Head to wind: the ship will be in irons and movement ends h
 
 
 ## The note under the movement readout: the allowance-change note (may be ""), plus the irons
-## warning whenever the plotted heading's wind-facing code is "L" (head to wind).
-static func plot_note(allowance_note: String, heading_code: String) -> String:
-	if heading_code != "L":
+## warning whenever the plotted heading's wind-facing code is "L" (head to wind), except in the
+## g-t after a calm (`calm_just_ended`), when no ship is in irons (3.D.4).
+static func plot_note(allowance_note: String, heading_code: String, calm_just_ended := false) -> String:
+	if heading_code != "L" or calm_just_ended:
 		return allowance_note
 	return IRONS_NOTE if allowance_note == "" else allowance_note + "\n" + IRONS_NOTE
 

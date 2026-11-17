@@ -33,10 +33,10 @@ static func course_info(options: Dictionary) -> Dictionary:
 ## The card's note: the allowance changed between the start heading (`start_code`) and the
 ## course-end heading (`end_code`, wind-facing codes L/C/B/R), and the irons warning when the course
 ## ends head to wind ("" when neither).
-static func course_note(options: Dictionary, start_code: String, end_code: String) -> String:
+static func course_note(options: Dictionary, start_code: String, end_code: String, calm_just_ended := false) -> String:
 	var change := PlanningText.allowance_change_note(int(options.get("start_max_ma", 0)),
 		int(options.get("max_ma", 0)), start_code, end_code)
-	return PlanningText.plot_note(change, end_code)
+	return PlanningText.plot_note(change, end_code, calm_just_ended)
 
 
 ## Click target -> MoveMetadata (resulting bow hex and facing) for the hover preview.

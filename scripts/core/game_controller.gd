@@ -583,7 +583,7 @@ func _course_info(ship: ShipState, options: Dictionary, ships: Array) -> Diction
 		var wind: int = GameState.environment.wind_direction
 		var end_facing: int = path[-1].facing if not path.is_empty() else ship.facing
 		info["note"] = CourseView.course_note(options, grid.get_wind_facing(ship.facing, wind),
-			grid.get_wind_facing(end_facing, wind))
+			grid.get_wind_facing(end_facing, wind), GameState.environment.calm_just_ended(GameState.current_turn))
 	info["tacking"] = _tacking_text(ship, bool(options.get("is_tacking_attempt", false)))
 	info["steering"] = _steering_text(ship)
 	var collision := path_collision_text(path, ship.hex_position, ship.facing, ships, ship.ship_id)

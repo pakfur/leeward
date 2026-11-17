@@ -9,6 +9,7 @@ var resolver: MovementResolver
 var rng: RandomNumberGenerator
 var env: EnvironmentState
 var _saved_turn_log: PhaseEvents.PhaseLog
+var _saved_turn: int
 
 
 func before_all() -> void:
@@ -32,9 +33,11 @@ func before_each() -> void:
 	# apply_results logs collision damage through DamageController
 	_saved_turn_log = GameState.turn_log
 	GameState.turn_log = PhaseEvents.PhaseLog.new()
+	_saved_turn = GameState.current_turn
 
 
 func after_each() -> void:
+	GameState.current_turn = _saved_turn
 	GameState.turn_log = _saved_turn_log
 
 
