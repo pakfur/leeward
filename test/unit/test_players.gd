@@ -12,7 +12,7 @@ func _reset_game() -> void:
 	pc.bear_off_prompt_player_ids = [] as Array[int]
 	pc.maintenance_prompt_player_ids = [] as Array[int]
 	pc.current_phase = TurnPhaseController.GamePhase.SETUP
-	pc.players_ready = [false, false] as Array[bool]
+	pc.players_ready = {0: false, 1: false}
 	GameState.clear_ships()
 	GameState.players.clear()
 	GameState.groups.clear()

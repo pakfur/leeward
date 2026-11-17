@@ -73,7 +73,7 @@ func plot_sail_change(player_id: int, ship_id: String, target: String) -> String
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
 		return "Unknown ship"
-	if ship.side != player_id:
+	if not game_state.commands(player_id, ship_id):
 		return "Not your ship"
 	if game_state.phase_controller.current_phase != TurnPhaseController.GamePhase.PLANNING:
 		return "Sail changes can only be ordered during planning"

@@ -216,7 +216,7 @@ func _reset_sides() -> void:
 	pc.bear_off_prompt_player_ids = [] as Array[int]
 	pc.maintenance_prompt_player_ids = [] as Array[int]
 	pc.current_phase = TurnPhaseController.GamePhase.SETUP
-	pc.players_ready = [false, false] as Array[bool]
+	pc.players_ready = {0: false, 1: false}
 	GameState.clear_ships()
 
 
@@ -237,7 +237,7 @@ func test_ai_plan_is_in_when_planning_begins() -> void:
 	GameState.start_scenario(DataManager.load_scenario("test_basic"), [0] as Array[int])
 	var pc: TurnPhaseController = GameState.phase_controller
 	assert_eq(pc.current_phase, TurnPhaseController.GamePhase.PLANNING)
-	assert_eq(pc.players_ready, [false, true] as Array[bool], "the server marks the AI side ready")
+	assert_eq(pc.players_ready, {0: false, 1: true}, "the server marks the AI side ready")
 	pc.player_submit_plan(0)
 	assert_ne(pc.current_phase, TurnPhaseController.GamePhase.PLANNING, "the human's plan alone ends planning")
 	_reset_sides()

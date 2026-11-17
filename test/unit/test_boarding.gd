@@ -836,7 +836,7 @@ func test_plot_crew_refuses_a_bad_boarding_order() -> void:
 	boarding.take_link_snapshot()
 	var pc: TurnPhaseController = GameState.phase_controller
 	pc.current_phase = TurnPhaseController.GamePhase.PLANNING
-	pc.players_ready = [false, false] as Array[bool]
+	pc.players_ready = {0: false, 1: false}
 	assert_string_contains(pc.player_plot_crew(0, "a", {"assignments": {}, "orders": {"boarding": "board:b"}}),
 		"start of the turn", "10.A.2: not linked")
 	assert_ne(pc.player_plot_crew(0, "a", {"assignments": {}, "orders": {"boarding": "charge"}}), "")

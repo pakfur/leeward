@@ -9,9 +9,9 @@ signal resolution_log_ready(log: MovementTypes.ResolutionLog)
 signal fire_declaration_requested()
 signal combat_log_ready(log: PhaseEvents.PhaseLog)
 signal game_over(result: Dictionary)
-## Movement playback reached a potential collision of a prompted player's ship (6.D.3): the player
-## answers with player_submit_bear_off.
-signal bear_off_decision_requested(situation: MovementTypes.BearOffSituation)
+## Movement playback reached a potential collision of a prompted player's ship (6.D.3): the
+## commanding player (`player_id`) answers with player_submit_bear_off.
+signal bear_off_decision_requested(player_id: int, situation: MovementTypes.BearOffSituation)
 ## STATUS_ADJUSTMENT waits for a prompted player's grapple (SoP V.C) or ungrapple (V.D) orders, or
 ## prize-crew sizes (10.G.6): `step` is "grapple", "ungrapple" or "prize_size", `options` that
 ## player's choices (see maintenance_options).
@@ -42,17 +42,23 @@ enum MaintenanceStep { NONE, GRAPPLE, UNGRAPPLE, PRIZE }
 
 var current_phase: GamePhase = GamePhase.SETUP
 var current_turn: int = 0
-var players_ready: Array[bool] = [false, false]
+## Player id -> plan submitted, one entry per player (GameState.player_ids). The phase advances
+## when every player is ready; AI players and players commanding nothing in play are made ready
+## automatically (_auto_ready_players).
+var players_ready: Dictionary = {0: false, 1: false}
+## Player id -> End Turn pressed (POST_COMBAT). See player_end_turn.
+var ended_turn: Dictionary = {}
 var is_server: bool = true  # Set to true on server, false on clients
 var _pending_resolution_log: MovementTypes.ResolutionLog = null
 var combat_step: CombatStep = CombatStep.NONE
-var _fire_orders: Array = [[], []]  # per player: Array[GunneryTypes.FireOrder]
-var _marine_orders: Array = [[], []]  # per player: Array of {ship_id, target_id} (7.G)
-var _fire_ready: Array[bool] = [false, false]
+var _fire_orders: Dictionary = {}  # player id -> Array[GunneryTypes.FireOrder]
+var _marine_orders: Dictionary = {}  # player id -> Array of {ship_id, target_id} (7.G)
+var _fire_ready: Dictionary = {}  # player id -> orders in
 ## Players whose ships' bear-off decisions are asked for (6.D.3); everyone else's ships decide by
-## StubAI.bear_off_choice. Empty (no prompts) unless the game wires a human player in.
+## StubAI.bear_off_choice. Player ids. Empty (no prompts) unless the game wires a human player in.
 var bear_off_prompt_player_ids: Array[int] = []
-## The human players (GameState.start_scenario). Their ships get a default course at planning start.
+## The human players' ids (GameState.start_scenario). Their ships get a default course at planning
+## start; they end the turn (player_end_turn). Empty in headless tests: player 0 then ends it.
 var human_player_ids: Array[int] = []
 ## ship_id -> {course: Array (step dicts), crew_auto: bool, boarding: String}: the planning start
 ## state of every ship of a human player (Cancel / Reset course restore it). Cleared at END_TURN.
@@ -63,7 +69,7 @@ var _bear_off_decisions: Dictionary = {}
 ## StubAI. Empty (no prompts, no pause) unless the game wires a human player in, as for bear-off.
 var maintenance_prompt_player_ids: Array[int] = []
 ## Players the server plays (StubAI): their plan counts as submitted as soon as PLANNING begins.
-## Set by GameState.start_scenario; empty in headless tests, which submit for both sides.
+## Player ids, set by GameState.start_scenario; empty in headless tests, which submit for both sides.
 var ai_player_ids: Array[int] = []
 var maintenance_step: MaintenanceStep = MaintenanceStep.NONE
 ## Prompted players whose orders for the current maintenance step are still awaited.
@@ -92,11 +98,12 @@ func start_new_game() -> void:
 
 	current_turn = 1
 	game_result = {}
-	players_ready = [false, false] as Array[bool]
+	players_ready = _fresh_readiness()
+	ended_turn = _fresh_readiness()
 	combat_step = CombatStep.NONE
-	_fire_orders = [[], []]
-	_marine_orders = [[], []]
-	_fire_ready = [false, false]
+	_fire_orders = {}
+	_marine_orders = {}
+	_fire_ready = _fresh_readiness()
 	_pending_resolution_log = null
 	_bear_off_decisions = {}
 	_reset_maintenance()
@@ -169,7 +176,7 @@ func _enter_environment_phase() -> void:
 func _enter_planning_phase() -> void:
 	"""SERVER ONLY: Enter planning phase"""
 	current_phase = GamePhase.PLANNING
-	players_ready = [false, false]
+	players_ready = _fresh_readiness()
 	Trace.trace_log("TurnPhase", "Phase: PLANNING - Players plot their actions")
 
 	# 10.A.2: boarding needs the two ships fouled or grappled at the start of the g-t.
@@ -178,9 +185,7 @@ func _enter_planning_phase() -> void:
 	_store_default_courses()
 	if game_state.stub_ai:
 		game_state.stub_ai.plot_all_ai_ships()
-	for p in ai_player_ids:
-		if p >= 0 and p < players_ready.size():
-			players_ready[p] = true
+	_auto_ready_players()
 	# Announced last: listeners (the view) find the default courses stored and the AI's plan in.
 	phase_changed.emit(current_phase)
 
@@ -190,7 +195,7 @@ func _store_default_courses() -> void:
 	planning_snapshot = {}
 	for ship in game_state.ships.values():
 		var s: ShipState = ship
-		if not human_player_ids.has(s.side):
+		if not human_player_ids.has(game_state.commander_of(s.ship_id)):
 			continue
 		var course: Array = []
 		if DefaultCourse.can_plot(s):
@@ -202,6 +207,42 @@ func _store_default_courses() -> void:
 			"crew_auto": s.crew_auto,
 			"boarding": str(orders.get("boarding", "")) if orders is Dictionary else "",
 		}
+
+
+## Player id -> false for every player (GameState.player_ids).
+func _fresh_readiness() -> Dictionary:
+	var out := {}
+	for id in game_state.player_ids():
+		out[id] = false
+	return out
+
+
+## Every AI player, and every player commanding no ship in play (spec 2: struck, destroyed or
+## captured, or none left; a dismasted ship still counts), is set ready: players_ready in
+## PLANNING, ended_turn in POST_COMBAT. The turn loop never waits on them.
+func _auto_ready_players() -> void:
+	var target: Dictionary = ended_turn if current_phase == GamePhase.POST_COMBAT else players_ready
+	for id in target:
+		if ai_player_ids.has(id) or game_state.in_play_ships_of_player(id).is_empty():
+			target[id] = true
+
+
+## Read-only: the player's plan is in (or counts as in). False for an unknown player.
+func is_player_ready(player_id: int) -> bool:
+	return bool(players_ready.get(player_id, false))
+
+
+## Readiness read from serialized data: a Dictionary (player id -> bool), or the old [bool, bool]
+## array (index = player id).
+static func readiness_from(data: Variant) -> Dictionary:
+	var out := {}
+	if data is Array:
+		for i in (data as Array).size():
+			out[i] = bool(data[i])
+	elif data is Dictionary:
+		for k in data:
+			out[int(k)] = bool(data[k])
+	return out
 
 
 ## Read-only: the course the ship had when planning began ([] when none).
@@ -219,7 +260,7 @@ func player_reset_planning(player_id: int) -> String:
 		return why
 	for ship_id in planning_snapshot:
 		var ship: ShipState = game_state.get_ship(ship_id)
-		if ship == null or ship.side != player_id:
+		if ship == null or not game_state.commands(player_id, ship_id):
 			continue
 		_restore_snapshot(ship_id, true)
 	Trace.trace_log("TurnPhase", "Player %d reset the planning" % player_id)
@@ -259,7 +300,7 @@ func _planning_request_error(player_id: int) -> String:
 		return "the game is over"
 	if current_phase != GamePhase.PLANNING:
 		return "planning can be reset in the planning phase only"
-	if player_id < 0 or player_id >= players_ready.size():
+	if not players_ready.has(player_id):
 		return "invalid player %d" % player_id
 	if players_ready[player_id]:
 		return "this player's plan is already submitted"
@@ -279,7 +320,7 @@ func player_submit_plan(player_id: int) -> bool:
 		push_error("[Server] Cannot submit plan outside PLANNING phase")
 		return false
 
-	if player_id < 0 or player_id >= players_ready.size():
+	if not players_ready.has(player_id):
 		push_error("[Server] Invalid player_id: %d" % player_id)
 		return false
 
@@ -292,8 +333,10 @@ func player_submit_plan(player_id: int) -> bool:
 	players_ready[player_id] = true
 	Trace.trace_log("TurnPhase", "Player %d submitted plan" % player_id)
 
-	# Check if all players are ready
-	if players_ready.all(func(is_ready): return is_ready):
+	# Check if all players are ready (a player whose last ship left play since PLANNING began is
+	# not waited on either).
+	_auto_ready_players()
+	if players_ready.values().all(func(is_ready): return is_ready):
 		Trace.trace_log("TurnPhase", "All players ready, advancing phase")
 		# End Planning: every crew plot is made legal against its final movement plot.
 		if game_state.crew_task_controller:
@@ -302,13 +345,14 @@ func player_submit_plan(player_id: int) -> bool:
 
 	return true
 
-## Read-only: why the player's plan cannot be submitted yet, {ship_id: reason} (empty when it can).
+## Read-only: why the player's plan cannot be submitted yet, {ship_id: reason} (empty when it can),
+## over the ships that player commands.
 ## A stored course that uses fewer MPs than its deceleration limit allows is refused (5.E.4); a ship
 ## with no course stored sails its default course (6.G.2), which meets the limit.
 func plan_errors(player_id: int) -> Dictionary:
 	var errors := {}
 	var validator := MovementValidator.new(game_state)
-	for ship in game_state.get_side_ships(player_id):
+	for ship in game_state.ships_of_player(player_id):
 		if not DefaultCourse.can_plot(ship) or not ship.plotted_actions.get("movement_plotted", false):
 			continue
 		var why := validator.deceleration_error(ship, stored_course(ship))
@@ -327,14 +371,14 @@ func player_clear_movement(player_id: int, ship_id: String) -> String:
 		return "the game is over"
 	if current_phase != GamePhase.PLANNING:
 		return "movement can only be re-plotted in the planning phase"
-	if player_id < 0 or player_id >= players_ready.size():
+	if not players_ready.has(player_id):
 		return "invalid player %d" % player_id
 	if players_ready[player_id]:
 		return "this player's plan is already submitted"
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
 		return "no ship %s" % ship_id
-	if ship.side != player_id:
+	if not game_state.commands(player_id, ship_id):
 		return "%s is not this player's ship" % ship_id
 	game_state.ship_controller.set_plotted_movement(ship_id, [])
 	Trace.trace_log("TurnPhase", "Player %d cleared the movement plot of %s" % [player_id, ship_id])
@@ -482,7 +526,7 @@ func _crew_request_error(player_id: int, ship_id: String) -> String:
 		return "the game is over"
 	if current_phase != GamePhase.PLANNING:
 		return "crew orders are given in the planning phase"
-	if player_id < 0 or player_id >= players_ready.size():
+	if not players_ready.has(player_id):
 		return "invalid player %d" % player_id
 	if players_ready[player_id]:
 		return "this player's plan is already submitted"
@@ -491,7 +535,7 @@ func _crew_request_error(player_id: int, ship_id: String) -> String:
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
 		return "no ship %s" % ship_id
-	if ship.side != player_id:
+	if not game_state.commands(player_id, ship_id):
 		return "%s is not this player's ship" % ship_id
 	if ship.is_destroyed():
 		return "%s is destroyed" % ship_id
@@ -538,12 +582,12 @@ func _run_movement_resolution(resume_impulse: int) -> void:
 func _bear_off_prompt_ship_ids(ships: Array) -> Array:
 	var ids: Array = []
 	for s in ships:
-		if s.side in bear_off_prompt_player_ids:
+		if game_state.commander_of(s.ship_id) in bear_off_prompt_player_ids:
 			ids.append(s.ship_id)
 	return ids
 
 
-## The view played an incomplete log up to its potential collision: ask the owner.
+## The view played an incomplete log up to its potential collision: ask the commanding player.
 func on_playback_paused() -> void:
 	if not is_server:
 		push_error("TurnPhaseController: Cannot pause playback on client")
@@ -552,7 +596,8 @@ func on_playback_paused() -> void:
 			or _pending_resolution_log.is_complete():
 		push_error("TurnPhaseController: on_playback_paused with no decision pending")
 		return
-	bear_off_decision_requested.emit(_pending_resolution_log.pending_bear_off)
+	var situation: MovementTypes.BearOffSituation = _pending_resolution_log.pending_bear_off
+	bear_off_decision_requested.emit(game_state.commander_of(situation.ship_id), situation)
 
 
 ## The owner's answer to the pending potential collision (6.D.3): "port", "starboard" or "collide".
@@ -571,7 +616,7 @@ func player_submit_bear_off(player_id: int, ship_id: String, choice: String) -> 
 	if situation.ship_id != ship_id:
 		return "the decision pending is for %s" % situation.ship_id
 	var ship = game_state.get_ship(ship_id)
-	if ship == null or ship.side != player_id:
+	if ship == null or not game_state.commands(player_id, ship_id):
 		return "player %d does not command %s" % [player_id, ship_id]
 	if not choice in situation.choices():
 		return "%s is not a legal choice here" % choice
@@ -634,18 +679,25 @@ func _enter_combat_resolution_phase() -> void:
 		return
 
 	combat_step = CombatStep.DECLARE
-	_fire_orders = [[], []]
-	_marine_orders = [[], []]
-	_fire_ready = [false, false]
+	_fire_orders = {}
+	_marine_orders = {}
+	_fire_ready = _fresh_readiness()
+	# A player commanding nothing in play has nothing to declare (spec 2).
+	for id in _fire_ready:
+		if game_state.in_play_ships_of_player(id).is_empty():
+			_fire_ready[id] = true
 	fire_declaration_requested.emit()
 	if game_state.stub_ai:
 		game_state.stub_ai.submit_fire_orders()
+	if combat_step == CombatStep.DECLARE and _fire_ready.values().all(func(is_ready): return is_ready):
+		_resolve_combat()
 
 func player_submit_fire_orders(player_id: int, orders: Array, marine_orders: Array = []) -> String:
 	"""SERVER ONLY: Validate and store a player's fire orders (Array of FireOrder dictionaries) and
 	marine fire orders (Array of {ship_id, target_id}, 7.G; MarineFireResolver.validate_orders).
 	Returns "" on success, otherwise the reason it was rejected (nothing changes on rejection).
-	A later valid submission replaces an earlier one until both players are ready."""
+	A later valid submission replaces an earlier one until every player is ready. Each player's
+	orders cover only the ships that player commands."""
 	if not is_server:
 		push_error("TurnPhaseController: Cannot submit fire orders on client")
 		return "fire orders can only be submitted on the server"
@@ -653,7 +705,7 @@ func player_submit_fire_orders(player_id: int, orders: Array, marine_orders: Arr
 		return "the game is over"
 	if current_phase != GamePhase.COMBAT_RESOLUTION or combat_step != CombatStep.DECLARE:
 		return "fire orders are not being accepted now"
-	if player_id < 0 or player_id >= _fire_ready.size():
+	if not _fire_ready.has(player_id):
 		return "invalid player %d" % player_id
 
 	var typed: Array[GunneryTypes.FireOrder] = []
@@ -681,7 +733,7 @@ func player_submit_fire_orders(player_id: int, orders: Array, marine_orders: Arr
 	Trace.trace_log("TurnPhase", "Player %d declared %d fire orders, %d marine fire orders" % [
 		player_id, typed.size(), marines.size()])
 
-	if _fire_ready.all(func(is_ready): return is_ready):
+	if _fire_ready.values().all(func(is_ready): return is_ready):
 		_resolve_combat()
 	return ""
 
@@ -691,11 +743,12 @@ func _resolve_combat() -> void:
 	gunfire damage, and rolled after all the gunfire dice (boarding spec §3.3)."""
 	combat_step = CombatStep.RESOLVE
 	var all_orders: Array[GunneryTypes.FireOrder] = []
-	for player_orders in _fire_orders:
-		all_orders.append_array(player_orders)
 	var all_marine: Array = []
-	for player_marines in _marine_orders:
-		all_marine.append_array(player_marines)
+	var ids: Array = _fire_ready.keys()
+	ids.sort()
+	for id in ids:  # ascending player id: the resolvers' order
+		all_orders.append_array(_fire_orders.get(id, []))
+		all_marine.append_array(_marine_orders.get(id, []))
 	_log_held_fire(all_orders)
 	var marine_shots: Array[Dictionary] = game_state.marine_fire_resolver.prepare(all_marine)
 	game_state.gunnery_resolver.resolve(all_orders, GamePhase.COMBAT_RESOLUTION)
@@ -778,7 +831,7 @@ func _begin_maintenance_step(step: MaintenanceStep) -> void:
 		maintenance_orders_requested.emit(player_id, _step_name(step), _maintenance_options[player_id])
 
 
-## The choices `player_id` has in `step`: one entry per (own ship, other ship) pair:
+## The choices `player_id` has in `step`: one entry per (ship that player commands, other ship) pair:
 ## {"ship_id", "target_id", "needed", "modifier", "modifiers", "percent"} (+ "attempt" when
 ## ungrappling), from GrapplingController's queries. Pure.
 func maintenance_options(player_id: int, step: MaintenanceStep) -> Array:
@@ -791,7 +844,7 @@ func maintenance_options(player_id: int, step: MaintenanceStep) -> Array:
 	if grappling == null:
 		return out
 	var own: Array = []
-	for ship: ShipState in game_state.get_side_ships(player_id):
+	for ship: ShipState in game_state.ships_of_player(player_id):
 		own.append(ship.ship_id)
 	own.sort()
 	for ship_id in own:
@@ -802,7 +855,7 @@ func maintenance_options(player_id: int, step: MaintenanceStep) -> Array:
 		var friends: Array = []
 		for other_id in others:
 			var other: ShipState = game_state.get_ship(other_id)
-			(friends if other.side == player_id else enemies).append(other_id)
+			(friends if other.side == game_state.get_ship(ship_id).side else enemies).append(other_id)
 		for other_id in enemies + friends:
 			var chance: Dictionary = grappling.grapple_chance(ship_id, other_id) if step == MaintenanceStep.GRAPPLE \
 					else grappling.ungrapple_chance(ship_id, other_id)
@@ -843,7 +896,7 @@ func player_submit_maintenance_orders(player_id: int, orders: Dictionary) -> Str
 		var ship: ShipState = game_state.get_ship(pair[0])
 		if ship == null:
 			return "no ship %s" % pair[0]
-		if ship.side != player_id:
+		if not game_state.commands(player_id, pair[0]):
 			return "%s is not this player's ship" % pair[0]
 		if not legal.has("%s|%s" % [pair[0], pair[1]]):
 			var grappling: GrapplingController = game_state.grappling_controller
@@ -921,12 +974,12 @@ func _resolve_maintenance_step(step: MaintenanceStep) -> void:
 		_finish_status_adjustment()
 
 
-## Players StubAI answers for (not prompted).
+## Players StubAI answers for (not prompted), by player id.
 func _ai_players() -> Array[int]:
 	var ai_players: Array[int] = []
-	for p in game_state.ships_by_side.keys():
-		if not maintenance_prompt_player_ids.has(int(p)):
-			ai_players.append(int(p))
+	for p in game_state.player_ids():
+		if not maintenance_prompt_player_ids.has(p):
+			ai_players.append(p)
 	return ai_players
 
 
@@ -993,21 +1046,44 @@ func _enter_message_delivery_phase() -> void:
 	advance_phase()
 
 func _enter_post_combat_phase() -> void:
-	"""SERVER ONLY: Enter post combat phase and wait for the player's End Turn"""
+	"""SERVER ONLY: Enter post combat phase and wait for the human players' End Turn"""
 	current_phase = GamePhase.POST_COMBAT
+	ended_turn = _fresh_readiness()
+	_auto_ready_players()
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: POST_COMBAT - waiting for End Turn")
 
+## The players who press End Turn: the human players, or player 0 when none is set (headless).
+func _end_turn_players() -> Array[int]:
+	if not human_player_ids.is_empty():
+		return human_player_ids
+	return [0] as Array[int]
+
+
 func player_end_turn(player_id: int) -> bool:
-	"""SERVER ONLY: The human player ends the turn. Only valid in POST_COMBAT; the AI needs no call."""
+	"""SERVER ONLY: A human player ends the turn. Only valid in POST_COMBAT; the AI needs no call.
+	Accepted from a human commanding a ship in play; END_TURN begins once every such human has
+	ended the turn. Players commanding nothing in play are not waited on; when no human commands
+	anything in play, any human's End Turn ends it (the game is then decided at END_TURN)."""
 	if not is_server:
 		push_error("TurnPhaseController: Cannot end turn on client")
 		return false
 	if not game_result.is_empty() or current_phase != GamePhase.POST_COMBAT:
 		return false
-	if player_id != 0:
+	var humans := _end_turn_players()
+	if not humans.has(player_id):
 		return false
+	var waited: Array[int] = []
+	for h in humans:
+		if not game_state.in_play_ships_of_player(h).is_empty():
+			waited.append(h)
+	if not waited.is_empty() and not waited.has(player_id):
+		return false
+	ended_turn[player_id] = true
 	Trace.trace_log("TurnPhase", "Player %d ended the turn" % player_id)
+	for h in waited:
+		if not ended_turn.get(h, false):
+			return true
 	_enter_end_turn_phase()
 	return true
 
@@ -1073,7 +1149,7 @@ func apply_phase_state(data: Dictionary) -> void:
 		return
 	current_phase = data.get("current_phase", GamePhase.SETUP)
 	current_turn = data.get("current_turn", 0)
-	players_ready = data.get("players_ready", [false, false])
+	players_ready = readiness_from(data.get("players_ready", {}))
 	combat_step = data.get("combat_step", CombatStep.NONE)
 	maintenance_step = data.get("maintenance_step", MaintenanceStep.NONE)
 

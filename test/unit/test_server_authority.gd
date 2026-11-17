@@ -293,11 +293,11 @@ func test_plotting_refused_after_submit_or_outside_planning() -> void:
 	var mpc: MovementPlottingController = GameState.movement_plotting_controller
 	var P := TurnPhaseController.GamePhase
 	pc.current_phase = P.PLANNING
-	pc.players_ready = [true, false] as Array[bool]
+	pc.players_ready = {0: true, 1: false}
 	var refused := mpc.handle_start_plotting(0, "plot_a", "r1")
 	assert_true(refused is MovementTypes.PlottingErrorResponse)
 	assert_eq((refused as MovementTypes.PlottingErrorResponse).error_code, "NOT_PLANNING", "plan already submitted")
-	pc.players_ready = [false, false] as Array[bool]
+	pc.players_ready = {0: false, 1: false}
 	pc.current_phase = P.COMBAT_RESOLUTION
 	var late := mpc.handle_start_plotting(0, "plot_a", "r2")
 	assert_eq((late as MovementTypes.PlottingErrorResponse).error_code, "NOT_PLANNING", "outside PLANNING")

@@ -248,7 +248,7 @@ func test_freed_ships_can_start_plotting_again() -> void:
 	var old_phase := pc.current_phase
 	var old_ready := pc.players_ready.duplicate()
 	pc.current_phase = TurnPhaseController.GamePhase.PLANNING  # movement is plotted in PLANNING
-	pc.players_ready = [false, false] as Array[bool]
+	pc.players_ready = {0: false, 1: false}
 	var response := GameState.movement_plotting_controller.handle_start_plotting(
 			ships[0].side, "a", "req")
 	pc.current_phase = old_phase

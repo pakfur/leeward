@@ -10,7 +10,7 @@ const PLANNING := TurnPhaseController.GamePhase.PLANNING
 var ship: ShipState
 var validator: MovementValidator
 var _old_phase: TurnPhaseController.GamePhase
-var _old_ready: Array[bool]
+var _old_ready: Dictionary
 var _old_env: EnvironmentState
 var _old_scenario: Dictionary
 
@@ -27,7 +27,7 @@ func before_each() -> void:
 	GameState.environment.wind_direction = 3
 	GameState.environment.wind_speed = 3
 	GameState.phase_controller.current_phase = PLANNING
-	GameState.phase_controller.players_ready = [false, false] as Array[bool]
+	GameState.phase_controller.players_ready = {0: false, 1: false}
 	ship = _make_ship("own", 0, Vector2i(5, 5), 0, 6)
 	validator = MovementValidator.new(GameState)
 

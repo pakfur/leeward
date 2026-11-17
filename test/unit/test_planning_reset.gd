@@ -7,7 +7,7 @@ const PLANNING := TurnPhaseController.GamePhase.PLANNING
 
 var ship: ShipState
 var _old_phase: TurnPhaseController.GamePhase
-var _old_ready: Array[bool]
+var _old_ready: Dictionary
 var _old_env: EnvironmentState
 var _old_humans: Array[int]
 var _old_ai: Array[int]
@@ -30,7 +30,7 @@ func before_each() -> void:
 	_pc().human_player_ids = [0] as Array[int]
 	_pc().ai_player_ids = [] as Array[int]
 	_pc().current_phase = PLANNING
-	_pc().players_ready = [false, false] as Array[bool]
+	_pc().players_ready = {0: false, 1: false}
 	ship = _make_ship("own", 0, Vector2i(5, 5))
 
 

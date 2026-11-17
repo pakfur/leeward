@@ -30,7 +30,8 @@ enum GamePhase {
 
 var current_phase: GamePhase = GamePhase.SETUP
 var current_turn: int = 0
-var players_ready: Array[bool] = [false, false]
+## Mirror of TurnPhaseController.players_ready: player id -> plan submitted.
+var players_ready: Dictionary = {0: false, 1: false}
 var active_scenario: Dictionary = {}
 var selected_scenario: String = ""  # Scenario name selected from menu
 
@@ -175,8 +176,8 @@ func _initialize_server_controllers() -> void:
 
 ## SERVER ONLY: starts a scenario game: clears the ships, builds every ship of the scenario (its
 ## type from ships.json, its navy per ship or per side, 1.G.8), sets which players are human
-## (they are asked about bearing off and the maintenance orders; every other side is the AI,
-## whose plan is in as soon as PLANNING begins), then start_new_game. The view creates its ship
+## by player id (they are asked about bearing off and the maintenance orders; every other player is
+## the AI, whose plan is in as soon as PLANNING begins), then start_new_game. The view creates its ship
 ## views on game_started. Returns false when refused.
 func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int]) -> bool:
 	if not is_server:
@@ -184,11 +185,10 @@ func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int]) -> 
 		return false
 	clear_ships()
 	var navies: Variant = scenario_data.get("navies", {})
-	var sides: Array[int] = []
 	for ship_data in scenario_data.get("ships", []):
 		var ship_state := _scenario_ship(ship_data, navies)
-		if ship_state != null and add_ship(ship_state) and not sides.has(ship_state.side):
-			sides.append(ship_state.side)
+		if ship_state != null:
+			add_ship(ship_state)
 	if not _build_players(scenario_data, human_player_ids):
 		return false
 	if phase_controller:
@@ -196,9 +196,9 @@ func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int]) -> 
 		phase_controller.human_player_ids = human_player_ids.duplicate()
 		phase_controller.maintenance_prompt_player_ids = human_player_ids.duplicate()
 		var ai: Array[int] = []
-		for side in sides:
-			if not human_player_ids.has(side):
-				ai.append(side)
+		for id in player_ids():
+			if not human_player_ids.has(id):
+				ai.append(id)
 		phase_controller.ai_player_ids = ai
 	start_new_game(scenario_data)
 	return true
@@ -295,19 +295,36 @@ func side_of_player(id: int) -> int:
 	return p.side if p != null else -1
 
 
+## The player commanding the ship (ShipState.commanding_player), -1 for an unknown id.
 func commander_of(ship_id: String) -> int:
 	var s: ShipState = ships.get(ship_id)
-	return s.commander_id if s != null else -1
+	return s.commanding_player() if s != null else -1
 
 
 func commands(player_id: int, ship_id: String) -> bool:
 	return player_id >= 0 and commander_of(ship_id) == player_id
 
 
+## Every player id, ascending: the roster's, or without one (a game set up without
+## start_scenario) the default one player per side: 0, 1 and any other side with ships.
+func player_ids() -> Array[int]:
+	var out: Array[int] = []
+	if not players.is_empty():
+		for id in players:
+			out.append(int(id))
+	else:
+		out.assign([0, 1])
+		for side in ships_by_side:
+			if not out.has(int(side)):
+				out.append(int(side))
+	out.sort()
+	return out
+
+
 func ships_of_player(id: int) -> Array[ShipState]:
 	var out: Array[ShipState] = []
 	for ship_id in ships:
-		if ships[ship_id].commander_id == id:
+		if commander_of(ship_id) == id:
 			out.append(ships[ship_id])
 	out.sort_custom(func(a: ShipState, b: ShipState) -> bool: return a.ship_id < b.ship_id)
 	return out
@@ -348,7 +365,9 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	# turn_changed / phase_changed keep them in step from here on).
 	current_turn = 1
 	current_phase = GamePhase.SETUP
-	players_ready = [false, false] as Array[bool]
+	players_ready = {}
+	for id in player_ids():
+		players_ready[id] = false
 
 	# Seed the shared RNG from scenario (default to 0 if no seed provided)
 	var seed_value: int = scenario_data.get("seed", 0)
@@ -764,7 +783,7 @@ func sync_from_server(state_data: Dictionary) -> void:
 	# Update phase state
 	current_turn = state_data.get("turn", 1)
 	current_phase = state_data.get("phase", GamePhase.SETUP) as GamePhase
-	players_ready = state_data.get("players_ready", [false, false])
+	players_ready = TurnPhaseController.readiness_from(state_data.get("players_ready", {}))
 
 	# Update environment
 	if state_data.has("environment"):

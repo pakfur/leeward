@@ -43,7 +43,7 @@ func _validate_move_command(command: MoveCommand) -> Dictionary:
 		return {"valid": false, "error": "Ship %s not found" % command.ship_id}
 
 	# Check if ship belongs to player
-	if ship.side != command.player_id:
+	if not game_state.commands(command.player_id, command.ship_id):
 		return {"valid": false, "error": "Ship %s does not belong to player %d" % [
 			command.ship_id, command.player_id
 		]}

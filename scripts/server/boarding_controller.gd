@@ -1008,10 +1008,12 @@ func capture(action: BoardingAction, struck_target: bool, phase: int, outcome: S
 	var original_crew := {"crew_count": def.crew_count.duplicate(), "marine_count": def.marine_count,
 		"crew_quality": def.crew_quality, "morale_rating": def.morale_rating}
 	var original_navy := def.gunnery_navy()
+	var original_commander: int = game_state.commander_of(def.ship_id)
 	if def.is_captured():
 		# Taken from her captor by a third side: the old original crew stays below.
 		original_crew = (def.prize.get("original_crew", {}) as Dictionary).duplicate(true)
 		original_navy = str(def.prize.get("original_navy", original_navy))
+		original_commander = int(def.prize.get("original_commander", original_commander))
 		_finish_captures_of(def.ship_id, action.id, phase)
 	ctc.cancel_all_except(def.ship_id, "FF", "captured", phase)
 	ctc.cancel_code(def.ship_id, "FF", "captured", phase, false)
@@ -1022,6 +1024,7 @@ func capture(action: BoardingAction, struck_target: bool, phase: int, outcome: S
 		"captor_id": att.ship_id,
 		"original_crew": original_crew,
 		"original_navy": original_navy,
+		"original_commander": original_commander,
 		"prize_crew_aboard": false,
 	}, true)
 	sc.set_crew(def.ship_id, [0, 0, 0, 0], 0)
@@ -1031,6 +1034,8 @@ func capture(action: BoardingAction, struck_target: bool, phase: int, outcome: S
 	game_state.turn_log.add(PhaseEvents.Type.SHIP_CAPTURED, phase, def.ship_id,
 		{"captor_id": att.ship_id, "struck_before": struck_before, "action": action.id, "outcome": action.outcome}, att.ship_id)
 	game_state.transfer_control(def.ship_id, att.side)
+	# Spec 2 (Prizes): commanded by the player commanding the ship whose boarders took her.
+	sc.set_commander(def.ship_id, game_state.commander_of(att.ship_id))
 	if action.struck_target:
 		for s in action.attacker_sections:
 			var task := att.boarding_task(s)
@@ -1187,7 +1192,7 @@ func prize_size_options(player_id: int) -> Array:
 			continue
 		var att: ShipState = game_state.get_ship(action.attacker_id)
 		var prize: ShipState = game_state.get_ship(action.defender_id)
-		if att.side != player_id or not att.linked_ids().has(prize.ship_id):
+		if not game_state.commands(player_id, att.ship_id) or not att.linked_ids().has(prize.ship_id):
 			continue
 		var left := _boarders_left(action, att)
 		var available := int(left["sailors"]) + int(left["marines"])
@@ -1363,13 +1368,31 @@ func retake(ship_id: String, cause: String, phase: int, action: BoardingAction =
 	sc.set_crew_quality(ship_id, RETAKEN_QUALITY)
 	sc.set_morale_rating(ship_id, RETAKEN_MORALE)
 	sc.set_navy(ship_id, str(ship.prize.get("original_navy", "")))
+	var commander := _retaken_commander(ship)
 	sc.set_prize(ship_id, {}, true)
 	sc.set_status(ship_id, ShipState.Status.ACTIVE)
 	game_state.transfer_control(ship_id, ship.original_side)
+	sc.set_commander(ship_id, commander)
 	_finish_captures_of(ship_id, action.id if action != null else -1, phase)
 	game_state.turn_log.add(PhaseEvents.Type.RECAPTURED, phase, ship_id, data,
 		action.attacker_id if action != null else captor_id)
 	Trace.trace_log("Boarding", "%s retaken (%s)" % [ship_id, cause], data)
+
+
+## Spec 2 (Prizes): a retaken ship goes back to the player who commanded her before her capture;
+## when that player no longer exists or commands no other ship in play, to the lowest-id player of
+## her side (-1, her side's default player, in a game without a roster).
+func _retaken_commander(ship: ShipState) -> int:
+	var before := int(ship.prize.get("original_commander", -1))
+	var player = game_state.get_player(before)
+	if player != null and player.side == ship.original_side:
+		for other: ShipState in game_state.in_play_ships_of_player(before):
+			if other.ship_id != ship.ship_id:
+				return before
+	var of_side: Array = game_state.players_of_side(ship.original_side)
+	if not of_side.is_empty():
+		return of_side[0].id
+	return -1
 
 
 ## Every box of `section` of the ship is crossed off (taken prisoner aboard a retaken prize); an

@@ -204,7 +204,7 @@ func any_eligible_shot() -> bool:
 func validate_orders(player_id: int, orders: Array[GunneryTypes.FireOrder]) -> String:
 	for order in orders:
 		var firer: ShipState = game_state.get_ship(order.ship_id)
-		if firer == null or firer.side != player_id:
+		if firer == null or not game_state.commands(player_id, firer.ship_id):
 			return "ship %s is not yours to command" % order.ship_id
 	var declaration := FireRules.declaration_error(orders)
 	if declaration != "":

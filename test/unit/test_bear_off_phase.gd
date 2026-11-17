@@ -50,7 +50,7 @@ func _on_log(log: MovementTypes.ResolutionLog) -> void:
 	_logs.append(log)
 
 
-func _on_request(situation: MovementTypes.BearOffSituation) -> void:
+func _on_request(_player_id: int, situation: MovementTypes.BearOffSituation) -> void:
 	_requests.append(situation)
 
 

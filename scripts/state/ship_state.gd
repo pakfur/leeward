@@ -269,6 +269,13 @@ func is_french_gunned() -> bool:
 func is_on_map() -> bool:
 	return not removed_from_map
 
+## The player commanding the ship: commander_id, or, for a ship given no commander (a game set up
+## without a roster, as headless tests do), its side's default player, whose id is the side number
+## (spec 2: without "players", one player per side).
+func commanding_player() -> int:
+	return commander_id if commander_id >= 0 else side
+
+
 ## Carries a fleet or squadron flag and is still in play.
 func is_flagship() -> bool:
 	return ship != null and ship.flag != "" and not is_out_of_play()

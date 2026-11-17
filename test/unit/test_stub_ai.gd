@@ -27,7 +27,7 @@ func before_each() -> void:
 	# Plotting is refused once a turn loop is past PLANNING; start from SETUP like a fresh game.
 	GameState.phase_controller.current_phase = TurnPhaseController.GamePhase.SETUP
 	GameState.phase_controller.game_result = {}
-	GameState.phase_controller.players_ready = [false, false] as Array[bool]
+	GameState.phase_controller.players_ready = {0: false, 1: false}
 
 	if GameState.movement_plotting_controller:
 		GameState.movement_plotting_controller.sessions.clear()
