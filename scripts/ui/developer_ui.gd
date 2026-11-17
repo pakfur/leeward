@@ -72,6 +72,7 @@ func _ready() -> void:
 	_build_environment_tab()
 	_build_ships_tab()
 	_build_trace_tab()
+	_build_sea_tab()
 	_update_turn_phase_display()
 
 	# Connect to Trace autoload
@@ -286,6 +287,151 @@ func _on_ship_selected(index: int) -> void:
 	damage_btn.tooltip_text = "Server request: 2 rigging and 2 hull boxes are marked out (for trying repairs, 8.F)"
 	damage_btn.pressed.connect(func(): _on_damage_pressed(sid))
 	ship_fields_container.add_child(damage_btn)
+
+## Sea tab (view only: writes SeaModel's look values, never game state)
+
+## [property, label, min, max, step]
+const SEA_ROWS := [
+	["swell_height_mult", "Swell height x", 0.0, 4.0, 0.05],
+	["swell_wavelength", "Swell wavelength", 2.0, 16.0, 0.25],
+	["swell_speed", "Swell speed x", 0.0, 3.0, 0.05],
+	["swell_shading", "Swell shading (zoomed out)", 0.0, 8.0, 0.1],
+	["chop_strength", "Chop strength", 0.0, 3.0, 0.05],
+	["inertia_mult", "Ship inertia x", 0.1, 4.0, 0.05],
+	["heel_mult", "Heel x", 0.0, 3.0, 0.05],
+	["glide_seconds", "Glide s / segment", 0.05, 2.0, 0.05],
+	["whitecap_threshold", "Whitecap threshold", 0.0, 1.0, 0.05],
+	["whitecap_strength", "Whitecap strength", 0.0, 3.0, 0.05],
+	["flat_distance", "Flat at distance >=", 4.0, 40.0, 0.5],
+	["full_distance", "Full swell at distance <=", 2.0, 30.0, 0.5],
+	["grid_fade_start", "Grid fade start (intensity)", 0.0, 1.0, 0.05],
+	["grid_fade_end", "Grid gone at (intensity)", 0.0, 1.0, 0.05],
+	["whitecap_min_sea", "Whitecaps from sea state", 0.0, 5.0, 1.0],
+]
+const SEA_MIN_GAP := 0.5  # flat_distance stays this far above full_distance
+
+var _sea_sliders: Dictionary = {}  # property -> HSlider
+var _sea_value_labels: Dictionary = {}  # property -> Label
+var _sea_status: Label = null
+var _sea_override: SpinBox = null
+var _sea_tab: VBoxContainer = null
+var _sea_built := false
+
+func _build_sea_tab() -> void:
+	_sea_tab = VBoxContainer.new()
+	_sea_tab.name = "Sea"
+	tab_container.add_child(_sea_tab)
+	var none := Label.new()
+	none.text = "No sea model yet."
+	_sea_tab.add_child(none)
+	_build_sea_content()
+
+## The SeaModel is made by GameController after this window is ready, so the controls are
+## built as soon as it exists.
+func _build_sea_content() -> void:
+	var model := SeaModel.instance
+	if model == null or _sea_built:
+		return
+	_sea_built = true
+	var tab := _sea_tab
+	for child in tab.get_children():
+		child.queue_free()
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	tab.add_child(scroll)
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(box)
+	var note := Label.new()
+	note.text = "Look only: nothing here changes the game. Edits hold until the sea state changes."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(note)
+	_sea_status = Label.new()
+	box.add_child(_sea_status)
+
+	var override_line := HBoxContainer.new()
+	box.add_child(override_line)
+	var override_label := Label.new()
+	override_label.text = "sea_state_override (-1 = game):"
+	override_label.custom_minimum_size = Vector2(200, 0)
+	override_line.add_child(override_label)
+	_sea_override = SpinBox.new()
+	_sea_override.min_value = -1
+	_sea_override.max_value = EnvironmentState.SEA_STATE_MAX
+	_sea_override.step = 1
+	_sea_override.value = model.sea_state_override
+	_sea_override.value_changed.connect(_on_sea_override_changed)
+	override_line.add_child(_sea_override)
+
+	for row: Array in SEA_ROWS:
+		var prop: String = row[0]
+		var line := HBoxContainer.new()
+		box.add_child(line)
+		var name_label := Label.new()
+		name_label.text = row[1]
+		name_label.custom_minimum_size = Vector2(200, 0)
+		line.add_child(name_label)
+		var slider := HSlider.new()
+		slider.min_value = row[2]
+		slider.max_value = row[3]
+		slider.step = row[4]
+		slider.value = float(model.get(prop))
+		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		slider.custom_minimum_size = Vector2(120, 0)
+		slider.value_changed.connect(_on_sea_slider_changed.bind(prop))
+		line.add_child(slider)
+		_sea_sliders[prop] = slider
+		var value_label := Label.new()
+		value_label.custom_minimum_size = Vector2(48, 0)
+		value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		line.add_child(value_label)
+		_sea_value_labels[prop] = value_label
+	var print_btn := Button.new()
+	print_btn.text = "Print values"
+	print_btn.pressed.connect(func():
+		if SeaModel.instance != null:
+			SeaModel.instance.print_values())
+	box.add_child(print_btn)
+	model.preset_loaded.connect(_sync_sea_sliders)
+	_sync_sea_sliders()
+
+func _process(_delta: float) -> void:
+	var model := SeaModel.instance
+	if not _sea_built:
+		_build_sea_content()
+	if _sea_status == null or model == null or not visible:
+		return
+	_sea_status.text = "camera %.1f | intensity %.2f | sea %d (game %d)" % [
+		model.camera_distance, model.intensity, model.effective_sea_state(), model.game_sea_state]
+
+func _on_sea_override_changed(value: float) -> void:
+	if SeaModel.instance != null:
+		SeaModel.instance.sea_state_override = int(value)
+
+func _on_sea_slider_changed(value: float, prop: String) -> void:
+	var model := SeaModel.instance
+	if model == null:
+		return
+	if prop == "whitecap_min_sea":
+		model.set(prop, int(value))
+	else:
+		model.set(prop, value)
+	# Keep flat_distance above full_distance by moving the one not being edited.
+	if prop == "flat_distance" and model.flat_distance < model.full_distance + SEA_MIN_GAP:
+		model.full_distance = model.flat_distance - SEA_MIN_GAP
+	elif prop == "full_distance" and model.full_distance > model.flat_distance - SEA_MIN_GAP:
+		model.flat_distance = model.full_distance + SEA_MIN_GAP
+	_sync_sea_sliders()
+
+## Move the sliders to the model's values without re-sending them.
+func _sync_sea_sliders() -> void:
+	var model := SeaModel.instance
+	if model == null:
+		return
+	for prop: String in _sea_sliders:
+		var v = model.get(prop)
+		(_sea_sliders[prop] as HSlider).set_value_no_signal(float(v))
+		(_sea_value_labels[prop] as Label).text = str(v) if v is int else "%.2f" % v
 
 ## Field Creation
 

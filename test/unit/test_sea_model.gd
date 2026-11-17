@@ -181,3 +181,22 @@ func test_push_resends_after_preset_change_only():
 	model._push_to_shader()
 	assert_eq(mat.get_shader_parameter("whitecap_strength"), 2.6, "re-sent after the preset change")
 	model.material = null
+
+
+func test_override_does_not_touch_environment():
+	var env_before := GameState.environment.sea_state
+	model.set_environment(0, 2, 1)
+	model.sea_state_override = 5
+	assert_eq(model.effective_sea_state(), 5)
+	assert_eq(GameState.environment.sea_state, env_before, "the override changes the look only")
+	assert_eq(model.game_sea_state, 1)
+	model.sea_state_override = -1
+	assert_eq(model.effective_sea_state(), 1)
+
+
+func test_settings_lists_every_tunable():
+	var s := model.settings()
+	for key: String in SeaModel.PRESET_FIELDS + SeaModel.GLOBAL_FIELDS:
+		assert_true(s.has(key), key)
+	assert_true(s.has("sea_state_override"))
+	assert_true(s.has("effective_sea_state"))
