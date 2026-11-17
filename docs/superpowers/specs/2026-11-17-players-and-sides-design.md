@@ -93,7 +93,7 @@ Per ship: `"flag": "fleet"` or `"squadron"` (fleet flagship / subordinate flagsh
 
 Requests (all of `player_*`): the ship check becomes `game_state.commands(player_id, ship_id)`. **Mixed sides.** A side may have human and AI players (a human admiral with AI captains is the point of §7). The view plays as player 0 and its ownership checks (`GameController`, `CourseClicks`, crew overlay, fire panel, prompts) move to `commands(HUMAN_PLAYER_ID, ship_id)` now, so AI teammates' ships are shown as friendly but not editable; colours and "yours"/"enemy" labels stay by side.
 
-**Players with nothing to command.** A player who commands no ship able to act (all struck, destroyed, captured or dismasted, or none left) stays in `players`, can still read signals, and is ready automatically at PLANNING and at End Turn, so the turn loop never waits on them.
+**Players with nothing to command.** A player who commands no ship in play (all struck, destroyed or captured, or none left; a dismasted ship still plots crew and fires, so it counts) stays in `players`, can still read signals, and is ready automatically at PLANNING and at End Turn, so the turn loop never waits on them.
 
 Side-wide actions stay per player: `players_ready` becomes a `Dictionary` player id → bool, and the phase advances when every player is ready (AI players are ready at PLANNING start, as now). Fire orders, bear-off, maintenance orders and End Turn are per player, each covering that player's ships. `player_end_turn` waits for every human player (today it accepts player 0 only). Prompts (`bear_off_decision_requested`, `maintenance_orders_requested`) go to the commanding player. Friend-or-foe in the fire, grapple and boarding code compares `side`.
 
