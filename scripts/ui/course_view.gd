@@ -1,7 +1,7 @@
 class_name CourseView
 extends RefCounted
 ## Pure helpers (no state) from the server's course_options (TurnPhaseController.course_options:
-## path, valid_next, remaining_ma, is_tacking_attempt, rudder_error) to what the view reads: the
+## path, valid_next, remaining_ma, is_tacking_attempt, rudder_error, speed_error) to what the view reads: the
 ## CourseClicks input, the hover candidates and the card's course readout.
 
 
@@ -50,12 +50,15 @@ static func hover_candidates(vnh: MovementTypes.ValidNextHexes) -> Dictionary:
 
 
 ## The card's warning line: the refusal of the last click on this ship if any, else the course's
-## collision warning, then the jammed-rudder text ("" when there is nothing to say).
-static func warning_text(refusal: String, collision: String, rudder_error: String) -> String:
+## collision warning, then the jammed-rudder text, then the too-slow text (5.E.4) ("" when there is
+## nothing to say).
+static func warning_text(refusal: String, collision: String, rudder_error: String,
+		speed_error := "") -> String:
 	var lines: Array[String] = []
 	var first := refusal if refusal != "" else collision
 	if first != "":
 		lines.append(first)
-	if rudder_error != "":
-		lines.append(rudder_error)
+	for extra in [rudder_error, speed_error]:
+		if extra != "":
+			lines.append(extra)
 	return "\n".join(lines)

@@ -337,7 +337,10 @@ func test_rudder_jammed_to_port_must_turn_when_moving() -> void:
 	assert_eq(validator.validate_submission(state, _path(state, "FF")).error_code, "RUDDER_JAMMED")
 	assert_false(_moves_at(state, "FF").can_submit, "the panel cannot submit either")
 	assert_true(validator.validate_submission(state, _path(state, "FPF")).can_submit)
-	assert_true(validator.validate_submission(state, _path(state, "")).can_submit)
+	# Stopping is still bound by the deceleration limit (5.E.4): speed 4, type A decelerates 2.
+	assert_eq(validator.validate_submission(state, _path(state, "")).error_code, "TOO_SLOW")
+	state.speed = 2
+	assert_true(validator.validate_submission(state, _path(state, "")).can_submit, "2 - 2: may stop")
 
 
 func test_rudder_destroyed_cancels_the_jam() -> void:

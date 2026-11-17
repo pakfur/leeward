@@ -3116,3 +3116,19 @@ func test_the_situation_carries_the_other_ships_remaining_plots() -> void:
 	assert_eq(plots.get("other"), [Vector2i(7, 8)] as Array[Vector2i], "Its step on segment 1 only")
 	assert_false(plots.has("blocker"), "A ship with no plot shows nothing")
 	assert_false(plots.has("mover"), "Not the deciding ship itself")
+
+
+func test_5e3b_a_ship_in_a_collision_is_stopped() -> void:
+	# 5.E.3b: a ship that moved ahead and then collided is stopped: speed 0 next g-t, so it has no
+	# deceleration minimum (5.E.4) and accelerates from 0 (5.E.7).
+	var stopped_ship = _make_ship_state(Vector2i(8, 5), 1, 0, "C", "stopped")
+	var ship_a = _make_ship_state(Vector2i(5, 5), 0, 3, "A", "ship_a", 3, "A")
+	ship_a.plotted_actions.movement = [{"hex": {"q": 6, "r": 5}, "facing": 0},
+		{"hex": {"q": 7, "r": 5}, "facing": 0}, {"hex": {"q": 8, "r": 5}, "facing": 0}]
+	var ships: Array[ShipState] = [ship_a, stopped_ship]
+	var hold := {"ship_a": {"choice": MovementTypes.BEAR_OFF_COLLIDE, "segment": 2}}
+	var log = resolver.run(ships, env, hold)
+	assert_eq(log.get_result("ship_a").collided_with, "stopped", "rams on its third hex")
+	assert_eq(log.get_result("ship_a").final_hex, Vector2i(7, 5), "two hexes ahead first")
+	resolver.apply_results(log, ships)
+	assert_eq(ship_a.speed, 0)

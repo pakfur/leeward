@@ -501,4 +501,4 @@ func test_collision_at_wf_l_puts_ship_in_irons() -> void:
 	assert_eq(a.speed, 0, "WF=L and collided: in irons")
 	GameState.environment.wind_direction = 0  # facing 1 is now close-hauled
 	GameState.movement_resolver.apply_results(_moved_result("a", Vector2i(5, 4), Vector2i(5, 5), 1, "b"), ships)
-	assert_eq(a.speed, 1, "not at WF=L: speed is the MPs used")
+	assert_eq(a.speed, 0, "not at WF=L: still stopped by the collision (5.E.3b)")

@@ -23,6 +23,10 @@ const SECOND_BATTERY_BONUS := 3
 
 ## Plotting errors for ships that legitimately cannot move; the AI skips them without error.
 const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_GRAPPLED", "SHIP_CAPTURED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED"]
+## Submission refusals after which the ship is replotted with a plain course.
+const REPLOT_ERROR_CODES := ["RUDDER_JAMMED", "TOO_SLOW", "CANNOT_SUBMIT"]
+## The most moves added to reach the deceleration limit (more than any movement allowance).
+const MAX_PADDING_STEPS := 20
 
 var game_state: Node = null
 var _request_counter: int = 0
@@ -426,18 +430,29 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 		"hold":
 			pass
 
+	# 5.E.4: a course that stops short of the deceleration limit is carried on until it meets it.
+	version = _meet_deceleration_minimum(ship_id, controller, session_id, version)
 	var submit_response := controller.handle_submit_movement(session_id, version, _next_request_id())
 
 	if submit_response is MovementTypes.PlottingErrorResponse \
-			and (submit_response as MovementTypes.PlottingErrorResponse).error_code == "RUDDER_JAMMED":
-		# The course found never turned the way the jammed rudder holds (hull #2): stay put instead.
-		Trace.trace_log("StubAI", "rudder jammed, holding position", {"ship_id": ship_id})
+			and (submit_response as MovementTypes.PlottingErrorResponse).error_code in REPLOT_ERROR_CODES:
+		# The course found cannot be submitted (a jammed rudder it never turned for, hull #2): start
+		# again with a plain course, straight ahead to the deceleration limit.
+		Trace.trace_log("StubAI", "course refused, replotting", {"ship_id": ship_id,
+			"error": (submit_response as MovementTypes.PlottingErrorResponse).error_code})
 		controller.handle_cancel_plotting(session_id, _next_request_id())
 		var restart := controller.handle_start_plotting(player_id, ship_id, _next_request_id())
 		if restart is MovementTypes.PlottingStartedResponse:
 			var again := restart as MovementTypes.PlottingStartedResponse
-			submit_response = controller.handle_submit_movement(again.session_id, again.session_version,
+			var again_version := _meet_deceleration_minimum(ship_id, controller, again.session_id,
+				again.session_version)
+			submit_response = controller.handle_submit_movement(again.session_id, again_version,
 				_next_request_id())
+			if submit_response is MovementTypes.PlottingErrorResponse:
+				# Nothing legal to submit: leave the ship unplotted (its default course, 6.G.2).
+				Trace.trace_log("StubAI", "no legal course, left unplotted", {"ship_id": ship_id})
+				controller.handle_cancel_plotting(again.session_id, _next_request_id())
+				return
 
 	if submit_response is MovementTypes.PlottingErrorResponse:
 		var err := submit_response as MovementTypes.PlottingErrorResponse
@@ -450,6 +465,28 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 		"strategy": strategy,
 		"steps": ship_state.plotted_actions.get("movement", []).size()
 	})
+
+
+## Extends the session's course with moves ahead (else the first move offered) while it cannot be
+## submitted for being short of the deceleration limit (5.E.4). Returns the session version.
+func _meet_deceleration_minimum(ship_id: String, controller: MovementPlottingController,
+		session_id: String, version: int) -> int:
+	var validator := MovementValidator.new(game_state)
+	var ship: ShipState = game_state.get_ship(ship_id)
+	for _i in range(MAX_PADDING_STEPS):
+		var session := controller.get_session_for_ship(ship_id)
+		if session == null or validator.deceleration_shortfall(ship, session.plotted_path) <= 0:
+			break
+		var valid := session.valid_next_hexes
+		if valid == null or not valid.has_any_moves():
+			break
+		var move: MovementTypes.ValidMove = valid.forward[0] if not valid.forward.is_empty() \
+				else valid.get_all_valid_moves()[0]
+		var response := controller.handle_select_hex(session_id, version, move.hex, _next_request_id())
+		if response is MovementTypes.PlottingErrorResponse:
+			break
+		version = (response as MovementTypes.HexSelectedResponse).session_version
+	return version
 
 
 func _strategy_forward(

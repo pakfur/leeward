@@ -765,12 +765,13 @@ func _amended_steps(ship_state: ShipState, steps: Array, rollback: Dictionary) -
 
 ## The fewest MPs the ship may use this turn, as the plotting validator computes it at a point of the
 ## plot where the ship heads `facing` (its start-of-turn facing when -1): last turn's speed less its
-## deceleration, 0 when its movement allowance at that facing is 0.
+## deceleration, never more than its movement allowance at that facing (5.E.9).
 func _deceleration_minimum(ship_state: ShipState, facing: int = -1) -> int:
-	if game_state.ship_controller.get_movement_allowance(ship_state.ship_id, facing) == 0:
+	var ma: int = game_state.ship_controller.get_movement_allowance(ship_state.ship_id, facing)
+	if ma == 0:
 		return 0
 	var decel: int = game_state.ship_controller.speed_change_limits(ship_state).decel
-	return maxi(ship_state.speed - decel, 0)
+	return clampi(ship_state.speed - decel, 0, ma)
 
 
 ## True when the ship executed every step before `segment` in the final pass, so it stood in the
@@ -1896,11 +1897,10 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			if result.immobilized:
 				sc.set_immobilized(sid, true)
 			# A ship with its rudder destroyed that enters WF=L is in irons at once (hull #2): stopped.
-			# So is a ship at WF=L in a collision (5.D.5).
-			var collision_irons: bool = result.collided_with != "" \
-					and hex_grid.get_wind_facing(result.final_facing, _wind_direction()) == "L"
+			# So is any ship in a collision (5.E.3b; at WF=L that is in irons, 5.D.5): next g-t it
+			# has no deceleration minimum and accelerates from 0 (5.E.7).
 			sc.set_ship_speed(sid, _count_steps_executed(result) if moved_ahead and not rudder_irons \
-					and not collision_irons else 0)
+					and result.collided_with == "" else 0)
 			if result.collided_with != "":
 				sc.set_collision_this_turn(sid, true)
 			if result.fouled_with != "":

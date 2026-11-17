@@ -283,6 +283,12 @@ func player_submit_plan(player_id: int) -> bool:
 		push_error("[Server] Invalid player_id: %d" % player_id)
 		return false
 
+	# 5.E.4: every course the player stored must meet its deceleration limit.
+	var errors := plan_errors(player_id)
+	if not errors.is_empty():
+		Trace.trace_log("TurnPhase", "Player %d plan refused" % player_id, {"errors": errors})
+		return false
+
 	players_ready[player_id] = true
 	Trace.trace_log("TurnPhase", "Player %d submitted plan" % player_id)
 
@@ -295,6 +301,21 @@ func player_submit_plan(player_id: int) -> bool:
 		advance_phase()
 
 	return true
+
+## Read-only: why the player's plan cannot be submitted yet, {ship_id: reason} (empty when it can).
+## A stored course that uses fewer MPs than its deceleration limit allows is refused (5.E.4); a ship
+## with no course stored sails its default course (6.G.2), which meets the limit.
+func plan_errors(player_id: int) -> Dictionary:
+	var errors := {}
+	var validator := MovementValidator.new(game_state)
+	for ship in game_state.get_player_ships(player_id):
+		if not DefaultCourse.can_plot(ship) or not ship.plotted_actions.get("movement_plotted", false):
+			continue
+		var why := validator.deceleration_error(ship, stored_course(ship))
+		if why != "":
+			errors[ship.ship_id] = why
+	return errors
+
 
 ## SERVER ONLY: the player withdraws a ship's movement plot to plot it again (other plotted
 ## orders, such as a sail change, are kept). Returns "" or the reason it is refused.
@@ -387,14 +408,29 @@ func course_options(ship_id: String) -> Dictionary:
 		"start_max_ma": at_start.max_ma,
 		"is_tacking_attempt": moves.is_tacking_attempt,
 		"rudder_error": validator.rudder_jam_error(ship, path),
+		"speed_error": validator.deceleration_error(ship, path),
 	}
 
 
-## The steps stored in the ship's plotted movement.
+## The steps stored in the ship's plotted movement. A step stored without a move type (a plot
+## written as bare hexes and facings) gets one from the step before it: a new hex is ahead, a new
+## facing a turn to port (facing - 1) or starboard (facing + 1).
 func stored_course(ship: ShipState) -> Array[MovementTypes.PlotStep]:
 	var steps: Array[MovementTypes.PlotStep] = []
+	var hex: Vector2i = ship.hex_position
+	var facing: int = ship.facing
 	for d in ship.plotted_actions.get("movement", []):
-		steps.append(MovementTypes.PlotStep.from_dict(d))
+		var step := MovementTypes.PlotStep.from_dict(d)
+		if step.move_type == MovementTypes.MoveType.NONE:
+			if step.hex != hex:
+				step.move_type = MovementTypes.MoveType.FORWARD
+			elif step.facing == (facing + 5) % 6:
+				step.move_type = MovementTypes.MoveType.PORT
+			elif step.facing == (facing + 1) % 6:
+				step.move_type = MovementTypes.MoveType.STARBOARD
+		hex = step.hex
+		facing = step.facing
+		steps.append(step)
 	return steps
 
 

@@ -770,3 +770,18 @@ func test_ai_does_not_score_blocked_shot() -> void:
 	var friendly: Array = [friend.occupied_hexes()]
 	assert_lt(stub_ai._score_position(Vector2i(0, 0), 0, enemy, occupied, friendly), 0,
 		"the blocked battery is not a firing position")
+
+
+func test_5e4_ai_course_meets_the_deceleration_limit() -> void:
+	# A plot that would stop dead (the hold strategy plots nothing) is carried on ahead to the
+	# deceleration limit: speed 6, maneuver type C (deceleration 3).
+	stub_ai.strategy_override = "hold"
+	var ai = _make_ship("ai1", 1, Vector2i(5, 5), 3, 6)
+	_add_ship(ai)
+	stub_ai.plot_all_ai_ships()
+	var steps: Array = ai.plotted_actions.movement
+	assert_eq(steps.size(), mini(3, GameState.ship_controller.get_movement_allowance(ai.ship_id)))
+	var path: Array[MovementTypes.PlotStep] = []
+	for d in steps:
+		path.append(MovementTypes.PlotStep.from_dict(d))
+	assert_eq(MovementValidator.new(GameState).deceleration_shortfall(ai, path), 0)

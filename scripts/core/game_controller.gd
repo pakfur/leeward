@@ -578,7 +578,7 @@ func _refresh_courses() -> void:
 
 ## The card's course readout for `ship`: MP used of the allowance (the server's count), the tacking
 ## and steering notes, the heading note (allowance change, irons) and the warning line (a refused
-## click, else the path's collision, then a jammed rudder).
+## click, else the path's collision, then a jammed rudder, then a course too short, 5.E.4).
 func _course_info(ship: ShipState, options: Dictionary, ships: Array) -> Dictionary:
 	var info := CourseView.course_info(options)
 	var path: Array = options.get("path", [])
@@ -592,7 +592,7 @@ func _course_info(ship: ShipState, options: Dictionary, ships: Array) -> Diction
 	info["steering"] = _steering_text(ship)
 	var collision := path_collision_text(path, ship.hex_position, ship.facing, ships, ship.ship_id)
 	info["collision"] = CourseView.warning_text(str(_click_refusals.get(ship.ship_id, "")), collision,
-		str(options.get("rudder_error", "")))
+		str(options.get("rudder_error", "")), str(options.get("speed_error", "")))
 	return info
 
 ## The tacking note for a course that turns at MA 0 ("" otherwise): the chance with the sections
@@ -948,7 +948,16 @@ func _on_end_planning_pressed() -> void:
 
 	# The AI's plan is in already (TurnPhaseController.ai_player_ids); only the human's is sent.
 	if GameState.is_server and GameState.phase_controller:
-		GameState.phase_controller.player_submit_plan(HUMAN_PLAYER_ID)
+		if not GameState.phase_controller.player_submit_plan(HUMAN_PLAYER_ID):
+			# Refused (a course short of its deceleration limit, 5.E.4): show the first such ship,
+			# whose card names what it must use.
+			var errors: Dictionary = GameState.phase_controller.plan_errors(HUMAN_PLAYER_ID)
+			if not errors.is_empty():
+				var first: String = errors.keys()[0]
+				Trace.trace_log("GameController", "End Planning refused", {"ship_id": first,
+					"reason": errors[first]})
+				if current_planning_ui and is_instance_valid(current_planning_ui):
+					current_planning_ui.select_ship(first)  # as a card click: expands its card
 	else:
 		push_warning("Client plan submission not yet implemented — needs network layer")
 

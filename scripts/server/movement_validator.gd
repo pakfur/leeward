@@ -64,6 +64,7 @@ func calculate_valid_moves(
 	# A ship in irons gets the ordinary MA=0 options: one plotted turn, resolved by a Tacking roll (5.D.6).
 	var valid_options = _calculate_real_valid_hexes(ps, ship_state, path_so_far)
 	result.valid_hexes = valid_options
+	result.can_submit = result.can_submit and _shortfall(ps, valid_options) == 0
 
 	return result
 
@@ -99,7 +100,54 @@ func validate_submission(
 	var jam_error := rudder_jam_error(ship_state, path)
 	if jam_error != "":
 		return MovementTypes.SubmissionValidationResult.failure("RUDDER_JAMMED", jam_error)
+	var slow_error := deceleration_error(ship_state, path)
+	if slow_error != "":
+		return MovementTypes.SubmissionValidationResult.failure("TOO_SLOW", slow_error)
 	return MovementTypes.SubmissionValidationResult.success()
+
+
+## 5.E.4: the MPs the plot is short of the deceleration limit (last turn's speed less the ship's
+## deceleration). 0 when the plot meets it, or when the ship cannot use any more MPs at the end of
+## the plot: its movement allowance at that heading is used up, it turned head to wind or turned at
+## MA 0 (5.E.9). A stopped ship (speed 0) has no minimum.
+func deceleration_shortfall(ship_state: ShipState, path: Array) -> int:
+	if ship_state == null:
+		return 0
+	var steps := _typed(path)
+	var end_hex: Vector2i = steps[-1].hex if not steps.is_empty() else ship_state.hex_position
+	var end_facing: int = steps[-1].facing if not steps.is_empty() else ship_state.facing
+	var ps := _build_plotting_state(ship_state, end_hex, end_facing, steps)
+	if ps.luffing_ended or ps.ma_zero_turn_ended:
+		return 0
+	return _shortfall(ps, _calculate_real_valid_hexes(ps, ship_state, steps))
+
+
+## The MPs short of the deceleration limit at the end of a plot whose next moves are `valid`; 0 when
+## no more MPs can be used there (5.E.9).
+static func _shortfall(ps: PlottingState, valid: MovementTypes.ValidNextHexes) -> int:
+	if ps.remaining_ma <= 0 or valid == null or not valid.has_any_moves():
+		return 0
+	return maxi(mini(ps.min_ma, ps.max_ma) - ps.mp_spent, 0)
+
+
+## The deceleration refusal for a plot ("" when it is acceptable), naming the MPs it must use.
+func deceleration_error(ship_state: ShipState, path: Array) -> String:
+	var short := deceleration_shortfall(ship_state, path)
+	if short <= 0:
+		return ""
+	var steps := _typed(path)
+	var end_hex: Vector2i = steps[-1].hex if not steps.is_empty() else ship_state.hex_position
+	var end_facing: int = steps[-1].facing if not steps.is_empty() else ship_state.facing
+	var used: int = _build_plotting_state(ship_state, end_hex, end_facing, steps).mp_spent
+	var decel: int = game_state.ship_controller.speed_change_limits(ship_state).decel
+	return "Too slow: must use at least %d MP this turn (speed %d last turn, deceleration %d)" % [
+		used + short, ship_state.speed, decel]
+
+
+static func _typed(path: Array) -> Array[MovementTypes.PlotStep]:
+	var typed: Array[MovementTypes.PlotStep] = []
+	typed.assign(path)
+	return typed
 
 
 ## Rudder Jammed to port or starboard (hull #2): a ship that moves must turn at least once that
@@ -163,9 +211,8 @@ func _build_plotting_state(
 
 	# Speed range
 	ps.min_ma = max(ps.speed_last_turn - decel, 0)
+	# 5.E.9: the movement allowance at this heading wins over the deceleration limit.
 	ps.max_ma = min(ps.speed_last_turn + accel, ps.base_ma)
-	if ps.max_ma < ps.min_ma:
-		ps.max_ma = ps.min_ma
 
 	# If MA is 0 from table, speed range is 0
 	if ps.base_ma == 0:
