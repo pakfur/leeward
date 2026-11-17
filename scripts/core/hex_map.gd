@@ -1,6 +1,9 @@
 extends Node3D
 ## HexMap - Renders the hex grid and manages hex tiles
 
+## Water mesh cells per side: fine enough for the long swell (sea-state spec B2).
+const WATER_SUBDIVISIONS := 384
+
 @export var hex_size: float = 1.0
 @export var grid_width: int = 100
 @export var grid_height: int = 100
@@ -85,15 +88,15 @@ func _create_water_plane() -> void:
 	# PlaneMesh size.x maps to X axis, size.y maps to Z axis when oriented horizontally
 	var plane_mesh = PlaneMesh.new()
 	plane_mesh.size = Vector2(map_width_x, map_depth_z)
-	plane_mesh.subdivide_width = 128
-	plane_mesh.subdivide_depth = 128
+	plane_mesh.subdivide_width = WATER_SUBDIVISIONS
+	plane_mesh.subdivide_depth = WATER_SUBDIVISIONS
 	plane_mesh.orientation = PlaneMesh.FACE_Y  # Face up on XZ plane (Y = up)
 
 	water_plane.mesh = plane_mesh
 	water_plane.material_override = ocean_material
 	water_plane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
-	Trace.trace_log("HexMap", "Water plane created on XZ plane: X=%.1f Z=%.1f with %d subdivisions" % [map_width_x, map_depth_z, 128])
+	Trace.trace_log("HexMap", "Water plane created on XZ plane: X=%.1f Z=%.1f with %d subdivisions" % [map_width_x, map_depth_z, WATER_SUBDIVISIONS])
 
 func _initialize_hex_tracking() -> void:
 	"""Initialize hex coordinate tracking (no visible meshes)"""

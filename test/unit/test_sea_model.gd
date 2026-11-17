@@ -114,3 +114,28 @@ func test_downwind_and_heel():
 	assert_eq(model.downwind(), Vector2(1.0, 0.0))
 	model.heel_mult = 1.5
 	assert_almost_eq(model.beam_heel_deg(), 13.5, 0.0001)
+
+
+func test_starts_flat_without_a_camera():
+	assert_eq(model.camera_distance, model.flat_distance)
+	assert_eq(SeaModel.intensity_for(model.camera_distance, model.flat_distance, model.full_distance), 0.0)
+
+
+func test_whitecap_sea_factor_by_sea_state():
+	model.set_environment(0, 2, 0)  # below whitecap_min_sea (1): no whitecaps
+	assert_eq(model.shader_uniforms()["whitecap_sea_factor"], 0.0)
+	model.sea_state_override = 1
+	assert_eq(model.shader_uniforms()["whitecap_sea_factor"], 0.8)
+	model.sea_state_override = 5
+	assert_eq(model.shader_uniforms()["whitecap_sea_factor"], 1.6)
+
+
+func test_shader_uniforms_carry_full_swell():
+	model.set_environment(0, 4, 5)
+	model.apply_preset_if_changed()
+	model.recompute()
+	var u := model.shader_uniforms()
+	var expected: float = SeaModel.SWELL_AMP_BY_SEA[5] * model.swell_height_mult * (0.6 + 0.3 + 0.25)
+	assert_almost_eq(u["swell_amp_total"], expected, 0.0001)
+	assert_eq(u["whitecap_strength"], 2.6)
+	assert_false(u.has("wave_1"), "no legacy wave uniforms")

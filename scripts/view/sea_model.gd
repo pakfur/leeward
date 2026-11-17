@@ -66,7 +66,7 @@ var whitecap_min_sea: int = 1       ## no whitecaps below this sea state
 # ---- derived ----
 var sea_time: float = 0.0
 var intensity: float = 0.0          ## 0..1, from the camera distance
-var camera_distance: float = 0.0
+var camera_distance: float = 0.0  ## starts at flat_distance: no camera yet means a flat sea
 var wind_direction: int = 0         ## where the wind comes from (hex direction)
 var wind_speed: int = 2
 var game_sea_state: int = 1
@@ -76,10 +76,12 @@ var material: ShaderMaterial = null
 var _swell: Array[Vector4] = [Vector4.ZERO, Vector4.ZERO, Vector4.ZERO]  # dir.x, dir.y, full amp, wavelength
 var _phase: Vector3 = Vector3.ZERO
 var _preset_sea: int = -1  # the sea state whose preset was last loaded
+var _pushed_uniforms: Dictionary = {}  # shader_uniforms() as last sent to the material
 
 
 func _init() -> void:
 	_apply_globals()
+	camera_distance = flat_distance
 	apply_preset_if_changed()
 	recompute()
 
@@ -231,28 +233,46 @@ func recompute() -> void:
 		_phase[i] = k * speed * sea_time + c[3]
 
 
-## Feed the ocean shader. The current shader still draws its own waves (wave_1..wave_8 on TIME),
-## sized here from the wind and the effective sea state; the swell uniforms come with the shader
-## that draws the swell.
+## Feed the ocean shader: the clock, the swell phases, the zoom intensity and the grid opacity
+## every frame; the rest (`shader_uniforms`) only when it differs from what was last sent.
 func _push_to_shader() -> void:
 	if material == null:
 		return
+	material.set_shader_parameter("sea_time", sea_time)
+	material.set_shader_parameter("swell_phase", _phase)
+	material.set_shader_parameter("zoom_intensity", intensity)
+	material.set_shader_parameter("grid_opacity", grid_opacity())
+	var uniforms := shader_uniforms()
+	if uniforms == _pushed_uniforms:
+		return
+	for key: String in uniforms:
+		material.set_shader_parameter(key, uniforms[key])
+	_pushed_uniforms = uniforms
+
+
+## The ocean shader's uniforms that change only with the wind, the sea state or the tuning.
+## Chop (surface detail, not ridden by ships) grows with wind and sea; whitecaps need
+## whitecap_min_sea and take WHITECAP_BY_SEA inside the preset strength.
+func shader_uniforms() -> Dictionary:
 	var sea := effective_sea_state()
-	var wind_vec := downwind()
-	var base_amplitude := 0.05 + wind_speed * 0.03 + sea * 0.05
-	var base_frequency := 1.0 - sea * 0.15
-	var dir_3 := wind_vec.rotated(deg_to_rad(30.0))
-	var dir_5 := wind_vec.rotated(deg_to_rad(-45.0))
-	material.set_shader_parameter("wave_1", Vector4(wind_vec.x * 2.0, wind_vec.y * 2.0, base_amplitude * 0.2, base_frequency * 0.8))
-	material.set_shader_parameter("wave_3", Vector4(dir_3.x * 1.5, dir_3.y * 1.5, base_amplitude * 0.15, base_frequency * 0.6))
-	material.set_shader_parameter("wave_5", Vector4(dir_5.x * 1.2, dir_5.y * 1.2, base_amplitude * 0.1, base_frequency * 1.2))
-	material.set_shader_parameter("wave_7", Vector4(wind_vec.x, wind_vec.y, base_amplitude * 0.18, base_frequency * 1.5))
-	material.set_shader_parameter("wave_2", Vector4(-0.3, -0.2, base_amplitude * 0.02, 0.5))
-	material.set_shader_parameter("wave_4", Vector4(0.2, -0.4, base_amplitude * 0.08, 0.4))
-	material.set_shader_parameter("wave_6", Vector4(0.8, 0.3, base_amplitude * 0.03, 0.4))
-	material.set_shader_parameter("wave_8", Vector4(-0.3, 0.5, base_amplitude * 0.12, 0.6))
-	material.set_shader_parameter("time_factor", clampf(3.5 - wind_speed * 0.25 - sea * 0.15, 1.5, 3.5))
-	material.set_shader_parameter("noise_amp", 0.05 + sea * 0.03)
+	var amp_total := 0.0
+	for s in _swell:
+		amp_total += s.z
+	return {
+		"wind_dir": downwind(),
+		"swell_1": _swell[0], "swell_2": _swell[1], "swell_3": _swell[2],
+		"swell_q": SWELL_Q,
+		"swell_amp_total": amp_total,
+		"swell_shading": swell_shading,
+		"chop_strength": chop_strength,
+		"chop_amplitude": 0.05 + wind_speed * 0.03 + sea * 0.05,
+		"chop_wavelength": 1.0 - sea * 0.15,
+		"chop_time_scale": clampf(3.5 - wind_speed * 0.25 - sea * 0.15, 1.5, 3.5),
+		"chop_noise": 0.05 + sea * 0.03,
+		"whitecap_threshold": whitecap_threshold,
+		"whitecap_strength": whitecap_strength,
+		"whitecap_sea_factor": 0.0 if sea < whitecap_min_sea else float(WHITECAP_BY_SEA[sea]),
+	}
 
 
 func _component_shift(i: int, p: Vector2) -> Vector2:
