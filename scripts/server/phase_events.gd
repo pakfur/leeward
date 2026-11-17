@@ -40,6 +40,7 @@ enum Type {
 	RECAPTURED,  # 10.H.4 ship_id is back with its own side: {cause: "rose"|"boarded", original_boxes, prize_boxes, cq, mr} (+ target_id: the boarding ship)
 	REORGANIZING_ABORTED,  # 10.G.5 ship_id's boarders reorganizing aboard prize target_id turn to defend her: {sections}
 	DEFENCE_SPLIT,  # 10.F.2 ship_id, boarded by several ships, shares out its defenders: {split: [{attacker_id, action, sections}]}
+	BEAR_OFF_ORDER,  # 6.D.3c potential collisions on one segment ordered by d10: {order: [{ship_id, rolls}]}; ship_id: the first
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -313,6 +314,10 @@ class PhaseEvent extends RefCounted:
 		for id in [ship_id, target_id, str(data.get("captor_id", ""))]:
 			if id != "" and not ids.has(id):
 				ids.append(id)
+		for e in data.get("order", []):
+			var id := str((e as Dictionary).get("ship_id", "")) if e is Dictionary else ""
+			if id != "" and not ids.has(id):
+				ids.append(id)
 		for e in data.get("split", []):
 			var id := str((e as Dictionary).get("attacker_id", "")) if e is Dictionary else ""
 			if id != "" and not ids.has(id):
@@ -476,6 +481,8 @@ class PhaseEvent extends RefCounted:
 				return _wind_text()
 			Type.BEAR_OFF:
 				return _bear_off_text(who, other)
+			Type.BEAR_OFF_ORDER:
+				return _bear_off_order_text(ship_names)
 			Type.UNFOUL:
 				return _unfoul_text(who, other)
 			Type.SAIL_CHANGE:
@@ -627,6 +634,22 @@ class PhaseEvent extends RefCounted:
 		if data.get("success", false):
 			return "%s bears off to %s to avoid %s (%s)" % [who, choice, other, roll_text]
 		return "%s fails to bear off to %s (%s)" % [who, choice, roll_text]
+
+	## "Two ships must bear off on the same segment; by d10 Bravo (7) decides first, then Alpha (3)" (6.D.3c).
+	func _bear_off_order_text(ship_names: Dictionary) -> String:
+		var parts: PackedStringArray = []
+		for e in data.get("order", []):
+			var rolls: PackedStringArray = []
+			for r in (e as Dictionary).get("rolls", []):
+				rolls.append(str(int(r)))
+			parts.append("%s (%s)" % [_name(ship_names, str(e.get("ship_id", ""))), ", ".join(rolls)])
+		if parts.is_empty():
+			return "Bearing off order decided by d10"
+		var count := "Two" if parts.size() == 2 else str(parts.size())
+		var text := "%s ships must bear off on the same segment; by d10 %s decides first" % [count, parts[0]]
+		for i in range(1, parts.size()):
+			text += ", then %s" % parts[i]
+		return text
 
 	## "… stops short of its plotted course", with the cause the resolution recorded, if any.
 	func _stopped_short_text(who: String, other: String) -> String:

@@ -386,6 +386,9 @@ enum ResolutionEventType {
 	OVERLAP_ROLLBACK,  # the overlap was not cleared on the next segment: the turn is undone (6.B.4)
 	BEARING_OFF_DECLINED,  # the ship held its course and collides on purpose (6.D.3, 6.E.1)
 	POOR_MANEUVERING_ROLL,  # 6.F.3 d10 for a plotted turn; detail on failure: "one hex ahead", "carried over", "turn at MA 0"
+	## 6.D.3c: two or more potential collisions on one segment, ordered by d10 (highest first, ties
+	## re-rolled). On the ship resolved first; detail "<id>=<d10>[,<re-roll>…] …" in resolution order.
+	BEAR_OFF_ORDER,
 }
 
 ## Choices for a potential collision (6.D): bear off to port or starboard, or hold course and collide.

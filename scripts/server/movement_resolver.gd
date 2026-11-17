@@ -91,6 +91,11 @@ class Segment:
 	## The groups let go first to break a cycle this segment: [{key, hex, owners}], `owners` the moving
 	## ships whose old stern `hex` is (the ships assumed to leave it).
 	var speculations: Array = []
+	## Potential collisions found while the groups run, decided once all of the segment's moves are
+	## made (6.D.3c, see _resolve_pending_bear_offs): [{loser, blocker, situation}].
+	var pending_bear_offs: Array = []
+	## The BEAR_OFF_ORDER event when two or more of them were ordered by d10 this segment, else null.
+	var bear_off_order: MovementTypes.ResolutionEvent = null
 
 var rng: RandomNumberGenerator:
 	get:
@@ -430,6 +435,7 @@ func _resolve_impulse(p: ResolutionPass, impulse: int, ships: Array[ShipState]) 
 			_resolve_bow_entries(p, seg, group.ids, group.hex)
 		for sid in group.ids:
 			_settle(p, seg, sid)
+	_resolve_pending_bear_offs(p, seg)
 	if not seg.speculations.is_empty():
 		p.failed_cycles = _failed_speculations(p, seg)
 	return seg
@@ -563,7 +569,7 @@ func _resolve_bow_entries(p: ResolutionPass, seg: Segment, ids: Array, target_he
 	var occupant_id: String = _find_holder(target_hex, seg.held, contesting_ids)
 	if occupant_id != "":
 		for sid in contesting_ids:
-			_resolve_collision_or_bearoff(p, seg, sid, occupant_id)
+			_potential_collision(p, seg, sid, occupant_id)
 		return
 
 	if contesting_ids.size() == 1:
@@ -835,6 +841,14 @@ func _record_bear_off(results: Dictionary, bear_off: Dictionary) -> void:
 	for sid in bear_off.contest_rolls:
 		if results.has(sid) and not _has_contest_roll(results[sid], bear_off.segment):
 			_insert_at_segment_start(results[sid], bear_off.segment, bear_off.contest_rolls[sid])
+	# The 6.D.3c order that put this bear-off where it was: the replay no longer meets every potential
+	# collision of that segment, so it may not roll the order itself.
+	var order_ev: MovementTypes.ResolutionEvent = bear_off.get("order_event")
+	if order_ev != null and results.has(order_ev.ship_id) \
+			and _reached_segment(results[order_ev.ship_id], bear_off.segment) \
+			and not _has_event_at(results[order_ev.ship_id], MovementTypes.ResolutionEventType.BEAR_OFF_ORDER,
+				bear_off.segment):
+		_insert_at_segment_start(results[order_ev.ship_id], bear_off.segment, [order_ev])
 	if result.blocked_by == "":
 		result.blocked_by = bear_off.other_id
 
@@ -850,6 +864,13 @@ func _record_undone_contest(results: Dictionary, contest: Dictionary) -> void:
 			return
 	for sid in contest.rolls:
 		_insert_at_segment_start(results[sid], contest.segment, contest.rolls[sid])
+
+
+func _has_event_at(result: MovementTypes.ShipResolutionResult, event_type: int, segment: int) -> bool:
+	for ev in result.events:
+		if ev.event_type == event_type and ev.impulse == segment:
+			return true
+	return false
 
 
 func _has_contest_roll(result: MovementTypes.ShipResolutionResult, segment: int) -> bool:
@@ -912,7 +933,7 @@ func _resolve_contested_hex(p: ResolutionPass, seg: Segment, contesting_ids: Arr
 	for sid in contesting_ids:
 		if sid == winner_id:
 			continue
-		_resolve_collision_or_bearoff(p, seg, sid, winner_id)
+		_potential_collision(p, seg, sid, winner_id)
 
 
 func _roll_contest(p: ResolutionPass, contesting_ids: Array, impulse: int) -> String:
@@ -1018,18 +1039,118 @@ func _crew_quality_index(quality: String) -> int:
 ## Bearing off & collision
 ## ============================================================================
 
+## A potential collision (6.D.1) found while the segment's groups run: `loser_id` cannot enter the hex
+## `blocker_id` holds. The loser makes no step this segment whatever is decided, so it stops now; the
+## decision waits until the segment's moves are made, where two or more potential collisions are put
+## in d10 order (6.D.3c, _resolve_pending_bear_offs). The situation is taken now, as the owner sees it.
+## A blocker that is a moving ship still to make its step (a head-on cycle) is decided at once: a
+## collision stops it before it moves.
+func _potential_collision(p: ResolutionPass, seg: Segment, loser_id: String, blocker_id: String) -> void:
+	if seg.intended_moves.has(blocker_id) and not seg.resolved.has(blocker_id) \
+			and not seg.moves.has(blocker_id) and not p.stopped[blocker_id]:
+		_resolve_collision_or_bearoff(p, seg, loser_id, blocker_id)
+		return
+	seg.pending_bear_offs.append({"loser": loser_id, "blocker": blocker_id,
+		"situation": bear_off_situation(p, loser_id, blocker_id, seg.impulse)})
+	p.stopped[loser_id] = true
+
+
+## The segment's potential collisions, decided once its moves are made (6.D.3c). A situation whose
+## blocker is the loser of another one (it sails into the hex that ship kept by stopping) arises from
+## that one and is decided right after it. The others, when there are two or more, each roll a d10
+## from the resolver's RNG, ties re-rolled among the tied, highest first (planner's call), logged as
+## one BEAR_OFF_ORDER event, and are decided in that order: who is asked first, and the order of the
+## dice. The rolls repeat on every re-run from the same RNG start. A single one rolls nothing.
+func _resolve_pending_bear_offs(p: ResolutionPass, seg: Segment) -> void:
+	var queue: Array = seg.pending_bear_offs
+	if queue.size() > 1:
+		queue = _order_bear_offs(p, seg, queue)
+	for entry in queue:
+		_resolve_collision_or_bearoff(p, seg, entry.loser, entry.blocker, entry.situation)
+
+
+## `queue` in resolution order (see _resolve_pending_bear_offs); with two or more independent
+## situations, the BEAR_OFF_ORDER event goes on the first ship's result.
+func _order_bear_offs(p: ResolutionPass, seg: Segment, queue: Array) -> Array:
+	var losers: Dictionary = {}
+	for entry in queue:
+		losers[entry.loser] = true
+	var roots: Array = []
+	for entry in queue:
+		if not losers.has(entry.blocker):
+			roots.append(entry)
+	if roots.size() > 1:
+		var rolls: Dictionary = {}  # roots index -> [d10, re-rolls...]
+		for i in range(roots.size()):
+			rolls[i] = []
+		var order: Array = _rank_by_d10(range(roots.size()), rolls)
+		var parts: PackedStringArray = []
+		var ranked: Array = []
+		for i in order:
+			ranked.append(roots[i])
+			var dice: PackedStringArray = []
+			for d in rolls[i]:
+				dice.append(str(d))
+			parts.append("%s=%s" % [roots[i].loser, ",".join(dice)])
+		roots = ranked
+		var first_id: String = roots[0].loser
+		var ev = MovementTypes.ResolutionEvent.new(first_id, seg.impulse,
+			MovementTypes.ResolutionEventType.BEAR_OFF_ORDER)
+		ev.from_hex = p.current_hexes[first_id]
+		ev.to_hex = p.current_hexes[first_id]
+		ev.facing = p.current_facings[first_id]
+		ev.roll = float(rolls[order[0]][0])
+		ev.detail = " ".join(parts)
+		p.results[first_id].events.append(ev)
+		seg.bear_off_order = ev
+	var ordered: Array = []
+	for root in roots:
+		_append_with_dependents(root, queue, ordered)
+	return ordered
+
+
+## `entry`, then (depth first, in the order found) the situations whose blocker is its loser.
+func _append_with_dependents(entry: Dictionary, queue: Array, ordered: Array) -> void:
+	ordered.append(entry)
+	for other in queue:
+		if other.blocker == entry.loser and not other in ordered:
+			_append_with_dependents(other, queue, ordered)
+
+
+## `indices` from the highest d10 down; each tie is rolled again among the tied. Every die is appended
+## to `rolls[index]`.
+func _rank_by_d10(indices: Array, rolls: Dictionary) -> Array:
+	if indices.size() <= 1:
+		return indices
+	var by_roll: Dictionary = {}
+	for i in indices:
+		var d10: int = rng.randi_range(0, 9)
+		rolls[i].append(d10)
+		if not by_roll.has(d10):
+			by_roll[d10] = []
+		by_roll[d10].append(i)
+	var ranked: Array = []
+	for d10 in range(9, -1, -1):
+		if by_roll.has(d10):
+			ranked.append_array(_rank_by_d10(by_roll[d10], rolls))
+	return ranked
+
+
 ## A potential collision (6.D.1): `loser_id` cannot enter the hex `blocker_id` holds. The owner may
 ## bear off if a turn is legal there (6.D.2): its choice comes from `bear_off_decisions`, from the
 ## player (a prompted ship with no decision stops the pass at the end of this segment) or from
 ## StubAI.bear_off_choice. Holding course collides (6.E.1). A successful roll queues a bear-off
 ## rollback: the plot is amended (turn, then ahead to the deceleration minimum) and the pass re-run.
-func _resolve_collision_or_bearoff(p: ResolutionPass, seg: Segment, loser_id: String, blocker_id: String) -> void:
+## `situation`: the one taken when the potential collision was found (else it is taken now).
+func _resolve_collision_or_bearoff(p: ResolutionPass, seg: Segment, loser_id: String, blocker_id: String,
+		situation: MovementTypes.BearOffSituation = null) -> void:
 	var impulse: int = seg.impulse
 	var loser: ShipState = p.ship_map[loser_id]
 	var loser_result: MovementTypes.ShipResolutionResult = p.results[loser_id]
 	loser_result.blocked_by = blocker_id
 
-	var situation := bear_off_situation(p, loser_id, blocker_id, impulse)
+	if situation == null:
+		situation = bear_off_situation(p, loser_id, blocker_id, impulse)
 	if p.settled_bear_offs.has(loser_id) or situation.eligible.is_empty():
 		var deny_ev = MovementTypes.ResolutionEvent.new(
 			loser_id, impulse, MovementTypes.ResolutionEventType.BEARING_OFF_PIVOT_DENIED
@@ -1105,7 +1226,8 @@ func _resolve_collision_or_bearoff(p: ResolutionPass, seg: Segment, loser_id: St
 			contest_rolls[sid] = rolls
 	p.bear_off_amendments.append({"kind": "bear_off", "ship_id": loser_id, "segment": impulse,
 		"pre_bow": p.current_hexes[loser_id], "pre_facing": old_facing, "facing": new_facing,
-		"other_id": blocker_id, "reason": "bore off %s" % choice, "events": [ev], "contest_rolls": contest_rolls})
+		"other_id": blocker_id, "reason": "bore off %s" % choice, "events": [ev], "contest_rolls": contest_rolls,
+		"order_event": seg.bear_off_order})
 	loser_result.stopped_at_impulse = impulse
 	p.stopped[loser_id] = true
 
@@ -1875,7 +1997,9 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 				turn_log.add(PhaseEvents.Type.POOR_MANEUVERING, phase, sid, {"roll": int(ev.roll),
 					"needed": int(ev.threshold), "success": ev.success, "outcome": ev.detail})
 		for ev in result.events:
-			if ev.event_type == MovementTypes.ResolutionEventType.BEARING_OFF_ROLL:
+			if ev.event_type == MovementTypes.ResolutionEventType.BEAR_OFF_ORDER:
+				turn_log.add(PhaseEvents.Type.BEAR_OFF_ORDER, phase, sid, {"order": _order_from_detail(ev.detail)})
+			elif ev.event_type == MovementTypes.ResolutionEventType.BEARING_OFF_ROLL:
 				turn_log.add(PhaseEvents.Type.BEAR_OFF, phase, sid, {"choice": ev.detail.get_slice(" ", 0),
 					"success": ev.success, "roll": int(ev.roll), "needed": int(ev.threshold),
 					"drm": _detail_drm(ev.detail)}, result.blocked_by)
@@ -1906,6 +2030,17 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 			turn_log.add(PhaseEvents.Type.FOULED, phase, sid, {"cause": "collision"}, result.fouled_with)
 			fouled_logged[sid] = true
 			fouled_logged[result.fouled_with] = true
+
+
+## A BEAR_OFF_ORDER detail ("b=7 a=4,8") as [{ship_id, rolls}] in resolution order.
+static func _order_from_detail(detail: String) -> Array:
+	var order: Array = []
+	for part in detail.split(" ", false):
+		var rolls: Array = []
+		for d in part.get_slice("=", 1).split(",", false):
+			rolls.append(int(d))
+		order.append({"ship_id": part.get_slice("=", 0), "rolls": rolls})
+	return order
 
 
 ## For a lost stern contest, the deciding (last) rolls of the loser and the winner, DRMs added, as
