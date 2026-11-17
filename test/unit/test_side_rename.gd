@@ -57,3 +57,21 @@ func _reset_game() -> void:
 	pc.current_phase = TurnPhaseController.GamePhase.SETUP
 	pc.players_ready = [false, false] as Array[bool]
 	GameState.clear_ships()
+
+
+func test_fallback_names_count_per_side_with_side_key() -> void:
+	var by_side := [
+		{"ship_type": "frigate_38", "side": 0}, {"ship_type": "frigate_38", "side": 1},
+		{"ship_type": "frigate_38", "side": 1},
+	]
+	var by_player := [
+		{"ship_type": "frigate_38", "player_id": 0}, {"ship_type": "frigate_38", "player_id": 1},
+		{"ship_type": "frigate_38", "player_id": 1},
+	]
+	DataManager.assign_fallback_ship_names(by_side)
+	DataManager.assign_fallback_ship_names(by_player)
+	for i in 3:
+		assert_eq(by_side[i]["ship_name"], by_player[i]["ship_name"])
+	assert_true(by_side[0]["ship_name"].ends_with(" 1"))
+	assert_true(by_side[1]["ship_name"].ends_with(" 1"))
+	assert_true(by_side[2]["ship_name"].ends_with(" 2"))
