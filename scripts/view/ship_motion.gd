@@ -56,7 +56,7 @@ static func steady_heel(sea: SeaModel, facing: int, sail_state: String) -> float
 	var side_sign := heel_sign(facing, sea.wind_direction)
 	if side_sign == 0.0:
 		return 0.0
-	var sail: float = SAIL_HEEL.get(sail_state.to_lower(), SAIL_HEEL["fs"])
+	var sail: float = SAIL_HEEL.get(sail_state.to_lower(), 0.0)
 	return side_sign * deg_to_rad(sea.beam_heel_deg()) * sail * beam_component(facing, sea.wind_direction)
 
 
@@ -86,11 +86,11 @@ static func rendered(state: Vector4, intensity: float) -> Vector4:
 	return state * clampf(intensity, 0.0, 1.0)
 
 
-## The sail that heels a ship: the sail it can actually use (`movement_sail_state`), none when it is
-## dismasted or destroyed.
+## The sail that heels a ship: the sail it can actually use (`movement_sail_state`); "" (no heel at
+## all) when it is dismasted or destroyed, since NS on a ship with masts still heels a little.
 static func heel_sail(ship_state: ShipState) -> String:
 	if ship_state.is_destroyed() or ship_state.is_dismasted():
-		return "NS"
+		return ""
 	return ship_state.movement_sail_state()
 
 

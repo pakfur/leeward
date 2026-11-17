@@ -113,6 +113,17 @@ func test_glide_accelerates_and_decelerates() -> void:
 	assert_almost_eq(MovementResolutionPlaybackController.pose_at(track, 2.0)[0].distance_to(start), total * 0.5, 0.0001, "halfway at mid-time")
 
 
+func test_segments_where_nobody_moves_take_no_clock_time() -> void:
+	var clock := MovementResolutionPlaybackController.moving_clock([4, 0, 3])
+	assert_eq(clock, {0: 0, 3: 1, 4: 2})
+	var events := _moves("d", [0, 3, 4])
+	var track: MovementResolutionPlaybackController.GlideTrack = MovementResolutionPlaybackController.track_for(events, hex_grid, MovementResolutionPlaybackController._model_angle(0), clock)
+	assert_eq(track.t0, 0.0)
+	assert_eq(track.t1, 3.0, "three moving segments, not five")
+	_assert_pose(MovementResolutionPlaybackController.pose_at(track, 3.0), events[-1], "still exact on arrival")
+	assert_eq(MovementResolutionPlaybackController.moving_clock([]), {})
+
+
 func test_glide_seconds_default_without_sea_model() -> void:
 	var saved := SeaModel.instance
 	SeaModel.instance = null
@@ -172,3 +183,52 @@ func test_final_pose_unchanged() -> void:
 	assert_almost_eq(view.base_position.x, final.x, 0.001, "final pose unchanged")
 	assert_almost_eq(view.base_position.z, final.z, 0.001)
 	assert_almost_eq(view.model_node.rotation_degrees.y, MovementResolutionPlaybackController._model_angle(result.final_facing), 0.01)
+
+
+## Records the pose the first glide frame puts the view in.
+class FirstFrameSpy extends MovementResolutionPlaybackController:
+	var first_pose: Array = []  # [base_position, model yaw]
+
+	func _pose_tracks(t: float, tracks: Array) -> void:
+		super(t, tracks)
+		if first_pose.is_empty() and not tracks.is_empty():
+			var view: ShipView = tracks[0].view
+			first_pose = [view.base_position, view.model_node.rotation_degrees.y]
+
+
+func test_resume_after_bear_off_pause_starts_from_the_paused_pose() -> void:
+	var events := _moves("live", [0, 1, 2, 3], 1)
+	var view := ShipView.new()
+	add_child_autofree(view)
+	view.initialize(_state("live", Vector2i(2, 5), 0), hex_grid)
+
+	var paused_log := MovementTypes.ResolutionLog.new(1)
+	paused_log.max_impulses = 4
+	paused_log.pending_bear_off = MovementTypes.BearOffSituation.new()
+	paused_log.pending_bear_off.segment = 2
+	var r1 := MovementTypes.ShipResolutionResult.new("live")
+	for ev in _in_range(events, 0, 1):
+		r1.events.append(ev)
+	paused_log.add_result(r1)
+	var first := MovementResolutionPlaybackController.new(hex_grid, {"live": view}, 0)
+	add_child_autofree(first)
+	first.play(paused_log)
+	await wait_for_signal(first.playback_paused, 10.0)
+	var paused_position := view.base_position
+	var paused_yaw := view.model_node.rotation_degrees.y
+
+	var resumed_log := MovementTypes.ResolutionLog.new(1)
+	resumed_log.max_impulses = 4
+	resumed_log.resume_impulse = 2
+	var r2 := MovementTypes.ShipResolutionResult.new("live")
+	for ev in events:
+		r2.events.append(ev)
+	resumed_log.add_result(r2)
+	var second := FirstFrameSpy.new(hex_grid, {"live": view}, 0)
+	add_child_autofree(second)
+	second.play(resumed_log)
+	await wait_for_signal(second.playback_completed, 10.0)
+
+	assert_false(second.first_pose.is_empty(), "the resumed log glided")
+	assert_lt(second.first_pose[0].distance_to(paused_position), 0.05, "no jump in position on resume")
+	assert_almost_eq(second.first_pose[1], paused_yaw, 1.0, "no jump in heading on resume")

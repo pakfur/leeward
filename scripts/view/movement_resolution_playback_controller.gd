@@ -211,10 +211,12 @@ func _collect_pre_movement_events() -> Array:
 ## Animation
 ## ============================================================================
 
-## Glide every ship through the segments [first, last]: one clock for all of them, from the first
-## step any ship makes to the last, `glide_seconds` per segment. Every ship ends on its resolved pose.
+## Glide every ship through the segments [first, last]: one clock for all of them, `glide_seconds`
+## per segment in which some ship moves (segments where nobody moves take no time, see
+## `moving_clock`). Every ship ends on its resolved pose.
 func _glide_stretch(first: int, last: int) -> void:
-	var tracks: Array = []
+	var steps_by_ship: Dictionary = {}
+	var moving: Dictionary = {}
 	for ship_id in _ship_views:
 		var steps: Array = []
 		for impulse in range(first, last + 1):
@@ -224,9 +226,17 @@ func _glide_stretch(first: int, last: int) -> void:
 		var view: ShipView = _ship_views[ship_id]
 		if steps.is_empty() or not is_instance_valid(view) or not _hex_grid:
 			continue
+		steps_by_ship[ship_id] = steps
+		for ev in steps:
+			moving[ev.impulse] = true
+	var clock := moving_clock(moving.keys())
+	var tracks: Array = []
+	for ship_id in steps_by_ship:
+		var steps: Array = steps_by_ship[ship_id]
+		var view: ShipView = _ship_views[ship_id]
 		var start_angle: float = view.model_node.rotation_degrees.y if view.model_node \
 			else _model_angle(steps[0].from_facing)
-		var track := track_for(steps, _hex_grid, start_angle)
+		var track := track_for(steps, _hex_grid, start_angle, clock)
 		track.view = view
 		tracks.append(track)
 	if tracks.is_empty() or _aborted:
@@ -251,12 +261,24 @@ static func glide_seconds() -> float:
 	return sea.glide_seconds if is_instance_valid(sea) else DEFAULT_GLIDE_SECONDS
 
 
+## The glide clock of a stretch: each segment in `moving_segments` (those in which some ship moves)
+## maps to its place, 0, 1, 2, ... in order, so segments where nobody moves add no idle time.
+static func moving_clock(moving_segments: Array) -> Dictionary:
+	var sorted := moving_segments.duplicate()
+	sorted.sort()
+	var clock: Dictionary = {}
+	for i in sorted.size():
+		clock[sorted[i]] = i
+	return clock
+
+
 ## The glide track for one ship's posed events `steps` (in order, all in one stretch), starting at
-## model angle `start_angle` (the view's current heading, so the angle stays continuous).
-static func track_for(steps: Array, hex_grid: HexGrid, start_angle: float) -> GlideTrack:
+## model angle `start_angle` (the view's current heading, so the angle stays continuous). `clock` maps
+## segments to clock time (`moving_clock`); without it a segment is its own number.
+static func track_for(steps: Array, hex_grid: HexGrid, start_angle: float, clock: Dictionary = {}) -> GlideTrack:
 	var track := GlideTrack.new()
-	track.t0 = float(steps[0].impulse)
-	track.t1 = float(steps[-1].impulse + 1)
+	track.t0 = float(clock.get(steps[0].impulse, steps[0].impulse))
+	track.t1 = float(clock.get(steps[-1].impulse, steps[-1].impulse)) + 1.0
 	track.keys.append([hex_grid.axial_to_world(steps[0].from_hex.x, steps[0].from_hex.y), start_angle])
 	for ev in steps:
 		var prev_angle: float = track.keys[-1][1]

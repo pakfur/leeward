@@ -92,10 +92,14 @@ func test_heel_sail_is_the_sail_set():
 	ship.rigging_current_hp = [0, 5, 6, 6] as Array[int]
 	assert_eq(ShipMotion.heel_sail(ship), "MS", "capped by the rigging (movement_sail_state)")
 	ship.rigging_current_hp = [0, 0, 0, 0] as Array[int]
-	assert_eq(ShipMotion.heel_sail(ship), "NS", "dismasted")
+	assert_eq(ShipMotion.heel_sail(ship), "", "dismasted: no masts, no heel")
 	ship.rigging_current_hp = [5, 5, 6, 6] as Array[int]
 	ship.status = ShipState.Status.DESTROYED
-	assert_eq(ShipMotion.heel_sail(ship), "NS", "a wreck")
+	assert_eq(ShipMotion.heel_sail(ship), "", "a wreck")
+	sea.wind_direction = 0
+	sea.wind_speed = 3
+	assert_eq(ShipMotion.steady_heel(sea, 1, ""), 0.0, "no sail, no heel")
+	assert_ne(ShipMotion.steady_heel(sea, 1, "NS"), 0.0, "bare poles on a masted ship still heel a little")
 
 
 func test_ship_moves_on_a_full_sea():

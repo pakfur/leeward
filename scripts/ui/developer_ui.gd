@@ -308,6 +308,7 @@ const SEA_ROWS := [
 	["grid_fade_end", "Grid gone at (intensity)", 0.0, 1.0, 0.05],
 	["whitecap_min_sea", "Whitecaps from sea state", 0.0, 5.0, 1.0],
 ]
+const SEA_FADE_GAP := 0.05  # grid_fade_end stays this far above grid_fade_start
 const SEA_MIN_GAP := 0.5  # flat_distance stays this far above full_distance
 
 var _sea_sliders: Dictionary = {}  # property -> HSlider
@@ -421,6 +422,13 @@ func _on_sea_slider_changed(value: float, prop: String) -> void:
 		model.full_distance = model.flat_distance - SEA_MIN_GAP
 	elif prop == "full_distance" and model.full_distance > model.flat_distance - SEA_MIN_GAP:
 		model.flat_distance = model.full_distance + SEA_MIN_GAP
+	# Likewise the grid fade: it ends above where it starts.
+	if prop == "grid_fade_start" and model.grid_fade_start > model.grid_fade_end - SEA_FADE_GAP:
+		model.grid_fade_end = minf(model.grid_fade_start + SEA_FADE_GAP, 1.0)
+		model.grid_fade_start = model.grid_fade_end - SEA_FADE_GAP
+	elif prop == "grid_fade_end" and model.grid_fade_end < model.grid_fade_start + SEA_FADE_GAP:
+		model.grid_fade_start = maxf(model.grid_fade_end - SEA_FADE_GAP, 0.0)
+		model.grid_fade_end = model.grid_fade_start + SEA_FADE_GAP
 	_sync_sea_sliders()
 
 ## Move the sliders to the model's values without re-sending them.

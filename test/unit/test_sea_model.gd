@@ -49,6 +49,19 @@ func test_globals_loaded():
 	assert_eq(model.whitecap_min_sea, 1)
 
 
+func test_grid_opacity_degenerate_fade_is_a_step():
+	model.grid_fade_start = 0.6
+	model.grid_fade_end = 0.6
+	model.intensity = 0.59
+	assert_eq(model.grid_opacity(), 1.0)
+	model.intensity = 0.6
+	assert_eq(model.grid_opacity(), 0.0)
+	model.grid_fade_end = 0.3  # inverted
+	model.intensity = 0.9
+	var o := model.grid_opacity()
+	assert_true(is_equal_approx(o, 0.0) and not is_nan(o), "no NaN or inverted fade")
+
+
 func test_grid_opacity_fades():
 	model.intensity = 0.5
 	assert_eq(model.grid_opacity(), 1.0)
