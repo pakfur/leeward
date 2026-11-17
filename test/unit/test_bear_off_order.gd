@@ -7,6 +7,8 @@ var resolver: MovementResolver
 var rng: RandomNumberGenerator
 var env: EnvironmentState
 var _saved_turn_log: PhaseEvents.PhaseLog
+var _saved_env: EnvironmentState
+var _saved_ships: Dictionary
 
 
 func before_all() -> void:
@@ -25,7 +27,9 @@ func before_each() -> void:
 	env.wind_direction = 0
 	env.wind_speed = 3
 	env.sea_state = 1
+	_saved_env = GameState.environment
 	GameState.environment = env
+	_saved_ships = GameState.ships.duplicate()
 	GameState.ships.clear()
 	_saved_turn_log = GameState.turn_log
 	GameState.turn_log = PhaseEvents.PhaseLog.new()
@@ -33,7 +37,9 @@ func before_each() -> void:
 
 func after_each() -> void:
 	GameState.turn_log = _saved_turn_log
+	GameState.environment = _saved_env
 	GameState.ships.clear()
+	GameState.ships.merge(_saved_ships)
 
 
 func _make_ship(id: String, hex: Vector2i, facing: int, speed: int) -> ShipState:

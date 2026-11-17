@@ -1106,6 +1106,10 @@ func _order_bear_offs(p: ResolutionPass, seg: Segment, queue: Array) -> Array:
 	var ordered: Array = []
 	for root in roots:
 		_append_with_dependents(root, queue, ordered)
+	# Safety net: every dependent chain should end at a root, but no queued situation may ever be dropped.
+	for entry in queue:
+		if not entry in ordered:
+			ordered.append(entry)
 	return ordered
 
 
