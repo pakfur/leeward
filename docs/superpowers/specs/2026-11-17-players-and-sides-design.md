@@ -116,7 +116,7 @@ In 1v1 (one player per side) signalling has nothing to do but is not switched of
 
 ### 4. Talking between ships (11.B.3)
 
-At PLANNING start the server finds pairs of **friendly** ships commanded by **different** players whose sterns are adjacent (`stern_hex()` neighbours) and opens a talk for each (`GameState.talks`: `{turn, ship_a, ship_b, first_player, messages: []}`). A d6 (via `game_state.dice`, in ship-id order of the pairs) picks who writes first. My call: only friendly ships talk; 11.A.3 leaves talking to the enemy unrestricted, so in-game talk to the enemy adds nothing.
+At PLANNING start the server finds pairs of **friendly** ships commanded by **different** players whose sterns are adjacent (`stern_hex()` neighbours) and opens a talk for each (`GameState.talks`: `{turn, ship_a, ship_b, first_player, messages: []}`). A d6 (via `game_state.dice`, in ship-id order of the pairs) picks who writes first. My call: only friendly ships talk; 11.A.3 leaves talking to the enemy unrestricted, so in-game talk to the enemy adds nothing. Talks open only between ships whose commanders are both human players; AI captains do not talk (ruling 2026-11-17).
 
 Request: `player_send_talk(player_id, talk_id, text) -> String`. The first writer sends one message of at most 5 words (same word rules as §3), shown at once (not held to end of g-t), then the other replies once; nothing more. Halyards cut does not stop talking (it is shouting across, not flags). A talk not used by the end of PLANNING lapses. Query `talks_for(player_id)`.
 

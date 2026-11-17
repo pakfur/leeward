@@ -1146,7 +1146,8 @@ func _open_talks() -> void:
 			var b: ShipState = game_state.ships[ids[j]]
 			var pa: int = a.commanding_player()
 			var pb: int = b.commanding_player()
-			if a.side != b.side or pa == pb or _hex_dist(a.stern_hex(), b.stern_hex()) != 1:
+			if a.side != b.side or pa == pb or _is_ai_player(pa) or _is_ai_player(pb) \
+					or _hex_dist(a.stern_hex(), b.stern_hex()) != 1:
 				continue
 			var d: int = game_state.dice.d6()
 			game_state.talks.append({
@@ -1154,6 +1155,11 @@ func _open_talks() -> void:
 				"turn": game_state.current_turn, "ship_a": ids[i], "ship_b": ids[j],
 				"first_player": pa if d <= 3 else pb, "second_player": pb if d <= 3 else pa,
 				"messages": []})
+
+
+func _is_ai_player(id: int) -> bool:
+	var p: PlayerState = game_state.players.get(id)
+	return ai_player_ids.has(id) or (p != null and p.is_ai)
 
 
 static func _hex_dist(a: Vector2i, b: Vector2i) -> int:
@@ -1168,9 +1174,13 @@ func player_send_talk(player_id: int, talk_id: String, text: String) -> String:
 	if not is_server:
 		push_error("TurnPhaseController: Cannot send a talk on client")
 		return "talks are sent on the server only"
-	var reason: String = _signal_request_error(player_id)
-	if reason != "":
-		return reason
+	# No players_ready check: a talk lapses with PLANNING, not when a player is ready (spec 4).
+	if not game_result.is_empty():
+		return "the game is over"
+	if current_phase != GamePhase.PLANNING:
+		return "talks are held in the planning phase only"
+	if not players_ready.has(player_id):
+		return "invalid player %d" % player_id
 	var talk: Dictionary = {}
 	for t in game_state.talks:
 		if t["id"] == talk_id and int(t["turn"]) == game_state.current_turn:

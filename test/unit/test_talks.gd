@@ -107,3 +107,27 @@ func test_halyards_cut_does_not_stop_talk() -> void:
 	GameState.ship_controller.add_critical_effect("brit_a2", {"id": "signal_halyards_cut"})
 	_open(5)
 	assert_eq(_pc().player_send_talk(1, GameState.talks[0]["id"], "ahoy"), "")
+
+
+func test_reply_allowed_after_plan_submitted() -> void:
+	_open(5)
+	var id: String = GameState.talks[0]["id"]
+	_pc().players_ready[0] = true
+	_pc().players_ready[1] = true
+	_pc().players_ready[2] = false  # another player still planning
+	assert_eq(_pc().player_send_talk(1, id, "ahoy"), "")
+	assert_eq(_pc().player_send_talk(0, id, "aye"), "")
+
+
+func test_ai_commander_pair_no_talk_and_no_die() -> void:
+	_place("brit_b1", Vector2i(40, 40), 0)
+	_place("fr_a2", Vector2i(-3, 0), 3)
+	GameState.ships["fr_a2"].controller_side = 0  # friendly to brit_a2, commanded by AI player 2
+	GameState.ships["fr_a2"].commander_id = 2
+	var d := ScriptedDice.new()
+	d.queue([5])
+	GameState.dice = d
+	GameState.talks.clear()
+	_pc()._open_talks()
+	assert_eq(GameState.talks.size(), 0)
+	assert_eq(d.remaining(), 1)
