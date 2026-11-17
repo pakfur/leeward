@@ -1070,7 +1070,8 @@ func player_send_signal(player_id: int, from_ship: String, address: Dictionary, 
 		return "a struck or lost ship cannot signal (11.B.2b)"
 	if ship.is_dismasted():
 		return "a dismasted ship cannot signal (11.B.2b)"
-	for s in game_state.ships_of_player(player_id):
+	# Only ships in play: a struck ship or a prize never has its crit fixed (11.B.2c).
+	for s in game_state.in_play_ships_of_player(player_id):
 		if s.has_critical("signal_halyards_cut"):
 			return "signal halyards are cut: %s cannot signal (11.B.2c)" % s.ship_name
 	var side: int = game_state.side_of_player(player_id)
@@ -1234,31 +1235,36 @@ func talks_for(player_id: int) -> Array:
 	for t in game_state.talks:
 		if int(t["turn"]) == game_state.current_turn \
 				and (int(t["first_player"]) == player_id or int(t["second_player"]) == player_id):
-			out.append(t)
+			out.append(t.duplicate(true))
 	return out
 
 
 func _drop_pending_signal(player_id: int) -> void:
-	var pending: SignalState = pending_signal(player_id)
+	var pending: SignalState = _pending_signal(player_id)
 	if pending != null:
 		game_state.signals.erase(pending)
 
 
-## The player's own undelivered signal this g-t, or null.
-func pending_signal(player_id: int) -> SignalState:
+func _pending_signal(player_id: int) -> SignalState:
 	for sig in game_state.signals:
 		if sig.from_player == player_id and not sig.delivered and sig.turn == game_state.current_turn:
 			return sig
 	return null
 
 
-## Delivered signals the player's side may read (11.A.4), of one turn or (turn -1) all.
+## A copy of the player's own undelivered signal this g-t, or null.
+func pending_signal(player_id: int) -> SignalState:
+	var sig: SignalState = _pending_signal(player_id)
+	return SignalState.from_dict(sig.to_dict()) if sig != null else null
+
+
+## Delivered signals the player's side may read (11.A.4), of one turn or (turn -1) all (copies).
 func signals_for(player_id: int, turn: int = -1) -> Array[SignalState]:
 	var out: Array[SignalState] = []
 	var side: int = game_state.side_of_player(player_id)
 	for sig in game_state.signals:
 		if sig.delivered and game_state.side_of_player(sig.from_player) == side and (turn < 0 or sig.turn == turn):
-			out.append(sig)
+			out.append(SignalState.from_dict(sig.to_dict()))
 	return out
 
 

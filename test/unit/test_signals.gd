@@ -57,6 +57,32 @@ func test_halyards_cut_blocks_every_ship_of_the_player() -> void:
 	assert_ne(_pc().player_send_signal(0, "brit_a1", _fleet(), "attack"), "")
 
 
+func test_struck_ship_with_halyards_cut_does_not_block_the_player() -> void:
+	GameState.ship_controller.add_critical_effect("brit_a2", {"id": "signal_halyards_cut"})
+	GameState.ships["brit_a2"].status = ShipState.Status.STRUCK
+	assert_eq(_pc().player_send_signal(0, "brit_a1", _fleet(), "attack"), "")
+
+
+func test_captured_prize_with_halyards_cut_does_not_block_the_captor() -> void:
+	var prize: ShipState = GameState.ships["fr_a1"]
+	prize.commander_id = 0
+	prize.status = ShipState.Status.CAPTURED
+	GameState.ship_controller.add_critical_effect("fr_a1", {"id": "signal_halyards_cut"})
+	assert_true(GameState.ships_of_player(0).has(prize))
+	assert_eq(_pc().player_send_signal(0, "brit_a1", _fleet(), "attack"), "")
+
+
+func test_queries_return_copies() -> void:
+	assert_eq(_pc().player_send_signal(0, "brit_a1", _fleet(), "attack"), "")
+	_pc().pending_signal(0).words.append("EXTRA")
+	_pc().pending_signal(0).delivered = true
+	assert_eq(GameState.signals[0].words, ["ATTACK"] as Array[String])
+	assert_false(GameState.signals[0].delivered)
+	GameState.signals[0].delivered = true
+	_pc().signals_for(0)[0].words.append("EXTRA")
+	assert_eq(GameState.signals[0].words.size(), 1)
+
+
 func test_struck_ship_cannot_signal() -> void:
 	GameState.ships["brit_a1"].status = ShipState.Status.STRUCK
 	assert_ne(_pc().player_send_signal(0, "brit_a1", _fleet(), "attack"), "")

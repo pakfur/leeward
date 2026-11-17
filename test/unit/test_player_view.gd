@@ -270,6 +270,21 @@ func test_plot_hidden_from_other_players() -> void:
 	assert_true(_view().ship_for(0, "brit_a1").has("pending_turn"))
 
 
+func test_standing_order_hidden_from_the_other_side() -> void:
+	GameState.get_ship("brit_a1").standing_order = {"order": "engage"}
+	assert_false(_view().ship_for(2, "brit_a1").has("standing_order"))
+	assert_true(_view().ship_for(1, "brit_a1").has("standing_order"))
+	assert_true(_view().ship_for(0, "brit_a1").has("standing_order"))
+
+
+func test_tournament_shows_standing_order() -> void:
+	GameState.clear_ships()
+	_scenario["tournament"] = true
+	_start(_scenario)
+	GameState.get_ship("brit_a1").standing_order = {"order": "engage"}
+	assert_true(_view().ship_for(2, "brit_a1").has("standing_order"))
+
+
 func test_tournament_keeps_plot() -> void:
 	GameState.clear_ships()
 	_scenario["tournament"] = true

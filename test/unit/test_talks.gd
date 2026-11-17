@@ -86,6 +86,9 @@ func test_second_player_cannot_write_first() -> void:
 	assert_eq(_pc().player_send_talk(1, id, "ahoy"), "")
 	assert_eq(_pc().talks_for(0).size(), 1)
 	assert_eq(_pc().talks_for(2).size(), 0)
+	var before: int = GameState.talks[0]["messages"].size()
+	_pc().talks_for(0)[0]["messages"].append("tamper")
+	assert_eq(GameState.talks[0]["messages"].size(), before)
 
 
 func test_six_words_refused() -> void:

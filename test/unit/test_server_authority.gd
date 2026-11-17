@@ -83,6 +83,9 @@ const FORBIDDEN := [
 	["\\b(GameState|game_state)\\.end_offers\\.(clear|erase|merge)\\(", "end_offers changed in place from view code"],
 	["\\b(GameState|game_state)\\.talks\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "talks written from view code"],
 	["\\b(GameState|game_state)\\.talks\\.(append|append_array|clear|erase|remove_at|push_back|insert|sort|sort_custom)\\(", "talks changed in place from view code"],
+	["\\.standing_order\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "a standing order written from view code"],
+	["\\.standing_order\\.(clear|erase|merge|assign|set)\\(", "a standing order changed in place from view code"],
+	["\\b(get_player\\([^)]*\\)|players\\[[^\\]]*\\])\\.(id|side|name|is_ai)\\s*(=|\\+=|-=)[^=]", "a PlayerState field written from view code"],
 	["\\.(delivered|words|address)\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "a signal field written from view code"],
 	["\\.(prize|detached_boxes|boarding_actions|linked_at_plot|boarding_history)\\.(append|append_array|clear|erase|remove_at|push_back|push_front|pop_back|pop_front|insert|resize|sort|sort_custom|fill|merge)\\(",
 			"a boarding or capture field changed in place from view code"],
@@ -330,6 +333,64 @@ func test_map_removal_patterns_catch_mutations() -> void:
 		"if not ship_state.is_on_map():",
 		"for s in GameState.ships_on_map():",
 		"if ship.removed_from_map == true:",
+	]
+	var checks: Array = []
+	for f in FORBIDDEN:
+		var re := RegEx.new()
+		re.compile(f[0])
+		checks.append(re)
+	for line in bad:
+		var hit := false
+		for re in checks:
+			if re.search(line) != null:
+				hit = true
+		assert_true(hit, "caught: %s" % line)
+	for line in good:
+		for re in checks:
+			assert_null(re.search(line), "allowed: %s" % line)
+
+
+## The players-and-sides patterns (players, groups, signals, talks, end offers, commanders, standing
+## orders, PlayerState fields) catch the violations they are meant to, and let the queries through.
+func test_players_and_sides_patterns_catch_mutations() -> void:
+	var bad := [
+		"GameState.players[0] = p",
+		"GameState.players.clear()",
+		"GameState.groups[0] = {}",
+		"GameState.groups.erase(0)",
+		"GameState.signals.append(sig)",
+		"GameState.signals = []",
+		"GameState.talks.clear()",
+		"GameState.talks[0] = {}",
+		"GameState.end_offers[0] = true",
+		"GameState.end_offers.erase(0)",
+		"ship.commander_id = 1",
+		"GameState.ship_controller.set_commander(\"a\", 1)",
+		"GameState.ship_controller.set_standing_order(\"a\", {})",
+		"ship.standing_order = {}",
+		"ship.standing_order[\"order\"] = \"engage\"",
+		"s.standing_order.merge({\"a\": 1})",
+		"s.standing_order.erase(\"order\")",
+		"s.standing_order.clear()",
+		"sig.delivered = true",
+		"sig.words = []",
+		"sig.address = {}",
+		"GameState.get_player(0).is_ai = false",
+		"GameState.players[0].side = 1",
+		"GameState.get_player(0).name = \"x\"",
+	]
+	var good := [
+		"var o = GameState.order_of(\"a\")",
+		"if GameState.commands(0, \"a\"):",
+		"var n := GameState.get_player(0).name",
+		"if GameState.players[0].is_ai:",
+		"var side := GameState.side_of_player(0)",
+		"var order: Dictionary = ship.standing_order",
+		"var t = GameState.phase_controller.talks_for(0)",
+		"if sig.delivered:",
+		"var p = GameState.signals.size()",
+		"view.side = 1",
+		"label.name = \"Plate\"",
 	]
 	var checks: Array = []
 	for f in FORBIDDEN:
