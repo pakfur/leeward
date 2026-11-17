@@ -322,6 +322,24 @@ func commander_of(ship_id: String) -> int:
 	return s.commanding_player() if s != null else -1
 
 
+## The order the ship's captain follows (spec 7): its standing order, or plain engage when it has
+## none or its target or leader is out of play or off the map. {} for an unknown id. Read-only.
+func order_of(ship_id: String) -> Dictionary:
+	var s: ShipState = ships.get(ship_id)
+	if s == null:
+		return {}
+	if s.standing_order.is_empty():
+		return {"order": "engage"}
+	for key in ["target", "leader"]:
+		var other_id := str(s.standing_order.get(key, ""))
+		if other_id == "":
+			continue
+		var other: ShipState = ships.get(other_id)
+		if other == null or other.is_out_of_play() or not other.is_on_map():
+			return {"order": "engage"}
+	return s.standing_order.duplicate(true)
+
+
 func commands(player_id: int, ship_id: String) -> bool:
 	return player_id >= 0 and commander_of(ship_id) == player_id
 

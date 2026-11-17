@@ -145,7 +145,7 @@ var ship_type: String:
 @export var irons_entry_turn: int = -1
 ## Standing order set by a delivered signal (SignalOrders): {} none, else {"order": engage|close|
 ## follow|line|disengage, "target"/"range"/"leader"/"group"}. Mutated only through
-## ShipStateController.set_standing_order. Read it with current_order().
+## ShipStateController.set_standing_order. Read it with GameState.order_of(ship_id).
 @export var standing_order: Dictionary = {}
 
 # Crew tasks (4.A.3, 4.B; crew-tasks spec §2.2; mutated only through ShipStateController)
@@ -283,21 +283,6 @@ func commanding_player() -> int:
 ## Carries a fleet or squadron flag and is still in play.
 func is_flagship() -> bool:
 	return ship != null and ship.flag != "" and not is_out_of_play()
-
-
-## The order the ship's captain follows: the standing order, or plain engage when there is none or
-## its target or leader is out of play or off the map.
-func current_order() -> Dictionary:
-	if standing_order.is_empty():
-		return {"order": "engage"}
-	for key in ["target", "leader"]:
-		var other_id := str(standing_order.get(key, ""))
-		if other_id == "":
-			continue
-		var other: ShipState = GameState.ships.get(other_id)
-		if other == null or other.is_out_of_play() or not other.is_on_map():
-			return {"order": "engage"}
-	return standing_order.duplicate(true)
 
 
 func is_fleet_flagship() -> bool:

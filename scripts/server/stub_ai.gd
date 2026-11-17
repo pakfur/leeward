@@ -3,14 +3,22 @@ extends RefCounted
 ## StubAI - Drives the plotting protocol for non-player ships
 ## Uses the real MovementPlottingController so all AI plots are rule-validated.
 ##
-## Strategies:
-##   "engage"  — steer toward the nearest enemy, presenting a broadside when close (default)
-##   "forward" — move straight ahead, consuming all available MA
-##   "hold"    — submit immediately with empty path
+## Strategies (a ship's strategy is its standing order, GameState.order_of; strategy_override wins):
+##   "engage"    — steer toward the ordered target (engage <ship>) or else the nearest enemy,
+##                 presenting a broadside when close (default, and the fallback of every order)
+##   "close"     — work to the ordered range from the nearest enemy and hold it there
+##   "follow"    — sail for the hex astern of the leader's stern, never into another ship's hexes
+##   "line"      — follow the ship listed before this one in the order's group (GameState.groups);
+##                 the first follows the fleet flagship, the flagship engages; no group: the flagship
+##   "disengage" — open the range from the nearest enemy
+##   "forward"   — move straight ahead, consuming all available MA (tests)
+##   "hold"      — submit immediately with empty path (tests)
+## Every course is carried on to the deceleration limit (_meet_deceleration_minimum).
 ##
 ## Fire: each ship fires each broadside at its best-odds target, splitting a side between two
-## targets when no full broadside bears (see choose_fire_orders); its marines fire at the adjacent
-## enemy with the best modified die (choose_marine_orders).
+## targets when no full broadside bears (see choose_fire_orders); a ship ordered to engage a ship
+## fires at her first when she can; its marines fire at the adjacent enemy with the best modified
+## die (choose_marine_orders).
 
 ## A broadside shot at or inside this range scores as a firing position.
 const FIRING_RANGE := 5
@@ -32,6 +40,9 @@ var game_state: Node = null
 var _request_counter: int = 0
 ## When non-empty, forces this strategy for every AI ship (used by tests).
 var strategy_override: String = ""
+## Submissions refused during the last plot_all_ai_ships, as {ship_id, error} (diagnostics; a refused
+## course is replotted plain).
+var refusals: Array = []
 
 
 func _init(p_game_state: Node = null) -> void:
@@ -46,6 +57,7 @@ func plot_all_ai_ships() -> void:
 	if not controller:
 		push_error("StubAI: No movement_plotting_controller on game_state")
 		return
+	refusals = []
 
 	var ai_ships := _get_ai_ships()
 	Trace.trace_log("StubAI", "plot_all_ai_ships: %d AI ships" % ai_ships.size())
@@ -268,15 +280,18 @@ func submit_fire_orders() -> void:
 ## differ, a split side (bow at one, stern at the other, 7.B.1). Of the combinations of the two
 ## sides' offers that name at most two targets (7.A.4) and, when they name two, leave every shot
 ## mgn >= 1 under the two-target penalty, the ship fires the one with the most shots, then the
-## highest total mgn (FireRules + preview_orders), then the nearest, then by target_id.
+## highest total mgn (FireRules + preview_orders), then the nearest, then by target_id. A ship
+## ordered to engage a ship (spec 7) puts a combination that fires at her before all of these; its
+## sides offer their best shot at her too.
 func choose_fire_orders(player_id: int = -1) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	var calculator: GunneryCalculator = game_state.gunnery_calculator
 	for ship_state in _get_ai_ships(player_id):
 		var shots := calculator.eligible_shots(ship_state.ship_id)
+		var ordered := str(game_state.order_of(ship_state.ship_id).get("target", ""))
 		var offers: Array = []
 		for side in GunneryCalculator.SIDES:
-			offers.append(_side_offers(shots, side))
+			offers.append(_side_offers(shots, side, ordered))
 		var best: Dictionary = {}
 		for port_offer in offers[0]:
 			for starboard_offer in offers[1]:
@@ -284,6 +299,8 @@ func choose_fire_orders(player_id: int = -1) -> Array[Dictionary]:
 				orders.append_array(port_offer)
 				orders.append_array(starboard_offer)
 				var candidate := _evaluate_orders(calculator, orders)
+				if not candidate.is_empty():
+					candidate["ordered"] = ordered != "" and ordered in candidate["targets"].split(",")
 				if not candidate.is_empty() and (best.is_empty() or _candidate_beats(candidate, best)):
 					best = candidate
 		if not best.is_empty():
@@ -323,10 +340,12 @@ func _marine_shot_beats(a: Dictionary, b: Dictionary) -> bool:
 	return str(a["target_id"]) < str(b["target_id"])
 
 
-## The order sets one side may fire: [] (hold), its best shot, and the split side when it has one.
-func _side_offers(shots: Array[GunneryTypes.ShotPreview], side: int) -> Array:
+## The order sets one side may fire: [] (hold), its best shot, the split side when it has one, and
+## its best shot at the `ordered` target when that is not already the best shot.
+func _side_offers(shots: Array[GunneryTypes.ShotPreview], side: int, ordered: String = "") -> Array:
 	var offers: Array = [[] as Array[GunneryTypes.FireOrder]]
 	var best: GunneryTypes.ShotPreview = null
+	var best_ordered: GunneryTypes.ShotPreview = null
 	var best_by_battery := {}
 	for shot in shots:
 		if shot.order.side != side:
@@ -334,12 +353,17 @@ func _side_offers(shots: Array[GunneryTypes.ShotPreview], side: int) -> Array:
 		# A full broadside before any half broadside (FireRules.battery_rank), then mgn.
 		if best == null or _preferred(shot, best):
 			best = shot
+		if ordered != "" and shot.order.target_id == ordered \
+				and (best_ordered == null or _preferred(shot, best_ordered)):
+			best_ordered = shot
 		var battery := shot.order.battery
 		if not best_by_battery.has(battery) or _shot_beats(shot, best_by_battery[battery]):
 			best_by_battery[battery] = shot
 	if best == null:
 		return offers
 	offers.append([best.order] as Array[GunneryTypes.FireOrder])
+	if best_ordered != null and best_ordered != best:
+		offers.append([best_ordered.order] as Array[GunneryTypes.FireOrder])
 	if best.order.battery == GunneryTypes.BATTERY_FULL:
 		return offers
 	var bow: GunneryTypes.ShotPreview = best_by_battery.get(GunneryTypes.BATTERY_BOW)
@@ -368,6 +392,8 @@ func _evaluate_orders(calculator: GunneryCalculator, orders: Array[GunneryTypes.
 
 
 func _candidate_beats(a: Dictionary, b: Dictionary) -> bool:
+	if a.get("ordered", false) != b.get("ordered", false):
+		return a.get("ordered", false)
 	for key in ["shots", "mgn"]:
 		if a[key] != b[key]:
 			return a[key] > b[key]
@@ -413,10 +439,11 @@ func _get_ai_ships(player_id: int = -1) -> Array[ShipState]:
 	return result
 
 
-func _get_strategy(_ship_state: ShipState) -> String:
+## The ship's strategy: strategy_override when set (tests), else its standing order's (spec 7).
+func _get_strategy(ship_state: ShipState) -> String:
 	if strategy_override != "":
 		return strategy_override
-	return "engage"
+	return str(game_state.order_of(ship_state.ship_id).get("order", "engage"))
 
 
 func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, strategy: String) -> void:
@@ -441,14 +468,31 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 	match strategy:
 		"engage":
 			version = _strategy_engage(ship_state, controller, session_id, version, started)
+		"close":
+			version = _strategy_close(ship_state, controller, session_id, version, started)
+		"follow":
+			version = _strategy_follow(ship_state, controller, session_id, version, started)
+		"line":
+			version = _strategy_line(ship_state, controller, session_id, version, started)
+		"disengage":
+			version = _strategy_disengage(ship_state, controller, session_id, version, started)
 		"forward":
 			version = _strategy_forward(ship_state, controller, session_id, version, started)
 		"hold":
 			pass
 
 	# 5.E.4: a course that stops short of the deceleration limit is carried on until it meets it.
-	version = _meet_deceleration_minimum(ship_id, controller, session_id, version)
+	# A ship keeping station on a leader pads with moves that stay out of the other ships' hexes.
+	var avoid := {}
+	if strategy in ["follow", "line"]:
+		var ships: Array[ShipState] = []
+		ships.assign(game_state.get_all_ships())
+		avoid = Occupancy.build(ships, [ship_id])
+	version = _meet_deceleration_minimum(ship_id, controller, session_id, version, avoid)
 	var submit_response := controller.handle_submit_movement(session_id, version, _next_request_id())
+	if submit_response is MovementTypes.PlottingErrorResponse:
+		refusals.append({"ship_id": ship_id,
+			"error": (submit_response as MovementTypes.PlottingErrorResponse).error_code})
 
 	if submit_response is MovementTypes.PlottingErrorResponse \
 			and (submit_response as MovementTypes.PlottingErrorResponse).error_code in REPLOT_ERROR_CODES:
@@ -484,9 +528,11 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 
 
 ## Extends the session's course with moves ahead (else the first move offered) while it cannot be
-## submitted for being short of the deceleration limit (5.E.4). Returns the session version.
+## submitted for being short of the deceleration limit (5.E.4). With `avoid` (hex -> ship id), it
+## first takes a move ahead, then any move, that keeps bow and stern out of those hexes, and only
+## when there is none the plain choice. Returns the session version.
 func _meet_deceleration_minimum(ship_id: String, controller: MovementPlottingController,
-		session_id: String, version: int) -> int:
+		session_id: String, version: int, avoid: Dictionary = {}) -> int:
 	var validator := MovementValidator.new(game_state)
 	var ship: ShipState = game_state.get_ship(ship_id)
 	for _i in range(MAX_PADDING_STEPS):
@@ -498,6 +544,15 @@ func _meet_deceleration_minimum(ship_id: String, controller: MovementPlottingCon
 			break
 		var move: MovementTypes.ValidMove = valid.forward[0] if not valid.forward.is_empty() \
 				else valid.get_all_valid_moves()[0]
+		if not avoid.is_empty():
+			var here := ship.hex_position
+			if not session.plotted_path.is_empty():
+				here = session.plotted_path[session.plotted_path.size() - 1].hex
+			var clear := _clear_move(valid.forward, here, avoid)
+			if clear == null:
+				clear = _clear_move(valid.get_all_valid_moves(), here, avoid)
+			if clear != null:
+				move = clear
 		var response := controller.handle_select_hex(session_id, version, move.hex, _next_request_id())
 		if response is MovementTypes.PlottingErrorResponse:
 			break
@@ -538,20 +593,145 @@ func _strategy_engage(
 	version: int,
 	started: MovementTypes.PlottingStartedResponse
 ) -> int:
-	var enemy := _nearest_enemy(ship_state)
+	var enemy := _engage_enemy(ship_state)
 	if enemy == null:
 		return version  # nothing to engage: submit the session with an empty path
+	var occupied := _occupied_except(ship_state, enemy)
+	var friendly := _friendly_footprints(ship_state)
+	var score := func(bow: Vector2i, facing: int) -> int:
+		return _score_position(bow, facing, enemy, occupied, friendly)
+	return _steer(ship_state, controller, session_id, version, started, score, true, false)
 
+
+## As engage, toward the ordered range from the nearest enemy (_score_close).
+func _strategy_close(
+	ship_state: ShipState,
+	controller: MovementPlottingController,
+	session_id: String,
+	version: int,
+	started: MovementTypes.PlottingStartedResponse
+) -> int:
+	var enemy := _nearest_enemy(ship_state)
+	if enemy == null:
+		return version
+	var want := clampi(int(game_state.order_of(ship_state.ship_id).get("range", FIRING_RANGE)), 1,
+		FireRules.MAX_RANGE)
+	var occupied := _occupied_except(ship_state, enemy)
+	var friendly := _friendly_footprints(ship_state)
+	var score := func(bow: Vector2i, facing: int) -> int:
+		return _score_close(bow, facing, enemy, want, occupied, friendly)
+	return _steer(ship_state, controller, session_id, version, started, score, true, false)
+
+
+## Sails for the hex astern of the leader's stern (_score_follow), never putting bow or stern into
+## another ship's hexes. No leader in play: engage.
+func _strategy_follow(
+	ship_state: ShipState,
+	controller: MovementPlottingController,
+	session_id: String,
+	version: int,
+	started: MovementTypes.PlottingStartedResponse
+) -> int:
+	var leader_id := str(game_state.order_of(ship_state.ship_id).get("leader", ""))
+	return _follow_leader(ship_state, leader_id, controller, session_id, version, started)
+
+
+## Follows the ship before this one in the order's group (_line_leader); the first ship and a ship
+## with no group follow the fleet flagship; the flagship (or a line with no flagship) engages.
+func _strategy_line(
+	ship_state: ShipState,
+	controller: MovementPlottingController,
+	session_id: String,
+	version: int,
+	started: MovementTypes.PlottingStartedResponse
+) -> int:
+	return _follow_leader(ship_state, _line_leader(ship_state), controller, session_id, version, started)
+
+
+## Opens the range from the nearest enemy with every move it has (_score_disengage).
+func _strategy_disengage(
+	ship_state: ShipState,
+	controller: MovementPlottingController,
+	session_id: String,
+	version: int,
+	started: MovementTypes.PlottingStartedResponse
+) -> int:
+	var enemy := _nearest_enemy(ship_state)
+	if enemy == null:
+		return version
+	var score := func(bow: Vector2i, facing: int) -> int:
+		return _score_disengage(bow, facing, enemy)
+	return _steer(ship_state, controller, session_id, version, started, score, false, false)
+
+
+func _follow_leader(ship_state: ShipState, leader_id: String, controller: MovementPlottingController,
+		session_id: String, version: int, started: MovementTypes.PlottingStartedResponse) -> int:
+	var leader: ShipState = game_state.get_ship(leader_id) if leader_id != "" else null
+	if leader == null or leader == ship_state or leader.is_out_of_play() or not leader.is_on_map():
+		return _strategy_engage(ship_state, controller, session_id, version, started)
+	var score := func(bow: Vector2i, facing: int) -> int:
+		return _score_follow(bow, facing, leader)
+	return _steer(ship_state, controller, session_id, version, started, score, true, true)
+
+
+## The ship a "line" order follows: the nearest ship in play listed before this one in the order's
+## group of its side (GameState.groups); else the side's fleet flagship; "" for the flagship itself
+## or when the side has none (the ship then engages).
+func _line_leader(ship_state: ShipState) -> String:
+	var group := str(game_state.order_of(ship_state.ship_id).get("group", ""))
+	var members: Array = game_state.groups.get(ship_state.side, {}).get(group, []) if group != "" else []
+	var index := members.find(ship_state.ship_id)
+	for i in range(index - 1, -1, -1):
+		var other: ShipState = game_state.get_ship(str(members[i]))
+		if other != null and not other.is_out_of_play() and other.is_on_map():
+			return other.ship_id
+	if ship_state.is_fleet_flagship():
+		return ""
+	for other in game_state.get_all_ships():
+		if other.side == ship_state.side and other.is_fleet_flagship() and other.is_on_map():
+			return other.ship_id
+	return ""
+
+
+## The enemy an engaging ship steers for: the ordered target (engage <ship>) while she is an enemy
+## in play on the map, else the nearest enemy.
+func _engage_enemy(ship_state: ShipState) -> ShipState:
+	var target_id := str(game_state.order_of(ship_state.ship_id).get("target", ""))
+	var target: ShipState = game_state.get_ship(target_id) if target_id != "" else null
+	if target != null and target.side != ship_state.side and not target.is_out_of_play() \
+			and target.is_on_map():
+		return target
+	return _nearest_enemy(ship_state)
+
+
+## Every footprint but the firer's and the enemy's (lines of sight pass those two).
+func _occupied_except(ship_state: ShipState, enemy: ShipState) -> Dictionary:
 	var ships: Array[ShipState] = []
 	ships.assign(game_state.get_all_ships())
-	# Footprints of everyone else: a turn may not swing the stern into one (the resolver would
-	# cancel it), and lines of sight pass the firer and the enemy but not the rest.
-	var others := Occupancy.build(ships, [ship_state.ship_id])
-	var occupied := Occupancy.build(ships, [ship_state.ship_id, enemy.ship_id])
-	# Friendly footprints make blocking hexes (7.B.10), as in GunneryCalculator.preview.
+	return Occupancy.build(ships, [ship_state.ship_id, enemy.ship_id])
+
+
+## Friendly footprints make blocking hexes (7.B.10), as in GunneryCalculator.preview.
+func _friendly_footprints(ship_state: ShipState) -> Array:
 	var friendly: Array = []
 	for friend in game_state.gunnery_calculator.friendly_ships(ship_state):
 		friendly.append(friend.occupied_hexes())
+	return friendly
+
+
+## Greedy course through the session: each step takes the valid move with the best `score`
+## (Callable(bow, facing) -> int; ties by _option_beats), skipping turns that swing the stern into
+## another ship's hexes and, with `avoid_bows`, moves that put the bow into one. With `hold`, a ship
+## whose position scores > 0 stops once no option is strictly better; otherwise it keeps way on,
+## even through a lower-scoring step, until it has no move left. Returns the session version.
+func _steer(ship_state: ShipState, controller: MovementPlottingController, session_id: String,
+		version: int, started: MovementTypes.PlottingStartedResponse, score: Callable, hold: bool,
+		avoid_bows: bool) -> int:
+	var ships: Array[ShipState] = []
+	ships.assign(game_state.get_all_ships())
+	# Footprints of everyone else: a turn may not swing the stern into one (the resolver would
+	# cancel it).
+	var others := Occupancy.build(ships, [ship_state.ship_id])
 
 	var current_hex := ship_state.hex_position
 	var current_facing := ship_state.facing
@@ -560,14 +740,15 @@ func _strategy_engage(
 	var can_submit := started.can_submit
 
 	while current_valid and current_valid.has_any_moves():
-		var stay_score := _score_position(current_hex, current_facing, enemy, occupied, friendly)
+		var stay_score: int = score.call(current_hex, current_facing)
 		var best: MovementTypes.ValidMove = null
 		var best_score := 0
 		for move in current_valid.get_all_valid_moves():
 			if _stern_blocked(move, current_hex, others):
 				continue
-			var move_score := _score_position(move.metadata.resulting_hex, move.metadata.resulting_facing,
-				enemy, occupied, friendly)
+			if avoid_bows and others.has(move.metadata.resulting_hex):
+				continue
+			var move_score: int = score.call(move.metadata.resulting_hex, move.metadata.resulting_facing)
 			if best == null or _option_beats(move, move_score, best, best_score, current_facing):
 				best = move
 				best_score = move_score
@@ -575,7 +756,7 @@ func _strategy_engage(
 			break
 		# An engaged ship holds position unless an option is strictly better; otherwise it keeps
 		# way on and works round toward the enemy, even through a lower-scoring step.
-		if can_submit and stay_score > 0 and best_score <= stay_score:
+		if hold and can_submit and stay_score > 0 and best_score <= stay_score:
 			break
 
 		var response := controller.handle_select_hex(session_id, current_version, best.hex, _next_request_id())
@@ -631,26 +812,88 @@ func _score_position(bow: Vector2i, facing: int, enemy: ShipState, occupied: Dic
 	var enemy_hexes := enemy.occupied_hexes()
 	var range_hexes := geometry.range_between(firer_hexes, enemy_hexes)
 	if range_hexes <= FIRING_RANGE:
-		var batteries := 0
-		for side in GunneryCalculator.SIDES:
-			var bearing := 0
-			for battery in firer_hexes:
-				var blocking := geometry.blocking_hexes(battery, facing, side, firer_hexes, friendly)
-				if geometry.battery_bears(battery, facing, side, enemy_hexes, occupied, blocking):
-					bearing += 1
-			batteries = maxi(batteries, bearing)
+		var batteries := _bearing_batteries(firer_hexes, facing, enemy_hexes, occupied, friendly)
 		if batteries > 0:
 			return FIRING_POSITION_BASE - FIRING_RANGE_WEIGHT * range_hexes \
 					+ SECOND_BATTERY_BONUS * (batteries - 1)
-	var enemy_bow := enemy.hex_position
 	var bow_hexes: Array[Vector2i] = [bow]
 	var distance := geometry.range_between(bow_hexes, enemy_hexes)
-	var misalignment := 0
-	if bow != enemy_bow:
-		var toward := geometry.hex_grid.get_facing_direction(bow.x, bow.y, enemy_bow.x, enemy_bow.y)
-		var steps := absi(facing - toward) % 6
-		misalignment = mini(steps, 6 - steps)
-	return -(2 * distance + misalignment)
+	return -(2 * distance + _misalignment(bow, facing, enemy.hex_position))
+
+
+## The most batteries of one side that bear on `enemy_hexes` (0-2).
+func _bearing_batteries(firer_hexes: Array[Vector2i], facing: int, enemy_hexes: Array[Vector2i],
+		occupied: Dictionary, friendly: Array) -> int:
+	var geometry: FireGeometry = game_state.fire_geometry
+	var batteries := 0
+	for side in GunneryCalculator.SIDES:
+		var bearing := 0
+		for battery in firer_hexes:
+			var blocking := geometry.blocking_hexes(battery, facing, side, firer_hexes, friendly)
+			if geometry.battery_bears(battery, facing, side, enemy_hexes, occupied, blocking):
+				bearing += 1
+		batteries = maxi(batteries, bearing)
+	return batteries
+
+
+## 60 degree steps between `facing` and the direction from `bow` toward `hex` (0 when on it).
+func _misalignment(bow: Vector2i, facing: int, hex: Vector2i) -> int:
+	if bow == hex:
+		return 0
+	var toward: int = game_state.fire_geometry.hex_grid.get_facing_direction(bow.x, bow.y, hex.x, hex.y)
+	return _turn_steps(facing, toward)
+
+
+static func _turn_steps(a: int, b: int) -> int:
+	var steps := absi(a - b) % 6
+	return mini(steps, 6 - steps)
+
+
+## Close (spec 7): at the ordered range `want` (closest hexes) the position is on station,
+## 1000 + 3 per battery bearing on the enemy, always > 0. Otherwise -(2 * |range - want| +
+## misalignment), the misalignment from the facing to the enemy's bow when too far, away from it
+## when too near.
+func _score_close(bow: Vector2i, facing: int, enemy: ShipState, want: int, occupied: Dictionary,
+		friendly: Array) -> int:
+	var firer_hexes: Array[Vector2i] = [bow, HexGrid.stern_of(bow, facing)]
+	var enemy_hexes := enemy.occupied_hexes()
+	var range_hexes: int = game_state.fire_geometry.range_between(firer_hexes, enemy_hexes)
+	if range_hexes == want:
+		return FIRING_POSITION_BASE \
+				+ SECOND_BATTERY_BONUS * _bearing_batteries(firer_hexes, facing, enemy_hexes, occupied, friendly)
+	var misalignment := _misalignment(bow, facing, enemy.hex_position)
+	if range_hexes < want:
+		misalignment = 3 - misalignment  # steps from the facing to the bearing away from her
+	return -(2 * absi(range_hexes - want) + misalignment)
+
+
+## Disengage (spec 7): 2 * range (closest hexes) less the misalignment from the bearing away from
+## the enemy's bow. Never "on station": the ship uses every move it has.
+func _score_disengage(bow: Vector2i, facing: int, enemy: ShipState) -> int:
+	var firer_hexes: Array[Vector2i] = [bow, HexGrid.stern_of(bow, facing)]
+	var range_hexes: int = game_state.fire_geometry.range_between(firer_hexes, enemy.occupied_hexes())
+	var off_away := 3 - _misalignment(bow, facing, enemy.hex_position)
+	return 2 * range_hexes - off_away
+
+
+## Follow (spec 7): the follower's bow on the hex astern of the leader's stern is on station,
+## 1000 less the steps between the two facings, always > 0. Otherwise -(2 * hex distance to that
+## hex + misalignment toward it).
+func _score_follow(bow: Vector2i, facing: int, leader: ShipState) -> int:
+	var wake: Vector2i = leader.stern_hex() + HexGrid.DIRECTIONS[(leader.facing + 3) % 6]
+	if bow == wake:
+		return FIRING_POSITION_BASE - _turn_steps(facing, leader.facing)
+	return -(2 * _axial_distance(bow, wake) + _misalignment(bow, facing, wake))
+
+
+## The first of `moves` that keeps bow and stern out of `avoid`, from a ship whose bow is at `here`;
+## null when none does.
+func _clear_move(moves: Array, here: Vector2i, avoid: Dictionary) -> MovementTypes.ValidMove:
+	for move: MovementTypes.ValidMove in moves:
+		if avoid.has(move.metadata.resulting_hex) or _stern_blocked(move, here, avoid):
+			continue
+		return move
+	return null
 
 
 ## Higher score wins; ties keep the current facing, then lowest q, then lowest r.

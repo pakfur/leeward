@@ -785,3 +785,206 @@ func test_5e4_ai_course_meets_the_deceleration_limit() -> void:
 	for d in steps:
 		path.append(MovementTypes.PlotStep.from_dict(d))
 	assert_eq(MovementValidator.new(GameState).deceleration_shortfall(ai, path), 0)
+
+
+# ===========================================================================
+# Standing orders (players-and-sides spec 7)
+# ===========================================================================
+
+func after_each() -> void:
+	GameState.groups = {}
+
+
+func _order(ship_id: String, order: Dictionary) -> void:
+	GameState.ship_controller.set_standing_order(ship_id, order)
+
+
+func _end_bow(ship: ShipState) -> Vector2i:
+	var path := _plotted(ship)
+	return ship.hex_position if path.is_empty() else path[path.size() - 1][0]
+
+
+func _end_footprint(ship: ShipState) -> Array[Vector2i]:
+	var path := _plotted(ship)
+	if path.is_empty():
+		return ship.occupied_hexes()
+	var last: Array = path[path.size() - 1]
+	var out: Array[Vector2i] = [last[0], HexGrid.stern_of(last[0], last[1])]
+	return out
+
+
+func _range(a: Array[Vector2i], b: Array[Vector2i]) -> int:
+	return GameState.fire_geometry.range_between(a, b)
+
+
+func _wake(leader: ShipState) -> Vector2i:
+	return leader.stern_hex() + HexGrid.DIRECTIONS[(leader.facing + 3) % 6]
+
+
+func _hex_distance(a: Vector2i, b: Vector2i) -> int:
+	return hex_grid.hex_distance(a.x, a.y, b.x, b.y)
+
+
+func _assert_never_enters(ship: ShipState, hexes: Array[Vector2i]) -> void:
+	for step in _plotted(ship):
+		assert_false(step[0] in hexes, "%s: bow %s enters %s" % [ship.ship_id, step[0], hexes])
+		assert_false(HexGrid.stern_of(step[0], step[1]) in hexes,
+			"%s: stern of %s enters %s" % [ship.ship_id, step, hexes])
+
+
+func test_strategy_reads_standing_order() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 3, 2)
+	_add_ship(ai)
+	assert_eq(stub_ai._get_strategy(ai), "engage", "no order: engage")
+	_order("ai1", {"order": "disengage"})
+	assert_eq(stub_ai._get_strategy(ai), "disengage")
+	stub_ai.strategy_override = "forward"
+	assert_eq(stub_ai._get_strategy(ai), "forward", "the test override wins")
+
+
+func test_close_holds_range() -> void:
+	# Enemy dead ahead to leeward at range 10; ordered to close to 5.
+	var enemy = _make_ship("p1", 0, Vector2i(-11, 0), 3, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 3, 2)
+	_add_ship(enemy)
+	_add_ship(ai)
+	_order("ai1", {"order": "close", "range": 5})
+	var start := _range(ai.occupied_hexes(), enemy.occupied_hexes())
+	assert_eq(start, 10, "fixture")
+	stub_ai.plot_all_ai_ships()
+	var end := _range(_end_footprint(ai), enemy.occupied_hexes())
+	assert_lt(absi(end - 5), absi(start - 5), "nearer range 5 (start %d, end %d)" % [start, end])
+
+
+func test_close_opens_range_when_too_near() -> void:
+	# Enemy abeam at range 2, where engage would lie and fight; ordered to hold range 5, the AI
+	# opens the range instead.
+	var enemy = _make_ship("p1", 0, Vector2i(0, -2), 3, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 3, 2)
+	_add_ship(enemy)
+	_add_ship(ai)
+	_order("ai1", {"order": "close", "range": 5})
+	var start := _range(ai.occupied_hexes(), enemy.occupied_hexes())
+	assert_eq(start, 2, "fixture")
+	stub_ai.plot_all_ai_ships()
+	var end := _range(_end_footprint(ai), enemy.occupied_hexes())
+	assert_gt(end, start, "opens toward range 5 (end %d)" % end)
+	assert_lte(end, 5, "but not beyond it")
+
+
+func test_follow_moves_toward_leader_stern() -> void:
+	var leader = _make_ship("lead", 1, Vector2i(-6, 0), 3, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 3, 2)
+	_add_ship(leader)
+	_add_ship(ai)
+	_order("ai1", {"order": "follow", "leader": "lead"})
+	var wake := _wake(leader)
+	assert_eq(wake, Vector2i(-4, 0), "fixture: the hex astern of the leader's stern")
+	var start := _hex_distance(ai.hex_position, wake)
+	stub_ai.plot_all_ai_ships()
+	assert_lt(_hex_distance(_end_bow(ai), wake), start, "steers for the leader's wake")
+
+
+func test_follow_never_enters_leader_hexes() -> void:
+	# The leader lies across the follower's road to her wake (she faces east, her wake is to the west).
+	var leader = _make_ship("lead", 1, Vector2i(-2, 0), 0, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(1, 0), 3, 2)
+	_add_ship(leader)
+	_add_ship(ai)
+	_order("ai1", {"order": "follow", "leader": "lead"})
+	stub_ai.plot_all_ai_ships()
+	assert_gt(_plotted(ai).size(), 0, "the follower plots a course")
+	_assert_never_enters(ai, leader.occupied_hexes())
+
+
+func test_line_follows_previous_ship_in_group() -> void:
+	var a = _make_ship("a", 1, Vector2i(-6, 0), 3, 0)
+	var b = _make_ship("b", 1, Vector2i(0, 0), 3, 2)
+	var flag = _make_ship("flag", 1, Vector2i(-6, 8), 3, 0)
+	flag.ship.flag = "fleet"
+	for s in [a, b, flag]:
+		_add_ship(s)
+	GameState.groups = {1: {"Van": ["a", "b"]}}
+	_order("a", {"order": "line", "group": "Van"})
+	_order("b", {"order": "line", "group": "Van"})
+	assert_eq(stub_ai._line_leader(b), "a", "b follows the ship before her")
+	assert_eq(stub_ai._line_leader(a), "flag", "the first follows the fleet flagship")
+	assert_eq(stub_ai._line_leader(flag), "", "the flagship engages")
+	_order("b", {"order": "line", "group": ""})
+	assert_eq(stub_ai._line_leader(b), "flag", "no group: follow the fleet flagship")
+	_order("b", {"order": "line", "group": "Van"})
+	var wake := _wake(a)
+	var start := _hex_distance(b.hex_position, wake)
+	stub_ai.plot_all_ai_ships()
+	assert_lt(_hex_distance(_end_bow(b), wake), start, "b steers for a's wake")
+
+
+func test_disengage_opens_range() -> void:
+	# Enemy abeam at range 2, where engage would lie and fight.
+	var enemy = _make_ship("p1", 0, Vector2i(0, -2), 3, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 3, 2)
+	_add_ship(enemy)
+	_add_ship(ai)
+	_order("ai1", {"order": "disengage"})
+	var start := _range(ai.occupied_hexes(), enemy.occupied_hexes())
+	stub_ai.plot_all_ai_ships()
+	var end := _range(_end_footprint(ai), enemy.occupied_hexes())
+	assert_gt(end, start, "opens the range (start %d, end %d)" % [start, end])
+
+
+func test_engage_target_overrides_nearest() -> void:
+	# The nearest enemy lies astern; the ordered target far ahead to leeward.
+	var near = _make_ship("near", 0, Vector2i(6, 0), 3, 0)
+	var far = _make_ship("far", 0, Vector2i(-14, 0), 3, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 3, 2)
+	for s in [near, far, ai]:
+		_add_ship(s)
+	assert_eq(stub_ai._engage_enemy(ai).ship_id, "near", "no target: the nearest")
+	_order("ai1", {"order": "engage", "target": "far"})
+	assert_eq(stub_ai._engage_enemy(ai).ship_id, "far")
+	var start := _range(ai.occupied_hexes(), far.occupied_hexes())
+	stub_ai.plot_all_ai_ships()
+	assert_lt(_range(_end_footprint(ai), far.occupied_hexes()), start, "closes the ordered target")
+
+
+func test_fire_prefers_ordered_target() -> void:
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 0)
+	var near = _make_ship("near", 0, _starboard_hex(Vector2i.ZERO, 0, 2), 0, 0)
+	# Also off the starboard side, on the other edge of the arc (SW), clear of near's line.
+	var far = _make_ship("far", 0, HexGrid.DIRECTIONS[2] * 4, 0, 0)
+	for s in [ai, near, far]:
+		_add_ship(s)
+	var at_far := GameState.gunnery_calculator.eligible_shots("ai1").filter(
+		func(p): return p.order.target_id == "far")
+	assert_gt(at_far.size(), 0, "fixture: a starboard battery bears on far")
+	var plain: Array[Dictionary] = stub_ai.choose_fire_orders()
+	assert_eq(plain.size(), 1)
+	assert_eq(plain[0]["target_id"], "near", "fixture: near is the better shot")
+	_order("ai1", {"order": "engage", "target": "far"})
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+	assert_eq(orders.size(), 1)
+	assert_eq(orders[0]["target_id"], "far")
+
+
+func test_follow_chain_plots_legally() -> void:
+	# a leads, b follows a, c follows b; all at speed 4 (deceleration limit 1 MP), close astern.
+	var a = _make_ship("a", 1, Vector2i(-6, 0), 3, 4)
+	var b = _make_ship("b", 1, Vector2i(-2, 0), 3, 4)
+	var c = _make_ship("c", 1, Vector2i(2, 0), 3, 4)
+	for s in [a, b, c]:
+		_add_ship(s)
+	_order("b", {"order": "follow", "leader": "a"})
+	_order("c", {"order": "follow", "leader": "b"})
+	var a_hexes: Array[Vector2i] = a.occupied_hexes()
+	var b_hexes: Array[Vector2i] = b.occupied_hexes()
+	stub_ai.plot_all_ai_ships()
+	assert_eq(stub_ai.refusals, [], "no submission refused")
+	var validator := MovementValidator.new(GameState)
+	for s in [a, b, c]:
+		assert_true(s.plotted_actions.get("movement_plotted", false), "%s submitted" % s.ship_id)
+		var path: Array[MovementTypes.PlotStep] = []
+		for d in s.plotted_actions.movement:
+			path.append(MovementTypes.PlotStep.from_dict(d))
+		assert_true(validator.validate_submission(s, path).can_submit, "%s plot is legal" % s.ship_id)
+	_assert_never_enters(b, a_hexes)
+	_assert_never_enters(c, b_hexes)

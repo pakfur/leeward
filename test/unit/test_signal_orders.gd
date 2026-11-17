@@ -129,19 +129,19 @@ func test_out_of_play_ships_skipped() -> void:
 
 func test_order_falls_back_when_leader_struck() -> void:
 	_deliver(0, "brit_a1", _fleet(), "FOLLOW FLAGSHIP")
-	assert_eq(GameState.ships["brit_a2"].current_order()["order"], "follow")
+	assert_eq(GameState.order_of("brit_a2")["order"], "follow")
 	GameState.ships["brit_a1"].status = ShipState.Status.STRUCK
-	assert_eq(GameState.ships["brit_a2"].current_order()["order"], "engage")
+	assert_eq(GameState.order_of("brit_a2")["order"], "engage")
 
 
 func test_order_falls_back_when_target_struck() -> void:
 	_deliver(0, "brit_a1", _fleet(), "ENGAGE BUCENTAURE")
 	GameState.ships["fr_a1"].status = ShipState.Status.STRUCK
-	assert_eq(GameState.ships["brit_a2"].current_order(), {"order": "engage"})
+	assert_eq(GameState.order_of("brit_a2"), {"order": "engage"})
 
 
 func test_no_order_is_engage() -> void:
-	assert_eq(GameState.ships["brit_a2"].current_order(), {"order": "engage"})
+	assert_eq(GameState.order_of("brit_a2"), {"order": "engage"})
 
 
 func test_standing_order_round_trips() -> void:
