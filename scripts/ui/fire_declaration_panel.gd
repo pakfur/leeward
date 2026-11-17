@@ -271,7 +271,24 @@ static func choose_battery(state: Dictionary, target_id: String, battery: String
 	return {"bow": bow, "stern": stern}
 
 
-## A ship's FireOrders for its sides (side -> {"bow", "stern", "want_high", "want_dismantling"})
+## The side state with row (target_id, battery)'s voluntary MGN reduction (7.C.14) set to n,
+## clamped at 0. A copy; "reductions" maps row_key to the reduction of that order, so a side split
+## between two targets can reduce one shot only.
+static func set_reduction(state: Dictionary, target_id: String, battery: String, n: int) -> Dictionary:
+	var out := state.duplicate(true)
+	var reductions: Dictionary = out.get("reductions", {})
+	reductions[row_key(target_id, battery)] = maxi(n, 0)
+	out["reductions"] = reductions
+	return out
+
+
+## The reduction set for row (target_id, battery) in a side state (0 when none).
+static func reduction_of(state: Dictionary, target_id: String, battery: String) -> int:
+	return int((state.get("reductions", {}) as Dictionary).get(row_key(target_id, battery), 0))
+
+
+## A ship's FireOrders for its sides (side -> {"bow", "stern", "want_high", "want_dismantling",
+## "reductions"})
 ## through FireRules (bow+stern at one target = full broadside, forced aim, ammunition range).
 ## `ranges` is target_id -> range in hexes.
 static func panel_orders(ship_id: String, sides: Dictionary, ranges: Dictionary) -> Array[GunneryTypes.FireOrder]:
@@ -283,7 +300,8 @@ static func panel_orders(ship_id: String, sides: Dictionary, ranges: Dictionary)
 		for shot: Dictionary in FireRules.side_shots(state["bow"], state["stern"]):
 			orders.append(FireRules.make_order(ship_id, int(side), shot["target_id"], shot["battery"],
 				bool(state.get("want_high", false)), bool(state.get("want_dismantling", false)),
-				int(ranges.get(shot["target_id"], 0))))
+				int(ranges.get(shot["target_id"], 0)),
+				reduction_of(state, shot["target_id"], shot["battery"])))
 	return orders
 
 
@@ -756,7 +774,7 @@ func _add_ship(ship_state: ShipState, options: Dictionary, marine_shots: Array =
 			start = choose_battery(start, str(ranked[0]["target_id"]), str(ranked[0]["battery"]))
 		entry["defaults"][side] = start.duplicate()
 		entry["sides"][side] = {"bow": start["bow"], "stern": start["stern"],
-			"want_high": false, "want_dismantling": false}
+			"want_high": false, "want_dismantling": false, "reductions": {}}
 		entry["widgets"][side] = _build_side(box, ship_id, side, display_order(ranked))
 	if not marine_shots.is_empty():
 		_build_marines(box, ship_id, marine_shots)
@@ -855,10 +873,13 @@ func _build_side(parent: VBoxContainer, ship_id: String, side: int, rows_in_orde
 	rows.add_theme_constant_override("separation", 2)
 	parent.add_child(rows)
 	var targets := {}
+	var steppers := {}
 	for row in rows_in_order:
 		var target_id := str(row["target_id"])
 		for battery in _battery_options_for(ship_id, side, target_id):
-			targets[row_key(target_id, battery)] = _target_row(rows, ship_id, side, target_id, battery)
+			var key := row_key(target_id, battery)
+			targets[key] = _target_row(rows, ship_id, side, target_id, battery)
+			steppers[key] = _reduction_stepper(rows, ship_id, side, target_id, battery)
 	targets[""] = _target_row(rows, ship_id, side, "", "")
 
 	var breakdown := Label.new()
@@ -870,7 +891,7 @@ func _build_side(parent: VBoxContainer, ship_id: String, side: int, rows_in_orde
 	var dismantling := _toggle_row(parent, "Dismantling")
 	high["button"].toggled.connect(func(on: bool): set_want_high(ship_id, side, on))
 	dismantling["button"].toggled.connect(func(on: bool): set_want_dismantling(ship_id, side, on))
-	return {"targets": targets, "rows": rows_in_order, "high": high["button"], "high_note": high["note"],
+	return {"targets": targets, "steppers": steppers, "rows": rows_in_order, "high": high["button"], "high_note": high["note"],
 		"dismantling": dismantling["button"], "dismantling_note": dismantling["note"],
 		"breakdown": breakdown}
 
@@ -889,6 +910,46 @@ func _target_row(parent: VBoxContainer, ship_id: String, side: int, target_id: S
 	button.set_meta("battery", battery)
 	parent.add_child(button)
 	return button
+
+
+## The "Reduce fire" stepper of a chosen row (7.C.14): - and + buttons around the value. Shown
+## only while the row is chosen; it sends the new reduction through set_reduction.
+func _reduction_stepper(parent: VBoxContainer, ship_id: String, side: int, target_id: String,
+		battery: String) -> Dictionary:
+	var box := HBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	box.visible = false
+	var label := Label.new()
+	label.text = "Reduce fire"
+	label.theme_type_variation = &"SecondaryLabel"
+	box.add_child(label)
+	var minus := Button.new()
+	minus.text = "-"
+	minus.theme_type_variation = &"SecondaryButton"
+	minus.focus_mode = Control.FOCUS_NONE
+	minus.pressed.connect(func(): step_reduction(ship_id, side, target_id, battery, -1))
+	box.add_child(minus)
+	var value := Label.new()
+	value.theme_type_variation = &"CounterLabel"
+	value.custom_minimum_size = Vector2(24, 0)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(value)
+	var plus := Button.new()
+	plus.text = "+"
+	plus.theme_type_variation = &"SecondaryButton"
+	plus.focus_mode = Control.FOCUS_NONE
+	plus.pressed.connect(func(): step_reduction(ship_id, side, target_id, battery, 1))
+	box.add_child(plus)
+	parent.add_child(box)
+	return {"box": box, "value": value, "minus": minus}
+
+
+## Change a chosen row's voluntary reduction by `delta` (clamped at 0) and re-preview the ship.
+func step_reduction(ship_id: String, side: int, target_id: String, battery: String, delta: int) -> void:
+	var state: Dictionary = _ships[ship_id]["sides"][side]
+	var n := reduction_of(state, target_id, battery) + delta
+	_ships[ship_id]["sides"][side] = set_reduction(state, target_id, battery, n)
+	_on_side_changed(ship_id, side)
 
 
 func _toggle_row(parent: VBoxContainer, text: String) -> Dictionary:
@@ -1034,6 +1095,11 @@ func _refresh_ship(ship_id: String) -> void:
 				else "%s%s%s" % [target_name, SEPARATOR, p.reason if p else "cannot fire"]
 			button.set_pressed_no_signal(chosen)
 			button.text = row_marker(chosen) + text
+			var stepper: Dictionary = widgets["steppers"][key]
+			stepper["box"].visible = chosen
+			var n := reduction_of(state, target_id, battery)
+			stepper["value"].text = str(n)
+			stepper["minus"].disabled = n <= 0
 
 		var high: CheckButton = widgets["high"]
 		var dismantling: CheckButton = widgets["dismantling"]

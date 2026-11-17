@@ -615,3 +615,29 @@ func test_no_shot_reason_names_the_blocking_friend() -> void:
 		"Blocked by friendly ship Orange")
 	assert_eq(FirePanel.no_shot_reason(["Blocked by friendly ship Arcturus", arc]),
 		"Blocked by friendly ship Arcturus")
+
+
+# 7.C.14: the firer may reduce the MGN voluntarily; the panel keeps it per order (row).
+func test_panel_orders_carry_row_reduction() -> void:
+	var side := {"bow": "t1", "stern": "t1", "want_high": false, "want_dismantling": false}
+	var state := FirePanel.set_reduction(side, "t1", "full", 3)
+	var orders := FirePanel.panel_orders("own", {ShipState.STARBOARD: state}, {"t1": 3})
+	assert_eq(orders.size(), 1)
+	assert_eq(orders[0].mgn_reduction, 3)
+
+
+func test_split_side_reduces_one_shot_only() -> void:
+	var side := {"bow": "t1", "stern": "t2", "want_high": false, "want_dismantling": false}
+	var state := FirePanel.set_reduction(side, "t2", "stern", 2)
+	var orders := FirePanel.panel_orders("own", {ShipState.STARBOARD: state}, {"t1": 3, "t2": 4})
+	assert_eq(orders.size(), 2)
+	for o in orders:
+		assert_eq(o.mgn_reduction, 2 if o.target_id == "t2" else 0, "only the t2 shot is reduced")
+
+
+func test_reduction_clamped_at_zero() -> void:
+	var state := FirePanel.set_reduction({"bow": "t1", "stern": ""}, "t1", "bow", -4)
+	assert_eq(FirePanel.reduction_of(state, "t1", "bow"), 0)
+	state = FirePanel.set_reduction(state, "t1", "bow", 2)
+	state = FirePanel.set_reduction(state, "t1", "bow", FirePanel.reduction_of(state, "t1", "bow") - 5)
+	assert_eq(FirePanel.reduction_of(state, "t1", "bow"), 0)
