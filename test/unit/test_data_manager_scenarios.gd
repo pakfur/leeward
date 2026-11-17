@@ -179,7 +179,7 @@ func test_shipped_scenarios_name_every_ship_uniquely() -> void:
 			seen[ship_name] = true
 
 func test_loaded_scenarios_have_unique_names_after_fallback() -> void:
-	for scenario_name in ["test_basic", "test_fleet", "test_prizes"]:
+	for scenario_name in ["test_basic", "test_fleet", "test_prizes", "test_heavy_weather"]:
 		var scenario := DataManager.load_scenario(scenario_name)
 		var seen := {}
 		for ship in scenario["ships"]:
@@ -264,7 +264,7 @@ func test_dev_reset_restarts_the_scenario() -> void:
 	_reset_sides()
 
 func test_shipped_scenarios_have_valid_placement() -> void:
-	for scenario_name in ["test_basic", "test_fleet", "test_prizes"]:
+	for scenario_name in ["test_basic", "test_fleet", "test_prizes", "test_heavy_weather"]:
 		_start_with_ships(DataManager.load_scenario(scenario_name))
 		assert_gt(GameState.ships.size(), 1, "%s: ships were placed" % scenario_name)
 		assert_eq(GameState.placement_errors(), [] as Array[String], scenario_name)

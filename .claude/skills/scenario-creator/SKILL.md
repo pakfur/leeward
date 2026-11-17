@@ -86,7 +86,7 @@ Each ship entry:
   `HexGrid.stern_of(bow, facing)`; facing 0/E puts the stern at q−1). No two footprints (bow or
   stern) may share a hex — `GameState.add_ship` refuses an overlapping ship — and both hexes must lie
   inside `map_bounds`
-- `sea_state`: 1-4
+- `sea_state`: 0-5 (0 calm, 1 slight, 2 moderate, 3 rough, 4 very rough, 5 high; clamped on load)
 - `region`: `oceanic`, `coastal`, `harbor`
 - `wind_speed_change`: `steady`, `gusting`, `dying`
 - `wind_direction_change`: `none`, `veering`, `backing`

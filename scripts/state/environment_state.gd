@@ -21,7 +21,10 @@ extends Resource
 @export var calm_ended_turn: int = -1
 
 # Sea State
-@export var sea_state: int = 1  # 0-3 (0=calm, 1=moderate, 2=rough, 3=storm)
+# 0-5: 0 calm (an extension, no rule effect), 1-5 as the Sea State chart (3.B.5).
+const SEA_STATE_MAX := 5
+const SEA_STATE_NAMES := ["calm", "slight", "moderate", "rough", "very rough", "high"]
+@export var sea_state: int = 1
 
 # Weather (for future expansion)
 @export var visibility: String = "clear"  # "clear", "hazy", "fog", "storm"
@@ -52,10 +55,16 @@ const WIND_SPEED_NAMES := ["Calm", "Light", "Moderate", "Fresh", "Strong", "Gale
 static func wind_speed_name(speed: int) -> String:
 	return WIND_SPEED_NAMES[speed] if speed >= 0 and speed < WIND_SPEED_NAMES.size() else "?"
 
+static func sea_state_name(sea: int) -> String:
+	return SEA_STATE_NAMES[clampi(sea, 0, SEA_STATE_MAX)]
+
+## Scenario and saved values are held to 0-5.
+static func clamp_sea_state(sea: int) -> int:
+	return clampi(sea, 0, SEA_STATE_MAX)
+
 func get_sea_state_name() -> String:
 	"""Get human-readable sea state"""
-	var states = ["Calm", "Moderate", "Rough", "Storm"]
-	return states[sea_state]
+	return sea_state_name(sea_state)
 
 func serialize() -> Dictionary:
 	"""Serialize environment state for network transmission or save/load"""
@@ -90,7 +99,7 @@ static func deserialize(data: Dictionary) -> EnvironmentState:
 	state.pending_wind_direction = data.get("pending_wind_direction", -1)
 	state.pending_wind_speed = data.get("pending_wind_speed", -1)
 	state.calm_ended_turn = data.get("calm_ended_turn", -1)
-	state.sea_state = data.get("sea_state", 1)
+	state.sea_state = clamp_sea_state(int(data.get("sea_state", 1)))
 	state.visibility = data.get("visibility", "clear")
 	state.time_of_day = data.get("time_of_day", "day")
 	state.precipitation = data.get("precipitation", "none")
@@ -106,7 +115,7 @@ func initialize_from_scenario(scenario_data: Dictionary) -> void:
 	wind_speed_change = scenario_data.get("wind_speed_change", "steady")
 	region = scenario_data.get("region", "oceanic")
 	wind_direction_change = scenario_data.get("wind_direction_change", "none")
-	sea_state = scenario_data.get("sea_state", 1)
+	sea_state = clamp_sea_state(int(scenario_data.get("sea_state", 1)))
 	visibility = scenario_data.get("visibility", "clear")
 	time_of_day = scenario_data.get("time_of_day", "day")
 	precipitation = scenario_data.get("precipitation", "none")

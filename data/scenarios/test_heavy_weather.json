@@ -1,0 +1,74 @@
+{
+  "name": "Heavy Weather - Ship of the Line vs Frigates",
+  "description": "A 74 meets two frigates in a very rough sea (sea state 4, fresh wind) to exercise lower-deck guns and ship motion",
+  "seed": 7,
+  "wind_direction": 0,
+  "wind_speed": 3,
+  "wind_speed_change": "steady",
+  "wind_direction_change": "none",
+  "region": "oceanic",
+  "sea_state": 4,
+  "turn_limit": 30,
+  "map": {
+	"map_texture": "res://assets/textures/water_default.png",
+	"show_hex": true
+  },
+  "map_bounds": {
+	"width": 100,
+	"height": 100
+  },
+  "minimap_texture": "",
+  "ships": [
+	{
+	  "id": "player_ship_1",
+	  "ship_name": "HMS Defiance",
+	  "player_id": 0,
+	  "ship_type": "ship_of_line_74",
+	  "position": {
+		"q": -6,
+		"r": 0
+	  },
+	  "facing": 1,
+	  "speed": 2,
+	  "movement_points": 0,
+	  "acceleration": 0,
+	  "sail_state": "MS",
+	  "crew_quality": "Trained",
+	  "crew_morale": 4
+	},
+	{
+	  "id": "enemy_ship_1",
+	  "ship_name": "Topaze",
+	  "player_id": 1,
+	  "ship_type": "frigate_38",
+	  "position": {
+		"q": 6,
+		"r": 0
+	  },
+	  "facing": 3,
+	  "speed": 2,
+	  "movement_points": 0,
+	  "acceleration": 0,
+	  "sail_state": "MS",
+	  "crew_quality": "Trained",
+	  "crew_morale": 4
+	},
+	{
+	  "id": "enemy_ship_2",
+	  "ship_name": "Vestale",
+	  "player_id": 1,
+	  "ship_type": "frigate_32",
+	  "position": {
+		"q": 7,
+		"r": 3
+	  },
+	  "facing": 3,
+	  "speed": 2,
+	  "movement_points": 0,
+	  "acceleration": 0,
+	  "sail_state": "MS",
+	  "crew_quality": "Trained",
+	  "crew_morale": 4
+	}
+  ]
+}

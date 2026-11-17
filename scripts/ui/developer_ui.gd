@@ -167,7 +167,7 @@ func _build_environment_tab() -> void:
 	_add_field(fields_container, env, "wind_speed_change", ["steady", "gusty"], null, "string")
 	_add_field(fields_container, env, "environment", ["oceanic", "coastal"], null, "string")
 	_add_field(fields_container, env, "wind_direction_change", ["none", "veering", "backing"], null, "string")
-	_add_field(fields_container, env, "sea_state", 0, 3, "int")
+	_add_field(fields_container, env, "sea_state", 0, EnvironmentState.SEA_STATE_MAX, "int")
 	_add_field(fields_container, env, "visibility", ["clear", "hazy", "fog", "storm"], null, "string")
 	_add_field(fields_container, env, "time_of_day", ["dawn", "day", "dusk", "night"], null, "string")
 	_add_field(fields_container, env, "precipitation", ["none", "rain", "snow", "storm"], null, "string")

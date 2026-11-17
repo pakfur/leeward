@@ -652,7 +652,7 @@ func sync_from_server(state_data: Dictionary) -> void:
 			environment.wind_speed = env_data.get("wind_speed", 2)
 			environment.wind_speed_change = env_data.get("wind_speed_change", "steady")
 			environment.wind_direction_change = env_data.get("wind_direction_change", "none")
-			environment.sea_state = env_data.get("sea_state", 1)
+			environment.sea_state = EnvironmentState.clamp_sea_state(int(env_data.get("sea_state", 1)))
 			environment.visibility = env_data.get("visibility", "clear")
 			environment.time_of_day = env_data.get("time_of_day", "day")
 			environment.precipitation = env_data.get("precipitation", "none")
