@@ -16,7 +16,7 @@ func before_each() -> void:
 	_saved_turn = GameState.current_turn
 	state = _make_state({})
 	GameState.ships.clear()
-	GameState.ships_by_player.clear()
+	GameState.ships_by_side.clear()
 	GameState.add_ship(state)
 
 
@@ -25,7 +25,7 @@ func after_each() -> void:
 	GameState.current_turn = _saved_turn
 	GameState.ship_history.erase("ss_ship")
 	GameState.ships.clear()
-	GameState.ships_by_player.clear()
+	GameState.ships_by_side.clear()
 
 
 func _make_state(overrides: Dictionary) -> ShipState:
@@ -291,7 +291,7 @@ func test_add_ship_rejects_duplicate_id() -> void:
 	assert_push_error("ss_ship")
 	assert_eq(GameState.ships.size(), 1, "one entry in ships")
 	assert_same(GameState.ships["ss_ship"], state, "the first ship is kept")
-	assert_eq(GameState.ships_by_player[1], ["ss_ship"], "one entry in ships_by_player")
+	assert_eq(GameState.ships_by_side[1], ["ss_ship"], "one entry in ships_by_side")
 
 
 func test_add_ship_rejects_ship_on_occupied_hex() -> void:
@@ -299,7 +299,7 @@ func test_add_ship_rejects_ship_on_occupied_hex() -> void:
 	assert_false(GameState.add_ship(stacked), "a ship starting on an occupied hex is rejected")
 	assert_push_error("ship 'ss_other' starts on (1, 1), already occupied by 'ss_ship'")
 	assert_false(GameState.ships.has("ss_other"), "not added to ships")
-	assert_eq(GameState.ships_by_player[1], ["ss_ship"], "not added to ships_by_player")
+	assert_eq(GameState.ships_by_side[1], ["ss_ship"], "not added to ships_by_side")
 
 
 func test_add_ship_rejects_stern_on_occupied_hex() -> void:
@@ -312,7 +312,7 @@ func test_add_ship_rejects_stern_on_occupied_hex() -> void:
 	assert_false(GameState.add_ship(stern_on_stern), "a stern on another ship's stern is rejected")
 	assert_push_error("ship 'ss_third' starts on (0, 1), already occupied by 'ss_ship'")
 	assert_eq(GameState.ships.size(), 1)
-	assert_eq(GameState.ships_by_player[1], ["ss_ship"])
+	assert_eq(GameState.ships_by_side[1], ["ss_ship"])
 
 
 func test_add_ship_accepts_ship_on_free_hex() -> void:

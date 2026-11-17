@@ -70,7 +70,7 @@ func station_of(section: int) -> String:
 
 func is_submitted() -> bool:
 	var pc = game_state.phase_controller
-	return pc != null and player_id < pc.players_ready.size() and pc.players_ready[player_id]
+	return pc != null and pc.is_player_ready(player_id)
 
 
 func phase() -> int:
@@ -82,7 +82,7 @@ func read_only_note() -> String:
 	var s := ship()
 	if s == null:
 		return "No ship selected."
-	return CrewOverlayText.read_only_note(phase(), s, s.player_id == player_id, is_submitted())
+	return CrewOverlayText.read_only_note(phase(), s, game_state.commands(player_id, s.ship_id), is_submitted())
 
 
 func editable() -> bool:
@@ -123,7 +123,7 @@ func refresh() -> void:
 
 func open_for(p_ship_id: String) -> void:
 	var s: ShipState = game_state.get_ship(p_ship_id)
-	if s == null or s.player_id != player_id:
+	if s == null or not game_state.commands(player_id, s.ship_id):
 		return  # enemy plots are secret
 	if p_ship_id != ship_id:
 		deck = "upper"
@@ -149,7 +149,7 @@ func close() -> void:
 ## Selecting another ship while open switches the overlay to it.
 func follow_ship(p_ship_id: String) -> void:
 	var s: ShipState = game_state.get_ship(p_ship_id) if p_ship_id != "" else null
-	if s == null or s.player_id != player_id:
+	if s == null or not game_state.commands(player_id, s.ship_id):
 		return
 	if is_open:
 		open_for(p_ship_id)

@@ -15,7 +15,7 @@ func validate() -> bool:
 		push_error("MoveCommand: Ship %s not found" % ship_id)
 		return false
 
-	if ship_state.player_id != player_id:
+	if not GameState.commands(player_id, ship_id):
 		push_error("MoveCommand: Ship %s does not belong to player %d" % [ship_id, player_id])
 		return false
 

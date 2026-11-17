@@ -12,19 +12,19 @@ const MOVE := TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
 
 var ship: ShipState
 var _old_phase: TurnPhaseController.GamePhase
-var _old_ready: Array[bool]
+var _old_ready: Dictionary
 var _old_log: PhaseEvents.PhaseLog
 
 
 func before_each() -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	_old_phase = GameState.phase_controller.current_phase
 	_old_ready = GameState.phase_controller.players_ready.duplicate()
 	_old_log = GameState.turn_log
 	GameState.turn_log = PhaseEvents.PhaseLog.new()
 	GameState.phase_controller.current_phase = PLANNING
-	GameState.phase_controller.players_ready = [false, false] as Array[bool]
+	GameState.phase_controller.players_ready = {0: false, 1: false}
 	ship = _make_ship("own", 0, Vector2i(0, 0))
 
 
@@ -33,7 +33,7 @@ func after_each() -> void:
 	GameState.phase_controller.players_ready = _old_ready
 	GameState.turn_log = _old_log
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, player: int, hex: Vector2i, facing: int = 0) -> ShipState:
@@ -300,11 +300,11 @@ func test_player_plot_crew_refusals() -> void:
 	assert_eq(pc.player_plot_crew(0, "own", {"assignments": {9: {}}, "orders": {}}), "Malformed crew plan")
 	assert_eq(pc.player_plot_crew(0, "own", {"assignments": {}, "orders": {"sail_target": "NS"}}),
 		"Cannot change to NS from MS", "a sail order must be a change the ship can make")
-	pc.players_ready = [true, false] as Array[bool]
+	pc.players_ready = {0: true, 1: false}
 	assert_eq(pc.player_plot_crew(0, "own", plan), "this player's plan is already submitted")
 	assert_eq(pc.player_plot_sail_change(0, "own", "FS"), "this player's plan is already submitted")
 	assert_eq(ship.ordered_sail_target(), "", "a refused sail order changes nothing")
-	pc.players_ready = [false, false] as Array[bool]
+	pc.players_ready = {0: false, 1: false}
 	pc.current_phase = MOVE
 	assert_eq(pc.player_plot_crew(0, "own", plan), "crew orders are given in the planning phase")
 	assert_eq(pc.player_set_crew_auto(0, "own", false), "crew orders are given in the planning phase")

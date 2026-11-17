@@ -116,7 +116,7 @@ In 1v1 (one player per side) signalling has nothing to do but is not switched of
 
 ### 4. Talking between ships (11.B.3)
 
-At PLANNING start the server finds pairs of **friendly** ships commanded by **different** players whose sterns are adjacent (`stern_hex()` neighbours) and opens a talk for each (`GameState.talks`: `{turn, ship_a, ship_b, first_player, messages: []}`). A d6 (via `game_state.dice`, in ship-id order of the pairs) picks who writes first. My call: only friendly ships talk; 11.A.3 leaves talking to the enemy unrestricted, so in-game talk to the enemy adds nothing.
+At PLANNING start the server finds pairs of **friendly** ships commanded by **different** players whose sterns are adjacent (`stern_hex()` neighbours) and opens a talk for each (`GameState.talks`: `{turn, ship_a, ship_b, first_player, messages: []}`). A d6 (via `game_state.dice`, in ship-id order of the pairs) picks who writes first. My call: only friendly ships talk; 11.A.3 leaves talking to the enemy unrestricted, so in-game talk to the enemy adds nothing. Talks open only between ships whose commanders are both human players; AI captains do not talk (ruling 2026-11-17).
 
 Request: `player_send_talk(player_id, talk_id, text) -> String`. The first writer sends one message of at most 5 words (same word rules as §3), shown at once (not held to end of g-t), then the other replies once; nothing more. Halyards cut does not stop talking (it is shouting across, not flags). A talk not used by the end of PLANNING lapses. Query `talks_for(player_id)`.
 
@@ -130,6 +130,8 @@ New pure class `PlayerView` (`scripts/server/player_view.gd`): `ship_for(player_
 - rigging: sections lost (0–4), not boxes; hull: the same; crew: sailor sections lost and whether the marine section is lost;
 - guns: all gun data (BGN inputs and modifiers, guns dismounted), 14.C.1d;
 - everything else a captain would see or ask for, 14.C.2: position, facing, sail state, speed, status, fires, fouled/grappled, critical effects, prize flag.
+
+Another ship's plotted actions are hidden from players who do not command her (ruling 2026-11-17).
 
 `PlayerView.events_for(player_id, turn)` filters the turn log by one rule (my call): any event field that counts boxes (rigging, hull, sailor or marine) of a ship the reader does not command is replaced by the sections lost by that event, with a marine-section flag (this covers DAMAGE, MARINE_FIRE, BOARDING_ROUND, BOARDING_RESULT, BLAST, PRIZE_CREW, DEFENCE_SPLIT and any later event; each event type declares its box fields in one table in `PlayerView`); everything else (crits, repairs, morale, crew tasks, fires) is shown, 14.C.2. `SIGNAL` events go only to the sending side; `TALK` events only to the two players talking; `END_OFFER` to everyone. Scenario `"tournament": true` turns limited information off (14.C.3); the default is on. My call: on by default, since giving a captain's view is the point (user's intent).
 

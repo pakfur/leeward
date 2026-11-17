@@ -47,7 +47,9 @@ func check(turn: int) -> Dictionary:
 	## {} while the game continues; otherwise
 	## {"winner": player id or -1 for a draw, "reason", "points": {0: float, 1: float}, "turn"}.
 	var reason := ""
-	if _is_defeated(0) or _is_defeated(1):
+	if _all_agree():
+		reason = "agreement"
+	elif _is_defeated(0) or _is_defeated(1):
 		reason = "all struck"
 	elif _is_unable(0) or _is_unable(1):
 		reason = "no ship able to move or fight"
@@ -67,6 +69,22 @@ func check(turn: int) -> Dictionary:
 	return {"winner": winner, "reason": reason, "points": points, "turn": turn}
 
 
+func _all_agree() -> bool:
+	## 2.A.1: every side present has offered. A side with no human never does (offers come only
+	## from a side's senior human).
+	var sides: Array[int] = []
+	for id in game_state.players:
+		var side: int = game_state.players[id].side
+		if not sides.has(side):
+			sides.append(side)
+	if sides.is_empty():
+		return false
+	for side in sides:
+		if not game_state.end_offers.get(side, false):
+			return false
+	return true
+
+
 static func _detached(ship: ShipState, section: int) -> int:
 	return ship.detached_boxes[section] if section < ship.detached_boxes.size() else 0
 
@@ -74,7 +92,7 @@ static func _detached(ship: ShipState, section: int) -> int:
 func _is_defeated(player_id: int) -> bool:
 	## A side with no ships at all counts as defeated. Ships it controls only: a prize (CAPTURED)
 	## is out of play, so a side holding only prizes is defeated (boarding spec §2.6).
-	for ship: ShipState in game_state.get_player_ships(player_id):
+	for ship: ShipState in game_state.get_side_ships(player_id):
 		if not ship.is_out_of_play():
 			return false
 	return true
@@ -97,7 +115,7 @@ func can_move_or_fight(ship: ShipState) -> bool:
 
 
 func _is_unable(player_id: int) -> bool:
-	for ship: ShipState in game_state.get_player_ships(player_id):
+	for ship: ShipState in game_state.get_side_ships(player_id):
 		if can_move_or_fight(ship):
 			return false
 	return true
@@ -107,6 +125,6 @@ func _points_scored(player_id: int) -> float:
 	## The enemy's ships by original owner: a ship it lost to capture scores 100 % like a struck one
 	## (VI.B.2-3), wherever it now is.
 	var total := 0.0
-	for ship: ShipState in game_state.get_original_player_ships(1 - player_id):
+	for ship: ShipState in game_state.get_original_side_ships(1 - player_id):
 		total += points_lost(ship)
 	return total

@@ -40,7 +40,7 @@ func before_each() -> void:
 	env.wind_direction = WIND_FROM_W
 	GameState.environment = env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	pc.game_result = {}
 	pc.combat_step = TurnPhaseController.CombatStep.NONE
 
@@ -54,7 +54,7 @@ func after_each() -> void:
 	GameState.environment = _old_env
 	GameState.active_scenario = _old_scenario
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, player: int, bow: Vector2i, facing: int = 3) -> ShipState:
@@ -83,7 +83,7 @@ func _make_ship(id: String, player: int, bow: Vector2i, facing: int = 3) -> Ship
 	state.starting_crew_quality = "D"
 	state.morale_rating = 4
 	GameState.ships[state.ship_id] = state
-	GameState.ships_by_player[player].append(state.ship_id)
+	GameState.ships_by_side[player].append(state.ship_id)
 	return state
 
 

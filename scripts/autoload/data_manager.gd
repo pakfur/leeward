@@ -386,7 +386,7 @@ func assign_fallback_ship_names(ships: Array) -> void:
 		var type_name := type_id
 		if ship_definitions.has(type_id):
 			type_name = ship_definitions[type_id].name
-		var key := "%d:%s" % [int(ship.get("player_id", 0)), type_name]
+		var key := "%d:%s" % [int(ship.get("side", ship.get("player_id", 0))), type_name]
 		counts[key] = int(counts.get(key, 0)) + 1
 		ship["ship_name"] = "%s %d" % [type_name, counts[key]]
 

@@ -19,7 +19,7 @@ func before_each() -> void:
 	hex_grid = HexGrid.new()
 
 	GameState.ships.clear()
-	GameState.ships_by_player.clear()
+	GameState.ships_by_side.clear()
 	GameState.clear_state_history()
 	GameState.current_turn = 0
 	GameState.current_phase = GameState.GamePhase.SETUP
@@ -237,7 +237,7 @@ func test_deterministic_resolution_with_same_seed() -> void:
 	for run_idx in range(2):
 		# Full reset
 		GameState.ships.clear()
-		GameState.ships_by_player.clear()
+		GameState.ships_by_side.clear()
 		GameState.clear_state_history()
 		GameState.current_turn = 0
 		GameState.current_phase = GameState.GamePhase.SETUP
@@ -299,7 +299,7 @@ func test_new_game_resets_every_turn_and_phase_mirror() -> void:
 		_run_one_turn(pc)
 	assert_eq(GameState.current_turn, 4, "GameState mirrors the turn during the game")
 	pc.game_result = {"winner": 0, "reason": "all struck"}  # as if game 1 had ended
-	GameState.players_ready = [true, true] as Array[bool]
+	GameState.players_ready = {0: true, 1: true}
 
 	_start_game()
 
@@ -310,4 +310,4 @@ func test_new_game_resets_every_turn_and_phase_mirror() -> void:
 	assert_eq(GameState.turn_log.turn, 1)
 	assert_eq(GameState.turn_logs.size(), 0)
 	assert_true(pc.game_result.is_empty())
-	assert_eq(GameState.players_ready, [false, false] as Array[bool])
+	assert_eq(GameState.players_ready, {0: false, 1: false})

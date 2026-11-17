@@ -252,7 +252,7 @@ static func icon_texture(hollow: bool) -> ImageTexture:
 
 
 static func icon_color(ship: ShipState) -> Color:
-	return DESTROYED_ICON_COLOR if ship.is_destroyed() else ShipView.owner_color(ship.player_id)
+	return DESTROYED_ICON_COLOR if ship.is_destroyed() else ShipView.owner_color(ship.side)
 
 
 ## Where a ship's icon goes in world space: the centre of its two hexes (bow and stern), as on the

@@ -7,13 +7,13 @@ const MOVE := TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
 
 var ship: ShipState
 var _old_phase: TurnPhaseController.GamePhase
-var _old_ready: Array[bool]
+var _old_ready: Dictionary
 var _old_env: EnvironmentState
 
 
 func before_each() -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	_old_phase = GameState.phase_controller.current_phase
 	_old_ready = GameState.phase_controller.players_ready.duplicate()
 	_old_env = GameState.environment
@@ -21,7 +21,7 @@ func before_each() -> void:
 	GameState.environment.wind_direction = 3  # from the west: a ship facing east runs before it
 	GameState.environment.wind_speed = 3
 	GameState.phase_controller.current_phase = PLANNING
-	GameState.phase_controller.players_ready = [false, false] as Array[bool]
+	GameState.phase_controller.players_ready = {0: false, 1: false}
 	ship = _make_ship("own", 0, Vector2i(5, 5))
 
 
@@ -30,7 +30,7 @@ func after_each() -> void:
 	GameState.phase_controller.players_ready = _old_ready
 	GameState.environment = _old_env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, player: int, hex: Vector2i, facing: int = 0) -> ShipState:
@@ -85,9 +85,9 @@ func test_extend_refused_outside_planning_after_ready_or_for_another_players_shi
 	GameState.phase_controller.current_phase = MOVE
 	assert_ne(_pc().player_extend_course(0, "own", target), "")
 	GameState.phase_controller.current_phase = PLANNING
-	GameState.phase_controller.players_ready = [true, false] as Array[bool]
+	GameState.phase_controller.players_ready = {0: true, 1: false}
 	assert_ne(_pc().player_extend_course(0, "own", target), "")
-	GameState.phase_controller.players_ready = [false, false] as Array[bool]
+	GameState.phase_controller.players_ready = {0: false, 1: false}
 	assert_ne(_pc().player_extend_course(1, "own", target), "")
 	assert_true(_pc().stored_course(ship).is_empty())
 

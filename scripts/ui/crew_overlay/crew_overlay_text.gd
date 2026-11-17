@@ -344,7 +344,7 @@ static func tactical_caption(ship: ShipState, ships: Array, geometry: FireGeomet
 	var nearest: ShipState = null
 	var best := -1
 	for other: ShipState in ships:
-		if other.player_id == ship.player_id or other.is_out_of_play():
+		if other.side == ship.side or other.is_out_of_play():
 			continue
 		var r := geometry.range_between(ship.occupied_hexes(), other.occupied_hexes()) if geometry else -1
 		if r >= 0 and (best < 0 or r < best):

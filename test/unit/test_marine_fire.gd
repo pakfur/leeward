@@ -26,7 +26,7 @@ func before_each() -> void:
 	env.sea_state = 1
 	GameState.environment = env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	mf = MarineFireResolver.new(GameState)
 	# a (player 0) bow (0,0) facing E; b (player 1) bow (-1,1) facing W: abeam, adjacent (range 1).
 	a = _make_ship("a_ship", 0, Vector2i.ZERO, 0)
@@ -41,7 +41,7 @@ func after_each() -> void:
 	GameState.turn_log = _old_log
 	GameState.environment = _old_env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, player: int, hex: Vector2i, facing: int, ship_class: int = 3,
@@ -67,7 +67,7 @@ func _make_ship(id: String, player: int, hex: Vector2i, facing: int, ship_class:
 	state.marine_count = marines
 	state.crew_quality = quality
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 
@@ -142,7 +142,7 @@ func test_crew_quality_e_and_f_are_plus_one() -> void:
 func test_larger_firing_class_is_minus_one_never_plus() -> void:
 	# 7.G.4: firing class # < target class # gives -1; smaller firing ship gets no modifier.
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	a = _make_ship("a_ship", 0, Vector2i.ZERO, 0, 2)
 	b = _make_ship("b_ship", 1, Vector2i(-1, 1), 3, 3)
 	assert_eq(mf.preview("a_ship", "b_ship")["modifier"], -1, "class 2 firing at class 3")

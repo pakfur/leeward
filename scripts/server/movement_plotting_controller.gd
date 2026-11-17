@@ -63,7 +63,7 @@ func _turn_refusal(player_id: int) -> String:
 	if pc.current_phase != TurnPhaseController.GamePhase.PLANNING \
 			and pc.current_phase != TurnPhaseController.GamePhase.SETUP:
 		return "movement is plotted in the planning phase"
-	if player_id >= 0 and player_id < pc.players_ready.size() and pc.players_ready[player_id]:
+	if pc.is_player_ready(player_id):
 		return "this player's plan is already submitted"
 	return ""
 
@@ -86,8 +86,8 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 		Trace.trace_log(Trace.MOVEMENT_PLOTTING_CATEGORY, "SHIP_NOT_FOUND - Ship %s not found" % ship_id)
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_NOT_FOUND", "Ship %s not found" % ship_id)
 
-	# Check if player owns this ship
-	if ship_state.player_id != player_id:
+	# Check if player commands this ship
+	if not game_state.commands(player_id, ship_id):
 		Trace.trace_log(Trace.MOVEMENT_PLOTTING_CATEGORY, "SHIP_NOT_FOUND - Player %d does not own ship %s" % [player_id, ship_id])
 		return MovementTypes.PlottingErrorResponse.create(request_id, "UNAUTHORIZED", "Player %d does not own ship %s" % [player_id, ship_id])
 

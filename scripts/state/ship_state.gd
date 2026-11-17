@@ -41,13 +41,13 @@ var ship: Ship = null
 # Convenience getters for immutable identity fields
 var ship_id: String:
 	get: return ship.ship_id if ship else ""
-## The side that controls the ship: the captor once it is a prize (controller_id), else the owner.
+## The side that controls the ship: the captor once it is a prize (controller_side), else the owner.
 ## Every reader (selection, owner colour, gunnery sides, AI) follows control (boarding spec §2.5).
-var player_id: int:
-	get: return controller_id if controller_id >= 0 else (ship.player_id if ship else 0)
-## The side the ship began the game with (Ship.player_id); victory points go by this (VI.B).
-var original_player_id: int:
-	get: return ship.player_id if ship else 0
+var side: int:
+	get: return controller_side if controller_side >= 0 else (ship.side if ship else 0)
+## The side the ship began the game with (Ship.side); victory points go by this (VI.B).
+var original_side: int:
+	get: return ship.side if ship else 0
 var ship_name: String:
 	get: return ship.ship_name if ship else "Unknown"
 var ship_type: String:
@@ -92,7 +92,9 @@ var ship_type: String:
 # Combat and turn-loop state (mutated only through ShipStateController)
 @export var status: Status = Status.ACTIVE
 ## The side controlling the ship when it is not its original owner (a prize, 10.H.1); -1 = the owner.
-@export var controller_id: int = -1
+@export var controller_side: int = -1
+## The player commanding the ship (-1 = none yet); set at load, mutated via ShipStateController.set_commander.
+@export var commander_id: int = -1
 ## Prize data while CAPTURED (10.G-H): {"captor_id": String, "original_crew": {"crew_count", "marine_count",
 ## "crew_quality", "morale_rating"}, "prize_crew_aboard": bool}. While a prize, the live crew fields are
 ## the prize crew's (empty until it is put aboard). {} otherwise.
@@ -141,6 +143,10 @@ var ship_type: String:
 ## The way the ship turned (PORT, STARBOARD) to come to WF=L, -1 when it is not at WF=L or got
 ## there without turning (wind shift). Turning back the other way is a reverse tack (5.D.3b).
 @export var irons_entry_turn: int = -1
+## Standing order set by a delivered signal (SignalOrders): {} none, else {"order": engage|close|
+## follow|line|disengage, "target"/"range"/"leader"/"group"}. Mutated only through
+## ShipStateController.set_standing_order. Read it with GameState.order_of(ship_id).
+@export var standing_order: Dictionary = {}
 
 # Crew tasks (4.A.3, 4.B; crew-tasks spec §2.2; mutated only through ShipStateController)
 ## Automatic crew allocation (spec §3.3): the server places the sections by CrewAuto's rules.
@@ -204,7 +210,7 @@ func is_struck() -> bool:
 func is_destroyed() -> bool:
 	return status == Status.DESTROYED
 
-## Taken by boarding (10.H): a prize of the side in controller_id.
+## Taken by boarding (10.H): a prize of the side in controller_side.
 func is_captured() -> bool:
 	return status == Status.CAPTURED
 
@@ -266,6 +272,22 @@ func is_french_gunned() -> bool:
 ## ShipStateController.remove_from_map has taken it off (8.G.1f).
 func is_on_map() -> bool:
 	return not removed_from_map
+
+## The player commanding the ship: commander_id, or, for a ship given no commander (a game set up
+## without a roster, as headless tests do), its side's default player, whose id is the side number
+## (spec 2: without "players", one player per side).
+func commanding_player() -> int:
+	return commander_id if commander_id >= 0 else side
+
+
+## Carries a fleet or squadron flag and is still in play.
+func is_flagship() -> bool:
+	return ship != null and ship.flag != "" and not is_out_of_play()
+
+
+func is_fleet_flagship() -> bool:
+	return ship != null and ship.flag == "fleet" and not is_out_of_play()
+
 
 ## Struck or destroyed: cannot move, fire, change sail, unfoul, fix or check morale, and is not a
 ## target. A struck ship still drifts; a destroyed one does not.
@@ -588,7 +610,8 @@ func serialize() -> Dictionary:
 		"crew_count": crew_count,
 		"marine_count": marine_count,
 		"status": int(status),
-		"controller_id": controller_id,
+		"controller_side": controller_side,
+		"commander_id": commander_id,
 		"prize": prize.duplicate(true),
 		"detached_boxes": detached_boxes.duplicate(),
 		"navy": navy,
@@ -616,6 +639,7 @@ func serialize() -> Dictionary:
 		"pending_turn": pending_turn,
 		"last_step_direction": last_step_direction,
 		"irons_entry_turn": irons_entry_turn,
+		"standing_order": standing_order.duplicate(true),
 		"plotted_actions": plotted_actions.duplicate(true)
 	}
 	return data
@@ -675,7 +699,8 @@ static func deserialize(data: Dictionary) -> ShipState:
 		state.crew_count.append(int(ct))
 	state.marine_count = data.get("marine_count", 0)
 	state.status = int(data.get("status", Status.ACTIVE)) as Status
-	state.controller_id = int(data.get("controller_id", -1))
+	state.controller_side = int(data.get("controller_side", data.get("controller_id", -1)))
+	state.commander_id = int(data.get("commander_id", -1))
 	state.prize = prize_from(data.get("prize", {}))
 	state.detached_boxes = _int_array(data.get("detached_boxes", [0, 0, 0, 0, 0]))
 	state.navy = str(data.get("navy", ""))
@@ -728,6 +753,7 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.pending_turn = int(data.get("pending_turn", -1))
 	state.last_step_direction = int(data.get("last_step_direction", -1))
 	state.irons_entry_turn = int(data.get("irons_entry_turn", -1))
+	state.standing_order = (data.get("standing_order", {}) as Dictionary).duplicate(true)
 	
 	state.plotted_actions = plot_from(data.get("plotted_actions", {}))
 

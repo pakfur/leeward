@@ -8,7 +8,7 @@ func after_each() -> void:
 	pc.bear_off_prompt_player_ids = [] as Array[int]
 	pc.maintenance_prompt_player_ids = [] as Array[int]
 	pc.current_phase = TurnPhaseController.GamePhase.SETUP
-	pc.players_ready = [false, false] as Array[bool]
+	pc.players_ready = {0: false, 1: false}
 	GameState.clear_ships()
 
 func test_sea_state_names_cover_zero_to_five() -> void:

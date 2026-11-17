@@ -7,7 +7,7 @@ const PLANNING := TurnPhaseController.GamePhase.PLANNING
 
 var ship: ShipState
 var _old_phase: TurnPhaseController.GamePhase
-var _old_ready: Array[bool]
+var _old_ready: Dictionary
 var _old_env: EnvironmentState
 var _old_humans: Array[int]
 var _old_ai: Array[int]
@@ -16,7 +16,7 @@ var _old_stub_ai: Variant
 
 func before_each() -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	_old_phase = GameState.phase_controller.current_phase
 	_old_ready = GameState.phase_controller.players_ready.duplicate()
 	_old_humans = _pc().human_player_ids.duplicate()
@@ -30,7 +30,7 @@ func before_each() -> void:
 	_pc().human_player_ids = [0] as Array[int]
 	_pc().ai_player_ids = [] as Array[int]
 	_pc().current_phase = PLANNING
-	_pc().players_ready = [false, false] as Array[bool]
+	_pc().players_ready = {0: false, 1: false}
 	ship = _make_ship("own", 0, Vector2i(5, 5))
 
 
@@ -43,7 +43,7 @@ func after_each() -> void:
 	GameState.stub_ai = _old_stub_ai
 	GameState.environment = _old_env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, player: int, hex: Vector2i, facing: int = 0) -> ShipState:

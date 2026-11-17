@@ -25,7 +25,7 @@ func before_each() -> void:
 	GameState.dice = _dice
 	GameState.turn_log = PhaseEvents.PhaseLog.new()
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	controller = MoraleController.new(GameState)
 
 
@@ -33,7 +33,7 @@ func after_each() -> void:
 	GameState.dice = _old_dice
 	GameState.turn_log = _old_log
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, quality: String, rating: int, pending: int, player: int = 0) -> ShipState:
@@ -45,7 +45,7 @@ func _make_ship(id: String, quality: String, rating: int, pending: int, player: 
 		"rigging_hp": [5, 5, 6, 6], "hull_hp": [5, 5, 5, 6],
 		"crew_count": [3, 3, 3, 3], "marine_count": 2,
 	})
-	state.player_id = player
+	state.side = player
 	state.hex_position = Vector2i(5, 5)
 	state.facing = 1
 	state.sail_state = "MS"
@@ -60,7 +60,7 @@ func _make_ship(id: String, quality: String, rating: int, pending: int, player: 
 	state.morale_rating = rating
 	state.pending_morale_checks = pending
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 

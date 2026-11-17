@@ -32,7 +32,7 @@ func before_each() -> void:
 	GameState.dice = _dice
 	GameState.turn_log = PhaseEvents.PhaseLog.new()
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	var env := EnvironmentState.new()
 	env.wind_direction = 0
 	env.wind_speed = 3
@@ -45,7 +45,7 @@ func after_each() -> void:
 	GameState.turn_log = _old_log
 	GameState.environment = _old_env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 ## Facing 1 (SE): the stern is the NW neighbour (q, r-1). Ships on (5,5) and (6,5) are alongside.
@@ -68,7 +68,7 @@ func _make_ship(id: String, player: int, hex: Vector2i, quality: String = "D", m
 	state.crew_quality = quality
 	state.mp_used_this_turn = mps
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 

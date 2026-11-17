@@ -73,7 +73,7 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 	var adjacent: Array = []  # [ship_id, ship_name] of enemies in play alongside (7.G.1)
 	if game_state != null and game_state.get("fire_geometry") != null:
 		for other: ShipState in game_state.get_all_ships():
-			if other.player_id == ship.player_id or other.is_out_of_play():
+			if other.side == ship.side or other.is_out_of_play():
 				continue
 			var r: int = game_state.fire_geometry.range_between(ship.occupied_hexes(), other.occupied_hexes())
 			if r >= 0 and (nearest < 0 or r < nearest):

@@ -50,7 +50,7 @@ func after_each() -> void:
 
 func _reset_game() -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	GameState.clear_state_history()
 	GameState.current_turn = 0
 	GameState.current_phase = GameState.GamePhase.SETUP
@@ -121,7 +121,7 @@ func _start(scenario_overrides: Dictionary = {}, default_resolver: bool = false)
 ## Orders for player 0: its single best shot (highest mgn, then nearest), low aim.
 func _best_shot_orders() -> Array:
 	var best: GunneryTypes.ShotPreview = null
-	for ship: ShipState in GameState.get_player_ships(0):
+	for ship: ShipState in GameState.get_side_ships(0):
 		for shot in GameState.gunnery_calculator.eligible_shots(ship.ship_id):
 			if best == null or shot.mgn > best.mgn \
 					or (shot.mgn == best.mgn and shot.range_hexes < best.range_hexes):

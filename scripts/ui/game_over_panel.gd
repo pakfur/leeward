@@ -44,11 +44,11 @@ static func struck_text(struck: int, total: int) -> String:
 
 
 ## {"struck": int, "total": int} for one side's ships.
-static func struck_counts(ships: Array, player_id: int) -> Dictionary:
+static func struck_counts(ships: Array, side: int) -> Dictionary:
 	var struck := 0
 	var total := 0
 	for ship in ships:
-		if ship.original_player_id != player_id:  # a prize counts for the side that lost it (VI.B.2-3)
+		if ship.original_side != side:  # a prize counts for the side that lost it (VI.B.2-3)
 			continue
 		total += 1
 		if ship.is_out_of_play():  # struck, destroyed or captured
@@ -58,6 +58,8 @@ static func struck_counts(ships: Array, player_id: int) -> Dictionary:
 
 ## Why the game ended, from the player's point of view. `own` and `enemy` are struck_counts().
 static func reason_text(reason: String, own: Dictionary, enemy: Dictionary) -> String:
+	if reason == "agreement":
+		return "Ended by agreement"
 	if reason == "turn limit":
 		return "Turn limit reached"
 	var own_all: bool = own["struck"] >= own["total"]

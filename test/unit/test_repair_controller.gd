@@ -21,7 +21,7 @@ var _old_turn: int
 
 func before_each() -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	_old_log = GameState.turn_log
 	_old_phase = GameState.phase_controller.current_phase
 	_old_dice = GameState.dice
@@ -46,7 +46,7 @@ func after_each() -> void:
 	GameState.critical_hit_controller = _old_crits
 	GameState.current_turn = _old_turn
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, player: int, hex: Vector2i, quality: String = "B") -> ShipState:

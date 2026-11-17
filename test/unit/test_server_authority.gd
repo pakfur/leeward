@@ -14,6 +14,7 @@ const FORBIDDEN := [
 	# read-only queries (get_/is_/can_/has_) are allowed
 	["\\bship_controller\\.(?!get_|is_|can_|has_)", "a ShipStateController mutator called from view code"],
 	["\\bShipStateController\\b", "ShipStateController used from view code"],
+	["\\bset_standing_order\\(", "a standing order set from view code (orders come from delivered signals)"],
 	["\\benvironment_controller\\.set_", "an EnvironmentController mutator called from view code"],
 	# the crew overlay reads plans through these queries only; crew plots go through
 	# phase_controller.player_plot_crew / player_set_crew_auto
@@ -69,9 +70,23 @@ const FORBIDDEN := [
 	["\\bboarding_controller\\.(?!preview\\(|tbcf\\(|live_action_of\\(|live_action_between\\(|locked_in_boarding\\(|counter_board\\(|action_by_id\\(|actions\\(|has_actions_to_resolve\\(|drms_for\\(|marines_in_boarding\\(|prize_size_options\\(|defence_tbcf\\(|attack_tbcf\\(|reorganizing_capture_of\\()",
 			"a BoardingController mutator called from view code (use player_plot_crew)"],
 	["\\b(BoardingController|BoardingTaskHandler)\\.new\\b", "a boarding controller made in view code"],
-	["(?<!dev_commands\\.)\\b(declare|capture|advance_reorganizing|end_of_turn|take_link_snapshot|transfer_control|set_controller|set_prize|set_crew|add_detached_box|remove_crew_box_from|apply_boarding_losses|apply_boarding_losses_shared|detach_prize_crew|grapple_ships|start_of_turn|retake|set_prize_size|set_navy|set_value_morale_rating)\\(",
+	["(?<!dev_commands\\.)\\b(declare|capture|advance_reorganizing|end_of_turn|take_link_snapshot|transfer_control|set_controller_side|set_prize|set_crew|add_detached_box|remove_crew_box_from|apply_boarding_losses|apply_boarding_losses_shared|detach_prize_crew|grapple_ships|start_of_turn|retake|set_prize_size|set_navy|set_value_morale_rating)\\(",
 			"a boarding or capture mutator called from view code"],
-	["\\.(controller_id|prize|detached_boxes|navy|value_morale_rating|boarding_actions|linked_at_plot|boarding_seq|boarding_history)\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "a boarding or capture field written from view code"],
+	["\\.(controller_side|prize|detached_boxes|navy|value_morale_rating|boarding_actions|linked_at_plot|boarding_seq|boarding_history)\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "a boarding or capture field written from view code"],
+	["\\b(set_commander)\\(", "a commander mutator called from view code"],
+	["\\.(commander_id)\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "commander_id written from view code"],
+	["\\b(GameState|game_state)\\.(players|groups)\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "players or groups written from view code"],
+	["\\b(GameState|game_state)\\.(players|groups)\\.(append|clear|erase|merge|set|assign)\\(", "players or groups changed in place from view code"],
+	["\\b(GameState|game_state)\\.signals\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "signals written from view code"],
+	["\\b(GameState|game_state)\\.signals\\.(append|append_array|clear|erase|remove_at|push_back|insert|sort|sort_custom)\\(", "signals changed in place from view code"],
+	["\\b(GameState|game_state)\\.end_offers\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "end_offers written from view code"],
+	["\\b(GameState|game_state)\\.end_offers\\.(clear|erase|merge)\\(", "end_offers changed in place from view code"],
+	["\\b(GameState|game_state)\\.talks\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "talks written from view code"],
+	["\\b(GameState|game_state)\\.talks\\.(append|append_array|clear|erase|remove_at|push_back|insert|sort|sort_custom)\\(", "talks changed in place from view code"],
+	["\\.standing_order\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "a standing order written from view code"],
+	["\\.standing_order\\.(clear|erase|merge|assign|set)\\(", "a standing order changed in place from view code"],
+	["\\b(get_player\\([^)]*\\)|players\\[[^\\]]*\\])\\.(id|side|name|is_ai)\\s*(=|\\+=|-=)[^=]", "a PlayerState field written from view code"],
+	["\\.(delivered|words|address)\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "a signal field written from view code"],
 	["\\.(prize|detached_boxes|boarding_actions|linked_at_plot|boarding_history)\\.(append|append_array|clear|erase|remove_at|push_back|push_front|pop_back|pop_front|insert|resize|sort|sort_custom|fill|merge)\\(",
 			"a boarding or capture field changed in place from view code"],
 	["\\b(_?action|a)\\.(state|attacker_sections|defender_sections|rounds|outcome|prize_aboard|finished_turn|prize_size|helper_id|helper_sections|original_crew_joins|prize_action|retaken|shared_with)\\s*(=|\\+=|-=)[^=]", "a BoardingAction field written from view code"],
@@ -95,7 +110,7 @@ const FORBIDDEN := [
 	["\\.plotted_actions\\s*\\[[^\\]]*\\]\\s*=[^=]|\\.plotted_actions\\.(merge|erase|clear)\\(", "a plot written from view code"],
 	["\\b(environment|env)\\.(wind_speed|wind_direction|pending_wind_speed|pending_wind_direction|original_wind_speed|original_wind_direction|sea_state|visibility|time_of_day|precipitation)\\s*(=|\\+=|-=)[^=]",
 			"an EnvironmentState field written from view code"],
-	["\\b(_?ship|ship_state|ss|state|s)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots|crew_auto|plotted_sections|task_seq|fire_list|fire_seq|explosion_checks|checked_sections|mp_used_this_turn)\\s*(=|\\+=|-=)[^=]",
+	["\\b(_?ship|ship_state|ss|state|s)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots|crew_auto|standing_order|plotted_sections|task_seq|fire_list|fire_seq|explosion_checks|checked_sections|mp_used_this_turn)\\s*(=|\\+=|-=)[^=]",
 			"a ShipState field written from view code"],
 ]
 
@@ -176,9 +191,9 @@ func test_boarding_patterns_catch_mutations() -> void:
 		"GameState.boarding_controller.resolve(6)",
 		"GameState.boarding_controller.capture(action, false, 4)",
 		"GameState.transfer_control(\"b\", 0)",
-		"GameState.ship_controller.set_controller(\"b\", 0)",
+		"GameState.ship_controller.set_controller_side(\"b\", 0)",
 		"set_prize(\"b\", {})",
-		"ship.controller_id = 1",
+		"ship.controller_side = 1",
 		"s.prize[\"captor_id\"] = \"a\"",
 		"GameState.boarding_actions.append(x)",
 		"GameState.linked_at_plot = {}",
@@ -246,16 +261,16 @@ func _dev_ship(id: String, player: int, hex: Vector2i, facing: int) -> ShipState
 	state.hull_current_hp = [5, 5, 5, 6] as Array[int]
 	state.crew_count = [3, 3, 3, 3] as Array[int]
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 
 func test_dev_place_ship_moves_through_the_server_and_refuses_held_hexes() -> void:
 	var old_ships: Dictionary = GameState.ships.duplicate()
-	var old_by_player: Dictionary = GameState.ships_by_player.duplicate(true)
+	var old_by_player: Dictionary = GameState.ships_by_side.duplicate(true)
 	var old_scenario: Dictionary = GameState.active_scenario
 	GameState.ships = {}
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	GameState.active_scenario = {"map_bounds": {"width": 20, "height": 20}}
 	var a := _dev_ship("dev_a", 0, Vector2i.ZERO, 0)
 	_dev_ship("dev_b", 1, Vector2i(4, 4), 0)
@@ -269,7 +284,7 @@ func test_dev_place_ship_moves_through_the_server_and_refuses_held_hexes() -> vo
 	assert_eq(a.hex_position, Vector2i(3, 5))
 	assert_eq(a.facing, 3)
 	GameState.ships = old_ships
-	GameState.ships_by_player = old_by_player
+	GameState.ships_by_side = old_by_player
 	GameState.active_scenario = old_scenario
 
 
@@ -277,9 +292,9 @@ func test_dev_place_ship_moves_through_the_server_and_refuses_held_hexes() -> vo
 ## loop runs); the server refuses it otherwise, whatever the view sends.
 func test_plotting_refused_after_submit_or_outside_planning() -> void:
 	var old_ships: Dictionary = GameState.ships.duplicate()
-	var old_by_player: Dictionary = GameState.ships_by_player.duplicate(true)
+	var old_by_player: Dictionary = GameState.ships_by_side.duplicate(true)
 	GameState.ships = {}
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	var plotter := _dev_ship("plot_a", 0, Vector2i.ZERO, 0)
 	plotter.ship = Ship.from_dict({"ship_id": "plot_a", "player_id": 0, "ship_name": "plot_a",
 		"ship_type": "frigate_38", "class": 3, "maneuverability": "C", "speed_type": "F/F",
@@ -289,11 +304,11 @@ func test_plotting_refused_after_submit_or_outside_planning() -> void:
 	var mpc: MovementPlottingController = GameState.movement_plotting_controller
 	var P := TurnPhaseController.GamePhase
 	pc.current_phase = P.PLANNING
-	pc.players_ready = [true, false] as Array[bool]
+	pc.players_ready = {0: true, 1: false}
 	var refused := mpc.handle_start_plotting(0, "plot_a", "r1")
 	assert_true(refused is MovementTypes.PlottingErrorResponse)
 	assert_eq((refused as MovementTypes.PlottingErrorResponse).error_code, "NOT_PLANNING", "plan already submitted")
-	pc.players_ready = [false, false] as Array[bool]
+	pc.players_ready = {0: false, 1: false}
 	pc.current_phase = P.COMBAT_RESOLUTION
 	var late := mpc.handle_start_plotting(0, "plot_a", "r2")
 	assert_eq((late as MovementTypes.PlottingErrorResponse).error_code, "NOT_PLANNING", "outside PLANNING")
@@ -304,7 +319,7 @@ func test_plotting_refused_after_submit_or_outside_planning() -> void:
 	mpc.ship_sessions.clear()
 	pc.current_phase = P.SETUP
 	GameState.ships = old_ships
-	GameState.ships_by_player = old_by_player
+	GameState.ships_by_side = old_by_player
 
 
 ## The map-removal patterns (8.G.1f) catch the violations and let the queries through.
@@ -318,6 +333,64 @@ func test_map_removal_patterns_catch_mutations() -> void:
 		"if not ship_state.is_on_map():",
 		"for s in GameState.ships_on_map():",
 		"if ship.removed_from_map == true:",
+	]
+	var checks: Array = []
+	for f in FORBIDDEN:
+		var re := RegEx.new()
+		re.compile(f[0])
+		checks.append(re)
+	for line in bad:
+		var hit := false
+		for re in checks:
+			if re.search(line) != null:
+				hit = true
+		assert_true(hit, "caught: %s" % line)
+	for line in good:
+		for re in checks:
+			assert_null(re.search(line), "allowed: %s" % line)
+
+
+## The players-and-sides patterns (players, groups, signals, talks, end offers, commanders, standing
+## orders, PlayerState fields) catch the violations they are meant to, and let the queries through.
+func test_players_and_sides_patterns_catch_mutations() -> void:
+	var bad := [
+		"GameState.players[0] = p",
+		"GameState.players.clear()",
+		"GameState.groups[0] = {}",
+		"GameState.groups.erase(0)",
+		"GameState.signals.append(sig)",
+		"GameState.signals = []",
+		"GameState.talks.clear()",
+		"GameState.talks[0] = {}",
+		"GameState.end_offers[0] = true",
+		"GameState.end_offers.erase(0)",
+		"ship.commander_id = 1",
+		"GameState.ship_controller.set_commander(\"a\", 1)",
+		"GameState.ship_controller.set_standing_order(\"a\", {})",
+		"ship.standing_order = {}",
+		"ship.standing_order[\"order\"] = \"engage\"",
+		"s.standing_order.merge({\"a\": 1})",
+		"s.standing_order.erase(\"order\")",
+		"s.standing_order.clear()",
+		"sig.delivered = true",
+		"sig.words = []",
+		"sig.address = {}",
+		"GameState.get_player(0).is_ai = false",
+		"GameState.players[0].side = 1",
+		"GameState.get_player(0).name = \"x\"",
+	]
+	var good := [
+		"var o = GameState.order_of(\"a\")",
+		"if GameState.commands(0, \"a\"):",
+		"var n := GameState.get_player(0).name",
+		"if GameState.players[0].is_ai:",
+		"var side := GameState.side_of_player(0)",
+		"var order: Dictionary = ship.standing_order",
+		"var t = GameState.phase_controller.talks_for(0)",
+		"if sig.delivered:",
+		"var p = GameState.signals.size()",
+		"view.side = 1",
+		"label.name = \"Plate\"",
 	]
 	var checks: Array = []
 	for f in FORBIDDEN:

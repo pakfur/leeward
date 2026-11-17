@@ -32,7 +32,7 @@ func before_each() -> void:
 	env.wind_speed = 3
 	GameState.environment = env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	_requests = []
 	pc.maintenance_orders_requested.connect(_on_request)
 	pc.maintenance_prompt_player_ids = [0] as Array[int]
@@ -47,7 +47,7 @@ func after_each() -> void:
 	GameState.turn_log = _old_log
 	GameState.environment = _old_env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _on_request(player_id: int, step: String, options: Array) -> void:
@@ -73,7 +73,7 @@ func _make_ship(id: String, player: int, hex: Vector2i, quality: String = "D") -
 	state.crew_quality = quality
 	state.mp_used_this_turn = 1
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 

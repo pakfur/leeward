@@ -316,15 +316,27 @@ func add_detached_box(ship_id: String, section: int) -> bool:
 	return true
 
 ## SERVER ONLY: the controlling side (-1 = the original owner). Use GameState.transfer_control,
-## which also re-indexes ships_by_player.
-func set_controller(ship_id: String, controller_id: int) -> bool:
+## which also re-indexes ships_by_side.
+func set_controller_side(ship_id: String, side: int) -> bool:
 	if not is_server:
 		push_error("ShipStateController: Cannot change control on client")
 		return false
 	var ship = _server_ship(ship_id)
 	if not ship:
 		return false
-	ship.controller_id = controller_id
+	ship.controller_side = side
+	ship_state_changed.emit(ship_id)
+	return true
+
+## SERVER ONLY: the player commanding the ship.
+func set_commander(ship_id: String, player_id: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot change the commander on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.commander_id = player_id
 	ship_state_changed.emit(ship_id)
 	return true
 
@@ -780,6 +792,18 @@ func set_irons_entry_turn(ship_id: String, direction: int) -> bool:
 	if not ship:
 		return false
 	ship.irons_entry_turn = direction
+	ship_state_changed.emit(ship_id)
+	return true
+
+## A standing order from a delivered signal ({} clears it).
+func set_standing_order(ship_id: String, order: Dictionary) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot set a standing order on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.standing_order = order.duplicate(true)
 	ship_state_changed.emit(ship_id)
 	return true
 

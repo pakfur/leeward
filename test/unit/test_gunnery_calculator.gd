@@ -11,7 +11,7 @@ var target: ShipState
 
 func before_each() -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	var env := EnvironmentState.new()
 	env.wind_speed = 2
 	env.sea_state = 1
@@ -57,7 +57,7 @@ func _make_ship(id: String, player: int, hex: Vector2i, facing: int) -> ShipStat
 	state.crew_count = crew
 	state.crew_quality = "D"
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 
@@ -326,7 +326,7 @@ func test_destroyed_firer_cannot_fire_and_has_no_eligible_shots() -> void:
 
 
 func test_same_player_cannot_fire() -> void:
-	target.ship.player_id = 0
+	target.ship.side = 0
 	assert_false(calc.preview(_order()).can_fire)
 
 

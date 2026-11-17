@@ -36,7 +36,7 @@ func before_each() -> void:
 	GameState.dice = _dice
 	GameState.turn_log = PhaseEvents.PhaseLog.new()
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	GameState.boarding_actions = []
 	GameState.linked_at_plot = {}
 	GameState.phase_controller.current_turn = 5
@@ -56,7 +56,7 @@ func after_each() -> void:
 	GameState.turn_log = _old_log
 	GameState.environment = _old_env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	GameState.boarding_actions = []
 	GameState.linked_at_plot = {}
 
@@ -85,7 +85,7 @@ func _ship(id: String, player: int, hex: Vector2i, crew: Array, marines: int) ->
 	state.morale_rating = 3
 	state.crew_auto = false
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 
@@ -386,9 +386,9 @@ func test_10_f_3_example_mars_takes_themis_as_hermione_takes_mars() -> void:
 	assert_eq(_dice.remaining(), 0)
 	# "Themis is now British-controlled, while Mars has been captured by the French."
 	assert_true(themis.is_captured())
-	assert_eq(themis.player_id, 0)
+	assert_eq(themis.side, 0)
 	assert_true(mars.is_captured())
-	assert_eq(mars.player_id, 1)
+	assert_eq(mars.side, 1)
 	# Mars' boarders aboard Themis are cut off from Mars: they hold Themis as her prize crew at once
 	# (spec 0.4 #6 by analogy): 3 sailors from S4 down and 4 marines, at Mars' CQ D.
 	assert_true(themis.has_prize_crew())
@@ -542,10 +542,10 @@ func test_capture_log_labels_ships_by_their_side_when_logged() -> void:
 	var d: ShipState = ships[2]
 	d.status = ShipState.Status.STRUCK
 	boarding.resolve(PHASE)
-	assert_eq(d.player_id, 0, "d is now a prize of side 0")
+	assert_eq(d.side, 0, "d is now a prize of side 0")
 	var info := CombatLogPanel.log_ships(GameState.get_all_ships())
 	var split: PhaseEvents.PhaseEvent = _events(PhaseEvents.Type.DEFENCE_SPLIT)[0]
-	assert_eq(split.players.get("d"), 1, "recorded at log time")
+	assert_eq(split.sides.get("d"), 1, "recorded at log time")
 	assert_string_contains(split.to_text(CombatLogPanel.event_names(split, info)), "d (enemy), boarded by 2 ships")
 	var cap: PhaseEvents.PhaseEvent = _events(PhaseEvents.Type.SHIP_CAPTURED)[0]
 	assert_string_starts_with(cap.to_text(CombatLogPanel.event_names(cap, info)), "d (enemy) is taken by ")

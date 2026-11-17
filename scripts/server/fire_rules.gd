@@ -168,7 +168,7 @@ static func marine_error(firer: ShipState, target: ShipState, range_hexes: int) 
 		return "a prize does not fight (10.H.2)"
 	if firer.is_out_of_play() or not target.is_targetable():
 		return "a struck ship cannot fire or be fired on"
-	if firer.player_id == target.player_id:
+	if firer.side == target.side:
 		return "cannot fire on a ship of the same side"
 	if firer.marine_count <= 0:
 		return "no marines left"

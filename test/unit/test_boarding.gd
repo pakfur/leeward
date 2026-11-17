@@ -35,7 +35,7 @@ func before_each() -> void:
 	GameState.dice = _dice
 	GameState.turn_log = PhaseEvents.PhaseLog.new()
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	GameState.boarding_actions = []
 	GameState.linked_at_plot = {}
 	GameState.phase_controller.current_turn = 5
@@ -55,7 +55,7 @@ func after_each() -> void:
 	GameState.turn_log = _old_log
 	GameState.environment = _old_env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	GameState.boarding_actions = []
 	GameState.linked_at_plot = {}
 
@@ -86,7 +86,7 @@ func _ship(id: String, player: int, hex: Vector2i, quality: String, ship_class: 
 	state.morale_rating = morale
 	state.crew_auto = false
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 
@@ -279,7 +279,7 @@ func test_24_no_defender_captured_without_a_roll() -> void:
 	_task(a, "BA", M, "b")
 	boarding.declare(PHASE)
 	assert_true(b.is_captured(), "10.E.2b")
-	assert_eq(b.player_id, 1, "friendly to the captor (10.H.1)")
+	assert_eq(b.side, 1, "friendly to the captor (10.H.1)")
 	assert_eq(_dice.remaining(), 0)
 	assert_eq(str(a.task_of(M).get("code", "")), "RO", "10.G.2: the boarders reorganize")
 
@@ -622,7 +622,7 @@ func test_47_captured_ship_scores_full_value_for_the_captor() -> void:
 	assert_almost_eq(vc._points_scored(1), 100.0, 0.001, "to the captor's side")
 	assert_true(vc._is_defeated(0), "player 0 has no ship in play left")
 	assert_false(vc._is_defeated(1))
-	assert_eq(GameState.get_player_ships(1).size(), 2, "the prize is indexed under her captor")
+	assert_eq(GameState.get_side_ships(1).size(), 2, "the prize is indexed under her captor")
 
 
 # --- rule A2b (test 52) ---
@@ -836,7 +836,7 @@ func test_plot_crew_refuses_a_bad_boarding_order() -> void:
 	boarding.take_link_snapshot()
 	var pc: TurnPhaseController = GameState.phase_controller
 	pc.current_phase = TurnPhaseController.GamePhase.PLANNING
-	pc.players_ready = [false, false] as Array[bool]
+	pc.players_ready = {0: false, 1: false}
 	assert_string_contains(pc.player_plot_crew(0, "a", {"assignments": {}, "orders": {"boarding": "board:b"}}),
 		"start of the turn", "10.A.2: not linked")
 	assert_ne(pc.player_plot_crew(0, "a", {"assignments": {}, "orders": {"boarding": "charge"}}), "")

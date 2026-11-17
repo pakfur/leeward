@@ -109,7 +109,7 @@ func validate_orders(player_id: int, orders: Array) -> String:
 		return shape
 	for order: Dictionary in orders:
 		var firer: ShipState = game_state.get_ship(str(order["ship_id"]))
-		if firer == null or firer.player_id != player_id:
+		if firer == null or not game_state.commands(player_id, firer.ship_id):
 			return "ship %s is not yours to command" % str(order["ship_id"])
 		var p := preview(str(order["ship_id"]), str(order["target_id"]))
 		if not p["can_fire"]:

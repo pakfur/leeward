@@ -158,7 +158,7 @@ func test_explosion_resyncs_ship_views() -> void:
 func test_log_names_tell_the_sides_apart() -> void:
 	var mine := _make_ship("s1")
 	var theirs := _make_ship("s2")
-	theirs.ship.player_id = 1
+	theirs.ship.side = 1
 	var names: Dictionary = LogPanel.log_names([mine, theirs])
 	assert_eq(names["s1"], "HMS Test (yours)")
 	assert_eq(names["s2"], "HMS Test (enemy)")
@@ -167,7 +167,7 @@ func test_log_names_tell_the_sides_apart() -> void:
 func test_log_names_feed_event_text() -> void:
 	var mine := _make_ship("s1")
 	var theirs := _make_ship("s2")
-	theirs.ship.player_id = 1
+	theirs.ship.side = 1
 	var turn_log := PhaseEvents.PhaseLog.new()
 	turn_log.add(PhaseEvents.Type.STRIKE, COMBAT, "s2", {"reason": "morale"})
 	assert_eq(LogPanel.latest_line(turn_log, LogPanel.log_names([mine, theirs])),
@@ -178,13 +178,13 @@ func test_log_labels_each_event_by_the_side_when_it_was_logged() -> void:
 	# A prize changes side (10.H.1); earlier lines must not read as if she had always been on it.
 	var mine := _make_ship("s1")
 	var theirs := _make_ship("s2")
-	theirs.ship.player_id = 1
+	theirs.ship.side = 1
 	var sides := {"s1": 0, "s2": 1}
 	var turn_log := PhaseEvents.PhaseLog.new()
-	turn_log.controller_of = func(id: String) -> int: return int(sides.get(id, -1))
+	turn_log.side_of = func(id: String) -> int: return int(sides.get(id, -1))
 	turn_log.add(PhaseEvents.Type.HOLD_FIRE, COMBAT, "s2")
 	sides["s2"] = 0
-	theirs.controller_id = 0  # captured by side 0
+	theirs.controller_side = 0  # captured by side 0
 	turn_log.add(PhaseEvents.Type.HOLD_FIRE, COMBAT, "s2")
 	var info := LogPanel.log_ships([mine, theirs])
 	var list: Array = LogPanel.entries(turn_log, 0, 2, -1, info)
@@ -195,8 +195,8 @@ func test_log_labels_each_event_by_the_side_when_it_was_logged() -> void:
 
 func test_unstamped_events_fall_back_to_the_side_now() -> void:
 	var theirs := _make_ship("s2")
-	theirs.ship.player_id = 1
-	var turn_log := PhaseEvents.PhaseLog.new()  # no controller_of: nothing recorded
+	theirs.ship.side = 1
+	var turn_log := PhaseEvents.PhaseLog.new()  # no side_of: nothing recorded
 	turn_log.add(PhaseEvents.Type.HOLD_FIRE, COMBAT, "s2")
 	assert_eq(LogPanel.latest_line(turn_log, LogPanel.log_ships([theirs])), "HMS Test (enemy) holds fire.")
 
@@ -204,8 +204,8 @@ func test_unstamped_events_fall_back_to_the_side_now() -> void:
 func test_game_state_logs_record_sides() -> void:
 	var fresh := GameState.new_turn_log(3)
 	assert_eq(fresh.turn, 3)
-	assert_true(fresh.controller_of.is_valid())
-	assert_eq(fresh.controller_of.call("no_such_ship"), -1)
+	assert_true(fresh.side_of.is_valid())
+	assert_eq(fresh.side_of.call("no_such_ship"), -1)
 
 
 # --- Auto collapse / expand ----------------------------------------------------------

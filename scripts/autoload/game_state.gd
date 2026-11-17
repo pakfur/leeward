@@ -30,7 +30,8 @@ enum GamePhase {
 
 var current_phase: GamePhase = GamePhase.SETUP
 var current_turn: int = 0
-var players_ready: Array[bool] = [false, false]
+## Mirror of TurnPhaseController.players_ready: player id -> plan submitted.
+var players_ready: Dictionary = {0: false, 1: false}
 var active_scenario: Dictionary = {}
 var selected_scenario: String = ""  # Scenario name selected from menu
 
@@ -50,7 +51,12 @@ var dev_commands: DevCommands = null
 # State objects (authoritative on server, read-only on client)
 var environment: EnvironmentState = null  # Environmental conditions
 var ships: Dictionary = {}  # ship_id -> ShipState
-var ships_by_player: Dictionary = {0: [], 1: []}  # player_id -> Array[ship_id]
+var ships_by_side: Dictionary = {0: [], 1: []}  # side -> Array[ship_id]
+var players: Dictionary = {}  # player id (int) -> PlayerState
+var groups: Dictionary = {}  # side (int) -> {group name -> Array[String] of ship ids}
+var talks: Array = []  # this game's talks between ships (11.B.3), Dictionaries; opened at PLANNING start
+var end_offers: Dictionary = {}  # side (int) -> bool: that side offers to end the game by agreement (2.A.1)
+var signals: Array[SignalState] = []  # flag signals sent this game (11.A); delivered at MESSAGE_DELIVERY
 
 # Shared seeded RNG — seeded from scenario on game start; all controllers share this instance
 var rng: RandomNumberGenerator = null
@@ -72,6 +78,8 @@ var grappling_controller: GrapplingController = null
 var boarding_controller: BoardingController = null
 var morale_controller: MoraleController = null
 var victory_controller: VictoryController = null
+## Limited information (14.C): what each player may see of the ships and the turn log. Pure queries.
+var player_view: PlayerView = null
 
 # Boarding (boarding spec §2.2-2.3; changed only by BoardingController)
 ## Live and recently finished boarding actions (BoardingAction).
@@ -135,6 +143,7 @@ func _initialize_server_controllers() -> void:
 		crew_task_controller.register_handler(code, BoardingTaskHandler.new(self, code))
 	morale_controller = MoraleController.new(self)
 	victory_controller = VictoryController.new(self)
+	player_view = PlayerView.new(self)
 	turn_log = new_turn_log(1)
 	phase_controller = TurnPhaseController.new(self)
 	ship_controller = ShipStateController.new(self)
@@ -173,8 +182,8 @@ func _initialize_server_controllers() -> void:
 
 ## SERVER ONLY: starts a scenario game: clears the ships, builds every ship of the scenario (its
 ## type from ships.json, its navy per ship or per side, 1.G.8), sets which players are human
-## (they are asked about bearing off and the maintenance orders; every other side is the AI,
-## whose plan is in as soon as PLANNING begins), then start_new_game. The view creates its ship
+## by player id (they are asked about bearing off and the maintenance orders; every other player is
+## the AI, whose plan is in as soon as PLANNING begins), then start_new_game. The view creates its ship
 ## views on game_started. Returns false when refused.
 func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int]) -> bool:
 	if not is_server:
@@ -182,22 +191,190 @@ func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int]) -> 
 		return false
 	clear_ships()
 	var navies: Variant = scenario_data.get("navies", {})
-	var sides: Array[int] = []
 	for ship_data in scenario_data.get("ships", []):
 		var ship_state := _scenario_ship(ship_data, navies)
-		if ship_state != null and add_ship(ship_state) and not sides.has(ship_state.player_id):
-			sides.append(ship_state.player_id)
+		if ship_state != null:
+			add_ship(ship_state)
+	if not _build_players(scenario_data, human_player_ids):
+		return false
 	if phase_controller:
 		phase_controller.bear_off_prompt_player_ids = human_player_ids.duplicate()
 		phase_controller.human_player_ids = human_player_ids.duplicate()
 		phase_controller.maintenance_prompt_player_ids = human_player_ids.duplicate()
 		var ai: Array[int] = []
-		for side in sides:
-			if not human_player_ids.has(side):
-				ai.append(side)
+		for id in player_ids():
+			if not human_player_ids.has(id):
+				ai.append(id)
 		phase_controller.ai_player_ids = ai
 	start_new_game(scenario_data)
 	return true
+
+
+## Builds players, commanders and groups from the scenario (spec 2). Returns false (after a
+## push_error) on a bad roster: a ship under two players, an unknown ship, a player on a side with
+## no ships, or two fleet flagships on one side.
+func _build_players(scenario_data: Dictionary, human_player_ids: Array[int]) -> bool:
+	players.clear()
+	groups = {}
+	var sides: Array[int] = []
+	for ship_id in ships:
+		var s: int = ships[ship_id].side
+		if not sides.has(s):
+			sides.append(s)
+	sides.sort()
+	var entries: Array = scenario_data.get("players", [])
+	if entries.is_empty():
+		for s in sides:
+			entries.append({"id": s, "side": s, "name": "Side %d" % s})
+	var owner_of := {}  # ship id -> player id
+	for entry in entries:
+		var player := PlayerState.new()
+		player.id = int(entry.get("id", 0))
+		player.side = int(entry.get("side", player.id))
+		player.name = str(entry.get("name", "Player %d" % player.id))
+		player.is_ai = not human_player_ids.has(player.id)
+		if players.has(player.id):
+			push_error("GameState: player %d is listed twice" % player.id)
+			return false
+		if not sides.has(player.side):
+			push_error("GameState: player %d is on side %d, which has no ships" % [player.id, player.side])
+			return false
+		players[player.id] = player
+		for ship_id in entry.get("ships", []):
+			var sid := str(ship_id)
+			if not ships.has(sid):
+				push_error("GameState: player %d lists unknown ship %s" % [player.id, sid])
+				return false
+			if owner_of.has(sid):
+				push_error("GameState: ship %s is listed under two players" % sid)
+				return false
+			if ships[sid].side != player.side:
+				push_error("GameState: ship %s is on side %d, not player %d's side" % [sid, ships[sid].side, player.id])
+				return false
+			owner_of[sid] = player.id
+	for s in sides:
+		var lowest := -1
+		for pid in players:
+			if players[pid].side == s and (lowest < 0 or pid < lowest):
+				lowest = pid
+		if lowest < 0:
+			push_error("GameState: side %d has ships but no player" % s)
+			return false
+		var fleet_flags := 0
+		for ship_id in ships_by_side.get(s, []):
+			if ships[ship_id].ship.flag == "fleet":
+				fleet_flags += 1
+			if not owner_of.has(ship_id):
+				owner_of[ship_id] = lowest
+		if fleet_flags > 1:
+			push_error("GameState: side %d has two fleet flagships" % s)
+			return false
+	for ship_id in owner_of:
+		ship_controller.set_commander(ship_id, owner_of[ship_id])
+	var raw_groups: Dictionary = scenario_data.get("groups", {})
+	for key in raw_groups:
+		var by_name := {}
+		for group_name in raw_groups[key]:
+			var ids: Array[String] = []
+			for ship_id in raw_groups[key][group_name]:
+				ids.append(str(ship_id))
+			by_name[str(group_name)] = ids
+		groups[int(key)] = by_name
+	return true
+
+
+func get_player(id: int) -> PlayerState:
+	return players.get(id)
+
+
+func players_of_side(side: int) -> Array[PlayerState]:
+	var out: Array[PlayerState] = []
+	for id in players:
+		if players[id].side == side:
+			out.append(players[id])
+	out.sort_custom(func(a: PlayerState, b: PlayerState) -> bool: return a.id < b.id)
+	return out
+
+
+## The human who speaks for the side (2.A.1): the human commanding the in-play fleet flagship, else the
+## lowest-id human commanding an in-play squadron flagship, else the lowest-id human, else -1.
+func senior_human_player(side: int) -> int:
+	var humans: Array[int] = []
+	for p in players_of_side(side):
+		if not p.is_ai:
+			humans.append(p.id)
+	for flag in ["fleet", "squadron"]:
+		for id in humans:
+			for s in ships_of_player(id):
+				if s.ship != null and s.ship.flag == flag and not s.is_out_of_play():
+					return id
+	return humans[0] if not humans.is_empty() else -1
+
+
+func side_of_player(id: int) -> int:
+	var p: PlayerState = players.get(id)
+	return p.side if p != null else -1
+
+
+## The player commanding the ship (ShipState.commanding_player), -1 for an unknown id.
+func commander_of(ship_id: String) -> int:
+	var s: ShipState = ships.get(ship_id)
+	return s.commanding_player() if s != null else -1
+
+
+## The order the ship's captain follows (spec 7): its standing order, or plain engage when it has
+## none or its target or leader is out of play or off the map. {} for an unknown id. Read-only.
+func order_of(ship_id: String) -> Dictionary:
+	var s: ShipState = ships.get(ship_id)
+	if s == null:
+		return {}
+	if s.standing_order.is_empty():
+		return {"order": "engage"}
+	for key in ["target", "leader"]:
+		var other_id := str(s.standing_order.get(key, ""))
+		if other_id == "":
+			continue
+		var other: ShipState = ships.get(other_id)
+		if other == null or other.is_out_of_play() or not other.is_on_map():
+			return {"order": "engage"}
+	return s.standing_order.duplicate(true)
+
+
+func commands(player_id: int, ship_id: String) -> bool:
+	return player_id >= 0 and commander_of(ship_id) == player_id
+
+
+## Every player id, ascending: the roster's, or without one (a game set up without
+## start_scenario) the default one player per side: 0, 1 and any other side with ships.
+func player_ids() -> Array[int]:
+	var out: Array[int] = []
+	if not players.is_empty():
+		for id in players:
+			out.append(int(id))
+	else:
+		out.assign([0, 1])
+		for side in ships_by_side:
+			if not out.has(int(side)):
+				out.append(int(side))
+	out.sort()
+	return out
+
+
+func ships_of_player(id: int) -> Array[ShipState]:
+	var out: Array[ShipState] = []
+	for ship_id in ships:
+		if commander_of(ship_id) == id:
+			out.append(ships[ship_id])
+	out.sort_custom(func(a: ShipState, b: ShipState) -> bool: return a.ship_id < b.ship_id)
+	return out
+
+
+func in_play_ships_of_player(id: int) -> Array[ShipState]:
+	var out: Array[ShipState] = []
+	for s in ships_of_player(id):
+		if not s.is_out_of_play():
+			out.append(s)
+	return out
 
 
 ## A ShipState for one scenario ship entry, or null when its type is unknown.
@@ -207,7 +384,7 @@ func _scenario_ship(ship_data: Dictionary, navies: Variant) -> ShipState:
 		push_error("Ship definition not found: %s" % ship_data.get("ship_type", ""))
 		return null
 	var ship_ref := Ship.initialize_from_scenario(ship_data, type_def.to_dict())
-	var side := str(int(ship_data.get("player_id", 0)))  # JSON numbers are floats
+	var side := str(int(ship_data.get("side", ship_data.get("player_id", 0))))  # JSON numbers are floats
 	if not ship_data.has("navy") and navies is Dictionary and navies.has(side):
 		ship_data = ship_data.duplicate()
 		ship_data["navy"] = str(navies[side])
@@ -227,7 +404,9 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	# turn_changed / phase_changed keep them in step from here on).
 	current_turn = 1
 	current_phase = GamePhase.SETUP
-	players_ready = [false, false] as Array[bool]
+	players_ready = {}
+	for id in player_ids():
+		players_ready[id] = false
 
 	# Seed the shared RNG from scenario (default to 0 if no seed provided)
 	var seed_value: int = scenario_data.get("seed", 0)
@@ -238,6 +417,9 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	turn_logs.clear()
 	boarding_actions = []
 	boarding_seq = 0
+	signals = []
+	talks = []
+	end_offers = {}
 	linked_at_plot = {}
 	boarding_history = {}
 	Trace.trace_log("GameState", "RNG seeded", seed_value)
@@ -340,11 +522,11 @@ func add_ship(ship_state: ShipState) -> bool:
 	ships[ship_state.ship_id] = ship_state
 
 	# Track by player
-	if not ships_by_player.has(ship_state.player_id):
-		ships_by_player[ship_state.player_id] = []
-	ships_by_player[ship_state.player_id].append(ship_state.ship_id)
+	if not ships_by_side.has(ship_state.side):
+		ships_by_side[ship_state.side] = []
+	ships_by_side[ship_state.side].append(ship_state.ship_id)
 
-	Trace.trace_log("GameState", "Added ship %s (player %d)" % [ship_state.ship_id, ship_state.player_id])
+	Trace.trace_log("GameState", "Added ship %s (side %d)" % [ship_state.ship_id, ship_state.side])
 	return true
 
 func remove_ship(ship_id: String) -> void:
@@ -353,70 +535,70 @@ func remove_ship(ship_id: String) -> void:
 		return
 
 	var ship_state = ships[ship_id]
-	var player_id = ship_state.player_id
+	var side = ship_state.side
 
 	ships.erase(ship_id)
 
-	if ships_by_player.has(player_id):
-		ships_by_player[player_id].erase(ship_id)
+	if ships_by_side.has(side):
+		ships_by_side[side].erase(ship_id)
 
 	Trace.trace_log("GameState", "Removed ship %s" % ship_id)
 
 ## SERVER: a fresh event log for `turn` whose events record each named ship's controlling side
-## when logged (PhaseEvent.players), so the log can label them as they were then.
+## when logged (PhaseEvent.sides), so the log can label them as they were then.
 func new_turn_log(turn: int) -> PhaseEvents.PhaseLog:
 	var fresh: PhaseEvents.PhaseLog = PhaseEvents.PhaseLog.new()
 	fresh.turn = turn
-	fresh.controller_of = controller_of
+	fresh.side_of = side_of
 	return fresh
 
-## The player controlling the ship now, -1 for an unknown id.
-func controller_of(ship_id: String) -> int:
+## The side controlling the ship now, -1 for an unknown id.
+func side_of(ship_id: String) -> int:
 	var ship: ShipState = ships.get(ship_id)
-	return ship.player_id if ship != null else -1
+	return ship.side if ship != null else -1
 
 func get_ship(ship_id: String) -> ShipState:
 	"""Get ship state by ID"""
 	return ships.get(ship_id)
 
-func get_player_ships(player_id: int) -> Array[ShipState]:
-	"""Get all ships for a player"""
+func get_side_ships(side: int) -> Array[ShipState]:
+	"""Get all ships of a side"""
 	var result: Array[ShipState] = []
-	if ships_by_player.has(player_id):
-		for ship_id in ships_by_player[player_id]:
+	if ships_by_side.has(side):
+		for ship_id in ships_by_side[side]:
 			if ships.has(ship_id):
 				result.append(ships[ship_id])
 	return result
 
-## Ships whose original owner is `player_id`, whoever controls them now (victory points, VI.B).
-func get_original_player_ships(player_id: int) -> Array[ShipState]:
+## Ships whose original owner is `side`, whoever controls them now (victory points, VI.B).
+func get_original_side_ships(side: int) -> Array[ShipState]:
 	var result: Array[ShipState] = []
 	var ids: Array = ships.keys()
 	ids.sort()
 	for ship_id in ids:
-		if ships[ship_id].original_player_id == player_id:
+		if ships[ship_id].original_side == side:
 			result.append(ships[ship_id])
 	return result
 
-## SERVER ONLY: hands a ship to `player_id` (a prize, 10.H.1; through ShipStateController) and
-## re-indexes ships_by_player. Returns false when refused.
-func transfer_control(ship_id: String, player_id: int) -> bool:
+## SERVER ONLY: hands a ship to `side` (a prize, 10.H.1; through ShipStateController) and
+## re-indexes ships_by_side. Returns false when refused.
+func transfer_control(ship_id: String, side: int) -> bool:
 	if not is_server:
 		push_error("GameState: Cannot transfer control on client")
 		return false
 	var ship: ShipState = ships.get(ship_id)
 	if ship == null:
 		return false
-	var before := ship.player_id
-	if not ship_controller.set_controller(ship_id, -1 if player_id == ship.original_player_id else player_id):
+	var before := ship.side
+	if not ship_controller.set_controller_side(ship_id, -1 if side == ship.original_side else side):
 		return false
-	if ships_by_player.has(before):
-		ships_by_player[before].erase(ship_id)
-	if not ships_by_player.has(player_id):
-		ships_by_player[player_id] = []
-	if not ships_by_player[player_id].has(ship_id):
-		ships_by_player[player_id].append(ship_id)
-	Trace.trace_log("GameState", "Ship %s now controlled by player %d" % [ship_id, player_id])
+	if ships_by_side.has(before):
+		ships_by_side[before].erase(ship_id)
+	if not ships_by_side.has(side):
+		ships_by_side[side] = []
+	if not ships_by_side[side].has(ship_id):
+		ships_by_side[side].append(ship_id)
+	Trace.trace_log("GameState", "Ship %s now controlled by side %d" % [ship_id, side])
 	return true
 
 func get_all_ships() -> Array[ShipState]:
@@ -441,7 +623,9 @@ func clear_ships() -> void:
 		push_error("GameState: Cannot clear ships on client")
 		return
 	ships.clear()
-	ships_by_player.clear()
+	ships_by_side.clear()
+	players.clear()
+	groups = {}
 
 ## State History Management
 
@@ -641,7 +825,7 @@ func sync_from_server(state_data: Dictionary) -> void:
 	# Update phase state
 	current_turn = state_data.get("turn", 1)
 	current_phase = state_data.get("phase", GamePhase.SETUP) as GamePhase
-	players_ready = state_data.get("players_ready", [false, false])
+	players_ready = TurnPhaseController.readiness_from(state_data.get("players_ready", {}))
 
 	# Update environment
 	if state_data.has("environment"):
@@ -713,7 +897,7 @@ func _update_ship_from_data(ship: ShipState, data: Dictionary) -> void:
 	ship.crew_quality = data.get("crew_quality", ship.crew_quality)
 	ship.morale_rating = int(data.get("morale_rating", ship.morale_rating))
 	ship.status = int(data.get("status", ship.status)) as ShipState.Status
-	ship.controller_id = int(data.get("controller_id", ship.controller_id))
+	ship.controller_side = int(data.get("controller_side", data.get("controller_id", ship.controller_side)))
 	if data.has("prize"):
 		ship.prize = ShipState.prize_from(data["prize"])
 	if data.has("detached_boxes"):

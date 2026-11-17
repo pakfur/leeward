@@ -30,7 +30,7 @@ func before_each() -> void:
 	GameState.current_turn = TURN
 	GameState.phase_controller.current_phase = STATUS
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	fc = GameState.fire_controller
 
 
@@ -41,7 +41,7 @@ func after_each() -> void:
 	GameState.current_turn = _old_turn
 	GameState.phase_controller.current_phase = _old_phase
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 ## A ship facing east with its bow at (q, 0) (stern at (q - 1, 0)): ships at q = 0 and q = r + 1
@@ -65,7 +65,7 @@ func _ship(id: String, q: int, quality: String = "D", ship_class: int = 3, playe
 	state.crew_count = [3, 3, 3, 3] as Array[int]
 	state.marine_count = 2
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 

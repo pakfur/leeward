@@ -34,7 +34,7 @@ func before_each() -> void:
 	GameState.dice = _dice
 	GameState.turn_log = PhaseEvents.PhaseLog.new()
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	GameState.boarding_actions = []
 	GameState.linked_at_plot = {}
 	GameState.phase_controller.current_turn = 5
@@ -58,7 +58,7 @@ func after_each() -> void:
 	GameState.turn_log = _old_log
 	GameState.environment = _old_env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	GameState.boarding_actions = []
 	GameState.linked_at_plot = {}
 
@@ -88,7 +88,7 @@ func _ship(id: String, player: int, hex: Vector2i, quality: String, ship_class: 
 	state.morale_rating = morale
 	state.crew_auto = false
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 
@@ -139,9 +139,9 @@ func _finish_ro(ship: ShipState) -> void:
 func _prize(id: String, captor_id: String, crew: Array, marines: int, below: Array, below_marines: int = 0) -> ShipState:
 	var s := _ship(id, 0, Vector2i(6, 5), "B", 2, crew, marines, 3)
 	s.status = ShipState.Status.CAPTURED
-	s.controller_id = 1
-	GameState.ships_by_player[0].erase(id)
-	GameState.ships_by_player[1].append(id)
+	s.controller_side = 1
+	GameState.ships_by_side[0].erase(id)
+	GameState.ships_by_side[1].append(id)
 	s.prize = {"captor_id": captor_id, "prize_crew_aboard": true, "original_navy": "",
 		"original_crew": {"crew_count": below, "marine_count": below_marines, "crew_quality": "C", "morale_rating": 4}}
 	return s
@@ -391,8 +391,8 @@ func test_prize_boarded_back_is_retaken() -> void:
 	assert_false(b.is_captured(), "retaken")
 	assert_true(b.prize.is_empty())
 	assert_eq(b.status, ShipState.Status.ACTIVE)
-	assert_eq(b.player_id, 0, "back with her own side")
-	assert_true(GameState.get_player_ships(0).has(b))
+	assert_eq(b.side, 0, "back with her own side")
+	assert_true(GameState.get_side_ships(0).has(b))
 	assert_eq(b.crew_count, [0, 4, 6, 0] as Array[int], "her original crew is freed")
 	assert_eq(b.crew_quality, "G", "as 10.H.4: G6")
 	assert_eq(b.morale_rating, 6)
@@ -441,7 +441,7 @@ func test_46_original_crew_retakes_below_the_minimum() -> void:
 	assert_true(BoardingController.recapture_due(b))
 	boarding.start_of_turn(TurnPhaseController.GamePhase.ENVIRONMENT)
 	assert_false(b.is_captured(), "retaken")
-	assert_eq(b.player_id, 0)
+	assert_eq(b.side, 0)
 	assert_eq(b.crew_count, [2, 0, 0, 0] as Array[int])
 	assert_eq(b.crew_quality, "G")
 	assert_eq(b.morale_rating, 6)
@@ -449,8 +449,8 @@ func test_46_original_crew_retakes_below_the_minimum() -> void:
 	assert_eq(ev.size(), 1)
 	assert_eq(int(ev[0].data["prize_boxes"]), 1)
 	assert_string_contains(ev[0].to_text({}), "retakes the ship")
-	assert_true(GameState.get_player_ships(0).has(b))
-	assert_false(GameState.get_player_ships(1).has(b))
+	assert_true(GameState.get_side_ships(0).has(b))
+	assert_false(GameState.get_side_ships(1).has(b))
 	assert_true(a.tasks_with("RO").is_empty())
 	# Prize crew 3 (the minimum), original 20: not below the minimum, no recapture.
 	var d := _prize("d", "a", [0, 0, 1, 2], 0, [2, 6, 6, 6])

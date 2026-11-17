@@ -38,7 +38,7 @@ func show_ships(focus_ship: ShipState, ships: Array, wind_direction: int) -> voi
 		var bow := _grid.axial_to_world(s.hex_position.x, s.hex_position.y)
 		var st := s.stern_hex()
 		var stern := _grid.axial_to_world(st.x, st.y)
-		var color := CrewStyle.OK if s.player_id == focus_ship.player_id else CrewStyle.BAD
+		var color := CrewStyle.OK if s.side == focus_ship.side else CrewStyle.BAD
 		if s.is_out_of_play():
 			color = CrewStyle.MUTED
 		_ships.append({"center": Vector2(w.x, w.z), "heading": Vector2(bow.x - stern.x, bow.z - stern.z).angle(),

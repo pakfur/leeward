@@ -387,14 +387,14 @@ func _armed(id: String, player: int, hex: Vector2i, facing: int) -> ShipState:
 	state.crew_count = crew
 	state.crew_quality = "D"
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 
 ## Two enemies on the starboard side, each covered by both batteries (searched, not hand-placed).
 func _double_covered_setup(calc: GunneryCalculator) -> Array[String]:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	var env := EnvironmentState.new()
 	env.wind_speed = 2
 	env.sea_state = 1
@@ -422,7 +422,7 @@ func _double_covered_setup(calc: GunneryCalculator) -> Array[String]:
 				taken.append_array([bow, stern])
 			else:
 				GameState.ships.erase(id)
-				GameState.ships_by_player[1].erase(id)
+				GameState.ships_by_side[1].erase(id)
 	return placed
 
 
@@ -580,7 +580,7 @@ func test_fire_button_text_with_marines() -> void:
 func test_panel_lists_a_ship_with_only_a_marine_shot() -> void:
 	# 7.G.1: an enemy dead ahead gives no broadside but is a marine target, so the panel opens.
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	var env := EnvironmentState.new()
 	env.wind_speed = 2
 	env.sea_state = 1

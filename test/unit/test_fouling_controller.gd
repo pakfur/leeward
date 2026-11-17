@@ -26,7 +26,7 @@ func before_each() -> void:
 	GameState.dice = _dice
 	GameState.turn_log = PhaseEvents.PhaseLog.new()
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	controller = FoulingController.new(GameState)
 
 
@@ -34,7 +34,7 @@ func after_each() -> void:
 	GameState.dice = _old_dice
 	GameState.turn_log = _old_log
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, hex: Vector2i, quality: String = "D", player: int = 0) -> ShipState:
@@ -46,7 +46,7 @@ func _make_ship(id: String, hex: Vector2i, quality: String = "D", player: int = 
 		"rigging_hp": [5, 5, 6, 6], "hull_hp": [5, 5, 5, 6],
 		"crew_count": [3, 3, 3, 3], "marine_count": 2,
 	})
-	state.player_id = player
+	state.side = player
 	state.hex_position = hex
 	state.facing = 1
 	state.sail_state = "MS"
@@ -59,7 +59,7 @@ func _make_ship(id: String, hex: Vector2i, quality: String = "D", player: int = 
 	state.marine_count = 2
 	state.crew_quality = quality
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 
@@ -248,9 +248,9 @@ func test_freed_ships_can_start_plotting_again() -> void:
 	var old_phase := pc.current_phase
 	var old_ready := pc.players_ready.duplicate()
 	pc.current_phase = TurnPhaseController.GamePhase.PLANNING  # movement is plotted in PLANNING
-	pc.players_ready = [false, false] as Array[bool]
+	pc.players_ready = {0: false, 1: false}
 	var response := GameState.movement_plotting_controller.handle_start_plotting(
-			ships[0].player_id, "a", "req")
+			ships[0].side, "a", "req")
 	pc.current_phase = old_phase
 	pc.players_ready = old_ready
 	assert_false(response is MovementTypes.PlottingErrorResponse)
