@@ -51,6 +51,8 @@ var dev_commands: DevCommands = null
 var environment: EnvironmentState = null  # Environmental conditions
 var ships: Dictionary = {}  # ship_id -> ShipState
 var ships_by_side: Dictionary = {0: [], 1: []}  # side -> Array[ship_id]
+var players: Dictionary = {}  # player id (int) -> PlayerState
+var groups: Dictionary = {}  # side (int) -> {group name -> Array[String] of ship ids}
 
 # Shared seeded RNG — seeded from scenario on game start; all controllers share this instance
 var rng: RandomNumberGenerator = null
@@ -187,6 +189,8 @@ func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int]) -> 
 		var ship_state := _scenario_ship(ship_data, navies)
 		if ship_state != null and add_ship(ship_state) and not sides.has(ship_state.side):
 			sides.append(ship_state.side)
+	if not _build_players(scenario_data, human_player_ids):
+		return false
 	if phase_controller:
 		phase_controller.bear_off_prompt_player_ids = human_player_ids.duplicate()
 		phase_controller.human_player_ids = human_player_ids.duplicate()
@@ -198,6 +202,123 @@ func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int]) -> 
 		phase_controller.ai_player_ids = ai
 	start_new_game(scenario_data)
 	return true
+
+
+## Builds players, commanders and groups from the scenario (spec 2). Returns false (after a
+## push_error) on a bad roster: a ship under two players, an unknown ship, a player on a side with
+## no ships, or two fleet flagships on one side.
+func _build_players(scenario_data: Dictionary, human_player_ids: Array[int]) -> bool:
+	players.clear()
+	groups = {}
+	var sides: Array[int] = []
+	for ship_id in ships:
+		var s: int = ships[ship_id].side
+		if not sides.has(s):
+			sides.append(s)
+	sides.sort()
+	var entries: Array = scenario_data.get("players", [])
+	if entries.is_empty():
+		for s in sides:
+			entries.append({"id": s, "side": s, "name": "Side %d" % s})
+	var owner_of := {}  # ship id -> player id
+	for entry in entries:
+		var player := PlayerState.new()
+		player.id = int(entry.get("id", 0))
+		player.side = int(entry.get("side", player.id))
+		player.name = str(entry.get("name", "Player %d" % player.id))
+		player.is_ai = not human_player_ids.has(player.id)
+		if players.has(player.id):
+			push_error("GameState: player %d is listed twice" % player.id)
+			return false
+		if not sides.has(player.side):
+			push_error("GameState: player %d is on side %d, which has no ships" % [player.id, player.side])
+			return false
+		players[player.id] = player
+		for ship_id in entry.get("ships", []):
+			var sid := str(ship_id)
+			if not ships.has(sid):
+				push_error("GameState: player %d lists unknown ship %s" % [player.id, sid])
+				return false
+			if owner_of.has(sid):
+				push_error("GameState: ship %s is listed under two players" % sid)
+				return false
+			if ships[sid].side != player.side:
+				push_error("GameState: ship %s is on side %d, not player %d's side" % [sid, ships[sid].side, player.id])
+				return false
+			owner_of[sid] = player.id
+	for s in sides:
+		var lowest := -1
+		for pid in players:
+			if players[pid].side == s and (lowest < 0 or pid < lowest):
+				lowest = pid
+		if lowest < 0:
+			push_error("GameState: side %d has ships but no player" % s)
+			return false
+		var fleet_flags := 0
+		for ship_id in ships_by_side.get(s, []):
+			if ships[ship_id].ship.flag == "fleet":
+				fleet_flags += 1
+			if not owner_of.has(ship_id):
+				owner_of[ship_id] = lowest
+		if fleet_flags > 1:
+			push_error("GameState: side %d has two fleet flagships" % s)
+			return false
+	for ship_id in owner_of:
+		ship_controller.set_commander(ship_id, owner_of[ship_id])
+	var raw_groups: Dictionary = scenario_data.get("groups", {})
+	for key in raw_groups:
+		var by_name := {}
+		for group_name in raw_groups[key]:
+			var ids: Array[String] = []
+			for ship_id in raw_groups[key][group_name]:
+				ids.append(str(ship_id))
+			by_name[str(group_name)] = ids
+		groups[int(key)] = by_name
+	return true
+
+
+func get_player(id: int) -> PlayerState:
+	return players.get(id)
+
+
+func players_of_side(side: int) -> Array[PlayerState]:
+	var out: Array[PlayerState] = []
+	for id in players:
+		if players[id].side == side:
+			out.append(players[id])
+	out.sort_custom(func(a: PlayerState, b: PlayerState) -> bool: return a.id < b.id)
+	return out
+
+
+func side_of_player(id: int) -> int:
+	var p: PlayerState = players.get(id)
+	return p.side if p != null else -1
+
+
+func commander_of(ship_id: String) -> int:
+	var s: ShipState = ships.get(ship_id)
+	return s.commander_id if s != null else -1
+
+
+func commands(player_id: int, ship_id: String) -> bool:
+	return player_id >= 0 and commander_of(ship_id) == player_id
+
+
+func ships_of_player(id: int) -> Array[ShipState]:
+	var out: Array[ShipState] = []
+	for ship_id in ships:
+		if ships[ship_id].commander_id == id:
+			out.append(ships[ship_id])
+	out.sort_custom(func(a: ShipState, b: ShipState) -> bool: return a.ship_id < b.ship_id)
+	return out
+
+
+func in_play_ships_of_player(id: int) -> Array[ShipState]:
+	var out: Array[ShipState] = []
+	for s in ships_of_player(id):
+		if not s.is_out_of_play():
+			out.append(s)
+	return out
 
 
 ## A ShipState for one scenario ship entry, or null when its type is unknown.
@@ -442,6 +563,8 @@ func clear_ships() -> void:
 		return
 	ships.clear()
 	ships_by_side.clear()
+	players.clear()
+	groups = {}
 
 ## State History Management
 

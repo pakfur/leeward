@@ -93,6 +93,8 @@ var ship_type: String:
 @export var status: Status = Status.ACTIVE
 ## The side controlling the ship when it is not its original owner (a prize, 10.H.1); -1 = the owner.
 @export var controller_side: int = -1
+## The player commanding the ship (-1 = none yet); set at load, mutated via ShipStateController.set_commander.
+@export var commander_id: int = -1
 ## Prize data while CAPTURED (10.G-H): {"captor_id": String, "original_crew": {"crew_count", "marine_count",
 ## "crew_quality", "morale_rating"}, "prize_crew_aboard": bool}. While a prize, the live crew fields are
 ## the prize crew's (empty until it is put aboard). {} otherwise.
@@ -266,6 +268,15 @@ func is_french_gunned() -> bool:
 ## ShipStateController.remove_from_map has taken it off (8.G.1f).
 func is_on_map() -> bool:
 	return not removed_from_map
+
+## Carries a fleet or squadron flag and is still in play.
+func is_flagship() -> bool:
+	return ship != null and ship.flag != "" and not is_out_of_play()
+
+
+func is_fleet_flagship() -> bool:
+	return ship != null and ship.flag == "fleet" and not is_out_of_play()
+
 
 ## Struck or destroyed: cannot move, fire, change sail, unfoul, fix or check morale, and is not a
 ## target. A struck ship still drifts; a destroyed one does not.
@@ -589,6 +600,7 @@ func serialize() -> Dictionary:
 		"marine_count": marine_count,
 		"status": int(status),
 		"controller_side": controller_side,
+		"commander_id": commander_id,
 		"prize": prize.duplicate(true),
 		"detached_boxes": detached_boxes.duplicate(),
 		"navy": navy,
@@ -676,6 +688,7 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.marine_count = data.get("marine_count", 0)
 	state.status = int(data.get("status", Status.ACTIVE)) as Status
 	state.controller_side = int(data.get("controller_side", data.get("controller_id", -1)))
+	state.commander_id = int(data.get("commander_id", -1))
 	state.prize = prize_from(data.get("prize", {}))
 	state.detached_boxes = _int_array(data.get("detached_boxes", [0, 0, 0, 0, 0]))
 	state.navy = str(data.get("navy", ""))

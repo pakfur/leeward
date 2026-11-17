@@ -328,6 +328,18 @@ func set_controller_side(ship_id: String, side: int) -> bool:
 	ship_state_changed.emit(ship_id)
 	return true
 
+## SERVER ONLY: the player commanding the ship.
+func set_commander(ship_id: String, player_id: int) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot change the commander on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.commander_id = player_id
+	ship_state_changed.emit(ship_id)
+	return true
+
 ## SERVER ONLY: the navy sailing the ship (1.G.8 BGN; "" = the ship type's nationality).
 func set_navy(ship_id: String, navy: String) -> bool:
 	if not is_server:

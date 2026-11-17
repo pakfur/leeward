@@ -6,6 +6,8 @@ extends RefCounted
 # Instance-specific identity (immutable after creation)
 var ship_id: String = ""
 var side: int = 0
+## "" (none), "fleet" or "squadron": a flagship carries the commander's flag (scenario "flag").
+var flag: String = ""
 var ship_name: String = ""
 var ship_type: String = ""
 var crew_quality: String = "B" # A=Elite, B=Veteran, C-D=Trained, E=Green, F-G=Demoralized
@@ -51,6 +53,7 @@ static func from_dict(data: Dictionary) -> Ship:
 	ship.ship_name = data.get("ship_name", "")
 	ship.ship_type = data.get("ship_type", "")
 	ship.crew_quality = data.get("crew_quality", "Trained")
+	ship.flag = str(data.get("flag", ""))
 
 	# Basic information
 	ship.name = data.get("name", "Unknown Ship")
@@ -106,6 +109,7 @@ static func initialize_from_scenario(data: Dictionary, type_def: Dictionary) -> 
 	ship.ship_type = data.get("ship_type", "")
 	ship.ship_name = data.get("ship_name", ship.name)
 	ship.crew_quality = data.get("crew_quality", "Trained")
+	ship.flag = str(data.get("flag", ""))
 
 	return ship
 
@@ -114,6 +118,7 @@ func to_dict() -> Dictionary:
 	return {
 		"ship_id": ship_id,
 		"side": side,
+		"flag": flag,
 		"ship_name": ship_name,
 		"ship_type": ship_type,
 		"crew_quality": crew_quality,
