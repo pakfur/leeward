@@ -207,6 +207,13 @@ func _build_plotting_state(
 			ps.ma_zero_turn_ended = true
 			ps.remaining_ma = 0
 
+	# 5.E.8: a stopped ship which uses its first MP to turn can move no further that g-t.
+	if ps.speed_last_turn == 0 and not path_so_far.is_empty():
+		var first_move = path_so_far[0].move_type
+		if first_move == MovementTypes.MoveType.PORT or first_move == MovementTypes.MoveType.STARBOARD:
+			ps.ma_zero_turn_ended = true
+			ps.remaining_ma = 0
+
 	return ps
 
 

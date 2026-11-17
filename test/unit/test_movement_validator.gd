@@ -262,6 +262,36 @@ func test_turn_at_ma_zero_ends_the_move() -> void:
 	assert_false(result.valid_hexes.has_any_moves(), "No moves after a turn made at MA=0")
 
 
+func _first_step_moves(speed: int, use_turn: bool) -> MovementTypes.ValidMovesResult:
+	# Wind from W, ship heading E (running): MA > 0, so the MA=0 rule cannot fire.
+	var ship = _make_ship("F/F", "b")
+	var ss = _make_ship_state(ship, 0, speed, "MS")
+	var first = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, [])
+	var mv: MovementTypes.ValidMove = first.valid_hexes.starboard if use_turn else first.valid_hexes.forward[0]
+	var path: Array[MovementTypes.PlotStep] = [
+		MovementTypes.PlotStep.new(mv.metadata.resulting_hex, mv.metadata.resulting_facing, mv.move)
+	]
+	return validator.calculate_valid_moves(ss, mv.metadata.resulting_hex, mv.metadata.resulting_facing, path)
+
+
+func test_stopped_ship_turning_first_cannot_move_further() -> void:
+	# 5.E.8: a stopped ship which uses its first MP to turn can move no further that g-t.
+	var result = _first_step_moves(0, true)
+	assert_false(result.valid_hexes.has_any_moves(), "No moves after a stopped ship's first-MP turn")
+
+
+func test_stopped_ship_moving_ahead_first_is_unaffected() -> void:
+	# 5.E.8 only concerns a first-MP turn; a stopped ship that moves ahead first may go on.
+	var result = _first_step_moves(0, false)
+	assert_true(result.valid_hexes.has_any_moves(), "Ahead first leaves further moves")
+
+
+func test_moving_ship_turning_first_may_continue() -> void:
+	# 5.E.8 applies to a stopped ship only; one that had speed last turn may turn then go on.
+	var result = _first_step_moves(2, true)
+	assert_true(result.valid_hexes.has_any_moves(), "A moving ship may continue after a turn")
+
+
 func test_not_in_irons_when_speed_nonzero() -> void:
 	mock_gs.environment.wind_direction = 0
 	var ship = _make_ship("F/F", "b")

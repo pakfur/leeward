@@ -65,7 +65,6 @@ These are the gaps and differences that most change how a game plays out, in rou
 | Friendly-ship blocking hexes for LOS (medium and long range) | 7.B.10–12 | Only the hexes a ship occupies block LOS (both of its hexes now). Nothing discourages firing past friendly ships. |
 | Voluntarily reducing the MGN | 7.C.14 | |
 | Acceleration reductions (two rigging sections missing, WS=1, towing) | 5.E.5 | **Fixed:** −1 each, never below 1 (`ShipStateController.speed_change_limits`); towing itself does not exist yet. |
-| "A stopped ship whose first MP is a turn cannot move further" | 5.E.8 | |
 | A collision or grapple in WF=L puts the ship in irons ✔ | 5.D.5 | **Fixed** (boarding spec B3). Leeward knows a ship is in irons by WF=L at speed 0. A ship at WF=L in a collision gets speed 0 even when it moved ahead (`movement_resolver.gd` (`apply_results`)), and each ship of a new grapple that lies at WF=L gets speed 0 (`grappling_controller.gd` (`_irons_on_grapple`)); either then needs the in-irons Tacking roll to turn out (5.D.6). |
 | Exceptions to being in irons (WS just rose from 0, cut cable, anchored) | 3.D.4c, 5.D.4 | A ship at WF=L with speed 0 always counts as in irons. |
 | Reverse tack | 5.D.3 | |
@@ -137,6 +136,7 @@ Implemented with essentially the same outcome as the rules:
 
 - Movement allowance lookup with rigging-level caps (5.A.2, 5.F.2–3).
 - No MA gained by turning into a faster WF (5.B.3).
+- A stopped ship which uses its first MP to turn can move no further that g-t (5.E.8). `MovementValidator._build_plotting_state` ends the plot after such a turn, as for a turn at MA 0.
 - Blocked wind: MA −1 (never to 0) when every windward hex (two at WF=C/B, one at WF=R) is held by a ship at FS or above that is not dismasted (5.G.1–3). Checked at the plotted position against the other ships where they stand. `BlockedWind` (`blocked_wind.gd`), used by `ShipStateController.get_movement_allowance` and the movement validator.
 - Sail-change cost, timing and cancellation when a crew section is lost (5.F.6–9, 4.A.3b, 4.B.2–3), worked by any section, marines included (4.B.1); its sailor sections do not serve the guns (4.B.4).
 - No more than two turns per g-t, pivoting on the bow (5.C.1–2).
