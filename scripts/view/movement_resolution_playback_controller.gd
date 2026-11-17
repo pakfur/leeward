@@ -1,16 +1,31 @@
 class_name MovementResolutionPlaybackController
 extends Node
-## Consumes a ResolutionLog and animates ships hex-by-hex, from the log's resume_impulse.
+## Consumes a ResolutionLog and animates the ships' moves, from the log's resume_impulse.
+## Each ship's move is a continuous glide (sea-state spec D): the segments are split into stretches
+## at every segment that carries an event (collision, contested hex, overlap rollback, stern contest,
+## bear-off roll, ...); within a stretch each ship speeds up and slows down along its steps and
+## arrives exactly on its resolved pose for the stretch's last segment, the event pause plays, and the
+## next stretch starts from there. `glide_seconds` per segment comes from the sea state's preset.
 ## A complete log ends with playback_completed. An incomplete one (a potential collision waiting for
 ## the player's bear-off decision, 6.D.3) is played up to that segment and ends with playback_paused;
-## the re-run log that follows the answer is played from there.
+## the re-run log that follows the answer is played from there, starting from the paused poses.
 
 signal playback_completed()
 signal playback_paused()
 
-const IMPULSE_DURATION_MS: float = 200.0
-const IMPULSE_GAP_MS: float = 50.0
 const EVENT_PAUSE_MS: float = 400.0
+const DEFAULT_GLIDE_SECONDS: float = 0.8  # without a sea model (headless tests)
+
+
+## One ship's glide through one stretch: its poses (bow world position, model angle in degrees,
+## unwrapped so each step turns the short way) before its first step and after each step, played
+## over the clock span [t0, t1] (in segments) with a trapezoidal speed profile.
+class GlideTrack:
+	var view: ShipView = null
+	var keys: Array = []  # [[bow: Vector3, angle: float]]
+	var t0: float = 0.0
+	var t1: float = 0.0
+
 
 var _hex_grid: HexGrid = null
 var _ship_views: Dictionary = {}  # ship_id -> ShipView
@@ -19,6 +34,7 @@ var _playing: bool = false
 var _aborted: bool = false  # the game is being left: stop and never report completion
 var _player_id: int = 0
 var _swung_out: Dictionary = {}  # ship_id -> true while a rolled-back turn is shown swung out
+var _posed_by_impulse: Dictionary = {}  # impulse -> the events that pose a ship (see _posed_events)
 
 
 func _init(p_hex_grid: HexGrid = null, p_ship_views: Dictionary = {}, p_player_id: int = 0) -> void:
@@ -77,29 +93,40 @@ func _play_all_impulses() -> void:
 	if not pre_events.is_empty() and _log.resume_impulse == 0:
 		await _play_event_batch(pre_events)
 
+	# Sort every segment's events, in order (_posed_events follows the swing outs from one to the next).
 	var last_impulse: int = _log.max_impulses if _log.is_complete() else _log.pending_bear_off.segment
+	_posed_by_impulse = {}
+	var special_by_impulse: Dictionary = {}
+	var event_segments: Array[int] = []
 	for impulse in range(_log.resume_impulse, last_impulse):
+		var impulse_events: Array = events_by_impulse.get(impulse, [])
+		_posed_by_impulse[impulse] = _posed_events(impulse_events)
+		var special: Array = _special_events(impulse_events, pre_events)
+		if not special.is_empty():
+			special_by_impulse[impulse] = special
+			event_segments.append(impulse)
+
+	for stretch in glide_stretches(event_segments, _log.resume_impulse, last_impulse - 1):
 		if _aborted:
 			return
-		var impulse_events: Array = events_by_impulse.get(impulse, [])
-		if impulse_events.is_empty():
-			continue
+		await _glide_stretch(stretch[0], stretch[1])
+		if _aborted:
+			return
+		# Play special events (contests, collisions, etc.) with pauses, every ship on its pose
+		if special_by_impulse.has(stretch[1]):
+			await _play_event_batch(special_by_impulse[stretch[1]])
 
-		# Separate the events that pose a ship from special events for this impulse
-		var move_events: Array = _posed_events(impulse_events)
-		var special_events: Array = _special_events(impulse_events, pre_events)
 
-		# Animate all moves for this impulse simultaneously
-		if not move_events.is_empty():
-			await _animate_moves(move_events)
-
-		# Play special events (contests, collisions, etc.) with pauses
-		if not special_events.is_empty():
-			await _play_event_batch(special_events)
-
-		# Brief gap between impulses
-		if impulse < _log.max_impulses - 1:
-			await _wait_ms(IMPULSE_GAP_MS)
+## The segment ranges [first, last] (inclusive) of the glide from `first_segment` to `last_segment`,
+## split after every segment in `event_segments`: each stretch ends on an event segment or on the last.
+static func glide_stretches(event_segments: Array[int], first_segment: int, last_segment: int) -> Array:
+	var stretches: Array = []
+	var start := first_segment
+	for seg in range(first_segment, last_segment + 1):
+		if seg == last_segment or event_segments.has(seg):
+			stretches.append([start, seg])
+			start = seg + 1
+	return stretches
 
 
 ## The events of one impulse that move a ship view: every MOVE, and a rolled-back turn (6.B.4) shown
@@ -184,37 +211,93 @@ func _collect_pre_movement_events() -> Array:
 ## Animation
 ## ============================================================================
 
-## Each posed event is one tween per ship: an ahead step slides the ship one hex along its keel; a
-## turn (or an overlap swing out or back) keeps the bow hex and swings the stern round it. The ship
-## view is placed by its centre, midway between bow and stern (HexGrid.ship_center_world), so both are
-## driven from the bow.
-func _animate_moves(move_events: Array) -> void:
-	if _aborted:
-		return
-	var tweens: Array = []
-	for ev in move_events:
-		var view: ShipView = _ship_views.get(ev.ship_id)
-		if not view or not _hex_grid:
+## Glide every ship through the segments [first, last]: one clock for all of them, from the first
+## step any ship makes to the last, `glide_seconds` per segment. Every ship ends on its resolved pose.
+func _glide_stretch(first: int, last: int) -> void:
+	var tracks: Array = []
+	for ship_id in _ship_views:
+		var steps: Array = []
+		for impulse in range(first, last + 1):
+			for ev in _posed_by_impulse.get(impulse, []):
+				if ev.ship_id == ship_id:
+					steps.append(ev)
+		var view: ShipView = _ship_views[ship_id]
+		if steps.is_empty() or not is_instance_valid(view) or not _hex_grid:
 			continue
+		var start_angle: float = view.model_node.rotation_degrees.y if view.model_node \
+			else _model_angle(steps[0].from_facing)
+		var track := track_for(steps, _hex_grid, start_angle)
+		track.view = view
+		tracks.append(track)
+	if tracks.is_empty() or _aborted:
+		return
+	var t0: float = tracks[0].t0
+	var t1: float = tracks[0].t1
+	for track in tracks:
+		t0 = minf(t0, track.t0)
+		t1 = maxf(t1, track.t1)
+	if not is_inside_tree():
+		_pose_tracks(t1, tracks)
+		return
+	var tween := create_tween()
+	tween.tween_method(_pose_tracks.bind(tracks), t0, t1, (t1 - t0) * glide_seconds())
+	await tween.finished
+	_pose_tracks(t1, tracks)  # exactly on the resolved poses, whatever the last frame's time
 
-		var from_bow: Vector3 = _hex_grid.axial_to_world(ev.from_hex.x, ev.from_hex.y)
-		var to_bow: Vector3 = _hex_grid.axial_to_world(ev.to_hex.x, ev.to_hex.y)
-		var from_angle: float = _model_angle(ev.from_facing)
-		if view.model_node:
-			from_angle = view.model_node.rotation_degrees.y
-		var to_angle: float = from_angle + _shortest_angle(from_angle, _model_angle(ev.facing))
 
-		var tween: Tween = view.create_tween()
-		tween.set_ease(Tween.EASE_IN_OUT)
-		tween.set_trans(Tween.TRANS_SINE)
-		tween.tween_method(_pose_ship.bind(view, from_bow, to_bow, from_angle, to_angle),
-			0.0, 1.0, IMPULSE_DURATION_MS / 1000.0)
-		tweens.append(tween)
+## Seconds per segment of the glide: the current sea state's preset, or the default without a model.
+static func glide_seconds() -> float:
+	var sea := SeaModel.instance
+	return sea.glide_seconds if is_instance_valid(sea) else DEFAULT_GLIDE_SECONDS
 
-	# Wait for all tweens to finish
-	for tween in tweens:
-		if tween.is_running():
-			await tween.finished
+
+## The glide track for one ship's posed events `steps` (in order, all in one stretch), starting at
+## model angle `start_angle` (the view's current heading, so the angle stays continuous).
+static func track_for(steps: Array, hex_grid: HexGrid, start_angle: float) -> GlideTrack:
+	var track := GlideTrack.new()
+	track.t0 = float(steps[0].impulse)
+	track.t1 = float(steps[-1].impulse + 1)
+	track.keys.append([hex_grid.axial_to_world(steps[0].from_hex.x, steps[0].from_hex.y), start_angle])
+	for ev in steps:
+		var prev_angle: float = track.keys[-1][1]
+		var to_angle: float = prev_angle + _shortest_angle(prev_angle, _model_angle(ev.facing))
+		track.keys.append([hex_grid.axial_to_world(ev.to_hex.x, ev.to_hex.y), to_angle])
+	return track
+
+
+## The pose [bow world position, model angle] of `track` at clock time `t` (segments): before t0 the
+## pose before the first step, after t1 the pose after the last, in between the steps spread over the
+## span with a gentle start and stop.
+static func pose_at(track: GlideTrack, t: float) -> Array:
+	var steps: int = track.keys.size() - 1
+	if steps <= 0:
+		return track.keys[0]
+	var s := clampf((t - track.t0) / maxf(track.t1 - track.t0, 0.001), 0.0, 1.0)
+	var accel := clampf(0.6 / float(steps), 0.15, 0.5)
+	var u := _trapezoid(s, accel) * float(steps)
+	var k := mini(floori(u), steps - 1)
+	var a: Array = track.keys[k]
+	var b: Array = track.keys[k + 1]
+	var f := u - float(k)
+	return [a[0].lerp(b[0], f), lerpf(a[1], b[1], f)]
+
+
+## Distance (0..1) at time s (0..1) for a speed that ramps up over `a`, holds, and ramps down over `a`.
+static func _trapezoid(s: float, a: float) -> float:
+	var vmax := 1.0 / (1.0 - a)
+	if s < a:
+		return vmax * s * s / (2.0 * a)
+	if s > 1.0 - a:
+		var r := 1.0 - s
+		return 1.0 - vmax * r * r / (2.0 * a)
+	return vmax * (s - a * 0.5)
+
+
+func _pose_tracks(t: float, tracks: Array) -> void:
+	for track in tracks:
+		if is_instance_valid(track.view):
+			var pose: Array = pose_at(track, t)
+			_place(track.view, pose[0], pose[1])
 
 
 ## Model Y rotation (degrees) for a facing; matches ShipView._update_rotation_from_state.
@@ -224,21 +307,27 @@ static func _model_angle(facing: int) -> float:
 
 ## Pose `view` a fraction `t` of the way through a step: the bow slides from `from_bow` to
 ## `to_bow` (both world positions of hex centres) while the heading turns from `from_angle` to
-## `to_angle`; the centre lies half a hex astern of the bow along the current heading.
+## `to_angle`.
 func _pose_ship(t: float, view: ShipView, from_bow: Vector3, to_bow: Vector3, from_angle: float, to_angle: float) -> void:
 	if not is_instance_valid(view):
 		return
-	var angle := lerpf(from_angle, to_angle, t)
+	_place(view, from_bow.lerp(to_bow, t), lerpf(from_angle, to_angle, t))
+
+
+## Place `view` with its bow at world position `bow` and model angle `angle` (degrees): the centre lies
+## half a hex astern of the bow along the heading. Ship motion reads `base_position` and the yaw; the
+## sea's pitch and roll on the model are kept.
+func _place(view: ShipView, bow: Vector3, angle: float) -> void:
 	var rad := deg_to_rad(angle)
 	var astern := Vector3(sin(rad), 0.0, cos(rad))  # the model's +Z (its bow is -Z) in world space
-	var bow := from_bow.lerp(to_bow, t)
 	var half_length := _hex_grid.hex_size * HexGrid.SQRT3 / 2.0
 	view.base_position = Vector3(bow.x, 0.0, bow.z) + astern * half_length
 	if view.model_node:
-		view.model_node.rotation_degrees = Vector3(0, angle, 0)
+		var r: Vector3 = view.model_node.rotation_degrees
+		view.model_node.rotation_degrees = Vector3(r.x, angle, r.z)
 
 
-func _shortest_angle(from_deg: float, to_deg: float) -> float:
+static func _shortest_angle(from_deg: float, to_deg: float) -> float:
 	var diff: float = fmod(to_deg - from_deg + 180.0, 360.0) - 180.0
 	if diff < -180.0:
 		diff += 360.0

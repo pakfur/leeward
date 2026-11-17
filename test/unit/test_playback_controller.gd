@@ -6,12 +6,12 @@ var playback: MovementResolutionPlaybackController
 var hex_grid: HexGrid
 
 
-## Records every ship view's pose after each impulse's animation.
+## Records every ship view's pose at the end of each glided stretch.
 class PoseSpy extends MovementResolutionPlaybackController:
-	var poses: Array = []  # [{ship_id: [base_position, model rotation y]}] per animated batch
+	var poses: Array = []  # [{ship_id: [base_position, model rotation y]}] per glided stretch
 
-	func _animate_moves(move_events: Array) -> void:
-		await super(move_events)
+	func _glide_stretch(first: int, last: int) -> void:
+		await super(first, last)
 		var snap := {}
 		for sid in _ship_views:
 			var view: ShipView = _ship_views[sid]
@@ -19,14 +19,12 @@ class PoseSpy extends MovementResolutionPlaybackController:
 		poses.append(snap)
 
 
-## Records which impulses' moves are animated (no ship views needed).
-class ImpulseSpy extends MovementResolutionPlaybackController:
-	var animated: Array = []
+## Records which segment ranges are glided (no ship views needed).
+class StretchSpy extends MovementResolutionPlaybackController:
+	var glided: Array = []  # [first, last] per stretch
 
-	func _animate_moves(move_events: Array) -> void:
-		for ev in move_events:
-			if not animated.has(ev.impulse):
-				animated.append(ev.impulse)
+	func _glide_stretch(first: int, last: int) -> void:
+		glided.append([first, last])
 
 
 func before_each() -> void:
@@ -518,13 +516,16 @@ func test_playback_rolled_back_turn_ends_in_the_old_pose() -> void:
 	pb.play(_overlap_rollback_log(false))
 	await wait_for_signal(pb.playback_completed, 5.0)
 
-	assert_eq(pb.poses.size(), 2, "Two animated impulses: the swing out and the swing back")
-	if pb.poses.size() == 2:
-		var out: Array = pb.poses[0]["swinging_ship"]
-		var swung := hex_grid.ship_center_world(Vector2i(5, 5), 1)
-		assert_almost_eq(out[0].x, swung.x, 0.01, "after the OVERLAP impulse the stern is swung out")
-		assert_almost_eq(out[0].z, swung.z, 0.01)
-		assert_almost_eq(out[1], -1 * 60.0 - 90.0, 1.0, "facing SE while swung out")
+	assert_eq(pb.poses.size(), 1, "One stretch: the swing out and back, ending on the rollback")
+	# Mid-glide (the end of the OVERLAP segment) the stern is swung out.
+	var log := _overlap_rollback_log(false)
+	var steps: Array = []
+	for ev in log.get_result("swinging_ship").events:
+		steps.append(ev)
+	var track := MovementResolutionPlaybackController.track_for(steps, hex_grid, -90.0)
+	var mid: Array = MovementResolutionPlaybackController.pose_at(track, 1.0)
+	assert_almost_eq(mid[0].distance_to(hex_grid.axial_to_world(5, 5)), 0.0, 0.01, "the bow stays put")
+	assert_almost_eq(mid[1], -1 * 60.0 - 90.0, 1.0, "facing SE while swung out")
 	var expected := hex_grid.ship_center_world(Vector2i(5, 5), 0)
 	assert_almost_eq(view.base_position.x, expected.x, 0.01, "back where it started")
 	assert_almost_eq(view.base_position.z, expected.z, 0.01)
@@ -734,23 +735,23 @@ func test_incomplete_log_plays_up_to_the_decision_and_pauses() -> void:
 	var log = _make_multi_impulse_log(4)
 	log.pending_bear_off = MovementTypes.BearOffSituation.new()
 	log.pending_bear_off.segment = 2
-	var spy := ImpulseSpy.new(hex_grid, {}, 0)
+	var spy := StretchSpy.new(hex_grid, {}, 0)
 	add_child_autofree(spy)
 	watch_signals(spy)
 	spy.play(log)
 	await wait_for_signal(spy.playback_paused, 3.0)
 	assert_signal_emitted(spy, "playback_paused")
 	assert_signal_not_emitted(spy, "playback_completed", "Not finished: a decision is pending")
-	assert_eq(spy.animated, [0, 1], "Segments before the potential collision only")
+	assert_eq(spy.glided, [[0, 1]], "Segments before the potential collision only")
 
 
 func test_resumed_log_plays_from_its_resume_impulse() -> void:
 	var log = _make_multi_impulse_log(4)
 	log.resume_impulse = 2
-	var spy := ImpulseSpy.new(hex_grid, {}, 0)
+	var spy := StretchSpy.new(hex_grid, {}, 0)
 	add_child_autofree(spy)
 	watch_signals(spy)
 	spy.play(log)
 	await wait_for_signal(spy.playback_completed, 3.0)
 	assert_signal_emitted(spy, "playback_completed")
-	assert_eq(spy.animated, [2, 3], "The segments already shown are not played again")
+	assert_eq(spy.glided, [[2, 3]], "The segments already shown are not played again")
