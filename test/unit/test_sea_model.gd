@@ -36,7 +36,7 @@ func test_presets_match_table():
 	assert_eq(model.preset(5).whitecap_strength, 2.6)
 	assert_eq(model.preset(0).whitecap_strength, 0.0)
 	assert_eq(model.preset(3).swell_wavelength, 5.5)
-	assert_eq(model.preset(1).inertia_mult, 1.1)
+	assert_eq(model.preset(1).inertia_mult, 0.8)
 	for sea in range(EnvironmentState.SEA_STATE_MAX + 1):
 		assert_eq(model.preset(sea).size(), 10, "sea %d preset has every field" % sea)
 

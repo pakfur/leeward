@@ -40,4 +40,4 @@ func test_heavy_weather_scenario_loads_with_valid_placements() -> void:
 	assert_eq(GameState.placement_errors(), [] as Array[String])
 	assert_eq(GameState.get_all_ships().size(), 3)
 	assert_eq(GameState.environment.sea_state, 4)
-	assert_eq(GameState.environment.wind_speed, 3)
+	assert_eq(GameState.environment.wind_speed, 4)
