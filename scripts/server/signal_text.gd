@@ -15,7 +15,7 @@ const _CLOSE := "@"
 ## without a prefix such as HMS, is one word; each punctuation mark is one word.
 static func words(text: String, ship_names: Array[String]) -> Dictionary:
 	var out: Array[String] = []
-	var work := text.to_upper()
+	var work := text.to_upper().replace("\n", " ").replace("\r", " ").replace("\t", " ")
 	# Ship names first (longest first), so a name's own hyphens or dots stay inside it.
 	var names: Array[String] = []
 	for n in ship_names:
@@ -27,13 +27,13 @@ static func words(text: String, ship_names: Array[String]) -> Dictionary:
 	for up in names:
 		var bare := _without_prefix(up)
 		var re := RegEx.new()
-		var pattern := "(?<![A-Z0-9])(?:(?:[A-Z]+\\.|HMS|USS)\\s+)?" + _escape(bare).replace("\\ ", "\\s+") + "(?![A-Z0-9])"
+		var pattern := "(?<![A-Z0-9])(?:(?:(?:[A-Z]+\\.)+|HMS|USS)\\s+)?" + _escape(bare).replace("\\ ", "\\s+") + "(?![A-Z0-9])"
 		if re.compile(pattern) != OK:
 			continue
 		var m := re.search(work)
 		while m != null:
 			var token := _OPEN + str(found.size()) + _CLOSE
-			found.append(m.get_string().strip_edges())
+			found.append(up)  # canonical: the listed name, whatever prefix or spacing was typed
 			work = work.substr(0, m.get_start()) + " " + token + " " + work.substr(m.get_end())
 			m = re.search(work)
 	for ch in PUNCTUATION:

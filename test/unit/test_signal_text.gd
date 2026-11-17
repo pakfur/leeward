@@ -31,6 +31,19 @@ func test_prefix_optional() -> void:
 		assert_string_contains(r["words"][1], "LIVELY", text)
 
 
+func test_ship_name_canonical_form() -> void:
+	var names: Array[String] = ["HMS Lively"]
+	for text in ["ENGAGE HMS LIVELY .", "ENGAGE LIVELY .", "ENGAGE HMS   LIVELY .", "ENGAGE H.M.S. LIVELY ."]:
+		var r := SignalText.words(text, names)
+		assert_eq(r["words"].size(), 3, text)
+		assert_eq(r["words"][1], "HMS LIVELY", text)
+
+
+func test_newlines_split_words() -> void:
+	assert_eq(SignalText.words("A\nB\nC\nD", [] as Array[String])["words"].size(), 4)
+	assert_eq(SignalText.words("A\r\nB", [] as Array[String])["words"].size(), 2)
+
+
 func test_punctuation_counts() -> void:
 	var r := SignalText.words("CLOSE TO 5 HEXES!", [] as Array[String])
 	assert_eq(r["words"].size(), 5)
