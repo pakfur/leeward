@@ -175,9 +175,10 @@ func ungrapple_orders(player_ids: Array[int]) -> Array:
 	for ship_state in _ships_of(player_ids):
 		for partner_id in grappling.ungrapple_options(ship_state.ship_id):
 			var partner: ShipState = game_state.get_ship(partner_id)
+			# Spec §9: a prize never grapples and cuts every grapple it may.
 			# Boarding spec §3.6: keep a grapple to an enemy it would board or grapple; never cut
 			# loose from a struck enemy; cut every other (friends included).
-			if partner != null and partner.player_id != ship_state.player_id \
+			if partner != null and not ship_state.is_captured() and partner.player_id != ship_state.player_id \
 					and (partner.is_struck() or would_board(ship_state, partner) or _wants_grapple(ship_state, partner)):
 				continue
 			orders.append([ship_state.ship_id, partner_id])

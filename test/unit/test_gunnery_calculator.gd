@@ -677,12 +677,12 @@ func test_reduction_lowers_mgn() -> void:
 	var plain := calc.preview(_order())
 	var reduced := calc.preview(_reduced(4))
 	assert_eq(reduced.mgn, plain.mgn - 4)
-	assert_eq(_mod(reduced, "Voluntary reduction"), -4)
-	assert_true(_names(reduced).has("Voluntary reduction"))
+	assert_eq(_mod(reduced, "voluntary_reduction"), -4)
+	assert_true(_names(reduced).has("voluntary_reduction"))
 
 
 func test_zero_reduction_adds_no_modifier() -> void:
-	assert_false(_names(calc.preview(_order())).has("Voluntary reduction"))
+	assert_false(_names(calc.preview(_order())).has("voluntary_reduction"))
 
 
 func test_negative_reduction_refused() -> void:
@@ -698,10 +698,21 @@ func test_reduction_round_trips_through_dict() -> void:
 
 func test_preview_orders_keeps_reduction() -> void:
 	var orders: Array[GunneryTypes.FireOrder] = [_reduced(2)]
-	assert_eq(_mod(calc.preview_orders(orders)[0], "Voluntary reduction"), -2)
+	assert_eq(_mod(calc.preview_orders(orders)[0], "voluntary_reduction"), -2)
 
 
 func test_make_order_carries_reduction() -> void:
 	var order := FireRules.make_order("firer", STARBOARD, "target", "full", false, false, 3, 5)
 	assert_eq(order.mgn_reduction, 5)
 	assert_eq(FireRules.make_order("firer", STARBOARD, "target", "full", false, false, 3).mgn_reduction, 0)
+
+
+func test_one_battery_blocked_by_a_friend_names_it() -> void:
+	# 7.B.10-12: the bow battery's line is blocked by the friend's blocking hexes, the stern
+	# battery bears; the refusal of a full broadside says why.
+	var friend := _make_ship("friend", 0, Vector2i(-2, 5), 3)
+	target.hex_position = Vector2i(-5, 8)
+	target.facing = 0
+	assert_eq(calc.preview(_order()).reason,
+		"only the stern battery bears: a full broadside needs both (bow blocked by friendly ship %s)" % friend.ship_name)
+	assert_true(calc.preview(_battery("stern")).can_fire)

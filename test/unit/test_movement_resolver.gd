@@ -471,6 +471,16 @@ func test_reverse_tack_stacks_with_in_irons() -> void:
 	assert_eq(resolver._calculate_tacking_drm(state, 3, ShipState.PORT), -2 + 1 + 3)
 
 
+func test_calm_exception_still_takes_the_reverse_tack_three() -> void:
+	# 3.D.4: no in-irons +1 the g-t after a calm; 5.D.3b: the reversing +3 still applies (SK -2).
+	var state = _make_ship_state(Vector2i(5, 5), 0, 0, "D")
+	state.irons_entry_turn = ShipState.STARBOARD
+	env.wind_direction = 0
+	GameState.current_turn = 7
+	env.calm_ended_turn = 7
+	assert_eq(resolver._calculate_tacking_drm(state, 3, ShipState.PORT), -2 + 3)
+
+
 func test_irons_entry_turn_is_serialized() -> void:
 	var state = _make_ship_state(Vector2i(5, 5), 0, 0, "D")
 	state.irons_entry_turn = ShipState.PORT

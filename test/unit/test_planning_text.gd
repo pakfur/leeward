@@ -104,8 +104,10 @@ func test_head_to_wind_note_shown_whenever_the_plotted_heading_is_into_the_wind(
 
 func test_no_irons_note_the_g_t_after_a_calm() -> void:
 	# 3.D.4: no ship is in irons in the g-t after the wind rose from 0.
-	assert_eq(PlanningText.plot_note("", "L", true), "")
-	assert_eq(PlanningText.plot_note("note", "L", true), "note")
+	# 5.D.3: a course into WF=L still ends there, so only the "in irons" warning goes.
+	assert_eq(PlanningText.plot_note("", "L", true), PlanningText.HEAD_TO_WIND_NOTE)
+	assert_eq(PlanningText.plot_note("note", "L", true), "note\n" + PlanningText.HEAD_TO_WIND_NOTE)
+	assert_eq(PlanningText.plot_note("note", "B", true), "note")
 
 
 func test_no_head_to_wind_note_off_the_wind() -> void:

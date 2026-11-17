@@ -469,6 +469,9 @@ func test_ai_prize_never_grapples_and_cuts_grapples() -> void:
 	GameState.get_ship("en").crew_quality = "A"  # strong: it would neither board nor grapple
 	GameState.get_ship("en").marine_count = 6
 	assert_true(GameState.stub_ai.ungrapple_orders([1] as Array[int]).has(["pz", "en"]), "a prize cuts its grapples")
+	# Spec §9: even a grapple to a struck enemy (which a live ship keeps) is cut.
+	GameState.get_ship("en").status = ShipState.Status.STRUCK
+	assert_true(GameState.stub_ai.ungrapple_orders([1] as Array[int]).has(["pz", "en"]), "cut though struck")
 
 
 # --- 5.D.5, the collision half ---

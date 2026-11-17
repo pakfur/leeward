@@ -59,6 +59,7 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 	var friends := friendly_ships(firer)
 	var bearing: Array[String] = []
 	var blocked_by: ShipState = null
+	var blocked_name := ""
 	for i in battery_hexes.size():
 		var blocking := battery_blocking_hexes(battery_hexes[i], firer, order.side, friends)
 		if geometry.battery_bears(battery_hexes[i], firer.facing, order.side, target_hexes, occupied, blocking):
@@ -66,12 +67,17 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 		elif blocked_by == null and geometry.battery_bears(battery_hexes[i], firer.facing, order.side,
 				target_hexes, occupied):
 			blocked_by = _blocking_friend(battery_hexes[i], firer, order.side, target_hexes, occupied, friends)
+			if blocked_by != null:
+				blocked_name = _battery_name(order.battery, i)
 	if bearing.is_empty():
 		if blocked_by != null:
 			return _refuse(p, "Blocked by friendly ship %s" % blocked_by.ship_name)
 		return _refuse(p, "no line of sight to target")
 	if bearing.size() < battery_hexes.size():
-		return _refuse(p, "only the %s battery bears: a full broadside needs both" % bearing[0])
+		var why := "only the %s battery bears: a full broadside needs both" % bearing[0]
+		if blocked_by != null:
+			why += " (%s blocked by friendly ship %s)" % [blocked_name, blocked_by.ship_name]
+		return _refuse(p, why)
 	p.batteries = bearing.size()
 	var sections := firer.sections_able_to_fire()
 	if sections == 0:
@@ -116,7 +122,7 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 		_add_modifier(p, "dismasted", -int(game_state.environment.sea_state))
 	# 7.C.14: a player may reduce the MGN by any amount (an FGN below 1 does no damage).
 	if order.mgn_reduction > 0:
-		_add_modifier(p, "Voluntary reduction", -order.mgn_reduction)
+		_add_modifier(p, "voluntary_reduction", -order.mgn_reduction)
 
 	p.mgn = p.bgn
 	for m in p.modifiers:

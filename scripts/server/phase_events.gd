@@ -82,6 +82,7 @@ const MODIFIER_LABELS := {
 	"wind_speed_4": "wind speed 4",
 	"dismasted": "dismasted",
 	"broadside_obscured": "broadside obscured",
+	"voluntary_reduction": "Voluntary reduction",
 	# Marine Fire DRMs (7.G.4)
 	"grappled_or_fouled": "alongside",
 	"cq_e_f": "crew",

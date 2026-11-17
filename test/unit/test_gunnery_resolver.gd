@@ -404,5 +404,5 @@ func test_reduction_below_one_does_no_damage_and_no_crit() -> void:
 	var ev := _fire_event_for("a_ship")
 	assert_true(ev.data["fgn"] < 1)
 	assert_eq(ev.data["rigging"] + ev.data["hull"] + ev.data["crew"], 0)
-	assert_true(ev.data["modifiers"].any(func(m): return m["name"] == "Voluntary reduction"))
+	assert_true(ev.data["modifiers"].any(func(m): return m["name"] == "voluntary_reduction"))
 	assert_eq(GameState.turn_log.events.filter(func(e): return e.type == PhaseEvents.Type.CRITICAL_ROLL).size(), 0)
