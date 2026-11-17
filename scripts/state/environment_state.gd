@@ -16,6 +16,9 @@ extends Resource
 # -1 = no change pending.
 @export var pending_wind_direction: int = -1
 @export var pending_wind_speed: int = -1
+# The turn a calm ended (wind speed rose from 0, 3.B.6); -1 = none. Ships at WF=L are not in
+# irons in that g-t (3.D.4, 5.D.4c).
+@export var calm_ended_turn: int = -1
 
 # Sea State
 @export var sea_state: int = 1  # 0-3 (0=calm, 1=moderate, 2=rough, 3=storm)
@@ -61,6 +64,7 @@ func serialize() -> Dictionary:
 		"original_wind_speed": original_wind_speed,
 		"pending_wind_direction": pending_wind_direction,
 		"pending_wind_speed": pending_wind_speed,
+		"calm_ended_turn": calm_ended_turn,
 		"sea_state": sea_state,
 		"visibility": visibility,
 		"time_of_day": time_of_day,
@@ -80,6 +84,7 @@ static func deserialize(data: Dictionary) -> EnvironmentState:
 	state.original_wind_speed = data.get("original_wind_speed", state.wind_speed)
 	state.pending_wind_direction = data.get("pending_wind_direction", -1)
 	state.pending_wind_speed = data.get("pending_wind_speed", -1)
+	state.calm_ended_turn = data.get("calm_ended_turn", -1)
 	state.sea_state = data.get("sea_state", 1)
 	state.visibility = data.get("visibility", "clear")
 	state.time_of_day = data.get("time_of_day", "day")

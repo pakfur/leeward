@@ -1459,7 +1459,7 @@ func _calculate_tacking_drm(ship_state: ShipState, sections: int = -1, turn_dire
 	var wind_facing: String = _get_ship_wind_facing(ship_state)
 	if wind_facing != "L":
 		drm -= 2  # ship not at WF=L (errata 5.D.2b)
-	elif ship_state.speed == 0:
+	elif _is_in_irons(ship_state, game_state.environment if game_state else null):
 		drm += 1  # in irons (5.D.6)
 	if is_reverse_tack(ship_state, _turn_direction_or_plotted(ship_state, turn_direction)):
 		drm += REVERSE_TACK_DRM
@@ -1659,7 +1659,10 @@ func _record_steering(ship_state: ShipState, result: MovementTypes.ShipResolutio
 ## Utility
 ## ============================================================================
 
-func _is_in_irons(ship_state: ShipState, _environment: EnvironmentState) -> bool:
+## In irons: stopped at WF=L, except in the g-t after the wind rose from a calm (3.D.4, 5.D.4c).
+func _is_in_irons(ship_state: ShipState, environment: EnvironmentState) -> bool:
+	if environment != null and game_state and environment.calm_ended_turn == game_state.current_turn:
+		return false
 	var wind_facing: String = _get_ship_wind_facing(ship_state)
 	return ship_state.speed == 0 and wind_facing == "L"
 

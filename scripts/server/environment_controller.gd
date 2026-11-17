@@ -27,7 +27,7 @@ func set_environment_property(property: String, value: Variant) -> bool:
 ## Weather phase (3.B). The change rolled last turn takes effect first (3.B.6), then this turn's
 ## wind rolls are made against the wind now blowing and held as next turn's pending change, so
 ## players see it coming.
-func tick_environment(env_state: EnvironmentState, _turn_number: int) -> void:
+func tick_environment(env_state: EnvironmentState, turn_number: int) -> void:
 	if not is_server:
 		push_error("EnvironmentController: Cannot tick environment on client")
 		return
@@ -41,6 +41,8 @@ func tick_environment(env_state: EnvironmentState, _turn_number: int) -> void:
 			env_state.wind_direction = env_state.pending_wind_direction
 		env_state.pending_wind_speed = -1
 		env_state.pending_wind_direction = -1
+		if from_speed == 0 and env_state.wind_speed >= 1:
+			env_state.calm_ended_turn = turn_number  # 3.D.4: no ship is in irons this g-t
 		_log_wind_change(env_state, from_speed, from_direction)
 
 	var next := env_state.duplicate() as EnvironmentState

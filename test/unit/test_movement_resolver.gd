@@ -393,6 +393,25 @@ func test_tacking_drm_in_irons() -> void:
 	assert_eq(resolver._calculate_tacking_drm(state), -1, "SK -2, in irons +1")
 
 
+# 3.D.4 / 5.D.4c: a ship at WF=L is not in irons in the first g-t after the wind speed rises from 0.
+func test_not_in_irons_first_turn_after_calm() -> void:
+	var state = _make_ship_state(Vector2i(5, 5), 0, 0)  # speed 0, facing E into a wind from E
+	env.wind_direction = 0
+	GameState.current_turn = 7
+	env.calm_ended_turn = 7
+	assert_false(resolver._is_in_irons(state, env))
+	assert_eq(resolver._calculate_tacking_drm(state), -2, "SK -2, no in-irons +1")
+
+
+func test_in_irons_again_the_g_t_after_the_calm() -> void:
+	var state = _make_ship_state(Vector2i(5, 5), 0, 0)
+	env.wind_direction = 0
+	GameState.current_turn = 8
+	env.calm_ended_turn = 7
+	assert_true(resolver._is_in_irons(state, env))
+	assert_eq(resolver._calculate_tacking_drm(state), -1, "SK -2, in irons +1")
+
+
 # 5.D.3b: reverse tack. Wind from E (0): facing 0 is WF=L, facing 5 and 1 are not.
 
 func test_turning_into_luffing_records_entry_turn() -> void:

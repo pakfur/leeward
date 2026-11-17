@@ -211,3 +211,14 @@ func test_steady_wind_logs_nothing() -> void:
 	var env := _env(2, 2, "steady", "oceanic")
 	var turn_log := _tick_logged(env, [5, 5, 5, 5])
 	assert_eq(turn_log.events.size(), 0)
+
+
+func test_wind_rising_from_calm_records_turn() -> void:
+	# 3.D.4: the g-t the wind rises from 0 is recorded so ships are not in irons then.
+	var env := _env(0, 2, "steady", "oceanic")
+	env.pending_wind_speed = 1
+	_dice.queue([5, 5, 5, 5])
+	_ctrl.tick_environment(env, 7)
+	assert_eq(env.wind_speed, 1)
+	assert_eq(env.calm_ended_turn, 7)
+	assert_eq(EnvironmentState.deserialize(env.serialize()).calm_ended_turn, 7)
