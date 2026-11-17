@@ -605,3 +605,13 @@ func test_panel_lists_a_ship_with_only_a_marine_shot() -> void:
 	assert_eq(GameState.marine_fire_resolver.validate_orders(0, panel.get_marine_orders()), "",
 		"the panel's marine orders pass the server's validation")
 	GameState.ships.clear()
+
+
+func test_no_shot_reason_names_the_blocking_friend() -> void:
+	# 7.B.10: the calculator's "Blocked by friendly ship <name>" is shown as it is, even when the
+	# name holds a word the other reasons are matched by.
+	var arc := "target is not in that broadside's arc"
+	assert_eq(FirePanel.no_shot_reason([arc, "Blocked by friendly ship Orange"]),
+		"Blocked by friendly ship Orange")
+	assert_eq(FirePanel.no_shot_reason(["Blocked by friendly ship Arcturus", arc]),
+		"Blocked by friendly ship Arcturus")

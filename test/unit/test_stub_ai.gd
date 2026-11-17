@@ -750,3 +750,23 @@ func test_ai_split_never_names_more_than_two_targets() -> void:
 	assert_gt(orders.size(), 0)
 	assert_lte(targets.size(), 2, str(orders))
 	assert_eq(GameState.gunnery_calculator.validate_orders(1, _typed(orders)), "")
+
+
+func test_ai_does_not_score_blocked_shot() -> void:
+	# 7.B.10, Diagram 19 (ship 3 on E): firer bow (0,0) facing E, stern (-1,0). The enemy points
+	# straight away from the bow battery, stern (0,5), bow (0,6), range 5; only the bow battery has
+	# it in arc. A friend at (-1,5)/(-2,5), range 5, makes (0,5) a blocking hex, so the bow battery's
+	# line to the enemy's bow, which passes through it, is blocked: no shot, no firing score.
+	var enemy = _make_ship("p1", 0, Vector2i(0, 6), 1, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 0, 0)
+	var friend = _make_ship("ai2", 1, Vector2i(-1, 5), 0, 0)
+	_add_ship(enemy)
+	_add_ship(ai)
+	_add_ship(friend)
+	var occupied := {friend.hex_position: true, friend.stern_hex(): true}
+	var clear := stub_ai._score_position(Vector2i(0, 0), 0, enemy, occupied)
+	assert_eq(clear, StubAI.FIRING_POSITION_BASE - StubAI.FIRING_RANGE_WEIGHT * 5,
+		"setup: without blocking hexes the bow battery bears at range 5")
+	var friendly: Array = [friend.occupied_hexes()]
+	assert_lt(stub_ai._score_position(Vector2i(0, 0), 0, enemy, occupied, friendly), 0,
+		"the blocked battery is not a firing position")

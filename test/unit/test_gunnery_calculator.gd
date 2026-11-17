@@ -626,3 +626,39 @@ func test_bgn_follows_the_navy_using_the_ship() -> void:
 	firer.ship.nationality = "French"
 	firer.navy = "British"
 	assert_false(firer.is_french_gunned(), "a French-built ship sailed by the British uses the British BGN")
+
+
+# --- 7.B.10-12: friendly ships make blocking hexes ---
+# Firer bow (0,0) facing E, stern (-1,0). A ship at bow (-2,5) facing W, stern (-1,5), is at range 5
+# in the starboard arc. The target, bow (-4,8) facing E, stern (-5,8), lies at range 8 beyond it.
+# The lines from each battery to the target's hexes miss the ship's own hexes; each battery has one
+# that crosses a hex beside the ship at range 5 or more, e.g. (-3,6) on the bow battery's line to
+# the target's bow.
+
+func _blocking_fixture(friend_player: int) -> ShipState:
+	target.hex_position = Vector2i(-4, 8)
+	target.facing = 0
+	return _make_ship("friend", friend_player, Vector2i(-2, 5), 3)
+
+
+func test_preview_names_blocking_friend() -> void:
+	# 7.B.10a/c: a friend at medium range blocks the hexes beside it beyond itself; lines of sight
+	# through them are blocked.
+	var friend := _blocking_fixture(0)
+	assert_eq(calc.preview(_order()).reason, "Blocked by friendly ship %s" % friend.ship_name)
+	assert_eq(calc.preview(_battery("bow")).reason, "Blocked by friendly ship %s" % friend.ship_name)
+
+
+func test_struck_friend_still_blocks() -> void:
+	# 7.B.10 counts every friendly ship; a struck one is still there.
+	var friend := _blocking_fixture(0)
+	friend.status = ShipState.Status.STRUCK
+	assert_eq(calc.preview(_order()).reason, "Blocked by friendly ship %s" % friend.ship_name)
+
+
+func test_enemy_ship_makes_no_blocking_hexes() -> void:
+	# 7.B.10: only friendly ships make blocking hexes; an enemy blocks just its own hexes (7.B.7).
+	_blocking_fixture(1)
+	var p := calc.preview(_order())
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.range_hexes, 8)

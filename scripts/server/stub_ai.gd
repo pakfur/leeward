@@ -492,6 +492,10 @@ func _strategy_engage(
 	# cancel it), and lines of sight pass the firer and the enemy but not the rest.
 	var others := Occupancy.build(ships, [ship_state.ship_id])
 	var occupied := Occupancy.build(ships, [ship_state.ship_id, enemy.ship_id])
+	# Friendly footprints make blocking hexes (7.B.10), as in GunneryCalculator.preview.
+	var friendly: Array = []
+	for friend in game_state.gunnery_calculator.friendly_ships(ship_state):
+		friendly.append(friend.occupied_hexes())
 
 	var current_hex := ship_state.hex_position
 	var current_facing := ship_state.facing
@@ -500,13 +504,14 @@ func _strategy_engage(
 	var can_submit := started.can_submit
 
 	while current_valid and current_valid.has_any_moves():
-		var stay_score := _score_position(current_hex, current_facing, enemy, occupied)
+		var stay_score := _score_position(current_hex, current_facing, enemy, occupied, friendly)
 		var best: MovementTypes.ValidMove = null
 		var best_score := 0
 		for move in current_valid.get_all_valid_moves():
 			if _stern_blocked(move, current_hex, others):
 				continue
-			var move_score := _score_position(move.metadata.resulting_hex, move.metadata.resulting_facing, enemy, occupied)
+			var move_score := _score_position(move.metadata.resulting_hex, move.metadata.resulting_facing,
+				enemy, occupied, friendly)
 			if best == null or _option_beats(move, move_score, best, best_score, current_facing):
 				best = move
 				best_score = move_score
@@ -561,7 +566,10 @@ func _stern_blocked(move: MovementTypes.ValidMove, current_hex: Vector2i, others
 ## enemy footprint and misalignment is the number of 60 degree steps between the facing and the
 ## direction from the bow toward the enemy's bow. The bow leads: counting the firer's stern too would
 ## score a ship pointing away (stern one hex nearer) as high as one pointing at the enemy.
-func _score_position(bow: Vector2i, facing: int, enemy: ShipState, occupied: Dictionary) -> int:
+## `friendly` holds the footprints of the firer's friends, whose blocking hexes (7.B.10) cut lines
+## of sight as in GunneryCalculator.preview.
+func _score_position(bow: Vector2i, facing: int, enemy: ShipState, occupied: Dictionary,
+		friendly: Array = []) -> int:
 	var geometry: FireGeometry = game_state.fire_geometry
 	var firer_hexes: Array[Vector2i] = [bow, HexGrid.stern_of(bow, facing)]
 	var enemy_hexes := enemy.occupied_hexes()
@@ -571,7 +579,8 @@ func _score_position(bow: Vector2i, facing: int, enemy: ShipState, occupied: Dic
 		for side in GunneryCalculator.SIDES:
 			var bearing := 0
 			for battery in firer_hexes:
-				if geometry.battery_bears(battery, facing, side, enemy_hexes, occupied):
+				var blocking := geometry.blocking_hexes(battery, facing, side, firer_hexes, friendly)
+				if geometry.battery_bears(battery, facing, side, enemy_hexes, occupied, blocking):
 					bearing += 1
 			batteries = maxi(batteries, bearing)
 		if batteries > 0:

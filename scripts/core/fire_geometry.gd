@@ -12,6 +12,9 @@ const RAKE_RANGE := 5
 ## Angular tolerance (degrees) so hexes lying exactly on an arc boundary are inside it.
 const EPSILON_DEG := 0.5
 const LOS_NUDGE := 1e-6
+## 7.B.10: a friendly ship in a battery's arc at these ranges makes blocking hexes this far out.
+const BLOCKING_MEDIUM_RANGE := 5
+const BLOCKING_LONG_RANGE := 10
 
 var hex_grid: HexGrid
 
@@ -51,16 +54,55 @@ func range_between(a: Array[Vector2i], b: Array[Vector2i]) -> int:
 ## broadside `side` (7.B.2-7.B.6): at least one target hex lies in the battery's arc within
 ## MAX_RANGE, and every target hex in that arc has a clear line of sight. Target hexes outside the
 ## arc are ignored (7.B.6). `occupied` must already exclude the firer's and the target's hexes.
+## `blocking` is this battery's friendly blocking hexes (blocking_hexes(), 7.B.10).
 func battery_bears(battery_hex: Vector2i, facing: int, side: int, target_hexes: Array[Vector2i],
-		occupied: Dictionary) -> bool:
+		occupied: Dictionary, blocking: Dictionary = {}) -> bool:
 	var any_in_arc := false
 	for h in target_hexes:
 		if not in_battery_arc(battery_hex, facing, side, h):
 			continue
 		any_in_arc = true
-		if not has_line_of_sight(battery_hex, h, occupied):
+		if not has_line_of_sight(battery_hex, h, occupied, blocking):
 			return false
 	return any_in_arc
+
+
+## Friendly blocking hexes for the `side` battery at `battery_hex` (7.B.10-12) as {hex: true}.
+## `firer_hexes` is the firing ship's footprint; `friendly` holds each friendly ship's footprint
+## (an Array of Array[Vector2i], the firer left out). Only a friend with a hex in this battery's
+## arc counts (7.B.11). Its range r is from the firing ship to its nearest hex (7.B.12): at 5-9
+## every hex within one of either of its hexes, at 10-15 within two, is blocking when it is at
+## least as far from the firing ship as r (7.B.10a-b). The friend's own hexes are included.
+func blocking_hexes(battery_hex: Vector2i, facing: int, side: int, firer_hexes: Array[Vector2i],
+		friendly: Array) -> Dictionary:
+	var result := {}
+	for footprint in friendly:
+		var friend_hexes: Array[Vector2i] = []
+		friend_hexes.assign(footprint)
+		if not friend_hexes.any(func(h: Vector2i) -> bool: return in_battery_arc(battery_hex, facing, side, h)):
+			continue
+		var r := range_between(firer_hexes, friend_hexes)
+		var radius := blocking_radius(r)
+		if radius == 0:
+			continue
+		for centre in friend_hexes:
+			for h in hex_grid.hex_range(centre.x, centre.y, radius):
+				if result.has(h):
+					continue
+				var probe: Array[Vector2i] = [h]
+				if range_between(firer_hexes, probe) >= r:
+					result[h] = true
+	return result
+
+
+## How far out a friendly ship at `friend_range` makes blocking hexes (7.B.10): 0 below range 5
+## and beyond MAX_RANGE, 1 at 5-9, 2 at 10-15.
+static func blocking_radius(friend_range: int) -> int:
+	if friend_range >= BLOCKING_LONG_RANGE and friend_range <= MAX_RANGE:
+		return 2
+	if friend_range >= BLOCKING_MEDIUM_RANGE and friend_range < BLOCKING_LONG_RANGE:
+		return 1
+	return 0
 
 
 ## Whether `hex` lies in the `side` arc of the battery at `battery_hex`, within MAX_RANGE.
@@ -133,11 +175,13 @@ func _dead_ahead_or_astern(target_bow: Vector2i, target_stern: Vector2i, target_
 	return firer_hexes.has(ahead) or firer_hexes.has(astern)
 
 
-## Line of sight between two hexes. `occupied` maps Vector2i -> anything.
-## For each intermediate point on the centre line, the point is nudged ±1e-6 perpendicular to
-## the line and both nudged points are rounded to hexes; sight is blocked only if both are occupied.
-## Endpoints never block.
-func has_line_of_sight(from_hex: Vector2i, to_hex: Vector2i, occupied: Dictionary) -> bool:
+## Line of sight between two hexes. `occupied` and `blocking` (friendly blocking hexes, 7.B.10)
+## map Vector2i -> anything. For each intermediate point on the centre line, the point is nudged
+## ±1e-6 perpendicular to the line and both nudged points are rounded to hexes; sight is blocked
+## only if both are occupied or blocking (7.B.8: a hex spine blocks when both hexes do).
+## Endpoints never block (7.B.10c: an LOS may enter a blocking hex).
+func has_line_of_sight(from_hex: Vector2i, to_hex: Vector2i, occupied: Dictionary,
+		blocking: Dictionary = {}) -> bool:
 	var n := hex_grid.hex_distance(from_hex.x, from_hex.y, to_hex.x, to_hex.y)
 	if n <= 1:
 		return true
@@ -149,7 +193,7 @@ func has_line_of_sight(from_hex: Vector2i, to_hex: Vector2i, occupied: Dictionar
 		var p := a.lerp(b, float(i) / float(n))
 		var h1 := hex_grid.world_to_axial(Vector3(p.x + perp.x, 0.0, p.y + perp.y))
 		var h2 := hex_grid.world_to_axial(Vector3(p.x - perp.x, 0.0, p.y - perp.y))
-		if occupied.has(h1) and occupied.has(h2):
+		if (occupied.has(h1) or blocking.has(h1)) and (occupied.has(h2) or blocking.has(h2)):
 			return false
 	return true
 

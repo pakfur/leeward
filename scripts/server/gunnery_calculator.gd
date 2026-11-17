@@ -56,11 +56,19 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 		return _refuse(p, "target is out of range (%d hexes, maximum %d)" % [p.range_hexes, max_range])
 	# 7.B.7: neither the firer's nor the target's own hexes block its lines of sight.
 	var occupied := _occupied_hexes([firer.ship_id, target.ship_id])
+	var friends := friendly_ships(firer)
 	var bearing: Array[String] = []
+	var blocked_by: ShipState = null
 	for i in battery_hexes.size():
-		if geometry.battery_bears(battery_hexes[i], firer.facing, order.side, target_hexes, occupied):
+		var blocking := battery_blocking_hexes(battery_hexes[i], firer, order.side, friends)
+		if geometry.battery_bears(battery_hexes[i], firer.facing, order.side, target_hexes, occupied, blocking):
 			bearing.append(_battery_name(order.battery, i))
+		elif blocked_by == null and geometry.battery_bears(battery_hexes[i], firer.facing, order.side,
+				target_hexes, occupied):
+			blocked_by = _blocking_friend(battery_hexes[i], firer, order.side, target_hexes, occupied, friends)
 	if bearing.is_empty():
+		if blocked_by != null:
+			return _refuse(p, "Blocked by friendly ship %s" % blocked_by.ship_name)
 		return _refuse(p, "no line of sight to target")
 	if bearing.size() < battery_hexes.size():
 		return _refuse(p, "only the %s battery bears: a full broadside needs both" % bearing[0])
@@ -213,6 +221,41 @@ func _refuse(p: GunneryTypes.ShotPreview, reason: String) -> GunneryTypes.ShotPr
 func _add_modifier(p: GunneryTypes.ShotPreview, modifier_name: String, value: int) -> void:
 	if value != 0:
 		p.modifiers.append({"name": modifier_name, "value": value})
+
+
+## The ships friendly to `firer` (7.B.10): its side (`player_id`, so a prize counts for her
+## captor), struck ones included, the firer left out.
+func friendly_ships(firer: ShipState) -> Array[ShipState]:
+	var friends: Array[ShipState] = []
+	for ship: ShipState in game_state.get_all_ships():
+		if ship.ship_id != firer.ship_id and ship.player_id == firer.player_id:
+			friends.append(ship)
+	return friends
+
+
+## The friendly blocking hexes (7.B.10-12) of `firer`'s `side` battery at `battery_hex`.
+func battery_blocking_hexes(battery_hex: Vector2i, firer: ShipState, side: int,
+		friends: Array[ShipState]) -> Dictionary:
+	return game_state.fire_geometry.blocking_hexes(battery_hex, firer.facing, side,
+		firer.occupied_hexes(), friends.map(func(f: ShipState) -> Array[Vector2i]: return f.occupied_hexes()))
+
+
+## The friend whose blocking hexes stop a battery that bears without them: the first whose own
+## blocking hexes do it, else the first that makes any for this battery (several together).
+func _blocking_friend(battery_hex: Vector2i, firer: ShipState, side: int, target_hexes: Array[Vector2i],
+		occupied: Dictionary, friends: Array[ShipState]) -> ShipState:
+	var geometry: FireGeometry = game_state.fire_geometry
+	var first_with_hexes: ShipState = null
+	for friend in friends:
+		var own: Array[ShipState] = [friend]
+		var blocking := battery_blocking_hexes(battery_hex, firer, side, own)
+		if blocking.is_empty():
+			continue
+		if first_with_hexes == null:
+			first_with_hexes = friend
+		if not geometry.battery_bears(battery_hex, firer.facing, side, target_hexes, occupied, blocking):
+			return friend
+	return first_with_hexes
 
 
 ## Bow and stern hex of every ship (struck ones included), minus `exclude_ids`.

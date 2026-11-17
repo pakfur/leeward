@@ -48,6 +48,8 @@ const NO_SHOT_CREW := "no crew to serve the guns"
 const NO_SHOT_STRUCK := "struck"
 const NO_SHOT_DESTROYED := "destroyed"
 const NO_SHOT_NO_ENEMY := "no enemy afloat"
+## GunneryCalculator.preview's "Blocked by friendly ship <name>" (7.B.10), shown as it is.
+const NO_SHOT_FRIENDLY_PREFIX := "Blocked by friendly ship"
 
 @onready var ship_list_container: VBoxContainer = %ShipListContainer
 @onready var error_label: Label = %ErrorLabel
@@ -392,6 +394,9 @@ static func no_shot_reason(reasons: Array) -> String:
 	var chosen := ""
 	for r in reasons:
 		var text := str(r)
+		# 7.B.10: shown as given; the friend's name must not trip the keyword checks below.
+		if text.begins_with(NO_SHOT_FRIENDLY_PREFIX):
+			return text
 		if not text.contains("arc"):
 			chosen = text
 			break

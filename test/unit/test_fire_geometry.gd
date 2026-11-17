@@ -243,3 +243,84 @@ func test_battery_arc_is_the_chosen_battery_only() -> void:
 		assert_true(full.has(h), "full = union")
 	assert_eq(full.size(), GameControllerScript.battery_arc(geo, ship, ShipState.STARBOARD,
 		["bow", "stern"] as Array[String]).size())
+
+
+# --- friendly blocking hexes (7.B.10-12, Diagram 18) ---
+# Firer A: bow (0,0) facing E, stern (-1,0); its starboard beam runs down the (-1,2) diagonal.
+
+func _firer() -> Array[Vector2i]:
+	var hexes: Array[Vector2i] = [Vector2i(0, 0), Vector2i(-1, 0)]
+	return hexes
+
+
+func _friend(bow: Vector2i, facing: int) -> Array[Vector2i]:
+	var hexes: Array[Vector2i] = [bow, HexGrid.stern_of(bow, facing)]
+	return hexes
+
+
+func _blocking(friends: Array, side: int = ShipState.STARBOARD, battery := Vector2i(0, 0)) -> Dictionary:
+	return geo.blocking_hexes(battery, 0, side, _firer(), friends)
+
+
+func test_friend_at_range_4_makes_no_blocking_hexes() -> void:
+	# 7.B.10, Diagram 18 ships B and C: a friend 1-4 hexes away makes none, even with one hex at 5.
+	var friend := _friend(Vector2i(-2, 4), 3)
+	assert_eq(geo.range_between(_firer(), friend), 4, "setup: range 4")
+	assert_true(_blocking([friend]).is_empty())
+
+
+func test_friend_at_medium_range_blocks_adjacent_hexes_beyond_it() -> void:
+	# 7.B.10a: a friend 5-9 hexes away blocks the hexes adjacent to it at least as far from the
+	# firer as itself (Diagram 18 ships D, E, F).
+	var friend := _friend(Vector2i(-3, 6), 3)
+	assert_eq(geo.range_between(_firer(), friend), 6, "setup: range 6")
+	var blocking := _blocking([friend])
+	assert_true(blocking.has(Vector2i(-3, 7)), "adjacent and farther (range 7)")
+	assert_true(blocking.has(Vector2i(-4, 6)), "adjacent at the same range (6)")
+	assert_false(blocking.has(Vector2i(-3, 5)), "adjacent but nearer (range 5)")
+	assert_false(blocking.has(Vector2i(-3, 8)), "two hexes out is beyond medium-range blocking")
+
+
+func test_friend_at_long_range_blocks_two_hexes_out() -> void:
+	# 7.B.10b: a friend 10-15 hexes away blocks every hex up to two away from it that is at least
+	# as far from the firer (Diagram 18 ships G and H).
+	var friend := _friend(Vector2i(-6, 12), 3)
+	assert_eq(geo.range_between(_firer(), friend), 12, "setup: range 12")
+	var blocking := _blocking([friend])
+	assert_true(blocking.has(Vector2i(-6, 14)), "two out, range 14")
+	assert_true(blocking.has(Vector2i(-3, 12)), "two out from the stern, range 12")
+	assert_false(blocking.has(Vector2i(-6, 10)), "two out but nearer (range 10)")
+	assert_false(blocking.has(Vector2i(-6, 15)), "three out")
+
+
+func test_friend_outside_arc_makes_none() -> void:
+	# 7.B.11, Diagram 18 ships X: a friend entirely outside this battery's arc makes none.
+	var ahead := _friend(Vector2i(7, 0), 0)
+	assert_true(_blocking([ahead]).is_empty(), "dead ahead")
+	var abeam := _friend(Vector2i(-3, 6), 3)
+	assert_true(_blocking([abeam], ShipState.PORT).is_empty(), "in the starboard arc, not the port one")
+
+
+func test_los_through_blocking_hex_is_blocked() -> void:
+	# 7.B.10c: any LOS which passes through a blocking hex is blocked.
+	assert_false(geo.has_line_of_sight(Vector2i(0, 0), Vector2i(4, 0), {}, {Vector2i(2, 0): true}))
+
+
+func test_los_along_spine_between_occupied_and_blocking_hex_is_blocked() -> void:
+	# 7.B.8: a spine blocks when both hexes beside it block, an occupied one and a blocking one alike.
+	assert_false(geo.has_line_of_sight(Vector2i(0, 0), Vector2i(1, 1), {Vector2i(1, 0): true},
+		{Vector2i(0, 1): true}))
+	assert_true(geo.has_line_of_sight(Vector2i(0, 0), Vector2i(1, 1), {}, {Vector2i(0, 1): true}),
+		"one blocking hex beside the spine leaves it clear")
+
+
+func test_target_in_blocking_hex_can_be_hit() -> void:
+	# 7.B.10c: "An LOS may enter a blocking hex": the end hexes never block.
+	assert_true(geo.has_line_of_sight(Vector2i(0, 0), Vector2i(4, 0), {}, {Vector2i(4, 0): true}))
+	var target: Array[Vector2i] = [_n(1) * 2, _n(1) * 3]
+	var blocking := {target[0]: true, target[1]: true, Vector2i(0, 0): true}
+	assert_false(geo.battery_bears(Vector2i.ZERO, 0, ShipState.STARBOARD, target, {}, blocking),
+		"the far target hex lies behind the near one, a blocking hex (Diagram 19, ship 3 on E)")
+	var near_only: Array[Vector2i] = [target[0]]
+	assert_true(geo.battery_bears(Vector2i.ZERO, 0, ShipState.STARBOARD, near_only, {}, blocking),
+		"a target hex that is itself blocking can be fired on")
