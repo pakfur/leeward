@@ -16,7 +16,7 @@ var _old_stub_ai: Variant
 
 func before_each() -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	_old_phase = GameState.phase_controller.current_phase
 	_old_ready = GameState.phase_controller.players_ready.duplicate()
 	_old_humans = _pc().human_player_ids.duplicate()
@@ -43,7 +43,7 @@ func after_each() -> void:
 	GameState.stub_ai = _old_stub_ai
 	GameState.environment = _old_env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, player: int, hex: Vector2i, facing: int = 0) -> ShipState:

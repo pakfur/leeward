@@ -28,14 +28,14 @@ func after_each() -> void:
 	GameState.dice = _old_dice
 	GameState.turn_log = _old_log
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 ## Default: B's bow (-1,1) facing W, stern (0,1), abeam of A (bow (0,0) facing E, stern (-1,0)),
 ## so each ship's starboard broadside bears on the other with both batteries.
 func _setup_ships(b_facing: int = 3, b_hex: Vector2i = Vector2i(-1, 1)) -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	var env := EnvironmentState.new()
 	env.wind_speed = 2
 	env.sea_state = 1
@@ -77,7 +77,7 @@ func _make_ship(id: String, player: int, hex: Vector2i, facing: int,
 	state.marine_count = 2
 	state.crew_quality = quality
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 

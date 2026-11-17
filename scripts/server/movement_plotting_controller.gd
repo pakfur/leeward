@@ -87,7 +87,7 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 		return MovementTypes.PlottingErrorResponse.create(request_id, "SHIP_NOT_FOUND", "Ship %s not found" % ship_id)
 
 	# Check if player owns this ship
-	if ship_state.player_id != player_id:
+	if ship_state.side != player_id:
 		Trace.trace_log(Trace.MOVEMENT_PLOTTING_CATEGORY, "SHIP_NOT_FOUND - Player %d does not own ship %s" % [player_id, ship_id])
 		return MovementTypes.PlottingErrorResponse.create(request_id, "UNAUTHORIZED", "Player %d does not own ship %s" % [player_id, ship_id])
 

@@ -18,7 +18,7 @@ var _old_log: PhaseEvents.PhaseLog
 
 func before_each() -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	_old_phase = GameState.phase_controller.current_phase
 	_old_ready = GameState.phase_controller.players_ready.duplicate()
 	_old_log = GameState.turn_log
@@ -33,7 +33,7 @@ func after_each() -> void:
 	GameState.phase_controller.players_ready = _old_ready
 	GameState.turn_log = _old_log
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, player: int, hex: Vector2i, facing: int = 0) -> ShipState:

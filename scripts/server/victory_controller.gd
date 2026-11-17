@@ -74,7 +74,7 @@ static func _detached(ship: ShipState, section: int) -> int:
 func _is_defeated(player_id: int) -> bool:
 	## A side with no ships at all counts as defeated. Ships it controls only: a prize (CAPTURED)
 	## is out of play, so a side holding only prizes is defeated (boarding spec §2.6).
-	for ship: ShipState in game_state.get_player_ships(player_id):
+	for ship: ShipState in game_state.get_side_ships(player_id):
 		if not ship.is_out_of_play():
 			return false
 	return true
@@ -97,7 +97,7 @@ func can_move_or_fight(ship: ShipState) -> bool:
 
 
 func _is_unable(player_id: int) -> bool:
-	for ship: ShipState in game_state.get_player_ships(player_id):
+	for ship: ShipState in game_state.get_side_ships(player_id):
 		if can_move_or_fight(ship):
 			return false
 	return true
@@ -107,6 +107,6 @@ func _points_scored(player_id: int) -> float:
 	## The enemy's ships by original owner: a ship it lost to capture scores 100 % like a struck one
 	## (VI.B.2-3), wherever it now is.
 	var total := 0.0
-	for ship: ShipState in game_state.get_original_player_ships(1 - player_id):
+	for ship: ShipState in game_state.get_original_side_ships(1 - player_id):
 		total += points_lost(ship)
 	return total

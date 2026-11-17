@@ -448,7 +448,7 @@ static func nearest_enemy(ship: ShipState, all_ships: Array, grid: HexGrid) -> S
 		return null
 	var geometry := FireGeometry.new(grid)
 	for other: ShipState in all_ships:
-		if other.player_id == ship.player_id or other.is_out_of_play():
+		if other.side == ship.side or other.is_out_of_play():
 			continue
 		var d := geometry.range_between(ship.occupied_hexes(), other.occupied_hexes())
 		if d < best or (d == best and other.ship_id < nearest.ship_id):

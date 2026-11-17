@@ -190,7 +190,7 @@ func _store_default_courses() -> void:
 	planning_snapshot = {}
 	for ship in game_state.ships.values():
 		var s: ShipState = ship
-		if not human_player_ids.has(s.player_id):
+		if not human_player_ids.has(s.side):
 			continue
 		var course: Array = []
 		if DefaultCourse.can_plot(s):
@@ -219,7 +219,7 @@ func player_reset_planning(player_id: int) -> String:
 		return why
 	for ship_id in planning_snapshot:
 		var ship: ShipState = game_state.get_ship(ship_id)
-		if ship == null or ship.player_id != player_id:
+		if ship == null or ship.side != player_id:
 			continue
 		_restore_snapshot(ship_id, true)
 	Trace.trace_log("TurnPhase", "Player %d reset the planning" % player_id)
@@ -308,7 +308,7 @@ func player_submit_plan(player_id: int) -> bool:
 func plan_errors(player_id: int) -> Dictionary:
 	var errors := {}
 	var validator := MovementValidator.new(game_state)
-	for ship in game_state.get_player_ships(player_id):
+	for ship in game_state.get_side_ships(player_id):
 		if not DefaultCourse.can_plot(ship) or not ship.plotted_actions.get("movement_plotted", false):
 			continue
 		var why := validator.deceleration_error(ship, stored_course(ship))
@@ -334,7 +334,7 @@ func player_clear_movement(player_id: int, ship_id: String) -> String:
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
 		return "no ship %s" % ship_id
-	if ship.player_id != player_id:
+	if ship.side != player_id:
 		return "%s is not this player's ship" % ship_id
 	game_state.ship_controller.set_plotted_movement(ship_id, [])
 	Trace.trace_log("TurnPhase", "Player %d cleared the movement plot of %s" % [player_id, ship_id])
@@ -491,7 +491,7 @@ func _crew_request_error(player_id: int, ship_id: String) -> String:
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
 		return "no ship %s" % ship_id
-	if ship.player_id != player_id:
+	if ship.side != player_id:
 		return "%s is not this player's ship" % ship_id
 	if ship.is_destroyed():
 		return "%s is destroyed" % ship_id
@@ -538,7 +538,7 @@ func _run_movement_resolution(resume_impulse: int) -> void:
 func _bear_off_prompt_ship_ids(ships: Array) -> Array:
 	var ids: Array = []
 	for s in ships:
-		if s.player_id in bear_off_prompt_player_ids:
+		if s.side in bear_off_prompt_player_ids:
 			ids.append(s.ship_id)
 	return ids
 
@@ -571,7 +571,7 @@ func player_submit_bear_off(player_id: int, ship_id: String, choice: String) -> 
 	if situation.ship_id != ship_id:
 		return "the decision pending is for %s" % situation.ship_id
 	var ship = game_state.get_ship(ship_id)
-	if ship == null or ship.player_id != player_id:
+	if ship == null or ship.side != player_id:
 		return "player %d does not command %s" % [player_id, ship_id]
 	if not choice in situation.choices():
 		return "%s is not a legal choice here" % choice
@@ -791,7 +791,7 @@ func maintenance_options(player_id: int, step: MaintenanceStep) -> Array:
 	if grappling == null:
 		return out
 	var own: Array = []
-	for ship: ShipState in game_state.get_player_ships(player_id):
+	for ship: ShipState in game_state.get_side_ships(player_id):
 		own.append(ship.ship_id)
 	own.sort()
 	for ship_id in own:
@@ -802,7 +802,7 @@ func maintenance_options(player_id: int, step: MaintenanceStep) -> Array:
 		var friends: Array = []
 		for other_id in others:
 			var other: ShipState = game_state.get_ship(other_id)
-			(friends if other.player_id == player_id else enemies).append(other_id)
+			(friends if other.side == player_id else enemies).append(other_id)
 		for other_id in enemies + friends:
 			var chance: Dictionary = grappling.grapple_chance(ship_id, other_id) if step == MaintenanceStep.GRAPPLE \
 					else grappling.ungrapple_chance(ship_id, other_id)
@@ -843,7 +843,7 @@ func player_submit_maintenance_orders(player_id: int, orders: Dictionary) -> Str
 		var ship: ShipState = game_state.get_ship(pair[0])
 		if ship == null:
 			return "no ship %s" % pair[0]
-		if ship.player_id != player_id:
+		if ship.side != player_id:
 			return "%s is not this player's ship" % pair[0]
 		if not legal.has("%s|%s" % [pair[0], pair[1]]):
 			var grappling: GrapplingController = game_state.grappling_controller
@@ -924,7 +924,7 @@ func _resolve_maintenance_step(step: MaintenanceStep) -> void:
 ## Players StubAI answers for (not prompted).
 func _ai_players() -> Array[int]:
 	var ai_players: Array[int] = []
-	for p in game_state.ships_by_player.keys():
+	for p in game_state.ships_by_side.keys():
 		if not maintenance_prompt_player_ids.has(int(p)):
 			ai_players.append(int(p))
 	return ai_players

@@ -17,7 +17,7 @@ var _old_scenario: Dictionary
 
 func before_each() -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	_old_phase = GameState.phase_controller.current_phase
 	_old_ready = GameState.phase_controller.players_ready.duplicate()
 	_old_env = GameState.environment
@@ -38,7 +38,7 @@ func after_each() -> void:
 	GameState.environment = _old_env
 	GameState.active_scenario = _old_scenario
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, player: int, hex: Vector2i, facing: int, speed: int) -> ShipState:

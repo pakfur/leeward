@@ -32,7 +32,7 @@ func before_each() -> void:
 	GameState.turn_log = PhaseEvents.PhaseLog.new()
 	GameState.active_scenario = {}
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	var env := EnvironmentState.new()
 	env.wind_direction = 0
 	env.wind_speed = 3
@@ -47,7 +47,7 @@ func after_each() -> void:
 	GameState.environment = _old_env
 	GameState.active_scenario = _old_scenario
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, hex: Vector2i, sail: String = "MS", player: int = 0) -> ShipState:
@@ -60,7 +60,7 @@ func _make_ship(id: String, hex: Vector2i, sail: String = "MS", player: int = 0)
 		"crew_count": [3, 3, 3, 3], "marine_count": 2,
 		"gun_factors": {"lg": 6, "mg": 0, "cr": 4},
 	})
-	state.player_id = player
+	state.side = player
 	state.hex_position = hex
 	state.facing = 1
 	state.sail_state = sail
@@ -73,7 +73,7 @@ func _make_ship(id: String, hex: Vector2i, sail: String = "MS", player: int = 0)
 	state.marine_count = 2
 	state.crew_quality = "D"
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 
@@ -550,7 +550,7 @@ func _start_plotting(state: ShipState) -> MovementTypes.PlottingResponse:
 	GameState.movement_plotting_controller.sessions.clear()
 	GameState.movement_plotting_controller.ship_sessions.clear()
 	return GameState.movement_plotting_controller.handle_start_plotting(
-			state.player_id, state.ship.ship_id, "req")
+			state.side, state.ship.ship_id, "req")
 
 
 func test_fouled_ship_cannot_plot() -> void:
@@ -720,7 +720,7 @@ func test_partial_drift_by_facing() -> void:
 		var cases: Dictionary = PARTIAL_TABLE[facing]
 		for free_end in cases:
 			GameState.ships.clear()
-			GameState.ships_by_player = {0: [], 1: []}
+			GameState.ships_by_side = {0: [], 1: []}
 			GameState.turn_log = PhaseEvents.PhaseLog.new()
 			var drifter := _make_ship("a", Vector2i(5, 5))
 			drifter.facing = facing

@@ -103,7 +103,7 @@ const MODIFIER_LABELS := {
 const SIDE_NAMES := ["port", "starboard"]
 
 ## The human player's id (single-player: player 0); VICTORY text is written from their side.
-const HUMAN_PLAYER := 0
+const HUMAN_SIDE := 0
 
 const SAIL_NAMES := {
 	"FS": "fighting sail", "MS": "maneuvering sail", "PS": "plain sail", "NS": "no sail",
@@ -290,7 +290,7 @@ class PhaseEvent extends RefCounted:
 	var data: Dictionary = {}
 	## Ship id -> the player controlling it when the event was logged (PhaseLog stamps it, server
 	## side), so the log can label sides as they were: a ship captured later keeps her old side here.
-	var players: Dictionary = {}
+	var sides: Dictionary = {}
 
 	func _init(p_type: Type = Type.FIRE, p_phase: int = 0, p_ship_id: String = "",
 			p_data: Dictionary = {}, p_target_id: String = "") -> void:
@@ -307,7 +307,7 @@ class PhaseEvent extends RefCounted:
 			"ship_id": ship_id,
 			"target_id": target_id,
 			"data": data.duplicate(true),
-			"players": players.duplicate(),
+			"sides": sides.duplicate(),
 		}
 
 	## Every ship id the event's text names: ship_id, target_id and the ids kept in its data.
@@ -328,7 +328,7 @@ class PhaseEvent extends RefCounted:
 
 	## The player that controlled `id` when the event was logged, or `fallback` if not recorded.
 	func player_when_logged(id: String, fallback: int) -> int:
-		return int(players.get(id, fallback))
+		return int(sides.get(id, fallback))
 
 	## One readable line in plain English, numbers kept. Missing data keys are skipped, never
 	## an error; raw ids, roll arrays and zero amounts are never shown.
@@ -1043,7 +1043,7 @@ class PhaseEvent extends RefCounted:
 		if not data.has("winner"):
 			return "The battle is over" + suffix
 		match int(data["winner"]):
-			PhaseEvents.HUMAN_PLAYER:
+			PhaseEvents.HUMAN_SIDE:
 				return "Victory: you" + suffix
 			-1:
 				return "Draw" + suffix
@@ -1063,8 +1063,8 @@ class PhaseLog extends RefCounted:
 	var turn: int = 0
 	var events: Array[PhaseEvent] = []
 	## ship id -> controlling player id (-1 unknown). GameState sets it on the logs it makes, so each
-	## event records the sides as they are when it is logged (PhaseEvent.players).
-	var controller_of: Callable
+	## event records the sides as they are when it is logged (PhaseEvent.sides).
+	var side_of: Callable
 
 	func add(type: Type, phase: int, ship_id: String, data: Dictionary = {},
 			target_id: String = "") -> PhaseEvent:
@@ -1078,12 +1078,12 @@ class PhaseLog extends RefCounted:
 		events.erase(ev)
 
 	func _stamp(ev: PhaseEvent) -> void:
-		if not controller_of.is_valid():
+		if not side_of.is_valid():
 			return
 		for id in ev.ship_ids():
-			var player: int = controller_of.call(id)
-			if player >= 0:
-				ev.players[id] = player
+			var side: int = side_of.call(id)
+			if side >= 0:
+				ev.sides[id] = side
 
 	## Like add, but places the event at `index` (clamped to the log), so a cause can be logged
 	## ahead of consequences that were recorded while it was being worked out.

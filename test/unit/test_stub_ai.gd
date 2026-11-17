@@ -17,7 +17,7 @@ func before_all() -> void:
 
 func before_each() -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player.clear()
+	GameState.ships_by_side.clear()
 	env = EnvironmentState.new()
 	env.wind_direction = 0
 	env.wind_speed = 2
@@ -157,7 +157,7 @@ func test_forward_strategy_different_facings() -> void:
 	# Wind from direction 0 (East). Facings that give MA > 0: 1,2,3,4,5 (not 0, which is luffing)
 	for facing in [1, 2, 3, 4, 5]:
 		GameState.ships.clear()
-		GameState.ships_by_player.clear()
+		GameState.ships_by_side.clear()
 		if GameState.movement_plotting_controller:
 			GameState.movement_plotting_controller.sessions.clear()
 			GameState.movement_plotting_controller.ship_sessions.clear()

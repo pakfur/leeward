@@ -45,7 +45,7 @@ func plot_crew(player_id: int, ship_id: String, plan: Dictionary) -> String:
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
 		return "Unknown ship"
-	if ship.player_id != player_id:
+	if ship.side != player_id:
 		return "Not your ship"
 	if game_state.phase_controller.current_phase != TurnPhaseController.GamePhase.PLANNING:
 		return "Crew can only be plotted during planning"
@@ -85,7 +85,7 @@ func set_auto(player_id: int, ship_id: String, on: bool) -> String:
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
 		return "Unknown ship"
-	if ship.player_id != player_id:
+	if ship.side != player_id:
 		return "Not your ship"
 	var plan := current_plan(ship_id)
 	game_state.ship_controller.set_crew_auto(ship_id, on)

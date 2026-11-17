@@ -10,13 +10,13 @@ var ship: ShipState
 
 func before_each() -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	ship = _make_ship("own", 0, Vector2i(0, 0))
 
 
 func after_each() -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, player: int, hex: Vector2i) -> ShipState:

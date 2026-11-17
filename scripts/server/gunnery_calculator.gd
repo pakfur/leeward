@@ -34,7 +34,7 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 		return _refuse(p, "a prize does not fight (10.H.2)")
 	if firer.is_out_of_play() or not target.is_targetable():
 		return _refuse(p, "a struck ship cannot fire or be fired on")
-	if firer.player_id == target.player_id:
+	if firer.side == target.side:
 		return _refuse(p, "cannot fire on a ship of the same side")
 	if order.side != ShipState.PORT and order.side != ShipState.STARBOARD:
 		return _refuse(p, "invalid broadside")
@@ -204,7 +204,7 @@ func any_eligible_shot() -> bool:
 func validate_orders(player_id: int, orders: Array[GunneryTypes.FireOrder]) -> String:
 	for order in orders:
 		var firer: ShipState = game_state.get_ship(order.ship_id)
-		if firer == null or firer.player_id != player_id:
+		if firer == null or firer.side != player_id:
 			return "ship %s is not yours to command" % order.ship_id
 	var declaration := FireRules.declaration_error(orders)
 	if declaration != "":
@@ -247,7 +247,7 @@ func _add_modifier(p: GunneryTypes.ShotPreview, modifier_name: String, value: in
 func friendly_ships(firer: ShipState) -> Array[ShipState]:
 	var friends: Array[ShipState] = []
 	for ship: ShipState in game_state.ships_on_map():
-		if ship.ship_id != firer.ship_id and ship.player_id == firer.player_id:
+		if ship.ship_id != firer.ship_id and ship.side == firer.side:
 			friends.append(ship)
 	return friends
 

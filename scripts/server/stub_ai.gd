@@ -89,7 +89,7 @@ func boarding_order(ship_state: ShipState) -> String:
 	var any_enemy_linked := false
 	for other_id in ids:
 		var other: ShipState = game_state.get_ship(str(other_id))
-		if other == null or other.player_id == ship_state.player_id:
+		if other == null or other.side == ship_state.side:
 			continue
 		any_enemy_linked = true
 		if BoardingRules.boardable_error(ship_state, other, linked) != "":
@@ -102,26 +102,26 @@ func boarding_order(ship_state: ShipState) -> String:
 		return "ready"
 	var grappling = game_state.get("grappling_controller")
 	for other: ShipState in game_state.get_all_ships():
-		if other.player_id != ship_state.player_id and not other.is_out_of_play() and other.has_boarders() \
+		if other.side != ship_state.side and not other.is_out_of_play() and other.has_boarders() \
 				and grappling != null and grappling.adjacent(ship_state, other):
 			return "ready"
 	return ""
 
 
-## Prize-crew sizes (10.G.6; boarding spec §3.6) for the won actions of `player_ids` that offer a
+## Prize-crew sizes (10.G.6; boarding spec §3.6) for the won actions of `sides` that offer a
 ## choice: the minimum, plus one if another enemy ship in play is within 3 hexes of the prize.
 ## {action_id: size}.
-func prize_sizes(player_ids: Array[int]) -> Dictionary:
+func prize_sizes(sides: Array[int]) -> Dictionary:
 	var out := {}
 	var boarding = game_state.get("boarding_controller")
 	if boarding == null:
 		return out
-	for player_id in player_ids:
-		for option in boarding.prize_size_options(player_id):
+	for side in sides:
+		for option in boarding.prize_size_options(side):
 			var prize: ShipState = game_state.get_ship(str(option["prize_id"]))
 			var size := int(option["minimum"])
 			for other: ShipState in game_state.get_all_ships():
-				if other.ship_id == prize.ship_id or other.player_id == player_id or other.is_out_of_play():
+				if other.ship_id == prize.ship_id or other.side == side or other.is_out_of_play():
 					continue
 				var r: int = game_state.fire_geometry.range_between(prize.occupied_hexes(), other.occupied_hexes())
 				if r >= 0 and r <= 3:
@@ -142,7 +142,7 @@ func _odds_favour(ship_state: ShipState, sections: Array, enemy: ShipState) -> b
 ## Whether the ship would board `enemy` with what it would send (the marines and its lowest sailor
 ## section): an enemy that has struck, or odds of at least +1 after the class DRM (boarding spec §3.6).
 func would_board(ship_state: ShipState, enemy: ShipState) -> bool:
-	if enemy == null or enemy.player_id == ship_state.player_id:
+	if enemy == null or enemy.side == ship_state.side:
 		return false
 	if enemy.is_struck():
 		return true
@@ -156,13 +156,13 @@ func would_board(ship_state: ShipState, enemy: ShipState) -> bool:
 	return _odds_favour(ship_state, goers, enemy)
 
 
-## Grapple orders (8.C.1) for the ships of `player_ids`, as [ship_id, target_id] pairs: every
+## Grapple orders (8.C.1) for the ships of `sides`, as [ship_id, target_id] pairs: every
 ## eligible enemy that has struck, or whose crew is at most two thirds of this ship's in boarding
 ## combat factors (boarding spec §3.6). Never a friendly ship.
-func grapple_orders(player_ids: Array[int]) -> Array:
+func grapple_orders(sides: Array[int]) -> Array:
 	var grappling: GrapplingController = game_state.grappling_controller
 	var orders: Array = []
-	for ship_state in _ships_of(player_ids):
+	for ship_state in _ships_of(sides):
 		if ship_state.is_captured():
 			continue  # a prize never grapples (it may, 10.H.2, but the AI does not)
 		for target_id in grappling.grapple_options(ship_state.ship_id):
@@ -171,18 +171,18 @@ func grapple_orders(player_ids: Array[int]) -> Array:
 	return orders
 
 
-## Ungrapple orders (8.C.4) for the ships of `player_ids`: every grapple to a ship it would neither
+## Ungrapple orders (8.C.4) for the ships of `sides`: every grapple to a ship it would neither
 ## board nor grapple (a friendly ship, or an enemy it would not take on).
-func ungrapple_orders(player_ids: Array[int]) -> Array:
+func ungrapple_orders(sides: Array[int]) -> Array:
 	var grappling: GrapplingController = game_state.grappling_controller
 	var orders: Array = []
-	for ship_state in _ships_of(player_ids):
+	for ship_state in _ships_of(sides):
 		for partner_id in grappling.ungrapple_options(ship_state.ship_id):
 			var partner: ShipState = game_state.get_ship(partner_id)
 			# Spec §9: a prize never grapples and cuts every grapple it may.
 			# Boarding spec §3.6: keep a grapple to an enemy it would board or grapple; never cut
 			# loose from a struck enemy; cut every other (friends included).
-			if partner != null and not ship_state.is_captured() and partner.player_id != ship_state.player_id \
+			if partner != null and not ship_state.is_captured() and partner.side != ship_state.side \
 					and (partner.is_struck() or would_board(ship_state, partner) or _wants_grapple(ship_state, partner)):
 				continue
 			orders.append([ship_state.ship_id, partner_id])
@@ -192,7 +192,7 @@ func ungrapple_orders(player_ids: Array[int]) -> Array:
 ## The AI's grappling rule (boarding spec §3.6): an enemy that has struck, or whose crew's boarding
 ## combat factors are at most two thirds of this ship's.
 func _wants_grapple(ship_state: ShipState, other: ShipState) -> bool:
-	if other == null or other.player_id == ship_state.player_id:
+	if other == null or other.side == ship_state.side:
 		return false
 	if other.is_struck():
 		return true
@@ -209,10 +209,10 @@ static func crew_strength(ship_state: ShipState) -> int:
 		+ ship_state.marine_count * tables.bcf(ship_state.crew_quality, true)
 
 
-func _ships_of(player_ids: Array[int]) -> Array[ShipState]:
+func _ships_of(sides: Array[int]) -> Array[ShipState]:
 	var out: Array[ShipState] = []
 	for ship_state in game_state.get_all_ships():
-		if player_ids.has(ship_state.player_id):
+		if sides.has(ship_state.side):
 			out.append(ship_state)
 	out.sort_custom(func(a: ShipState, b: ShipState) -> bool: return a.ship_id < b.ship_id)
 	return out
@@ -392,7 +392,7 @@ func _shot_beats(a: GunneryTypes.ShotPreview, b: GunneryTypes.ShotPreview) -> bo
 func _get_ai_ships() -> Array[ShipState]:
 	var result: Array[ShipState] = []
 	for ship_state in game_state.get_all_ships():
-		if ship_state.player_id != 0:
+		if ship_state.side != 0:
 			result.append(ship_state)
 	return result
 
@@ -405,7 +405,7 @@ func _get_strategy(_ship_state: ShipState) -> String:
 
 func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, strategy: String) -> void:
 	var ship_id := ship_state.ship_id
-	var player_id := ship_state.player_id
+	var player_id := ship_state.side
 
 	var start_response := controller.handle_start_plotting(player_id, ship_id, _next_request_id())
 
@@ -581,7 +581,7 @@ func _nearest_enemy(ship_state: ShipState) -> ShipState:
 	var nearest: ShipState = null
 	var nearest_distance := 0
 	for other in game_state.get_all_ships():
-		if other.player_id == ship_state.player_id or other.is_out_of_play():
+		if other.side == ship_state.side or other.is_out_of_play():
 			continue
 		var distance: int = game_state.fire_geometry.range_between(ship_state.occupied_hexes(), other.occupied_hexes())
 		if nearest == null or distance < nearest_distance \

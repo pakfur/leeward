@@ -38,7 +38,7 @@ func before_each() -> void:
 	env.sea_state = 1
 	GameState.environment = env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	controller = VictoryController.new(GameState)
 	pc.game_result = {}
 	pc.combat_step = TurnPhaseController.CombatStep.NONE
@@ -56,7 +56,7 @@ func after_each() -> void:
 	GameState.environment = _old_env
 	GameState.active_scenario = _old_scenario
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _on_game_over(result: Dictionary) -> void:
@@ -88,7 +88,7 @@ func _make_ship(id: String, player: int, quality: String = "D", rating: int = 4)
 	state.starting_crew_quality = quality
 	state.morale_rating = rating
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 

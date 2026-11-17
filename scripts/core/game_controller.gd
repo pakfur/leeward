@@ -265,7 +265,7 @@ func _toggle_crew_overlay() -> void:
 	if ship_id == "" and crew_client.ship_id != "":
 		ship_id = crew_client.ship_id
 	if ship_id == "":
-		var own := GameState.get_player_ships(HUMAN_PLAYER_ID)
+		var own := GameState.get_side_ships(HUMAN_PLAYER_ID)
 		if not own.is_empty():
 			ship_id = own[0].ship_id
 	_open_crew_overlay(ship_id)
@@ -273,7 +273,7 @@ func _toggle_crew_overlay() -> void:
 
 func _open_crew_overlay(ship_id: String) -> void:
 	var ship := GameState.get_ship(ship_id)
-	if ship == null or ship.player_id != HUMAN_PLAYER_ID:
+	if ship == null or ship.side != HUMAN_PLAYER_ID:
 		return  # enemy plots are secret
 	_clear_hover()
 	crew_client.open_for(ship_id)
@@ -447,7 +447,7 @@ func _spawn_ship_view(ship_state: ShipState) -> void:
 	# Connect selection signal
 	ship_view.selected.connect(func(): _select_ship(ship_state.ship_id))
 
-	Trace.trace_log("GameController", "Spawned ship: %s for player %d" % [ship_state.ship_name, ship_state.player_id])
+	Trace.trace_log("GameController", "Spawned ship: %s for player %d" % [ship_state.ship_name, ship_state.side])
 
 func _unhandled_input(event: InputEvent) -> void:
 	if game_over_panel:
@@ -554,7 +554,7 @@ func _refresh_courses() -> void:
 	var selected := _course_selected_id()
 	var grid: HexGrid = hex_map.get_hex_grid() if hex_map else null
 	var ships: Array = GameState.ships_on_map()
-	for ship: ShipState in GameState.get_player_ships(HUMAN_PLAYER_ID):
+	for ship: ShipState in GameState.get_side_ships(HUMAN_PLAYER_ID):
 		var id := ship.ship_id
 		var options: Dictionary = GameState.phase_controller.course_options(id)  # read-only query
 		if options.is_empty():
@@ -707,7 +707,7 @@ func _handle_ship_selection(screen_pos: Vector2) -> void:
 	if not ship_state:
 		return
 
-	if ship_state.player_id == HUMAN_PLAYER_ID:
+	if ship_state.side == HUMAN_PLAYER_ID:
 		# Own ship: full selected-ship UI.
 		# The camera does not move: the player clicked what they can already see.
 		# While planning, the orders panel follows (one selected ship everywhere).
@@ -761,7 +761,7 @@ func _update_status_hover() -> void:
 ## Only enemy ships get the status plate on the water: the planning panel's card shows more about
 ## one of ours.
 static func shows_status_plate(ship_state: ShipState) -> bool:
-	return ship_state != null and ship_state.player_id != HUMAN_PLAYER_ID
+	return ship_state != null and ship_state.side != HUMAN_PLAYER_ID
 
 ## Keep the graphic status up over a clicked enemy ship.
 func _pin_status(ship_id: String) -> void:
@@ -867,7 +867,7 @@ func _enter_planning_phase() -> void:
 		combat_log_panel.auto_expand(false)  # the map is what matters while plotting
 
 	# Get player ships
-	var player_0_ships = GameState.get_player_ships(0)
+	var player_0_ships = GameState.get_side_ships(0)
 	if player_0_ships.is_empty():
 		Trace.trace_log("GameController", "No ships for player 0")
 		return
@@ -1182,7 +1182,7 @@ func _on_playback_completed() -> void:
 # ============================================================================
 
 func _on_fire_declaration_requested() -> void:
-	var player_ships := GameState.get_player_ships(HUMAN_PLAYER_ID)
+	var player_ships := GameState.get_side_ships(HUMAN_PLAYER_ID)
 	var ship_ids: Array = []
 	for ship in player_ships:
 		ship_ids.append(ship.ship_id)

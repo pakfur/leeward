@@ -59,14 +59,14 @@ var _fire_effect: ShipFireEffect = null
 var _seen_afloat := false  ## synced at least once before it was destroyed (so the explosion is new)
 var _fire_poll := 0.0
 ## Capture on the map (boarding spec §4.5, UX4): the ring and pennant take the captor's colour (they
-## follow ShipState.player_id), a prize flag (captor's colour over white) flies at the masthead, and
+## follow ShipState.side), a prize flag (captor's colour over white) flies at the masthead, and
 ## a label shows "PRIZE" with the boarders' reorganizing turns until the prize crew is aboard.
 var _prize_flag: Node3D = null
 var _prize_label: Label3D = null
 
-static func owner_color(player_id: int) -> Color:
-	"""Owner colour for a player id (matches the minimap ship icons)."""
-	return PLAYER_COLOR if player_id == HUMAN_PLAYER_ID else ENEMY_COLOR
+static func owner_color(side: int) -> Color:
+	"""Owner colour for a side (matches the minimap ship icons)."""
+	return PLAYER_COLOR if side == HUMAN_PLAYER_ID else ENEMY_COLOR
 
 func _process(delta: float) -> void:
 	# Visual update only - the ship rides the swell (SeaModel)
@@ -112,7 +112,7 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	_update_position_from_state(ship_state, hex_grid)
 
 	# Owner marker (ring + pennant) in the owner's colour; before the rotation, which turns the ring
-	_update_owner_marker(ship_state.player_id)
+	_update_owner_marker(ship_state.side)
 
 	# Update rotation
 	_update_rotation_from_state(ship_state)
@@ -143,12 +143,12 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	if _struck_flag:
 		_struck_flag.position = _masthead_position(0.3) - Vector3(0, 0.1, 0)
 
-func _update_owner_marker(player_id: int) -> void:
-	"""Create (once) or recolour the owner ring and pennant for player_id."""
-	if model_node == null or player_id == _owner_player_id:
+func _update_owner_marker(side: int) -> void:
+	"""Create (once) or recolour the owner ring and pennant for side."""
+	if model_node == null or side == _owner_player_id:
 		return
-	_owner_player_id = player_id
-	var color := owner_color(player_id)
+	_owner_player_id = side
+	var color := owner_color(side)
 	if _owner_ring == null:
 		_owner_ring = MeshInstance3D.new()
 		_owner_ring.name = "OwnerRing"
@@ -229,7 +229,7 @@ func _update_prize_visual(ship_state: ShipState) -> void:
 			_prize_label.queue_free()
 			_prize_label = null
 		return
-	var color := owner_color(ship_state.player_id)
+	var color := owner_color(ship_state.side)
 	if _prize_flag == null:
 		_prize_flag = Node3D.new()
 		_prize_flag.name = "PrizeFlag"

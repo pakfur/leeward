@@ -50,7 +50,7 @@ var dev_commands: DevCommands = null
 # State objects (authoritative on server, read-only on client)
 var environment: EnvironmentState = null  # Environmental conditions
 var ships: Dictionary = {}  # ship_id -> ShipState
-var ships_by_player: Dictionary = {0: [], 1: []}  # player_id -> Array[ship_id]
+var ships_by_side: Dictionary = {0: [], 1: []}  # side -> Array[ship_id]
 
 # Shared seeded RNG — seeded from scenario on game start; all controllers share this instance
 var rng: RandomNumberGenerator = null
@@ -185,8 +185,8 @@ func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int]) -> 
 	var sides: Array[int] = []
 	for ship_data in scenario_data.get("ships", []):
 		var ship_state := _scenario_ship(ship_data, navies)
-		if ship_state != null and add_ship(ship_state) and not sides.has(ship_state.player_id):
-			sides.append(ship_state.player_id)
+		if ship_state != null and add_ship(ship_state) and not sides.has(ship_state.side):
+			sides.append(ship_state.side)
 	if phase_controller:
 		phase_controller.bear_off_prompt_player_ids = human_player_ids.duplicate()
 		phase_controller.human_player_ids = human_player_ids.duplicate()
@@ -207,7 +207,7 @@ func _scenario_ship(ship_data: Dictionary, navies: Variant) -> ShipState:
 		push_error("Ship definition not found: %s" % ship_data.get("ship_type", ""))
 		return null
 	var ship_ref := Ship.initialize_from_scenario(ship_data, type_def.to_dict())
-	var side := str(int(ship_data.get("player_id", 0)))  # JSON numbers are floats
+	var side := str(int(ship_data.get("side", ship_data.get("player_id", 0))))  # JSON numbers are floats
 	if not ship_data.has("navy") and navies is Dictionary and navies.has(side):
 		ship_data = ship_data.duplicate()
 		ship_data["navy"] = str(navies[side])
@@ -340,11 +340,11 @@ func add_ship(ship_state: ShipState) -> bool:
 	ships[ship_state.ship_id] = ship_state
 
 	# Track by player
-	if not ships_by_player.has(ship_state.player_id):
-		ships_by_player[ship_state.player_id] = []
-	ships_by_player[ship_state.player_id].append(ship_state.ship_id)
+	if not ships_by_side.has(ship_state.side):
+		ships_by_side[ship_state.side] = []
+	ships_by_side[ship_state.side].append(ship_state.ship_id)
 
-	Trace.trace_log("GameState", "Added ship %s (player %d)" % [ship_state.ship_id, ship_state.player_id])
+	Trace.trace_log("GameState", "Added ship %s (side %d)" % [ship_state.ship_id, ship_state.side])
 	return true
 
 func remove_ship(ship_id: String) -> void:
@@ -353,70 +353,70 @@ func remove_ship(ship_id: String) -> void:
 		return
 
 	var ship_state = ships[ship_id]
-	var player_id = ship_state.player_id
+	var side = ship_state.side
 
 	ships.erase(ship_id)
 
-	if ships_by_player.has(player_id):
-		ships_by_player[player_id].erase(ship_id)
+	if ships_by_side.has(side):
+		ships_by_side[side].erase(ship_id)
 
 	Trace.trace_log("GameState", "Removed ship %s" % ship_id)
 
 ## SERVER: a fresh event log for `turn` whose events record each named ship's controlling side
-## when logged (PhaseEvent.players), so the log can label them as they were then.
+## when logged (PhaseEvent.sides), so the log can label them as they were then.
 func new_turn_log(turn: int) -> PhaseEvents.PhaseLog:
 	var fresh: PhaseEvents.PhaseLog = PhaseEvents.PhaseLog.new()
 	fresh.turn = turn
-	fresh.controller_of = controller_of
+	fresh.side_of = side_of
 	return fresh
 
-## The player controlling the ship now, -1 for an unknown id.
-func controller_of(ship_id: String) -> int:
+## The side controlling the ship now, -1 for an unknown id.
+func side_of(ship_id: String) -> int:
 	var ship: ShipState = ships.get(ship_id)
-	return ship.player_id if ship != null else -1
+	return ship.side if ship != null else -1
 
 func get_ship(ship_id: String) -> ShipState:
 	"""Get ship state by ID"""
 	return ships.get(ship_id)
 
-func get_player_ships(player_id: int) -> Array[ShipState]:
-	"""Get all ships for a player"""
+func get_side_ships(side: int) -> Array[ShipState]:
+	"""Get all ships of a side"""
 	var result: Array[ShipState] = []
-	if ships_by_player.has(player_id):
-		for ship_id in ships_by_player[player_id]:
+	if ships_by_side.has(side):
+		for ship_id in ships_by_side[side]:
 			if ships.has(ship_id):
 				result.append(ships[ship_id])
 	return result
 
-## Ships whose original owner is `player_id`, whoever controls them now (victory points, VI.B).
-func get_original_player_ships(player_id: int) -> Array[ShipState]:
+## Ships whose original owner is `side`, whoever controls them now (victory points, VI.B).
+func get_original_side_ships(side: int) -> Array[ShipState]:
 	var result: Array[ShipState] = []
 	var ids: Array = ships.keys()
 	ids.sort()
 	for ship_id in ids:
-		if ships[ship_id].original_player_id == player_id:
+		if ships[ship_id].original_side == side:
 			result.append(ships[ship_id])
 	return result
 
-## SERVER ONLY: hands a ship to `player_id` (a prize, 10.H.1; through ShipStateController) and
-## re-indexes ships_by_player. Returns false when refused.
-func transfer_control(ship_id: String, player_id: int) -> bool:
+## SERVER ONLY: hands a ship to `side` (a prize, 10.H.1; through ShipStateController) and
+## re-indexes ships_by_side. Returns false when refused.
+func transfer_control(ship_id: String, side: int) -> bool:
 	if not is_server:
 		push_error("GameState: Cannot transfer control on client")
 		return false
 	var ship: ShipState = ships.get(ship_id)
 	if ship == null:
 		return false
-	var before := ship.player_id
-	if not ship_controller.set_controller(ship_id, -1 if player_id == ship.original_player_id else player_id):
+	var before := ship.side
+	if not ship_controller.set_controller_side(ship_id, -1 if side == ship.original_side else side):
 		return false
-	if ships_by_player.has(before):
-		ships_by_player[before].erase(ship_id)
-	if not ships_by_player.has(player_id):
-		ships_by_player[player_id] = []
-	if not ships_by_player[player_id].has(ship_id):
-		ships_by_player[player_id].append(ship_id)
-	Trace.trace_log("GameState", "Ship %s now controlled by player %d" % [ship_id, player_id])
+	if ships_by_side.has(before):
+		ships_by_side[before].erase(ship_id)
+	if not ships_by_side.has(side):
+		ships_by_side[side] = []
+	if not ships_by_side[side].has(ship_id):
+		ships_by_side[side].append(ship_id)
+	Trace.trace_log("GameState", "Ship %s now controlled by side %d" % [ship_id, side])
 	return true
 
 func get_all_ships() -> Array[ShipState]:
@@ -441,7 +441,7 @@ func clear_ships() -> void:
 		push_error("GameState: Cannot clear ships on client")
 		return
 	ships.clear()
-	ships_by_player.clear()
+	ships_by_side.clear()
 
 ## State History Management
 
@@ -713,7 +713,7 @@ func _update_ship_from_data(ship: ShipState, data: Dictionary) -> void:
 	ship.crew_quality = data.get("crew_quality", ship.crew_quality)
 	ship.morale_rating = int(data.get("morale_rating", ship.morale_rating))
 	ship.status = int(data.get("status", ship.status)) as ShipState.Status
-	ship.controller_id = int(data.get("controller_id", ship.controller_id))
+	ship.controller_side = int(data.get("controller_side", data.get("controller_id", ship.controller_side)))
 	if data.has("prize"):
 		ship.prize = ShipState.prize_from(data["prize"])
 	if data.has("detached_boxes"):

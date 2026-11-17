@@ -316,15 +316,15 @@ func add_detached_box(ship_id: String, section: int) -> bool:
 	return true
 
 ## SERVER ONLY: the controlling side (-1 = the original owner). Use GameState.transfer_control,
-## which also re-indexes ships_by_player.
-func set_controller(ship_id: String, controller_id: int) -> bool:
+## which also re-indexes ships_by_side.
+func set_controller_side(ship_id: String, side: int) -> bool:
 	if not is_server:
 		push_error("ShipStateController: Cannot change control on client")
 		return false
 	var ship = _server_ship(ship_id)
 	if not ship:
 		return false
-	ship.controller_id = controller_id
+	ship.controller_side = side
 	ship_state_changed.emit(ship_id)
 	return true
 

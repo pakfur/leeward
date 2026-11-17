@@ -35,7 +35,7 @@ func before_each() -> void:
 	env.sea_state = 1
 	GameState.environment = env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	_declare_signals = 0
 	_log_signals = 0
 	pc.fire_declaration_requested.connect(_on_declare)
@@ -52,7 +52,7 @@ func after_each() -> void:
 	GameState.turn_log = _old_log
 	GameState.environment = _old_env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _on_declare() -> void:
@@ -92,7 +92,7 @@ func _make_ship(id: String, player: int, hex: Vector2i, facing: int) -> ShipStat
 	state.marine_count = 2
 	state.crew_quality = "D"
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 

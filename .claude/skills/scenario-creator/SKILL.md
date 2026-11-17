@@ -57,7 +57,7 @@ Each ship entry:
 ```json
 {
   "id": "unique_ship_id",
-  "player_id": 0,
+  "side": 0,
   "ship_type": "frigate_38",
   "position": { "q": 0, "r": 0 },
   "facing": 0,
@@ -79,7 +79,7 @@ Each ship entry:
 - `sail_state`: one of `FS` (fighting), `MS` (maneuvering), `PS` (plain), `NS` (no sail)
 - `crew_quality`: one of `Elite`, `Crack`, `Trained`, `Green`, `Rabble`
 - `crew_morale`: 1-6
-- `player_id`: integer (0 = player, 1+ = opponents/AI)
+- `side`: integer (0 = the human side, 1+ = opponents/AI); the older key `player_id` is still read as an alias
 - `id` must be unique across all ships in the scenario
 - `position` (q, r): axial hex coordinates of the ship's **bow**. Every ship holds two hexes: the stern
   is derived, the neighbour against the facing (`stern = bow + DIRECTIONS[(facing + 3) % 6]`, i.e.

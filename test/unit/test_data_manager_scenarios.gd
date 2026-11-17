@@ -224,7 +224,7 @@ func test_start_scenario_builds_the_ships_on_the_server() -> void:
 	var scenario := DataManager.load_scenario("test_prizes")
 	GameState.start_scenario(scenario, [0] as Array[int])
 	assert_eq(GameState.ships.size(), scenario["ships"].size(), "every scenario ship is built")
-	for ship in GameState.get_player_ships(1):
+	for ship in GameState.get_side_ships(1):
 		assert_eq(ship.gunnery_navy(), "French", "1.G.8: the side's navy from \"navies\"")
 	var pc: TurnPhaseController = GameState.phase_controller
 	assert_eq(pc.bear_off_prompt_player_ids, [0] as Array[int])

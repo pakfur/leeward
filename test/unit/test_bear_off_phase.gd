@@ -26,7 +26,7 @@ func before_each() -> void:
 	env.wind_speed = 3
 	GameState.environment = env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	_logs = []
 	_requests = []
 	pc.resolution_log_ready.connect(_on_log)
@@ -43,7 +43,7 @@ func after_each() -> void:
 	GameState.environment = _old_env
 	GameState.turn_log = _old_log
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _on_log(log: MovementTypes.ResolutionLog) -> void:
@@ -73,7 +73,7 @@ func _make_ship(id: String, player: int, hex: Vector2i, facing: int, speed: int)
 	state.hull_current_hp = hull
 	state.crew_quality = "A"
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 

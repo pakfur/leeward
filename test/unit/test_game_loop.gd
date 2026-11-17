@@ -19,7 +19,7 @@ func before_each() -> void:
 	hex_grid = HexGrid.new()
 
 	GameState.ships.clear()
-	GameState.ships_by_player.clear()
+	GameState.ships_by_side.clear()
 	GameState.clear_state_history()
 	GameState.current_turn = 0
 	GameState.current_phase = GameState.GamePhase.SETUP
@@ -237,7 +237,7 @@ func test_deterministic_resolution_with_same_seed() -> void:
 	for run_idx in range(2):
 		# Full reset
 		GameState.ships.clear()
-		GameState.ships_by_player.clear()
+		GameState.ships_by_side.clear()
 		GameState.clear_state_history()
 		GameState.current_turn = 0
 		GameState.current_phase = GameState.GamePhase.SETUP

@@ -141,7 +141,7 @@ static func syncs_views(event: PhaseEvents.PhaseEvent) -> bool:
 static func log_names(ships: Array) -> Dictionary:
 	var names := {}
 	for ship in ships:
-		names[ship.ship_id] = side_label(ship.ship_name, ship.player_id)
+		names[ship.ship_id] = side_label(ship.ship_name, ship.side)
 	return names
 
 
@@ -149,12 +149,12 @@ static func log_names(ships: Array) -> Dictionary:
 static func log_ships(ships: Array) -> Dictionary:
 	var info := {}
 	for ship in ships:
-		info[ship.ship_id] = {"name": ship.ship_name, "player": ship.player_id}
+		info[ship.ship_id] = {"name": ship.ship_name, "player": ship.side}
 	return info
 
 
-static func side_label(ship_name: String, player_id: int) -> String:
-	return "%s (%s)" % [ship_name, "yours" if player_id == PhaseEvents.HUMAN_PLAYER else "enemy"]
+static func side_label(ship_name: String, side: int) -> String:
+	return "%s (%s)" % [ship_name, "yours" if side == PhaseEvents.HUMAN_SIDE else "enemy"]
 
 
 ## The labels for one event: each ship by the side recorded when the event was logged (a prize

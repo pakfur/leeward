@@ -37,7 +37,7 @@ func before_each() -> void:
 	crits = CriticalHitController.new(GameState)
 	GameState.critical_hit_controller = crits
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	a = _make_ship("a_ship", 0, Vector2i.ZERO, 0)
 	b = _make_ship("b_ship", 1, Vector2i(-1, 1), 3, -2)
 
@@ -50,7 +50,7 @@ func after_each() -> void:
 	GameState.current_turn = _old_turn
 	GameState.environment = _old_env
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, player: int, hex: Vector2i, facing: int, ch_mod: int = 0,
@@ -83,7 +83,7 @@ func _make_ship(id: String, player: int, hex: Vector2i, facing: int, ch_mod: int
 	state.marine_count = 2
 	state.crew_quality = "D"
 	GameState.ships[id] = state
-	GameState.ships_by_player[player].append(id)
+	GameState.ships_by_side[player].append(id)
 	return state
 
 

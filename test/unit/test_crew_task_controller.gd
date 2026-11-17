@@ -15,7 +15,7 @@ var _old_phase: TurnPhaseController.GamePhase
 
 func before_each() -> void:
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	_old_log = GameState.turn_log
 	_old_phase = GameState.phase_controller.current_phase
 	GameState.turn_log = PhaseEvents.PhaseLog.new()
@@ -28,7 +28,7 @@ func after_each() -> void:
 	GameState.turn_log = _old_log
 	GameState.phase_controller.current_phase = _old_phase
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String, player: int, quality: String = "B") -> ShipState:

@@ -458,7 +458,7 @@ func _reorganizers_defend(action: BoardingAction, target: ShipState, phase: int)
 	action.prize_action = taking.id
 	var attacker: ShipState = game_state.get_ship(action.attacker_id)
 	action.original_crew_joins = target.original_crew_boxes() > 0 and (not ORIGINAL_CREW_WITH_ATTACKERS
-		or (attacker != null and attacker.player_id == target.original_player_id))
+		or (attacker != null and attacker.side == target.original_side))
 	game_state.turn_log.add(PhaseEvents.Type.REORGANIZING_ABORTED, phase, captor.ship_id,
 		{"sections": secs.duplicate(), "action": action.id, "original_crew": target.original_crew_boxes()},
 		target.ship_id)
@@ -994,7 +994,7 @@ func capture(action: BoardingAction, struck_target: bool, phase: int, outcome: S
 	var sc: ShipStateController = game_state.ship_controller
 	var ctc: CrewTaskController = game_state.crew_task_controller
 	_cut_off(def, phase)
-	if def.is_captured() and att.player_id == def.original_player_id:
+	if def.is_captured() and att.side == def.original_side:
 		# A prize boarded back by her own side: retaken (boarding spec §8 Q5). The winners reorganize
 		# (10.G.2) and then come home; she needs no prize crew.
 		action.retaken = true
@@ -1030,7 +1030,7 @@ func capture(action: BoardingAction, struck_target: bool, phase: int, outcome: S
 	# Logged before control passes, so the line labels her by the side she was taken from.
 	game_state.turn_log.add(PhaseEvents.Type.SHIP_CAPTURED, phase, def.ship_id,
 		{"captor_id": att.ship_id, "struck_before": struck_before, "action": action.id, "outcome": action.outcome}, att.ship_id)
-	game_state.transfer_control(def.ship_id, att.player_id)
+	game_state.transfer_control(def.ship_id, att.side)
 	if action.struck_target:
 		for s in action.attacker_sections:
 			var task := att.boarding_task(s)
@@ -1058,7 +1058,7 @@ func _share_capture(action: BoardingAction, phase: int) -> void:
 		if a == action or not a.is_live() or a.defender_id != action.defender_id:
 			continue
 		var att: ShipState = game_state.get_ship(a.attacker_id)
-		if att == null or winner == null or att.player_id != winner.player_id:
+		if att == null or winner == null or att.side != winner.side:
 			continue
 		a.state = BoardingAction.ATTACKER_WON
 		a.outcome = "shared_capture"
@@ -1187,7 +1187,7 @@ func prize_size_options(player_id: int) -> Array:
 			continue
 		var att: ShipState = game_state.get_ship(action.attacker_id)
 		var prize: ShipState = game_state.get_ship(action.defender_id)
-		if att.player_id != player_id or not att.linked_ids().has(prize.ship_id):
+		if att.side != player_id or not att.linked_ids().has(prize.ship_id):
 			continue
 		var left := _boarders_left(action, att)
 		var available := int(left["sailors"]) + int(left["marines"])
@@ -1339,7 +1339,7 @@ func retake(ship_id: String, cause: String, phase: int, action: BoardingAction =
 		if a.state != BoardingAction.ATTACKER_WON or a.defender_id != ship_id or aboard.has(a.attacker_id):
 			continue
 		var holder_ship: ShipState = game_state.get_ship(a.attacker_id)
-		if holder_ship != null and holder_ship.player_id != ship.original_player_id:
+		if holder_ship != null and holder_ship.side != ship.original_side:
 			aboard[a.attacker_id] = [] as Array[int]
 	for holder_id in aboard:
 		var holder: ShipState = game_state.get_ship(str(holder_id))
@@ -1365,7 +1365,7 @@ func retake(ship_id: String, cause: String, phase: int, action: BoardingAction =
 	sc.set_navy(ship_id, str(ship.prize.get("original_navy", "")))
 	sc.set_prize(ship_id, {}, true)
 	sc.set_status(ship_id, ShipState.Status.ACTIVE)
-	game_state.transfer_control(ship_id, ship.original_player_id)
+	game_state.transfer_control(ship_id, ship.original_side)
 	_finish_captures_of(ship_id, action.id if action != null else -1, phase)
 	game_state.turn_log.add(PhaseEvents.Type.RECAPTURED, phase, ship_id, data,
 		action.attacker_id if action != null else captor_id)

@@ -147,7 +147,7 @@ func ungrapple_chance(ship_id: String, partner_id: String) -> Dictionary:
 	_add(mods, "skill", tables.skill_modifier(quality_of(ship)))
 	if marines_unavailable(ship):
 		_add(mods, "marines_unavailable", tables.marines_unavailable_modifier())
-	if ship.player_id == partner.player_id:
+	if ship.side == partner.side:
 		_add(mods, "friendly", tables.ungrapple_drm("friendly"))
 	else:
 		var better: int = QUALITY_ORDER.find(quality_of(partner)) - QUALITY_ORDER.find(quality_of(ship))

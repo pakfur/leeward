@@ -17,7 +17,7 @@ func before_each() -> void:
 	GameState.critical_hit_controller = CriticalHitController.new(GameState)
 	GameState.critical_hit_controller.hold()
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 	_old_dice = GameState.dice
 	_old_log = GameState.turn_log
 	_dice = ScriptedDice.new()
@@ -32,7 +32,7 @@ func after_each() -> void:
 	GameState.dice = _old_dice
 	GameState.turn_log = _old_log
 	GameState.ships.clear()
-	GameState.ships_by_player = {0: [], 1: []}
+	GameState.ships_by_side = {0: [], 1: []}
 
 
 func _make_ship(id: String) -> ShipState:
@@ -63,7 +63,7 @@ func _make_ship(id: String) -> ShipState:
 	state.crew_count = crew
 	state.marine_count = 2
 	GameState.ships[id] = state
-	GameState.ships_by_player[0].append(id)
+	GameState.ships_by_side[0].append(id)
 	return state
 
 

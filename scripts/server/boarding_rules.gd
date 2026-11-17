@@ -161,7 +161,7 @@ static func target_error(ship: ShipState, ctx: Dictionary, target_id: String) ->
 static func boardable_error(ship: ShipState, target: ShipState, linked_at_plot: Array) -> String:
 	if target == null:
 		return "There is no such ship."
-	if target.player_id == ship.player_id:
+	if target.side == ship.side:
 		return "Friendly ships may not board each other (10.A.2)."
 	if target.is_destroyed():
 		return "%s has been destroyed." % target.ship_name

@@ -41,13 +41,13 @@ var ship: Ship = null
 # Convenience getters for immutable identity fields
 var ship_id: String:
 	get: return ship.ship_id if ship else ""
-## The side that controls the ship: the captor once it is a prize (controller_id), else the owner.
+## The side that controls the ship: the captor once it is a prize (controller_side), else the owner.
 ## Every reader (selection, owner colour, gunnery sides, AI) follows control (boarding spec §2.5).
-var player_id: int:
-	get: return controller_id if controller_id >= 0 else (ship.player_id if ship else 0)
-## The side the ship began the game with (Ship.player_id); victory points go by this (VI.B).
-var original_player_id: int:
-	get: return ship.player_id if ship else 0
+var side: int:
+	get: return controller_side if controller_side >= 0 else (ship.side if ship else 0)
+## The side the ship began the game with (Ship.side); victory points go by this (VI.B).
+var original_side: int:
+	get: return ship.side if ship else 0
 var ship_name: String:
 	get: return ship.ship_name if ship else "Unknown"
 var ship_type: String:
@@ -92,7 +92,7 @@ var ship_type: String:
 # Combat and turn-loop state (mutated only through ShipStateController)
 @export var status: Status = Status.ACTIVE
 ## The side controlling the ship when it is not its original owner (a prize, 10.H.1); -1 = the owner.
-@export var controller_id: int = -1
+@export var controller_side: int = -1
 ## Prize data while CAPTURED (10.G-H): {"captor_id": String, "original_crew": {"crew_count", "marine_count",
 ## "crew_quality", "morale_rating"}, "prize_crew_aboard": bool}. While a prize, the live crew fields are
 ## the prize crew's (empty until it is put aboard). {} otherwise.
@@ -204,7 +204,7 @@ func is_struck() -> bool:
 func is_destroyed() -> bool:
 	return status == Status.DESTROYED
 
-## Taken by boarding (10.H): a prize of the side in controller_id.
+## Taken by boarding (10.H): a prize of the side in controller_side.
 func is_captured() -> bool:
 	return status == Status.CAPTURED
 
@@ -588,7 +588,7 @@ func serialize() -> Dictionary:
 		"crew_count": crew_count,
 		"marine_count": marine_count,
 		"status": int(status),
-		"controller_id": controller_id,
+		"controller_side": controller_side,
 		"prize": prize.duplicate(true),
 		"detached_boxes": detached_boxes.duplicate(),
 		"navy": navy,
@@ -675,7 +675,7 @@ static func deserialize(data: Dictionary) -> ShipState:
 		state.crew_count.append(int(ct))
 	state.marine_count = data.get("marine_count", 0)
 	state.status = int(data.get("status", Status.ACTIVE)) as Status
-	state.controller_id = int(data.get("controller_id", -1))
+	state.controller_side = int(data.get("controller_side", data.get("controller_id", -1)))
 	state.prize = prize_from(data.get("prize", {}))
 	state.detached_boxes = _int_array(data.get("detached_boxes", [0, 0, 0, 0, 0]))
 	state.navy = str(data.get("navy", ""))
