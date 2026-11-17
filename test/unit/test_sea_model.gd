@@ -139,3 +139,32 @@ func test_shader_uniforms_carry_full_swell():
 	assert_almost_eq(u["swell_amp_total"], expected, 0.0001)
 	assert_eq(u["whitecap_strength"], 2.6)
 	assert_false(u.has("wave_1"), "no legacy wave uniforms")
+
+
+func test_base_chop_ignores_sea_state():
+	model.set_environment(0, 3, 1)
+	var calm := model.shader_uniforms()
+	model.sea_state_override = 5
+	var heavy := model.shader_uniforms()
+	for key in ["chop_amplitude", "chop_wavelength", "chop_time_scale", "chop_noise"]:
+		assert_eq(heavy[key], calm[key], key)
+	model.set_environment(0, 5, 1)
+	assert_true(model.shader_uniforms()["chop_amplitude"] > calm["chop_amplitude"], "follows the wind")
+
+
+func test_push_resends_after_preset_change_only():
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://assets/shaders/ocean_water.gdshader")
+	model.material = mat
+	model.set_environment(0, 2, 1)
+	model._push_to_shader()
+	assert_eq(mat.get_shader_parameter("whitecap_strength"), 1.1)
+	mat.set_shader_parameter("whitecap_strength", 9.0)  # a stale value the model should not overwrite
+	model._push_to_shader()
+	assert_eq(mat.get_shader_parameter("whitecap_strength"), 9.0, "unchanged uniforms are not re-sent")
+	model.sea_state_override = 5
+	model.apply_preset_if_changed()
+	model.recompute()
+	model._push_to_shader()
+	assert_eq(mat.get_shader_parameter("whitecap_strength"), 2.6, "re-sent after the preset change")
+	model.material = null

@@ -22,6 +22,11 @@ const COMPONENTS := [
 	[22.0, 0.3, 0.73, 1.7],
 	[-31.0, 0.25, 1.37, 4.1],
 ]
+## Sea state the base chop is always sized for. The presets were tuned with the base chop read
+## at the game's sea state, which was 1 in every scenario used, while the override changed the
+## preset; so each preset's chop_strength already carries the difference between sea states, and
+## the base chop follows the wind speed only.
+const CHOP_BASE_SEA := 1
 ## Gerstner crest sharpening (horizontal displacement share).
 const SWELL_Q := 0.8
 ## Gravity at map scale (1 world unit ~ 26 m): deep-water phase speed c = sqrt(g / k).
@@ -251,7 +256,7 @@ func _push_to_shader() -> void:
 
 
 ## The ocean shader's uniforms that change only with the wind, the sea state or the tuning.
-## Chop (surface detail, not ridden by ships) grows with wind and sea; whitecaps need
+## Chop (surface detail, not ridden by ships) grows with the wind (CHOP_BASE_SEA); whitecaps need
 ## whitecap_min_sea and take WHITECAP_BY_SEA inside the preset strength.
 func shader_uniforms() -> Dictionary:
 	var sea := effective_sea_state()
@@ -265,10 +270,10 @@ func shader_uniforms() -> Dictionary:
 		"swell_amp_total": amp_total,
 		"swell_shading": swell_shading,
 		"chop_strength": chop_strength,
-		"chop_amplitude": 0.05 + wind_speed * 0.03 + sea * 0.05,
-		"chop_wavelength": 1.0 - sea * 0.15,
-		"chop_time_scale": clampf(3.5 - wind_speed * 0.25 - sea * 0.15, 1.5, 3.5),
-		"chop_noise": 0.05 + sea * 0.03,
+		"chop_amplitude": 0.05 + wind_speed * 0.03 + CHOP_BASE_SEA * 0.05,
+		"chop_wavelength": 1.0 - CHOP_BASE_SEA * 0.15,
+		"chop_time_scale": clampf(3.5 - wind_speed * 0.25 - CHOP_BASE_SEA * 0.15, 1.5, 3.5),
+		"chop_noise": 0.05 + CHOP_BASE_SEA * 0.03,
 		"whitecap_threshold": whitecap_threshold,
 		"whitecap_strength": whitecap_strength,
 		"whitecap_sea_factor": 0.0 if sea < whitecap_min_sea else float(WHITECAP_BY_SEA[sea]),
