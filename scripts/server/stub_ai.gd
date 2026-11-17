@@ -6,14 +6,16 @@ extends RefCounted
 ## Strategies (a ship's strategy is its standing order, GameState.order_of; strategy_override wins):
 ##   "engage"    — steer toward the ordered target (engage <ship>) or else the nearest enemy,
 ##                 presenting a broadside when close (default, and the fallback of every order)
-##   "close"     — work to the ordered range from the nearest enemy and hold it there
+##   "close"     — hold within the ordered range of the nearest enemy: close it from beyond,
+##                 fight as engage inside it, never opening the range
 ##   "follow"    — sail for the hex astern of the leader's stern, never into another ship's hexes
 ##   "line"      — follow the ship listed before this one in the order's group (GameState.groups);
 ##                 the first follows the fleet flagship, the flagship engages; no group: the flagship
 ##   "disengage" — open the range from the nearest enemy
 ##   "forward"   — move straight ahead, consuming all available MA (tests)
 ##   "hold"      — submit immediately with empty path (tests)
-## Every course is carried on to the deceleration limit (_meet_deceleration_minimum).
+## Every course is carried on to the deceleration limit (_meet_deceleration_minimum). Every strategy
+## but engage keeps the ship on the map (BOUNDED_STRATEGIES).
 ##
 ## Fire: each ship fires each broadside at its best-odds target, splitting a side between two
 ## targets when no full broadside bears (see choose_fire_orders); a ship ordered to engage a ship
@@ -28,6 +30,10 @@ const FIRING_RANGE_WEIGHT := 2
 ## Added to a firing position's score when its second battery bears too: worth more than one hex of
 ## range, less than two (two batteries at range r beat one at r or r-1, lose to one at r-2).
 const SECOND_BATTERY_BONUS := 3
+## Taken off a close position beyond the ordered range: more than any engage score within range 15.
+const CLOSE_OUTSIDE_PENALTY := 100
+## Strategies that never plot a ship off the map (engage keeps its old course choice).
+const BOUNDED_STRATEGIES := ["close", "follow", "line", "disengage"]
 
 ## Plotting errors for ships that legitimately cannot move; the AI skips them without error.
 const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_GRAPPLED", "SHIP_CAPTURED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED"]
@@ -483,12 +489,14 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 
 	# 5.E.4: a course that stops short of the deceleration limit is carried on until it meets it.
 	# A ship keeping station on a leader pads with moves that stay out of the other ships' hexes.
+	# A ship under a standing order other than engage pads with moves that stay on the map.
 	var avoid := {}
 	if strategy in ["follow", "line"]:
 		var ships: Array[ShipState] = []
 		ships.assign(game_state.get_all_ships())
 		avoid = Occupancy.build(ships, [ship_id])
-	version = _meet_deceleration_minimum(ship_id, controller, session_id, version, avoid)
+	version = _meet_deceleration_minimum(ship_id, controller, session_id, version, avoid,
+		strategy in BOUNDED_STRATEGIES)
 	var submit_response := controller.handle_submit_movement(session_id, version, _next_request_id())
 	if submit_response is MovementTypes.PlottingErrorResponse:
 		refusals.append({"ship_id": ship_id,
@@ -528,11 +536,12 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 
 
 ## Extends the session's course with moves ahead (else the first move offered) while it cannot be
-## submitted for being short of the deceleration limit (5.E.4). With `avoid` (hex -> ship id), it
-## first takes a move ahead, then any move, that keeps bow and stern out of those hexes, and only
-## when there is none the plain choice. Returns the session version.
+## submitted for being short of the deceleration limit (5.E.4). With `avoid` (hex -> ship id) or
+## `keep_in_bounds`, it first takes a move ahead, then any move, that keeps bow and stern out of
+## those hexes and (with `keep_in_bounds`) on the map, and only when there is none the plain choice.
+## Returns the session version.
 func _meet_deceleration_minimum(ship_id: String, controller: MovementPlottingController,
-		session_id: String, version: int, avoid: Dictionary = {}) -> int:
+		session_id: String, version: int, avoid: Dictionary = {}, keep_in_bounds: bool = false) -> int:
 	var validator := MovementValidator.new(game_state)
 	var ship: ShipState = game_state.get_ship(ship_id)
 	for _i in range(MAX_PADDING_STEPS):
@@ -544,13 +553,13 @@ func _meet_deceleration_minimum(ship_id: String, controller: MovementPlottingCon
 			break
 		var move: MovementTypes.ValidMove = valid.forward[0] if not valid.forward.is_empty() \
 				else valid.get_all_valid_moves()[0]
-		if not avoid.is_empty():
+		if not avoid.is_empty() or keep_in_bounds:
 			var here := ship.hex_position
 			if not session.plotted_path.is_empty():
 				here = session.plotted_path[session.plotted_path.size() - 1].hex
-			var clear := _clear_move(valid.forward, here, avoid)
+			var clear := _clear_move(valid.forward, here, avoid, keep_in_bounds)
 			if clear == null:
-				clear = _clear_move(valid.get_all_valid_moves(), here, avoid)
+				clear = _clear_move(valid.get_all_valid_moves(), here, avoid, keep_in_bounds)
 			if clear != null:
 				move = clear
 		var response := controller.handle_select_hex(session_id, version, move.hex, _next_request_id())
@@ -603,7 +612,8 @@ func _strategy_engage(
 	return _steer(ship_state, controller, session_id, version, started, score, true, false)
 
 
-## As engage, toward the ordered range from the nearest enemy (_score_close).
+## Hold within the ordered range n of the nearest enemy (spec 7, _score_close): beyond n, close it;
+## within n, fight as engage does, never opening the range past where it started.
 func _strategy_close(
 	ship_state: ShipState,
 	controller: MovementPlottingController,
@@ -616,11 +626,14 @@ func _strategy_close(
 		return version
 	var want := clampi(int(game_state.order_of(ship_state.ship_id).get("range", FIRING_RANGE)), 1,
 		FireRules.MAX_RANGE)
+	var start_range: int = game_state.fire_geometry.range_between(ship_state.occupied_hexes(),
+		enemy.occupied_hexes())
+	var limit := mini(want, start_range)
 	var occupied := _occupied_except(ship_state, enemy)
 	var friendly := _friendly_footprints(ship_state)
 	var score := func(bow: Vector2i, facing: int) -> int:
-		return _score_close(bow, facing, enemy, want, occupied, friendly)
-	return _steer(ship_state, controller, session_id, version, started, score, true, false)
+		return _score_close(bow, facing, enemy, limit, occupied, friendly)
+	return _steer(ship_state, controller, session_id, version, started, score, true, false, true)
 
 
 ## Sails for the hex astern of the leader's stern (_score_follow), never putting bow or stern into
@@ -661,7 +674,7 @@ func _strategy_disengage(
 		return version
 	var score := func(bow: Vector2i, facing: int) -> int:
 		return _score_disengage(bow, facing, enemy)
-	return _steer(ship_state, controller, session_id, version, started, score, false, false)
+	return _steer(ship_state, controller, session_id, version, started, score, false, false, true)
 
 
 func _follow_leader(ship_state: ShipState, leader_id: String, controller: MovementPlottingController,
@@ -671,7 +684,7 @@ func _follow_leader(ship_state: ShipState, leader_id: String, controller: Moveme
 		return _strategy_engage(ship_state, controller, session_id, version, started)
 	var score := func(bow: Vector2i, facing: int) -> int:
 		return _score_follow(bow, facing, leader)
-	return _steer(ship_state, controller, session_id, version, started, score, true, true)
+	return _steer(ship_state, controller, session_id, version, started, score, true, true, true)
 
 
 ## The ship a "line" order follows: the nearest ship in play listed before this one in the order's
@@ -723,10 +736,12 @@ func _friendly_footprints(ship_state: ShipState) -> Array:
 ## (Callable(bow, facing) -> int; ties by _option_beats), skipping turns that swing the stern into
 ## another ship's hexes and, with `avoid_bows`, moves that put the bow into one. With `hold`, a ship
 ## whose position scores > 0 stops once no option is strictly better; otherwise it keeps way on,
-## even through a lower-scoring step, until it has no move left. Returns the session version.
+## even through a lower-scoring step, until it has no move left. With `keep_in_bounds` (every
+## strategy but engage) it never takes a move that puts bow or stern off the map (_move_in_bounds).
+## Returns the session version.
 func _steer(ship_state: ShipState, controller: MovementPlottingController, session_id: String,
 		version: int, started: MovementTypes.PlottingStartedResponse, score: Callable, hold: bool,
-		avoid_bows: bool) -> int:
+		avoid_bows: bool, keep_in_bounds: bool = false) -> int:
 	var ships: Array[ShipState] = []
 	ships.assign(game_state.get_all_ships())
 	# Footprints of everyone else: a turn may not swing the stern into one (the resolver would
@@ -747,6 +762,8 @@ func _steer(ship_state: ShipState, controller: MovementPlottingController, sessi
 			if _stern_blocked(move, current_hex, others):
 				continue
 			if avoid_bows and others.has(move.metadata.resulting_hex):
+				continue
+			if keep_in_bounds and not _move_in_bounds(move):
 				continue
 			var move_score: int = score.call(move.metadata.resulting_hex, move.metadata.resulting_facing)
 			if best == null or _option_beats(move, move_score, best, best_score, current_facing):
@@ -849,22 +866,20 @@ static func _turn_steps(a: int, b: int) -> int:
 	return mini(steps, 6 - steps)
 
 
-## Close (spec 7): at the ordered range `want` (closest hexes) the position is on station,
-## 1000 + 3 per battery bearing on the enemy, always > 0. Otherwise -(2 * |range - want| +
-## misalignment), the misalignment from the facing to the enemy's bow when too far, away from it
-## when too near.
-func _score_close(bow: Vector2i, facing: int, enemy: ShipState, want: int, occupied: Dictionary,
+## Close (spec 7): within `limit` (the ordered range, or the starting range when nearer; closest
+## hexes) a position scores as engage does (_score_position). Beyond it, -(2 * bow distance +
+## misalignment toward the enemy's bow) - CLOSE_OUTSIDE_PENALTY, below every position within it, so
+## the ship closes from beyond the range and never opens it once inside.
+func _score_close(bow: Vector2i, facing: int, enemy: ShipState, limit: int, occupied: Dictionary,
 		friendly: Array) -> int:
 	var firer_hexes: Array[Vector2i] = [bow, HexGrid.stern_of(bow, facing)]
-	var enemy_hexes := enemy.occupied_hexes()
-	var range_hexes: int = game_state.fire_geometry.range_between(firer_hexes, enemy_hexes)
-	if range_hexes == want:
-		return FIRING_POSITION_BASE \
-				+ SECOND_BATTERY_BONUS * _bearing_batteries(firer_hexes, facing, enemy_hexes, occupied, friendly)
-	var misalignment := _misalignment(bow, facing, enemy.hex_position)
-	if range_hexes < want:
-		misalignment = 3 - misalignment  # steps from the facing to the bearing away from her
-	return -(2 * absi(range_hexes - want) + misalignment)
+	var range_hexes: int = game_state.fire_geometry.range_between(firer_hexes, enemy.occupied_hexes())
+	if range_hexes <= limit:
+		return _score_position(bow, facing, enemy, occupied, friendly)
+	# The bow leads, as in _score_position: a stern swung toward her does not count as closing.
+	var bow_hexes: Array[Vector2i] = [bow]
+	var distance: int = game_state.fire_geometry.range_between(bow_hexes, enemy.occupied_hexes())
+	return -(2 * distance + _misalignment(bow, facing, enemy.hex_position)) - CLOSE_OUTSIDE_PENALTY
 
 
 ## Disengage (spec 7): 2 * range (closest hexes) less the misalignment from the bearing away from
@@ -886,14 +901,24 @@ func _score_follow(bow: Vector2i, facing: int, leader: ShipState) -> int:
 	return -(2 * _axial_distance(bow, wake) + _misalignment(bow, facing, wake))
 
 
-## The first of `moves` that keeps bow and stern out of `avoid`, from a ship whose bow is at `here`;
-## null when none does.
-func _clear_move(moves: Array, here: Vector2i, avoid: Dictionary) -> MovementTypes.ValidMove:
+## The first of `moves` that keeps bow and stern out of `avoid` (and, with `keep_in_bounds`, on the
+## map), from a ship whose bow is at `here`; null when none does.
+func _clear_move(moves: Array, here: Vector2i, avoid: Dictionary,
+		keep_in_bounds: bool = false) -> MovementTypes.ValidMove:
 	for move: MovementTypes.ValidMove in moves:
 		if avoid.has(move.metadata.resulting_hex) or _stern_blocked(move, here, avoid):
 			continue
+		if keep_in_bounds and not _move_in_bounds(move):
+			continue
 		return move
 	return null
+
+
+## Both hexes of the ship after `move` lie inside the scenario's map bounds (always, with none).
+func _move_in_bounds(move: MovementTypes.ValidMove) -> bool:
+	var bow := move.metadata.resulting_hex
+	return Occupancy.in_bounds(bow, game_state.active_scenario) \
+			and Occupancy.in_bounds(HexGrid.stern_of(bow, move.metadata.resulting_facing), game_state.active_scenario)
 
 
 ## Higher score wins; ties keep the current facing, then lowest q, then lowest r.

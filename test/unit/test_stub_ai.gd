@@ -856,9 +856,9 @@ func test_close_holds_range() -> void:
 	assert_lt(absi(end - 5), absi(start - 5), "nearer range 5 (start %d, end %d)" % [start, end])
 
 
-func test_close_opens_range_when_too_near() -> void:
-	# Enemy abeam at range 2, where engage would lie and fight; ordered to hold range 5, the AI
-	# opens the range instead.
+func test_close_within_range_does_not_open_it() -> void:
+	# Spec 7: CLOSE TO n holds *within* n. Enemy abeam at range 2, ordered to close to 5: the AI
+	# fights as engage does and never opens the range.
 	var enemy = _make_ship("p1", 0, Vector2i(0, -2), 3, 0)
 	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 3, 2)
 	_add_ship(enemy)
@@ -867,9 +867,48 @@ func test_close_opens_range_when_too_near() -> void:
 	var start := _range(ai.occupied_hexes(), enemy.occupied_hexes())
 	assert_eq(start, 2, "fixture")
 	stub_ai.plot_all_ai_ships()
+	for step in _plotted(ai):
+		var hexes: Array[Vector2i] = [step[0], HexGrid.stern_of(step[0], step[1])]
+		assert_lte(_range(hexes, enemy.occupied_hexes()), start, "step %s opens the range" % [step])
+	assert_lte(_range(_end_footprint(ai), enemy.occupied_hexes()), start)
+
+
+func test_close_beyond_range_closes_where_engage_would_hold() -> void:
+	# Enemy abeam at range 4: engage settles for a firing position at range 3. Ordered to close to
+	# 2, the AI comes within 2.
+	var enemy = _make_ship("p1", 0, Vector2i(0, -4), 3, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(0, 0), 3, 2)
+	_add_ship(enemy)
+	_add_ship(ai)
+	assert_eq(_range(ai.occupied_hexes(), enemy.occupied_hexes()), 4, "fixture")
+	stub_ai.plot_all_ai_ships()
+	assert_gt(_range(_end_footprint(ai), enemy.occupied_hexes()), 2, "fixture: engage stays beyond 2")
+	GameState.movement_plotting_controller.sessions.clear()
+	GameState.movement_plotting_controller.ship_sessions.clear()
+	_order("ai1", {"order": "close", "range": 2})
+	stub_ai.plot_all_ai_ships()
 	var end := _range(_end_footprint(ai), enemy.occupied_hexes())
-	assert_gt(end, start, "opens toward range 5 (end %d)" % end)
-	assert_lte(end, 5, "but not beyond it")
+	assert_lte(end, 2, "closes within range 2 (end %d)" % end)
+
+
+func test_disengage_stays_on_the_map() -> void:
+	# Map q in [-10, 10). The enemy astern pushes the disengaging ship west toward the edge.
+	var saved: Dictionary = GameState.active_scenario
+	GameState.active_scenario = {"map_bounds": {"width": 20, "height": 20}}
+	var enemy = _make_ship("p1", 0, Vector2i(-3, 0), 3, 0)
+	var ai = _make_ship("ai1", 1, Vector2i(-7, 0), 3, 2)
+	_add_ship(enemy)
+	_add_ship(ai)
+	_order("ai1", {"order": "disengage"})
+	stub_ai.plot_all_ai_ships()
+	var steps := _plotted(ai)
+	GameState.active_scenario = saved
+	assert_gt(steps.size(), 0, "the ship still moves")
+	var scenario := {"map_bounds": {"width": 20, "height": 20}}
+	for step in steps:
+		assert_true(Occupancy.in_bounds(step[0], scenario), "bow %s off the map" % [step])
+		assert_true(Occupancy.in_bounds(HexGrid.stern_of(step[0], step[1]), scenario),
+			"stern of %s off the map" % [step])
 
 
 func test_follow_moves_toward_leader_stern() -> void:
