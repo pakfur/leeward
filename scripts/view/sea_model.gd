@@ -155,14 +155,25 @@ func beam_heel_deg() -> float:
 ## Swell height (× intensity) of the surface at world XZ `p`, as the shader draws it: one
 ## fixed-point step undoes the Gerstner horizontal shift.
 func swell_height(p: Vector2) -> float:
+	return swell_height_scaled(p, intensity)
+
+
+## Swell height of the full swell (intensity 1) at world XZ `p`: what a ship rides before its
+## motion is scaled by the zoom (ShipMotion.rendered).
+func swell_height_full(p: Vector2) -> float:
+	return swell_height_scaled(p, 1.0)
+
+
+## Swell height at world XZ `p` with the swell scaled by `k` (shift and height).
+func swell_height_scaled(p: Vector2, k: float) -> float:
 	var shift := Vector2.ZERO
 	for i in range(_swell.size()):
 		shift += _component_shift(i, p)
-	var q := p - shift * intensity
+	var q := p - shift * k
 	var h := 0.0
 	for i in range(_swell.size()):
 		h += _component_height(i, q)
-	return h * intensity
+	return h * k
 
 
 ## Gerstner displacement (× intensity) of the surface point at rest at world XZ `p`:

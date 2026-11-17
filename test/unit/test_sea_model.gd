@@ -70,6 +70,19 @@ func test_swell_zero_when_flat():
 		assert_eq(model.swell_displacement(p), Vector3.ZERO)
 
 
+func test_full_swell_ignores_the_zoom():
+	model.set_environment(2, 4, 5)
+	model.sea_time = 3.7
+	model.recompute()
+	var p := Vector2(3.2, -1.5)
+	model.intensity = 1.0
+	var full := model.swell_height(p)
+	assert_ne(full, 0.0)
+	assert_eq(model.swell_height_full(p), full, "the full swell is the swell at intensity 1")
+	model.intensity = 0.0
+	assert_eq(model.swell_height_full(p), full, "and does not change with the zoom")
+
+
 func test_swell_scales_with_intensity():
 	model.set_environment(2, 4, 5)
 	model.sea_time = 3.7

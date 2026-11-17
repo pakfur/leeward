@@ -6,8 +6,9 @@ extends RefCounted
 ## each toward its target with a time constant scaled by the ship's class and the preset's
 ## inertia_mult, so a 74 answers about 1.45× slower than a frigate. A steady heel to leeward comes
 ## from the wind (SeaModel.beam_heel_deg) × the sail carried × the beam component of the wind.
-## SeaModel's swell heights already carry the zoom intensity; the heel takes it here, so a ship
-## sits level at the flat distance. Roll follows the model's Z rotation: positive = starboard up.
+## The targets and the low-passed state are the full motion (intensity 1); `rendered` scales the
+## low-pass output by the current zoom intensity, so a ship is exactly level at the flat distance
+## and fades smoothly while zooming. Roll follows the model's Z rotation: positive = starboard up.
 
 ## Base time constants (seconds) for a class 3 ship at inertia_mult 1.
 const HEAVE_TAU := 0.5
@@ -48,7 +49,7 @@ static func time_constant(ship_class: int, inertia_mult: float, base_seconds: fl
 	return base_seconds * float(CLASS_INERTIA.get(ship_class, 1.0)) * inertia_mult
 
 
-## The steady heel (radians, as a roll) at `facing` with `sail_state` carried, × zoom intensity.
+## The steady heel (radians, as a roll) at `facing` with `sail_state` set, at full intensity.
 static func steady_heel(sea: SeaModel, facing: int, sail_state: String) -> float:
 	if sea == null:
 		return 0.0
@@ -56,28 +57,41 @@ static func steady_heel(sea: SeaModel, facing: int, sail_state: String) -> float
 	if side_sign == 0.0:
 		return 0.0
 	var sail: float = SAIL_HEEL.get(sail_state.to_lower(), SAIL_HEEL["fs"])
-	return side_sign * deg_to_rad(sea.beam_heel_deg()) * sail * beam_component(facing, sea.wind_direction) \
-			* sea.intensity
+	return side_sign * deg_to_rad(sea.beam_heel_deg()) * sail * beam_component(facing, sea.wind_direction)
 
 
 ## Target motion for a ship centred at world XZ `centre` with model yaw `yaw` (radians), the swell
 ## sampled `reach` fore and aft (ShipView: PITCH_SAMPLE_SHARE × hull length): x heave (world
-## units), y pitch (bow up), z roll (starboard up), w heel (radians).
-## Zero with no sea model or a flat sea.
+## units), y pitch (bow up), z roll (starboard up), w heel (radians). Full intensity (scale the
+## low-passed result with `rendered`). Zero with no sea model.
 static func targets(sea: SeaModel, centre: Vector2, yaw: float, reach: float, sail_state: String) -> Vector4:
 	if sea == null:
 		return Vector4.ZERO
 	var forward := Vector2(-sin(yaw), -cos(yaw))   # the model's −Z (bow) in world XZ
 	var starboard := Vector2(cos(yaw), -sin(yaw))  # the model's +X
-	var h_bow := sea.swell_height(centre + forward * reach)
-	var h_stern := sea.swell_height(centre - forward * reach)
-	var h_stbd := sea.swell_height(centre + starboard * ROLL_SAMPLE_HALF)
-	var h_port := sea.swell_height(centre - starboard * ROLL_SAMPLE_HALF)
+	var h_bow := sea.swell_height_full(centre + forward * reach)
+	var h_stern := sea.swell_height_full(centre - forward * reach)
+	var h_stbd := sea.swell_height_full(centre + starboard * ROLL_SAMPLE_HALF)
+	var h_port := sea.swell_height_full(centre - starboard * ROLL_SAMPLE_HALF)
 	return Vector4(
 		(h_bow + h_stern + h_stbd + h_port) * 0.25,
 		atan2(h_bow - h_stern, 2.0 * reach),
 		atan2(h_stbd - h_port, 2.0 * ROLL_SAMPLE_HALF),
 		steady_heel(sea, facing_from_yaw(yaw), sail_state))
+
+
+## The motion as drawn: the low-passed full-intensity state (heave, pitch, roll, heel) × the zoom
+## intensity now. Exactly zero at intensity 0.
+static func rendered(state: Vector4, intensity: float) -> Vector4:
+	return state * clampf(intensity, 0.0, 1.0)
+
+
+## The sail that heels a ship: the sail it can actually use (`movement_sail_state`), none when it is
+## dismasted or destroyed.
+static func heel_sail(ship_state: ShipState) -> String:
+	if ship_state.is_destroyed() or ship_state.is_dismasted():
+		return "NS"
+	return ship_state.movement_sail_state()
 
 
 ## The hex facing nearest to a model yaw (radians): yaw = −(60·facing + 90)°. Follows the playback's

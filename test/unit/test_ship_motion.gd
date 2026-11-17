@@ -61,15 +61,41 @@ func test_larger_ship_slower():
 
 
 func test_ship_level_when_flat():
+	# A ship zoomed out while still rolling (a non-zero low-pass state) is drawn exactly level.
+	var state := Vector4(0.04, 0.03, -0.05, 0.12)
+	assert_eq(ShipMotion.rendered(state, 0.0), Vector4.ZERO, "heave, pitch, roll and heel all 0")
+	assert_eq(ShipMotion.rendered(state, 1.0), state, "full motion at full intensity")
+	assert_almost_eq(ShipMotion.rendered(state, 0.5).w, 0.06, 0.00001, "fades with the zoom, no pop")
+
+
+func test_targets_are_full_intensity():
+	# The low-pass runs on the full motion: the targets do not depend on the zoom.
 	sea.wind_speed = 5
 	sea.wind_direction = 5
 	sea.sea_state_override = 5
 	sea.apply_preset_if_changed()
 	sea.sea_time = 3.7
-	sea.intensity = 0.0
 	sea.recompute()
-	var m := ShipMotion.targets(sea, Vector2(4.0, 2.0), deg_to_rad(-90.0), 0.9, "PS")
-	assert_eq(m, Vector4.ZERO, "heave, pitch, roll and heel all 0")
+	sea.intensity = 0.0
+	var flat := ShipMotion.targets(sea, Vector2(4.0, 2.0), deg_to_rad(-90.0), 0.9, "PS")
+	sea.intensity = 1.0
+	var full := ShipMotion.targets(sea, Vector2(4.0, 2.0), deg_to_rad(-90.0), 0.9, "PS")
+	assert_eq(flat, full)
+	assert_true(flat.w < 0.0, "heels to leeward")
+
+
+func test_heel_sail_is_the_sail_set():
+	var ship := ShipState.new()
+	ship.rigging_current_hp = [5, 5, 6, 6] as Array[int]
+	ship.sail_state = "PS"
+	assert_eq(ShipMotion.heel_sail(ship), "PS")
+	ship.rigging_current_hp = [0, 5, 6, 6] as Array[int]
+	assert_eq(ShipMotion.heel_sail(ship), "MS", "capped by the rigging (movement_sail_state)")
+	ship.rigging_current_hp = [0, 0, 0, 0] as Array[int]
+	assert_eq(ShipMotion.heel_sail(ship), "NS", "dismasted")
+	ship.rigging_current_hp = [5, 5, 6, 6] as Array[int]
+	ship.status = ShipState.Status.DESTROYED
+	assert_eq(ShipMotion.heel_sail(ship), "NS", "a wreck")
 
 
 func test_ship_moves_on_a_full_sea():

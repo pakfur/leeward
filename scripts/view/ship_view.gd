@@ -9,11 +9,12 @@ var state_id: String = ""  # Reference to ShipState in GameState
 var model_node: Node3D
 # Riding the swell (visual only, not part of game state; ShipMotion, sea-state spec C)
 var base_position: Vector3  # Position without the swell
+# Low-passed full-intensity motion; drawn × the zoom intensity (ShipMotion.rendered).
 var _heave := 0.0
 var _pitch := 0.0  # radians, bow up positive
 var _roll := 0.0   # radians, starboard up positive (from the swell)
 var _heel := 0.0   # radians, as a roll (steady heel to leeward)
-var _sail_state := "FS"  # sail carried, last synced (sets the heel)
+var _sail_state := "FS"  # sail that heels the ship, last synced (ShipMotion.heel_sail)
 var _ship_class := 3
 var hex_grid_ref: HexGrid = null
 var _struck_flag: MeshInstance3D = null  # white flag shown while the ship is struck
@@ -115,6 +116,7 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 
 	# Update rotation
 	_update_rotation_from_state(ship_state)
+	_sail_state = ShipMotion.heel_sail(ship_state)
 
 	if ship_state.is_destroyed():
 		if _seen_afloat and not _wrecked:
@@ -125,7 +127,6 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	_seen_afloat = true
 	_update_fire_visual(ship_state.fire_count())
 
-	_sail_state = ship_state.sail_state
 	# Masts still standing and sails set; the pennant flies from the highest mast left
 	if _spec:
 		_rigging_level = ship_state.rigging_level()
@@ -538,7 +539,9 @@ func _update_wave_position(delta: float = 0.0) -> void:
 	var yaw_deg := model_node.rotation_degrees.y if model_node else 0.0
 	var target := Vector4.ZERO
 	var inertia := 1.0
+	var k := 0.0
 	if sea != null:
+		k = sea.intensity
 		var reach := (_spec.length if _spec else 1.7) * ShipMotion.PITCH_SAMPLE_SHARE
 		target = ShipMotion.targets(sea, Vector2(base_position.x, base_position.z), deg_to_rad(yaw_deg),
 				reach, _sail_state)
@@ -550,12 +553,13 @@ func _update_wave_position(delta: float = 0.0) -> void:
 		_roll = ShipMotion.low_pass(_roll, target.z, delta, ShipMotion.ROLL_TAU * tau)
 		_heel = ShipMotion.low_pass(_heel, target.w, delta, ShipMotion.HEEL_TAU * tau)
 
-	position = base_position + Vector3(0.0, _heave, 0.0)
+	var shown := ShipMotion.rendered(Vector4(_heave, _pitch, _roll, _heel), k)
+	position = base_position + Vector3(0.0, shown.x, 0.0)
 	if _wrecked and model_node:
 		model_node.position.y = -WRECK_SINK - _leave_sink  # the hull settles; the debris stays on the surface
 	if model_node:
-		var tilt_forward := _pitch
-		var tilt_side := _roll + _heel
+		var tilt_forward := shown.y
+		var tilt_side := shown.z + shown.w
 		if _wrecked:
 			tilt_forward += deg_to_rad(WRECK_TRIM_DEG)
 			tilt_side += deg_to_rad(WRECK_HEEL_DEG)
