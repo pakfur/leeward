@@ -70,3 +70,30 @@ func test_declaration_error_rules() -> void:
 func test_full_broadside_ranks_before_half() -> void:
 	assert_true(FireRules.battery_rank("full") < FireRules.battery_rank("bow"))
 	assert_eq(FireRules.battery_rank("bow"), FireRules.battery_rank("stern"))
+
+
+# --- 7.F.2 lower-deck guns, the rule shared by the calculator and the ship card ---
+
+func test_lower_deck_closed_rule() -> void:
+	var stbd := ShipState.STARBOARD
+	var port := ShipState.PORT
+	assert_false(FireRules.lower_deck_closed(4, 3, stbd, stbd), "sea below freeboard: open")
+	assert_false(FireRules.lower_deck_closed(0, 0, stbd, stbd), "calm: open")
+	assert_true(FireRules.lower_deck_closed(4, 4, stbd, stbd), "sea = freeboard: leeward side shut")
+	assert_false(FireRules.lower_deck_closed(4, 4, port, stbd), "sea = freeboard: windward side open")
+	assert_false(FireRules.lower_deck_closed(4, 4, port, -1), "sea = freeboard at WF=L/R: open")
+	assert_false(FireRules.lower_deck_closed(4, 4, stbd, -1))
+	assert_true(FireRules.lower_deck_closed(4, 5, port, -1), "sea above freeboard: both sides shut")
+	assert_true(FireRules.lower_deck_closed(4, 5, stbd, port))
+
+
+func test_lower_deck_modifier_reads_the_ship() -> void:
+	var s := ShipState.new()
+	s.ship = Ship.new()
+	s.ship.freeboard = 4
+	s.ship.lower_deck_modifier = -5
+	s.facing = 1  # wind from 0: WF=C, starboard leeward
+	assert_eq(FireRules.lower_deck_modifier(s, ShipState.STARBOARD, 4, 0), -5)
+	assert_eq(FireRules.lower_deck_modifier(s, ShipState.PORT, 4, 0), 0)
+	assert_eq(FireRules.lower_deck_modifier(s, ShipState.PORT, 5, 0), -5)
+	assert_eq(FireRules.lower_deck_modifier(s, ShipState.PORT, 3, 0), 0)

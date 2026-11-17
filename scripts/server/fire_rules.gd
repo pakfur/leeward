@@ -193,3 +193,25 @@ static func marine_orders_error(orders: Array) -> String:
 			return "the marines of %s fire at one ship per turn (7.G.2)" % ship_id
 		seen[ship_id] = true
 	return ""
+
+
+## 7.F.2 (Freeboard Calculation): true when the sea has shut `side`'s lower-deck gunports. Pure.
+## Sea below freeboard (or calm): open. Equal: the leeward broadside only; `leeward` is
+## FireGeometry.leeward_side, -1 at WF=L or WF=R, where nothing closes. Above: both broadsides.
+static func lower_deck_closed(freeboard: int, sea: int, side: int, leeward: int) -> bool:
+	if sea <= 0 or sea < freeboard:
+		return false
+	if sea > freeboard:
+		return true
+	return leeward >= 0 and leeward == side
+
+
+## The lower-deck gunfire modifier (the ship's LDGM, negative) on `side` in this sea and wind, or 0.
+## The gunnery calculator and the ship card both read it, so they cannot disagree.
+static func lower_deck_modifier(ship: ShipState, side: int, sea: int, wind_direction: int) -> int:
+	if ship == null or ship.ship == null:
+		return 0
+	var leeward := FireGeometry.leeward_side(ship.facing, wind_direction)
+	if not lower_deck_closed(ship.ship.freeboard, sea, side, leeward):
+		return 0
+	return ship.ship.lower_deck_modifier

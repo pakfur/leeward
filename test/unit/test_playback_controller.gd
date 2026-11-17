@@ -551,8 +551,8 @@ func test_mid_swing_the_stern_orbits_a_fixed_bow() -> void:
 	var half_length := hex_grid.hex_size * HexGrid.SQRT3 / 2.0
 
 	for t in [0.25, 0.5, 0.75]:
-		pb._pose_ship(t, view, bow, bow, from_angle, to_angle)
 		var angle := lerpf(from_angle, to_angle, t)
+		pb._place(view, bow, angle)
 		var expected := _centre_for(bow, angle)
 		assert_almost_eq(view.base_position.x, expected.x, 0.01, "t=%s: centre on the arc round the bow" % t)
 		assert_almost_eq(view.base_position.z, expected.z, 0.01)
@@ -571,7 +571,7 @@ func test_ahead_step_slides_along_the_keel() -> void:
 	var to_bow := hex_grid.axial_to_world(6, 5)
 	var angle := MovementResolutionPlaybackController._model_angle(0)
 
-	pb._pose_ship(0.5, view, from_bow, to_bow, angle, angle)
+	pb._place(view, from_bow.lerp(to_bow, 0.5), angle)
 
 	var expected := _centre_for(from_bow.lerp(to_bow, 0.5), angle)
 	assert_almost_eq(view.base_position.x, expected.x, 0.01, "halfway: the bow is midway between the hexes")

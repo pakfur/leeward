@@ -190,14 +190,25 @@ static func marines_caption(ship: ShipState, plan: Dictionary) -> String:
 
 ## One row per broadside for the Guns line: the gun factors by kind (`Ship.gun_factors`, the same
 ## on both sides), the guns dismounted on that side and its status ("ready", "2 dismounted · −2").
-static func gun_rows(ship: ShipState) -> Array[Dictionary]:
+## With `env`, a broadside whose lower deck the sea has shut (7.F.2, FireRules.lower_deck_modifier)
+## says so ("lower deck closed · sea 4", `lower_deck` = the modifier), so it shows before firing.
+static func gun_rows(ship: ShipState, env: EnvironmentState = null) -> Array[Dictionary]:
 	var gf: Dictionary = ship.ship.gun_factors if ship.ship else {}
 	var rows: Array[Dictionary] = []
 	for side in [ShipState.PORT, ShipState.STARBOARD]:
 		var off := int(ship.guns_dismounted[side]) if side < ship.guns_dismounted.size() else 0
+		var parts: Array[String] = []
+		if off > 0:
+			parts.append("%d dismounted · −%d" % [off, off])
+		var ldgm := 0
+		if env:
+			ldgm = FireRules.lower_deck_modifier(ship, side, env.sea_state, env.wind_direction)
+			if ldgm != 0:
+				parts.append("lower deck closed · sea %d" % env.sea_state)
 		rows.append({"side": "Port" if side == ShipState.PORT else "Starboard",
 			"lg": int(gf.get("lg", 0)), "mg": int(gf.get("mg", 0)), "cr": int(gf.get("cr", 0)),
-			"dismounted": off, "status": "ready" if off == 0 else "%d dismounted · −%d" % [off, off]})
+			"dismounted": off, "lower_deck": ldgm,
+			"status": "ready" if parts.is_empty() else " · ".join(parts)})
 	return rows
 
 

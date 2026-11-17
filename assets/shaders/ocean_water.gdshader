@@ -12,7 +12,7 @@ render_mode depth_draw_always, cull_disabled;
 uniform sampler2D SCREEN_TEXTURE : hint_screen_texture, filter_linear_mipmap;
 uniform sampler2D DEPTH_TEXTURE : hint_depth_texture, filter_linear_mipmap;
 
-// The sea, driven by SeaModel (scripts/view/sea_model.gd; sea-state spec B). Per frame: sea_time,
+// The sea, driven by SeaModel (scripts/view/sea_model.gd; sea-state spec B). Per frame: sea_time, chop_time,
 // swell_phase, zoom_intensity, grid_opacity. The rest is pushed when the wind, sea state or
 // tuning changes.
 group_uniforms Sea;
@@ -23,14 +23,14 @@ uniform vec2 wind_dir = vec2(1.0, 0.0);           // world XZ the wind blows tow
 uniform vec4 swell_1 = vec4(1.0, 0.0, 0.0, 8.75); // dir.x, dir.y, full amplitude, wavelength (world units)
 uniform vec4 swell_2 = vec4(1.0, 0.0, 0.0, 8.75);
 uniform vec4 swell_3 = vec4(1.0, 0.0, 0.0, 8.75);
-uniform vec3 swell_phase = vec3(0.0);             // k * c * sea_time + offset, per component
+uniform vec3 swell_phase = vec3(0.0);             // ∫ k * c dt + offset, per component (SeaModel)
 uniform float swell_q = 0.8;                      // crest sharpening
 uniform float swell_shading = 0.4;                // normal tilt from the swell when zoomed out (none of its height)
 // Chop: short waves set relative to the wind, surface detail at every zoom (height only zoomed in).
 uniform float chop_strength = 1.0;                // chop steepness and normal-map detail
 uniform float chop_amplitude = 0.16;              // base steepness, from wind speed and sea state
 uniform float chop_wavelength = 0.85;             // base wavelength
-uniform float chop_time_scale = 2.8;              // sea_time divisor for the chop
+uniform float chop_time = 0.0;                    // the chop's clock (SeaModel: ∫ dt / chop time scale)
 uniform float chop_noise = 0.08;                  // fBm height added to the chop
 uniform float noise_zoom = 2.0;
 // Whitecaps: foam on swell crests and breaking chop, streaked downwind.
@@ -242,7 +242,7 @@ void vertex() {
     original_world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 
     // Chop: the short waves (surface detail; height only when zoomed in)
-    WaveResult waveResult = wave(VERTEX.xz, sea_time / chop_time_scale);
+    WaveResult waveResult = wave(VERTEX.xz, chop_time);
     // Swell: the long waves the ships ride, in world XZ as SeaModel samples them
     vec3 swell = vec3(0.0);
     vec2 swell_slope = vec2(0.0);
@@ -469,7 +469,8 @@ void fragment() {
     // zoomed out as faint texture
     float cap = 0.0;
     float whitecap_amount = whitecap_strength * whitecap_sea_factor * (0.15 + 0.85 * zoom_intensity);
-    if (whitecap_amount > 0.0) {
+    // Uniform-only test: the whole draw skips the streak texture and fbm when there are no caps
+    if (whitecap_amount > 0.001) {
         vec2 wd = normalize(wind_dir);
         vec2 wp = vec2(dot(world_position.xz, wd), dot(world_position.xz, vec2(-wd.y, wd.x)));
         float streak = texture(foam_texture, vec2(wp.x * 0.25, wp.y * 0.9) - vec2(sea_time * 0.04, 0.0)).r;

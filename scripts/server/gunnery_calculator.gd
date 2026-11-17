@@ -230,21 +230,11 @@ func _refuse(p: GunneryTypes.ShotPreview, reason: String) -> GunneryTypes.ShotPr
 	return p
 
 
-## 7.F.2 (Freeboard Calculation): the LDGM when the sea has shut this broadside's lower-deck guns.
-## Sea below freeboard: none. Equal: the leeward broadside only, never at WF=L or WF=R. Above: all gunfire.
+## 7.F.2 (Freeboard Calculation): the LDGM when the sea has shut this broadside's lower-deck guns
+## (FireRules.lower_deck_modifier; the ship card's Guns rows use the same rule).
 func _lower_deck_modifier(firer: ShipState, side: int) -> int:
-	var sea: int = game_state.environment.sea_state
-	var freeboard: int = firer.ship.freeboard
-	var ldgm: int = firer.ship.lower_deck_modifier
-	if sea <= 0 or sea < freeboard:
-		return 0
-	if sea > freeboard:
-		return ldgm
-	var wind: int = game_state.environment.wind_direction
-	var wf: String = game_state.fire_geometry.hex_grid.get_wind_facing(firer.facing, wind)
-	if wf == "L" or wf == "R":
-		return 0
-	return ldgm if FireGeometry.leeward_side(firer.facing, wind) == side else 0
+	var env: EnvironmentState = game_state.environment
+	return FireRules.lower_deck_modifier(firer, side, env.sea_state, env.wind_direction)
 
 
 func _add_modifier(p: GunneryTypes.ShotPreview, modifier_name: String, value: int) -> void:

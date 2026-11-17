@@ -172,8 +172,11 @@ func test_base_chop_ignores_sea_state():
 	var calm := model.shader_uniforms()
 	model.sea_state_override = 5
 	var heavy := model.shader_uniforms()
-	for key in ["chop_amplitude", "chop_wavelength", "chop_time_scale", "chop_noise"]:
+	for key in ["chop_amplitude", "chop_wavelength", "chop_noise"]:
 		assert_eq(heavy[key], calm[key], key)
+	var calm_scale := model.chop_time_scale()
+	model.sea_state_override = 5
+	assert_eq(model.chop_time_scale(), calm_scale, "chop clock ignores the sea state")
 	model.set_environment(0, 5, 1)
 	assert_true(model.shader_uniforms()["chop_amplitude"] > calm["chop_amplitude"], "follows the wind")
 
@@ -213,3 +216,50 @@ func test_settings_lists_every_tunable():
 		assert_true(s.has(key), key)
 	assert_true(s.has("sea_state_override"))
 	assert_true(s.has("effective_sea_state"))
+
+
+func test_speed_change_does_not_jump_the_phase():
+	model.set_environment(0, 3, 3)
+	for i in 600:  # ten seconds of sea
+		model.advance(1.0 / 60.0)
+	var before: Vector3 = model._phase
+	model.swell_speed *= 3.0
+	model.swell_wavelength *= 1.5
+	model.recompute()
+	assert_eq(model._phase, before, "a speed or wavelength edit changes the rate, not the phase")
+	model.advance(1.0 / 60.0)
+	for i in 3:
+		var step := absf(angle_difference(before[i], model._phase[i]))
+		assert_almost_eq(step, model.phase_speed(i) / 60.0, 0.0001, "one frame at the new speed")
+
+
+func test_chop_clock_accumulates():
+	model.set_environment(0, 2, 1)
+	model.advance(1.0)
+	var t := model.chop_time
+	assert_almost_eq(t, 1.0 / model.chop_time_scale(), 0.0001)
+	model.set_environment(0, 5, 1)  # a stronger wind runs the chop faster from here, no jump
+	assert_eq(model.chop_time, t)
+	model.advance(1.0)
+	assert_almost_eq(model.chop_time, t + 1.0 / model.chop_time_scale(), 0.0001)
+
+
+func test_swell_direction_blends_to_new_downwind():
+	model.set_environment(3, 3, 3)  # first environment snaps: toward E
+	assert_almost_eq(model.swell_direction().distance_to(Vector2(1.0, 0.0)), 0.0, 0.0001)
+	model.set_environment(0, 3, 3)  # wind now from E: downwind is W
+	assert_almost_eq(model.swell_direction().distance_to(Vector2(1.0, 0.0)), 0.0, 0.0001,
+		"no snap on a wind shift")
+	model.advance(SeaModel.DIR_BLEND_SECONDS * 0.5)
+	var mid := model.swell_direction()
+	assert_true(mid.distance_to(Vector2(1.0, 0.0)) > 0.1 and mid.distance_to(Vector2(-1.0, 0.0)) > 0.1,
+		"on its way round halfway through")
+	model.advance(SeaModel.DIR_BLEND_SECONDS)
+	assert_almost_eq(model.swell_direction().distance_to(model.downwind()), 0.0, 0.0001, "settled downwind")
+	assert_almost_eq(model.shader_uniforms()["wind_dir"].distance_to(model.downwind()), 0.0, 0.0001)
+
+
+func test_sea_moves_before_the_ships():
+	var view := ShipView.new()
+	assert_true(model.process_priority < view.process_priority, "SeaModel processes before ShipView")
+	view.free()

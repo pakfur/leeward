@@ -11,7 +11,7 @@ Sea state: 0 calm (an extension with no rule effect), 1 slight, 2 moderate, 3 ro
 1. **EnvironmentState** (`scripts/state/environment_state.gd`): server data, `wind_direction` 0-5, `wind_speed`, `sea_state` 0-5 (`SEA_STATE_MAX`).
 2. **EnvironmentController** (`scripts/server/environment_controller.gd`): rolls the changes and emits `environment_updated`.
 3. **OceanView** (`scripts/view/ocean_view.gd`): on `environment_updated` and at game start, calls `SeaModel.set_environment(wind_direction, wind_speed, sea_state)`.
-4. **SeaModel** (`scripts/view/sea_model.gd`, `SeaModel.instance`): the one sea. Owns the sea clock, three Gerstner swell components running downwind, the zoom intensity, the grid opacity, the look presets and the shader uniforms. Created in `GameController` with the HexMap's `ocean_material`.
+4. **SeaModel** (`scripts/view/sea_model.gd`, `SeaModel.instance`): the one sea. Owns the sea clock, three Gerstner swell components running downwind (phases accumulated per frame, `advance(delta)`: a speed or wavelength change alters the rate, never jumps the phase; a wind shift swings the swell direction round over `DIR_BLEND_SECONDS`, 3 s), the zoom intensity, the grid opacity, the look presets and the shader uniforms. Created in `GameController` with the HexMap's `ocean_material`; it processes before the ship views (`process_priority` −10), so ships ride this frame's water.
 5. **Ocean shader** (`assets/shaders/ocean_water.gdshader`): the swell (vertex and normals), the chop (surface detail), the plain grid and whitecaps, driven by the model's uniforms.
 6. **ShipMotion** (`scripts/view/ship_motion.gd`) and **ShipView**: ships ride the same swell (heave, pitch, roll, heel to leeward).
 7. **Playback** (`scripts/view/movement_resolution_playback_controller.gd`): ships glide through their steps instead of stepping hex by hex.
@@ -38,7 +38,7 @@ The camera distance gives the zoom `intensity` (smoothstep): 0 at `flat_distance
 
 ## Chop and whitecaps
 
-The chop (fine surface detail ships do not ride) grows with the wind speed; its base is always sized for sea state 1 (`CHOP_BASE_SEA`), because the presets were tuned there, and each preset's `chop_strength` carries the difference between sea states. Whitecaps appear from sea state `whitecap_min_sea` (default 1), scaled by `WHITECAP_BY_SEA` inside the preset's `whitecap_strength` and threshold.
+The chop (fine surface detail ships do not ride) grows with the wind speed and runs on its own accumulated clock (`chop_time` = ∫ dt / `chop_time_scale()`, so a wind change does not jump it); its base is always sized for sea state 1 (`CHOP_BASE_SEA`), because the presets were tuned there, and each preset's `chop_strength` carries the difference between sea states. Whitecaps appear from sea state `whitecap_min_sea` (default 1), scaled by `WHITECAP_BY_SEA` inside the preset's `whitecap_strength` and threshold.
 
 ## Ship motion
 

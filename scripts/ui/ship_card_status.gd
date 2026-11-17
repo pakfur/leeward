@@ -83,7 +83,7 @@ func _guns(ship: ShipState, plan: Dictionary) -> Control:
 	big.name = "GunsReadout"
 	head.add_child(big)
 	v.add_child(head)
-	for row in CrewOverlayText.gun_rows(ship):
+	for row in CrewOverlayText.gun_rows(ship, GameState.environment):
 		var h := _hbox(8)
 		var side := Style.label(str(row["side"]).to_upper(), 11, Style.MUTED, false, false, Style.COUNTER)
 		side.custom_minimum_size.x = Style.px(62)
@@ -104,9 +104,13 @@ func _guns(ship: ShipState, plan: Dictionary) -> Control:
 		segs.tooltip_text = "%s broadside: %d long gun, %d medium gun and %d carronade factors%s" % [
 			row["side"], row["lg"], row["mg"], row["cr"],
 			"" if off == 0 else ", %d guns dismounted (−1 each to this side's fire)" % off]
+		if int(row["lower_deck"]) != 0:
+			segs.tooltip_text += "\nLower deck guns closed by the sea (7.F.2): %s on this side's fire" % (
+				"%d" % int(row["lower_deck"])).replace("-", "−")
 		segs.mouse_filter = MOUSE_FILTER_PASS
 		h.add_child(segs)
-		h.add_child(Style.label(row["status"], 11, Style.WARN if off > 0 else Style.MUTED, false, false, Style.COUNTER))
+		var warn: bool = off > 0 or int(row["lower_deck"]) != 0
+		h.add_child(Style.label(row["status"], 11, Style.WARN if warn else Style.MUTED, false, false, Style.COUNTER))
 		v.add_child(h)
 	v.add_child(Style.label(g["why"], 12, Style.MUTED, false, true))
 	var key := _hbox(14)

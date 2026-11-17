@@ -3,7 +3,8 @@ extends Node
 ## SeaModel - the one sea shared by the water shader and the ship motion (sea-state spec B).
 ##
 ## Presentation only: it is fed the environment (`set_environment`, from OceanView) and never
-## writes game state. It owns the sea clock (`sea_time`), the long swell (three Gerstner components
+## writes game state. It owns the sea clock (`sea_time`; the swell phases and the chop clock are
+## accumulated per frame, so a speed, wavelength or wind change never jumps them), the long swell (three Gerstner components
 ## running downwind, sized by sea state), the zoom intensity (0 = flat board, 1 = full swell) from
 ## the camera distance, and the look values: one preset per sea state from
 ## `data/ui/sea_presets.json`, loaded whenever the effective sea state changes, plus the globals.
@@ -31,6 +32,10 @@ const CHOP_BASE_SEA := 1
 const SWELL_Q := 0.8
 ## Gravity at map scale (1 world unit ~ 26 m): deep-water phase speed c = sqrt(g / k).
 const G_MAP := 9.81 / 26.0
+## Process before every ShipView (default priority 0): the ships sample the sea after it moves.
+const PROCESS_PRIORITY := -10
+## Seconds the swell takes to swing round to a new downwind after the wind direction changes.
+const DIR_BLEND_SECONDS := 3.0
 ## The preset fields, in the order of the preset table.
 const PRESET_FIELDS := [
 	"swell_height_mult", "swell_wavelength", "swell_speed", "swell_shading", "chop_strength",
@@ -70,6 +75,7 @@ var whitecap_min_sea: int = 1       ## no whitecaps below this sea state
 
 # ---- derived ----
 var sea_time: float = 0.0
+var chop_time: float = 0.0          ## the chop's clock: ∫ dt / chop_time_scale (the shader's chop time)
 var intensity: float = 0.0          ## 0..1, from the camera distance
 var camera_distance: float = 0.0  ## starts at flat_distance: no camera yet means a flat sea
 var wind_direction: int = 0         ## where the wind comes from (hex direction)
@@ -79,15 +85,24 @@ var game_sea_state: int = 1
 var material: ShaderMaterial = null
 
 var _swell: Array[Vector4] = [Vector4.ZERO, Vector4.ZERO, Vector4.ZERO]  # dir.x, dir.y, full amp, wavelength
-var _phase: Vector3 = Vector3.ZERO
+var _phase: Vector3 = Vector3.ZERO      # what the shader gets: accumulated phase + offset
+var _phase_acc: Vector3 = Vector3.ZERO  # ∫ k·c dt per component, kept in [0, TAU)
+var _dir_angle: float = 0.0  # the swell's downwind angle now (blends toward the wind's)
+var _dir_from: float = 0.0
+var _dir_to: float = 0.0
+var _dir_t: float = 1.0      # 0..1 through the blend; 1 = settled
+var _dir_set: bool = false   # false until the first environment: that one snaps
 var _preset_sea: int = -1  # the sea state whose preset was last loaded
 var _pushed_uniforms: Dictionary = {}  # shader_uniforms() as last sent to the material
 
 
 func _init() -> void:
+	# Run before the ship views (priority 0) so they ride this frame's water, not last frame's.
+	process_priority = PROCESS_PRIORITY
 	_apply_globals()
 	camera_distance = flat_distance
 	apply_preset_if_changed()
+	_snap_direction()
 	recompute()
 
 
@@ -101,14 +116,44 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
-	sea_time += delta
 	var cam := get_viewport().get_camera_3d()
 	if cam != null and "camera_distance" in cam:
 		camera_distance = cam.camera_distance
 	intensity = intensity_for(camera_distance, flat_distance, full_distance)
 	apply_preset_if_changed()
-	recompute()
+	advance(delta)
 	_push_to_shader()
+
+
+## Move the sea on by `delta` seconds: the clock, the chop clock, each swell component's phase at
+## its present speed (so changing the speed or wavelength changes the rate, not the phase) and the
+## swell direction's blend toward the wind; then recompute.
+func advance(delta: float) -> void:
+	sea_time += delta
+	chop_time += delta / chop_time_scale()
+	if _dir_t < 1.0:
+		_dir_t = minf(1.0, _dir_t + delta / DIR_BLEND_SECONDS)
+		_dir_angle = _dir_from + angle_difference(_dir_from, _dir_to) * smoothstep(0.0, 1.0, _dir_t)
+	for i in range(_swell.size()):
+		_phase_acc[i] = fposmod(_phase_acc[i] + phase_speed(i) * delta, TAU)
+	recompute()
+
+
+## Phase speed k·c (radians per second) of swell component `i` at the present wavelength and speed.
+func phase_speed(i: int) -> float:
+	var length: float = maxf(swell_wavelength * COMPONENTS[i][2], 0.1)
+	var k := TAU / length
+	return k * sqrt(G_MAP / k) * swell_speed
+
+
+## World XZ direction the swell runs now: downwind, or on its way there after a wind shift.
+func swell_direction() -> Vector2:
+	return Vector2.from_angle(_dir_angle)
+
+
+## The chop clock's divisor: shorter, faster chop in a stronger wind (CHOP_BASE_SEA).
+func chop_time_scale() -> float:
+	return clampf(3.5 - wind_speed * 0.25 - CHOP_BASE_SEA * 0.15, 1.5, 3.5)
 
 
 ## The game's wind and sea, as OceanView reads them from the environment.
@@ -116,6 +161,14 @@ func set_environment(p_wind_direction: int, p_wind_speed: int, p_sea_state: int)
 	wind_direction = p_wind_direction
 	wind_speed = p_wind_speed
 	game_sea_state = p_sea_state
+	var target := downwind().angle()
+	if not _dir_set:
+		_dir_set = true
+		_snap_direction()
+	elif not is_equal_approx(angle_difference(_dir_to, target), 0.0):
+		_dir_from = _dir_angle
+		_dir_to = target
+		_dir_t = 0.0
 	apply_preset_if_changed()
 	recompute()
 
@@ -235,18 +288,25 @@ func apply_preset_if_changed() -> void:
 	preset_loaded.emit()
 
 
-## Swell components from the sea state, the preset and the wind, and their phases at sea_time.
+## Swell components from the sea state, the preset and the (blended) swell direction, and their
+## phases: the accumulated phase plus each component's offset.
 func recompute() -> void:
 	var amp: float = SWELL_AMP_BY_SEA[effective_sea_state()] * swell_height_mult
-	var dw := downwind()
+	var dw := swell_direction()
 	for i in range(COMPONENTS.size()):
 		var c: Array = COMPONENTS[i]
 		var dir := dw.rotated(deg_to_rad(c[0]))
 		var length: float = maxf(swell_wavelength * c[2], 0.1)
 		_swell[i] = Vector4(dir.x, dir.y, amp * c[1], length)
-		var k := TAU / length
-		var speed := sqrt(G_MAP / k) * swell_speed
-		_phase[i] = k * speed * sea_time + c[3]
+		_phase[i] = _phase_acc[i] + c[3]
+
+
+## Point the swell straight downwind with no blend (the first environment of a game).
+func _snap_direction() -> void:
+	_dir_angle = downwind().angle()
+	_dir_from = _dir_angle
+	_dir_to = _dir_angle
+	_dir_t = 1.0
 
 
 ## Feed the ocean shader: the clock, the swell phases, the zoom intensity and the grid opacity
@@ -255,6 +315,7 @@ func _push_to_shader() -> void:
 	if material == null:
 		return
 	material.set_shader_parameter("sea_time", sea_time)
+	material.set_shader_parameter("chop_time", chop_time)
 	material.set_shader_parameter("swell_phase", _phase)
 	material.set_shader_parameter("zoom_intensity", intensity)
 	material.set_shader_parameter("grid_opacity", grid_opacity())
@@ -275,7 +336,7 @@ func shader_uniforms() -> Dictionary:
 	for s in _swell:
 		amp_total += s.z
 	return {
-		"wind_dir": downwind(),
+		"wind_dir": swell_direction(),
 		"swell_1": _swell[0], "swell_2": _swell[1], "swell_3": _swell[2],
 		"swell_q": SWELL_Q,
 		"swell_amp_total": amp_total,
@@ -283,7 +344,6 @@ func shader_uniforms() -> Dictionary:
 		"chop_strength": chop_strength,
 		"chop_amplitude": 0.05 + wind_speed * 0.03 + CHOP_BASE_SEA * 0.05,
 		"chop_wavelength": 1.0 - CHOP_BASE_SEA * 0.15,
-		"chop_time_scale": clampf(3.5 - wind_speed * 0.25 - CHOP_BASE_SEA * 0.15, 1.5, 3.5),
 		"chop_noise": 0.05 + CHOP_BASE_SEA * 0.03,
 		"whitecap_threshold": whitecap_threshold,
 		"whitecap_strength": whitecap_strength,

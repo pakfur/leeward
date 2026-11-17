@@ -392,10 +392,31 @@ func test_gun_rows_per_side_with_dismounted_guns() -> void:
 	ship.guns_dismounted = [0, 2] as Array[int]
 	var rows := CrewOverlayText.gun_rows(ship)
 	assert_eq(rows.size(), 2)
-	assert_eq(rows[0], {"side": "Port", "lg": 6, "mg": 0, "cr": 4, "dismounted": 0, "status": "ready"})
+	assert_eq(rows[0], {"side": "Port", "lg": 6, "mg": 0, "cr": 4, "dismounted": 0, "lower_deck": 0,
+		"status": "ready"})
 	assert_eq(rows[1]["side"], "Starboard")
 	assert_eq(rows[1]["dismounted"], 2)
 	assert_eq(rows[1]["status"], "2 dismounted · −2", "a dismounted gun is -1 on that side's fire")
+
+
+func test_gun_rows_note_a_shut_lower_deck() -> void:
+	ship.ship.freeboard = 4
+	ship.ship.lower_deck_modifier = -5
+	ship.facing = 1  # wind from 0: WF=C, starboard leeward
+	var env := EnvironmentState.new()
+	env.wind_direction = 0
+	env.sea_state = 4
+	var rows := CrewOverlayText.gun_rows(ship, env)
+	assert_eq(rows[0]["status"], "ready", "the windward lower deck stays open at sea = freeboard")
+	assert_eq(rows[1]["status"], "lower deck closed · sea 4")
+	assert_eq(rows[1]["lower_deck"], -5)
+	env.sea_state = 5
+	ship.guns_dismounted = [1, 0] as Array[int]
+	rows = CrewOverlayText.gun_rows(ship, env)
+	assert_eq(rows[0]["status"], "1 dismounted · −1 · lower deck closed · sea 5")
+	assert_eq(rows[1]["status"], "lower deck closed · sea 5")
+	env.sea_state = 3
+	assert_eq(CrewOverlayText.gun_rows(ship, env)[1]["status"], "ready")
 
 
 func test_guns_silent() -> void:

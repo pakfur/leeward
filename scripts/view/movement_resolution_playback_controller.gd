@@ -327,15 +327,6 @@ static func _model_angle(facing: int) -> float:
 	return -facing * 60.0 - 90.0
 
 
-## Pose `view` a fraction `t` of the way through a step: the bow slides from `from_bow` to
-## `to_bow` (both world positions of hex centres) while the heading turns from `from_angle` to
-## `to_angle`.
-func _pose_ship(t: float, view: ShipView, from_bow: Vector3, to_bow: Vector3, from_angle: float, to_angle: float) -> void:
-	if not is_instance_valid(view):
-		return
-	_place(view, from_bow.lerp(to_bow, t), lerpf(from_angle, to_angle, t))
-
-
 ## Place `view` with its bow at world position `bow` and model angle `angle` (degrees): the centre lies
 ## half a hex astern of the bow along the heading. Ship motion reads `base_position` and the yaw; the
 ## sea's pitch and roll on the model are kept.

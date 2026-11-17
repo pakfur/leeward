@@ -117,6 +117,8 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	# Update rotation
 	_update_rotation_from_state(ship_state)
 	_sail_state = ShipMotion.heel_sail(ship_state)
+	# Ride the sea after the new heading and sail are in, so the heel uses this yaw, not the last
+	_update_wave_position()
 
 	if ship_state.is_destroyed():
 		if _seen_afloat and not _wrecked:
@@ -486,7 +488,6 @@ func _update_position_from_state(ship_state: ShipState, hex_grid: HexGrid) -> vo
 	base_position = hex_grid.ship_center_world(ship_state.hex_position, ship_state.facing)
 
 	base_position.y = 0.0  # Ship center at waterline, hull extends above/below
-	_update_wave_position()
 
 func _update_rotation_from_state(ship_state: ShipState) -> void:
 	"""Update the 3D rotation based on state"""
