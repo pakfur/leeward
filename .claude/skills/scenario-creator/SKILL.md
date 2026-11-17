@@ -51,6 +51,9 @@ Optional fields: `turn_limit` (integer, game ends at that turn; omit for no limi
 Hull Critical Hits table; omit it and no year DRM applies). Also optional: `navies`, the navy each
 side sails under, `{"0": "British", "1": "French"}` (1.G.8: French BGN at ranges 11–15), or `navy` on
 one ship; without them a ship uses its type's `nationality`.
+Also optional: `tournament` (bool, default false): a tournament game (14.C.3) shows every player
+the full box counts of every ship; otherwise each player sees only the sections lost of ships
+they do not command (limited information, 14.C.1, `PlayerView`).
 
 Each ship entry:
 

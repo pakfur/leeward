@@ -78,6 +78,8 @@ var grappling_controller: GrapplingController = null
 var boarding_controller: BoardingController = null
 var morale_controller: MoraleController = null
 var victory_controller: VictoryController = null
+## Limited information (14.C): what each player may see of the ships and the turn log. Pure queries.
+var player_view: PlayerView = null
 
 # Boarding (boarding spec §2.2-2.3; changed only by BoardingController)
 ## Live and recently finished boarding actions (BoardingAction).
@@ -141,6 +143,7 @@ func _initialize_server_controllers() -> void:
 		crew_task_controller.register_handler(code, BoardingTaskHandler.new(self, code))
 	morale_controller = MoraleController.new(self)
 	victory_controller = VictoryController.new(self)
+	player_view = PlayerView.new(self)
 	turn_log = new_turn_log(1)
 	phase_controller = TurnPhaseController.new(self)
 	ship_controller = ShipStateController.new(self)

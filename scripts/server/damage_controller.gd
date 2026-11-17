@@ -37,6 +37,7 @@ func apply_hits(ship_id: String, rigging: int, hull: int, crew: int, crew_cause:
 	# The DAMAGE line is the cause; guns dismounted, morale checks and a strike logged while the
 	# hits are applied are its consequences, so it goes in ahead of them.
 	var damage_index: int = game_state.turn_log.events.size()
+	var boxes_before := _section_boxes(ship)
 
 	if rigging > 0 and dismasted_before:
 		rigging_hit_while_dismasted(ship_id, phase)  # 8.F.6 (a fire's 1R, a critical's rigging loss)
@@ -54,6 +55,7 @@ func apply_hits(ship_id: String, rigging: int, hull: int, crew: int, crew_cause:
 		"sailors_lost": crew_applied - marines_lost,
 		"marines_lost": marines_lost,
 		"crew_rolls": crew_rolls,
+		"sections_emptied": _sections_emptied(boxes_before, ship),
 	}
 	if damage_cause != "":
 		data["cause"] = damage_cause
@@ -79,6 +81,7 @@ func apply_crew_losses(ship_id: String, count: int, crew_cause: String, phase: i
 		return 0  # a wreck takes no damage
 	var struck_before := ship.is_out_of_play()  # struck (or a prize): no checks, no morale
 	var damage_index: int = game_state.turn_log.events.size()
+	var boxes_before := _section_boxes(ship)
 	var marines_before := ship.marine_count
 	var rolls: Array = []
 	var applied := _apply_crew(ship, ship_id, count, crew_cause, phase, struck_before, rolls, false)
@@ -90,6 +93,7 @@ func apply_crew_losses(ship_id: String, count: int, crew_cause: String, phase: i
 		"sailors_lost": applied - marines_lost,
 		"marines_lost": marines_lost,
 		"crew_rolls": rolls,
+		"sections_emptied": _sections_emptied(boxes_before, ship),
 	}
 	if damage_cause != "":
 		data["cause"] = damage_cause
@@ -115,6 +119,7 @@ func apply_crew_boxes(ship_id: String, count: int, marines_first: bool, phase: i
 		return 0  # a wreck takes no damage
 	var struck_before := ship.is_out_of_play()  # struck (or a prize): no checks, no morale
 	var damage_index: int = game_state.turn_log.events.size()
+	var boxes_before := _section_boxes(ship)
 	var marines_before := ship.marine_count
 	var applied := 0
 	for i in range(count):
@@ -137,6 +142,7 @@ func apply_crew_boxes(ship_id: String, count: int, marines_first: bool, phase: i
 		"sailors_lost": applied - marines_lost,
 		"marines_lost": marines_lost,
 		"cause": CAUSE_CRITICAL,
+		"sections_emptied": _sections_emptied(boxes_before, ship),
 	}, source_id)
 	return applied
 
@@ -159,6 +165,7 @@ func apply_boarding_losses(ship_id: String, bcf_required: int, sections: Array, 
 		return out
 	var struck_before := ship.is_out_of_play()
 	var damage_index: int = game_state.turn_log.events.size()
+	var boxes_before := _section_boxes(ship)
 	var tables: CombatTables = DataManager.combat_tables
 	while int(out["bcf"]) < bcf_required:
 		var sailor_sections: Array[int] = []
@@ -195,6 +202,7 @@ func apply_boarding_losses(ship_id: String, bcf_required: int, sections: Array, 
 		"rigging": 0, "hull": 0, "crew": lost, "sailors_lost": out["sailors"], "marines_lost": out["marines"],
 		"crew_rolls": (out["rolls"] as Array).duplicate(), "cause": "boarding",
 		"bcf_needed": bcf_required, "bcf_lost": out["bcf"],
+		"sections_emptied": _sections_emptied(boxes_before, ship),
 	}, source_id)
 	return out
 
@@ -219,6 +227,11 @@ func apply_boarding_losses_shared(contingents: Array, bcf_required: int, phase: 
 	var tables: CombatTables = DataManager.combat_tables
 	var sc: ShipStateController = game_state.ship_controller
 	var per_ship := {}  # ship_id -> {sailors, marines}
+	var boxes_before := {}  # ship_id -> _section_boxes before the losses
+	for c in contingents:
+		var cs: ShipState = game_state.get_ship(str(c["ship_id"]))
+		if cs != null and not boxes_before.has(cs.ship_id):
+			boxes_before[cs.ship_id] = _section_boxes(cs)
 	var damage_index: int = game_state.turn_log.events.size()
 	while int(out["bcf"]) < bcf_required:
 		var sailor_c := -1
@@ -279,8 +292,33 @@ func apply_boarding_losses_shared(contingents: Array, bcf_required: int, phase: 
 			"sailors_lost": lost["sailors"], "marines_lost": lost["marines"],
 			"crew_rolls": (out["rolls"] as Array).duplicate(), "cause": "boarding",
 			"bcf_needed": bcf_required, "bcf_lost": out["bcf"],
+			"sections_emptied": _sections_emptied(boxes_before[ship_id], game_state.get_ship(ship_id)),
 		}, source_id)
 		damage_index += 1
+	return out
+
+
+## Boxes in each section now: {"rigging": [4], "hull": [4], "crew": [5]} (crew index 4 = the marines).
+static func _section_boxes(ship: ShipState) -> Dictionary:
+	var crew: Array = []
+	for i in range(ShipState.SAILOR_SECTIONS + 1):
+		crew.append(ship.section_boxes(i))
+	return {"rigging": ship.rigging_current_hp.duplicate(), "hull": ship.hull_current_hp.duplicate(), "crew": crew}
+
+
+## DAMAGE `sections_emptied` (14.C.1): the section indices that had boxes in `before` and have none
+## now, per kind: {"rigging": [i…], "hull": [i…], "crew": [i…]} (crew 4 = the marines).
+static func _sections_emptied(before: Dictionary, ship: ShipState) -> Dictionary:
+	var now := _section_boxes(ship)
+	var out := {}
+	for kind in ["rigging", "hull", "crew"]:
+		var emptied: Array = []
+		var was: Array = before[kind]
+		var is_now: Array = now[kind]
+		for i in mini(was.size(), is_now.size()):
+			if int(was[i]) > 0 and int(is_now[i]) <= 0:
+				emptied.append(i)
+		out[kind] = emptied
 	return out
 
 
