@@ -487,7 +487,7 @@ func _enter_movement_resolution_phase() -> void:
 ## from `resume_impulse`. An incomplete log (a prompted ship's potential collision) is played up to
 ## that segment; the view then calls on_playback_paused().
 func _run_movement_resolution(resume_impulse: int) -> void:
-	var all_ships = game_state.get_all_ships()
+	var all_ships = game_state.ships_on_map()  # a wreck removed at END_TURN (8.G.1f) is gone
 	game_state.movement_resolver.rng.state = _resolution_rng_state
 	@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 	var log = game_state.movement_resolver.run(all_ships, game_state.environment, _bear_off_decisions,
@@ -981,6 +981,11 @@ func _enter_end_turn_phase() -> void:
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: END_TURN")
 	planning_snapshot = {}
+
+	# 8.G.1f: remove ships. An exploded ship has blocked the map all g-t; now it leaves it.
+	for ship: ShipState in game_state.get_all_ships():
+		if ship.is_destroyed() and ship.is_on_map():
+			game_state.ship_controller.remove_from_map(ship.ship_id)
 
 	var result: Dictionary = game_state.victory_controller.check(current_turn)
 	if result.is_empty():

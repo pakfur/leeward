@@ -320,9 +320,9 @@ func _render() -> void:
 	for d in order:
 		_other_decks.add_child(_build_deck_card(d))
 
-	_inset.show_ships(_ship, client.game_state.get_all_ships(),
+	_inset.show_ships(_ship, client.game_state.ships_on_map(),
 		client.game_state.environment.wind_direction if client.game_state.environment else -1)
-	_caption.text = CrewOverlayText.tactical_caption(_ship, client.game_state.get_all_ships(),
+	_caption.text = CrewOverlayText.tactical_caption(_ship, client.game_state.ships_on_map(),
 		client.game_state.fire_geometry, client.game_state.environment)
 	if _footer.client == null:
 		_footer.setup(client, self)

@@ -184,11 +184,11 @@ func _minimap_to_world(minimap_pos: Vector2) -> Vector3:
 	return Vector3(world_x, 0, world_z)
 
 func _refresh_ship_icons() -> void:
-	"""Create or update ship icon nodes for all ships"""
-	# Remove icons for ships that no longer exist
+	"""Create or update ship icon nodes for all ships on the map"""
+	# Remove icons for ships that no longer exist or have left the map (8.G.1f)
 	var ships_to_remove = []
 	for ship_id in ship_icons.keys():
-		if not GameState.ships.has(ship_id):
+		if not GameState.ships.has(ship_id) or not GameState.ships[ship_id].is_on_map():
 			ships_to_remove.append(ship_id)
 
 	for ship_id in ships_to_remove:
@@ -197,7 +197,7 @@ func _refresh_ship_icons() -> void:
 
 	# Create icons for new ships
 	for ship_id in GameState.ships.keys():
-		if not ship_icons.has(ship_id):
+		if not ship_icons.has(ship_id) and GameState.ships[ship_id].is_on_map():
 			_create_ship_icon(ship_id)
 
 func _create_ship_icon(ship_id: String) -> void:
@@ -269,6 +269,7 @@ func _update_ship_positions() -> void:
 			continue
 
 		var icon = ship_icons[ship_id]
+		icon.visible = ship.is_on_map()  # gone once removed (8.G.1f), even before the next refresh
 		icon.modulate = icon_color(ship)
 		if bool(icon.get_meta("hollow", false)) != ship.is_captured():
 			icon.texture = icon_texture(ship.is_captured())

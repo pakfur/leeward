@@ -248,11 +248,12 @@ func _process(delta: float) -> void:
 func _refresh() -> void:
 	if _suppressed or _hex_grid == null:
 		return
-	if _pinned_id != "" and _pinned_state:
+	# A ship removed from the map (8.G.1f) shows no plate.
+	if _pinned_id != "" and _pinned_state and _pinned_state.is_on_map():
 		_place(_pinned, _pinned_state, [])
 	else:
 		_hide(_pinned)
-	if hover_due(_hover_id, _pinned_id, _hover_time) and _hover_state:
+	if hover_due(_hover_id, _pinned_id, _hover_time) and _hover_state and _hover_state.is_on_map():
 		_place(_hover, _hover_state, [_pinned.rect] if not _pinned.rect.is_empty() else [])
 	else:
 		_hide(_hover)
@@ -270,7 +271,7 @@ func _place(plate: Plate, state: ShipState, other_plates: Array) -> void:
 	var heading := (_world_xz(state.hex_position) - _world_xz(state.stern_hex())).normalized()
 	var others: Array = []
 	for other in GameState.get_all_ships():  # read-only  SCV:ALLOW
-		if other != state:
+		if other != state and other.is_on_map():
 			for h in other.occupied_hexes():  # bow and stern
 				others.append(_world_xz(h))
 	var size := plate_size()

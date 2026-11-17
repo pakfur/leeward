@@ -112,6 +112,9 @@ var ship_type: String:
 @export var pending_morale_checks: int = 0
 @export var morale_triggers_used: Array[String] = []
 @export var unfoul_attempts: int = 0
+## Taken off the map (8.G.1f "remove ships": an exploded ship at the end of the g-t). The ship stays
+## in GameState.ships for logs, history and victory, but no map query sees it (is_on_map()).
+@export var removed_from_map: bool = false
 
 # Critical hits (7.D.11-12; mutated only through ShipStateController)
 ## Each entry: {"seq": int, "id": String (CRITICAL_EFFECT_IDS), "turn": int,
@@ -258,6 +261,11 @@ func gunnery_navy() -> String:
 ## 1.G.8: French BGN values at ranges 11-15 when the French navy sails the ship.
 func is_french_gunned() -> bool:
 	return gunnery_navy() == "French"
+
+## On the map: holds its two hexes, blocks movement, drift, line of sight and wind. False once
+## ShipStateController.remove_from_map has taken it off (8.G.1f).
+func is_on_map() -> bool:
+	return not removed_from_map
 
 ## Struck or destroyed: cannot move, fire, change sail, unfoul, fix or check morale, and is not a
 ## target. A struck ship still drifts; a destroyed one does not.
@@ -597,6 +605,7 @@ func serialize() -> Dictionary:
 		"pending_morale_checks": pending_morale_checks,
 		"morale_triggers_used": morale_triggers_used,
 		"unfoul_attempts": unfoul_attempts,
+		"removed_from_map": removed_from_map,
 		"critical_effects": critical_effects.duplicate(true),
 		"critical_seq": critical_seq,
 		"rudder_destroyed": rudder_destroyed,
@@ -699,6 +708,7 @@ static func deserialize(data: Dictionary) -> ShipState:
 	for trigger in data.get("morale_triggers_used", []):
 		state.morale_triggers_used.append(str(trigger))
 	state.unfoul_attempts = int(data.get("unfoul_attempts", 0))
+	state.removed_from_map = bool(data.get("removed_from_map", false))
 	state.critical_effects.clear()
 	for effect in data.get("critical_effects", []):
 		state.critical_effects.append(_critical_effect_from(effect))

@@ -42,7 +42,7 @@ func resolve(phase: int) -> void:
 	var delta: Vector2i = HexGrid.DIRECTIONS[downwind_dir]
 	var downwind_vector: Vector3 = _hex_grid.axial_to_world(delta.x, delta.y)
 
-	var ships: Array[ShipState] = game_state.get_all_ships()
+	var ships: Array[ShipState] = game_state.ships_on_map()
 	ships.sort_custom(func(x: ShipState, y: ShipState) -> bool:
 		var px := _projection(x, downwind_vector)
 		var py := _projection(y, downwind_vector)

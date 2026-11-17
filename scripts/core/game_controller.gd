@@ -423,7 +423,7 @@ func _on_game_started(_scenario: Dictionary) -> void:
 				old_view.get_parent().remove_child(old_view)  # free the name for the new view
 			old_view.queue_free()
 	ship_views.clear()
-	for ship_state in GameState.get_all_ships():
+	for ship_state in GameState.ships_on_map():
 		_spawn_ship_view(ship_state)
 
 
@@ -549,7 +549,7 @@ func _refresh_courses() -> void:
 		hex_overlay.clear_blocked_hexes()
 	var selected := _course_selected_id()
 	var grid: HexGrid = hex_map.get_hex_grid() if hex_map else null
-	var ships: Array = GameState.get_all_ships()
+	var ships: Array = GameState.ships_on_map()
 	for ship: ShipState in GameState.get_player_ships(HUMAN_PLAYER_ID):
 		var id := ship.ship_id
 		var options: Dictionary = GameState.phase_controller.course_options(id)  # read-only query
@@ -1620,6 +1620,11 @@ func _sync_all_views() -> void:
 		var ship_state = GameState.get_ship(ship_id)
 		if ship_state and ship_view and hex_map:
 			ship_view.sync_to_state(ship_state, hex_map.get_hex_grid())
+		if ship_state and not ship_state.is_on_map():
+			# 8.G.1f: the ship left the map; its view fades out and frees itself.
+			ship_views.erase(ship_id)
+			if selected_ship_id == ship_id:
+				_deselect_ship()
 	if hex_map:
 		if grapple_lines == null:
 			grapple_lines = GrappleLines.new()

@@ -426,6 +426,15 @@ func get_all_ships() -> Array[ShipState]:
 		result.append(ship_state)
 	return result
 
+## Ships still on the map (ShipState.is_on_map(): not removed by 8.G.1f), for map queries such
+## as the movement resolver's ship list. Read-only.
+func ships_on_map() -> Array[ShipState]:
+	var result: Array[ShipState] = []
+	for ship_state in ships.values():
+		if ship_state.is_on_map():
+			result.append(ship_state)
+	return result
+
 func clear_ships() -> void:
 	"""Clear all ships (for new game)"""
 	if not is_server:

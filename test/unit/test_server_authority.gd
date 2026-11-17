@@ -37,6 +37,10 @@ const FORBIDDEN := [
 	# dev_commands.start_fire (Developer UI)
 	["\\bfire_controller\\.(?!skill\\()", "a FireController mutator called from view code (use dev_commands.start_fire)"],
 	["\\bFireController\\.new\\b", "a FireController made in view code"],
+	# leaving the map (8.G.1f): the view reads is_on_map() / GameState.ships_on_map(); only the
+	# server's END_TURN step removes a ship
+	["\\bremove_from_map\\(", "a ship removed from the map by view code"],
+	["\\.removed_from_map\\s*(=|\\+=|-=)[^=]", "removed_from_map written from view code"],
 	["(?<!dev_commands\\.)\\b(start_fire|explode|add_fire|remove_fire|clear_fires|set_explosion_checks)\\(",
 			"a fire mutator called from view code"],
 	# gunfire and marine fire (7.G): the view previews through GunneryCalculator and
@@ -301,3 +305,31 @@ func test_plotting_refused_after_submit_or_outside_planning() -> void:
 	pc.current_phase = P.SETUP
 	GameState.ships = old_ships
 	GameState.ships_by_player = old_by_player
+
+
+## The map-removal patterns (8.G.1f) catch the violations and let the queries through.
+func test_map_removal_patterns_catch_mutations() -> void:
+	var bad := [
+		"GameState.ship_controller.remove_from_map(\"w\")",
+		"remove_from_map(ship_id)",
+		"ship.removed_from_map = true",
+	]
+	var good := [
+		"if not ship_state.is_on_map():",
+		"for s in GameState.ships_on_map():",
+		"if ship.removed_from_map == true:",
+	]
+	var checks: Array = []
+	for f in FORBIDDEN:
+		var re := RegEx.new()
+		re.compile(f[0])
+		checks.append(re)
+	for line in bad:
+		var hit := false
+		for re in checks:
+			if re.search(line) != null:
+				hit = true
+		assert_true(hit, "caught: %s" % line)
+	for line in good:
+		for re in checks:
+			assert_null(re.search(line), "allowed: %s" % line)

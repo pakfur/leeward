@@ -416,6 +416,27 @@ func set_status(ship_id: String, status: ShipState.Status) -> bool:
 	ship_state_changed.emit(ship_id)
 	return true
 
+func remove_from_map(ship_id: String) -> bool:
+	"""SERVER ONLY: Take the ship off the map (8.G.1f "remove ships"). It keeps its status and stays
+	in GameState.ships; it lets go of any partner (already none for a destroyed ship)."""
+	if not is_server:
+		push_error("ShipStateController: Cannot remove a ship from the map on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	var partner_id: String = ship.fouled_with
+	if partner_id != "":
+		set_fouled_with(ship_id, "")
+		var partner = game_state.get_ship(partner_id)
+		if partner != null and partner.fouled_with == ship_id:
+			set_fouled_with(partner_id, "")
+	for grappled_id in ship.grappled_with.duplicate():
+		remove_grapple(ship_id, grappled_id)
+	ship.removed_from_map = true
+	ship_state_changed.emit(ship_id)
+	return true
+
 func add_guns_dismounted(ship_id: String, amount: int, side: int = -1) -> bool:
 	"""SERVER ONLY: Add dismounted guns to one side (PORT/STARBOARD), or both sides when side is -1"""
 	if not is_server:

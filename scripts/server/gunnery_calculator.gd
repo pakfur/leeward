@@ -229,10 +229,10 @@ func _add_modifier(p: GunneryTypes.ShotPreview, modifier_name: String, value: in
 
 
 ## The ships friendly to `firer` (7.B.10): its side (`player_id`, so a prize counts for her
-## captor), struck ones included, the firer left out.
+## captor), struck ones included, the firer and ships removed from the map (8.G.1f) left out.
 func friendly_ships(firer: ShipState) -> Array[ShipState]:
 	var friends: Array[ShipState] = []
-	for ship: ShipState in game_state.get_all_ships():
+	for ship: ShipState in game_state.ships_on_map():
 		if ship.ship_id != firer.ship_id and ship.player_id == firer.player_id:
 			friends.append(ship)
 	return friends

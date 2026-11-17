@@ -3,11 +3,12 @@ extends RefCounted
 ## Occupancy - hex -> ship_id maps for two-hex ships (bow + stern). Static, stateless.
 
 
-## Map every occupied hex (bow and stern) to its ship id. Struck ships are included.
+## Map every occupied hex (bow and stern) to its ship id. Struck ships and wrecks are included;
+## ships removed from the map (8.G.1f, ShipState.is_on_map()) are not.
 static func build(ships: Array[ShipState], exclude_ids: Array = []) -> Dictionary:
 	var result := {}
 	for s in ships:
-		if s.ship_id in exclude_ids:
+		if s.ship_id in exclude_ids or not s.is_on_map():
 			continue
 		for h in s.occupied_hexes():
 			result[h] = s.ship_id

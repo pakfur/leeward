@@ -40,6 +40,12 @@ const WRECK_DEBRIS_COUNT := 7
 const WRECK_DEBRIS_COLOR := Color(0.13, 0.10, 0.07)
 var _wrecked := false
 var _wreck_debris: Node3D = null
+## Leaving the map (8.G.1f: an exploded ship is removed at the end of the g-t): the wreck and its
+## debris fade and sink, then the view frees itself.
+const LEAVE_SECONDS := 1.5
+const LEAVE_SINK := 0.35          # extra settling while the wreck fades (world units)
+var _leaving := false
+var _leave_sink := 0.0
 ## Fire on the map (crew-tasks spec §9 Q6): flame and smoke while the ship burns, more with more
 ## fires; a flash and a ring of debris when it explodes. Read from the ship's state only.
 const FIRE_POLL_SECONDS := 0.25
@@ -89,6 +95,14 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	"""Update visual representation to match state"""
 	state_id = ship_state.ship_id
 	hex_grid_ref = hex_grid
+
+	if _leaving:
+		return
+	if not ship_state.is_on_map():
+		if ship_state.is_destroyed():
+			_apply_wreck(ship_state)
+		_leave_map()
+		return
 
 	# Update position
 	_update_position_from_state(ship_state, hex_grid)
@@ -270,7 +284,7 @@ func _place_prize_label() -> void:
 	if me != null and hex_grid_ref != null:
 		var centre := hex_grid_ref.ship_center_world(me.hex_position, me.facing)
 		for s: ShipState in GameState.get_all_ships():
-			if s.ship_id == me.ship_id:
+			if s.ship_id == me.ship_id or not s.is_on_map():
 				continue
 			for h in s.occupied_hexes():
 				others.append(hex_grid_ref.axial_to_world(h.x, h.y) - centre)
@@ -373,6 +387,39 @@ func _play_explosion() -> void:
 
 func is_wrecked() -> bool:
 	return _wrecked
+
+## Fading out after the ship left the map (8.G.1f); the view frees itself when done.
+func is_leaving() -> bool:
+	return _leaving
+
+func _leave_map() -> void:
+	"""Fade the hull and the debris out while the wreck settles, then free the view. Clicks no
+	longer pick it (the click body goes at once)."""
+	if _leaving:
+		return
+	_leaving = true
+	if model_node:
+		var body := model_node.get_node_or_null("ClickBody")
+		if body:
+			body.queue_free()
+	if not is_inside_tree():
+		queue_free()
+		return
+	var tween := create_tween()
+	tween.tween_method(_set_leave_progress, 0.0, 1.0, LEAVE_SECONDS)
+	tween.tween_callback(queue_free)
+
+func _set_leave_progress(t: float) -> void:
+	_leave_sink = LEAVE_SINK * t
+	for node: Node in [model_node, _wreck_debris]:
+		if node == null:
+			continue
+		for mesh in node.find_children("*", "MeshInstance3D", true, false):
+			var material := (mesh as MeshInstance3D).material_override as StandardMaterial3D
+			if material == null:
+				continue
+			material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			material.albedo_color.a = 1.0 - t
 
 func _apply_wreck(ship_state: ShipState) -> void:
 	"""Swap to the wreck look (once): masts down to the stumps, no sails, the hull charred, the
@@ -496,7 +543,7 @@ func _update_wave_position() -> void:
 	# Apply dampened wave height to ship position
 	position = base_position + wave_offset
 	if _wrecked and model_node:
-		model_node.position.y = -WRECK_SINK  # the hull settles; the debris stays on the surface
+		model_node.position.y = -WRECK_SINK - _leave_sink  # the hull settles; the debris stays on the surface
 
 	# Get wave normal for tilting the ship
 	var wave_normal = wave_calculator.get_wave_normal(base_position, current_time, 0.5)

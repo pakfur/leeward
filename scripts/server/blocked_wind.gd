@@ -12,7 +12,7 @@ extends RefCounted
 
 
 ## True when a ship with this bow and facing has its wind blocked by `ships` (ShipState values;
-## `exclude_id`, the ship itself, is skipped).
+## `exclude_id`, the ship itself, and ships removed from the map (8.G.1f) are skipped).
 static func is_blocked(bow: Vector2i, facing: int, wind_direction: int, ships: Array, exclude_id: String) -> bool:
 	var own: Array[Vector2i] = [bow, HexGrid.stern_of(bow, facing)]
 	var windward: Array[Vector2i] = []
@@ -25,7 +25,8 @@ static func is_blocked(bow: Vector2i, facing: int, wind_direction: int, ships: A
 	var blockers := {}
 	for s in ships:
 		var ship_state := s as ShipState
-		if ship_state == null or ship_state.ship_id == exclude_id or not blocks_wind(ship_state):
+		if ship_state == null or ship_state.ship_id == exclude_id or not ship_state.is_on_map() \
+				or not blocks_wind(ship_state):
 			continue
 		for h in ship_state.occupied_hexes():
 			blockers[h] = true
