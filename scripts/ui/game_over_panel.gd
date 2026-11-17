@@ -58,6 +58,8 @@ static func struck_counts(ships: Array, side: int) -> Dictionary:
 
 ## Why the game ended, from the player's point of view. `own` and `enemy` are struck_counts().
 static func reason_text(reason: String, own: Dictionary, enemy: Dictionary) -> String:
+	if reason == "agreement":
+		return "Ended by agreement"
 	if reason == "turn limit":
 		return "Turn limit reached"
 	var own_all: bool = own["struck"] >= own["total"]

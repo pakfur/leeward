@@ -55,6 +55,7 @@ var ships_by_side: Dictionary = {0: [], 1: []}  # side -> Array[ship_id]
 var players: Dictionary = {}  # player id (int) -> PlayerState
 var groups: Dictionary = {}  # side (int) -> {group name -> Array[String] of ship ids}
 var talks: Array = []  # this game's talks between ships (11.B.3), Dictionaries; opened at PLANNING start
+var end_offers: Dictionary = {}  # side (int) -> bool: that side offers to end the game by agreement (2.A.1)
 var signals: Array[SignalState] = []  # flag signals sent this game (11.A); delivered at MESSAGE_DELIVERY
 
 # Shared seeded RNG — seeded from scenario on game start; all controllers share this instance
@@ -292,6 +293,21 @@ func players_of_side(side: int) -> Array[PlayerState]:
 	return out
 
 
+## The human who speaks for the side (2.A.1): the human commanding the in-play fleet flagship, else the
+## lowest-id human commanding an in-play squadron flagship, else the lowest-id human, else -1.
+func senior_human_player(side: int) -> int:
+	var humans: Array[int] = []
+	for p in players_of_side(side):
+		if not p.is_ai:
+			humans.append(p.id)
+	for flag in ["fleet", "squadron"]:
+		for id in humans:
+			for s in ships_of_player(id):
+				if s.ship != null and s.ship.flag == flag and not s.is_out_of_play():
+					return id
+	return humans[0] if not humans.is_empty() else -1
+
+
 func side_of_player(id: int) -> int:
 	var p: PlayerState = players.get(id)
 	return p.side if p != null else -1
@@ -382,6 +398,7 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	boarding_seq = 0
 	signals = []
 	talks = []
+	end_offers = {}
 	linked_at_plot = {}
 	boarding_history = {}
 	Trace.trace_log("GameState", "RNG seeded", seed_value)

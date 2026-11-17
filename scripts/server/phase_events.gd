@@ -43,6 +43,7 @@ enum Type {
 	BEAR_OFF_ORDER,  # 6.D.3c potential collisions on one segment ordered by d10: {order: [{ship_id, rolls}]}; ship_id: the first
 	SIGNAL,  # 11.A a flag signal delivered, ship_id = the sending ship: {from_player, address: {kind, name}, words}
 	TALK,  # 11.B.3 a word passed between sterns-adjacent ships of one side, ship_id = the speaking ship: {talk_id, from_player, words}
+	END_OFFER,  # 2.A.1 a side offers or withdraws an offer to end the game, ship_id empty: {side, offer: bool}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -176,6 +177,7 @@ const CRITICAL_END_REASONS := {
 const VICTORY_REASONS := {
 	"all struck": "every ship of one side has struck",
 	"turn limit": "turn limit reached",
+	"agreement": "ended by agreement",
 }
 
 const ORDINALS := ["first", "second", "third", "fourth", "fifth"]
@@ -499,6 +501,9 @@ class PhaseEvent extends RefCounted:
 				return _signal_text(who, ship_names)
 			Type.TALK:
 				return "%s calls across: %s" % [who, " ".join(data.get("words", []))]
+			Type.END_OFFER:
+				var side_name := "Side %d" % (int(data.get("side", 0)) + 1)
+				return "%s offers to end the game" % side_name if data.get("offer", false) else "%s withdraws its offer to end the game" % side_name
 		return "%s: event %d" % [who, type]
 
 	## "X's damaged steering fails the turn (7 > 5) — one hex ahead" (6.F.3), or "answers the helm".

@@ -1210,6 +1210,24 @@ func player_send_talk(player_id: int, talk_id: String, text: String) -> String:
 	return ""
 
 
+## 2.A.1: the side's senior human offers (or withdraws an offer) to end the game; when every side
+## offers, the game ends at END_TURN by agreement. Returns "" or a reason.
+func player_offer_end(player_id: int, offer: bool) -> String:
+	if not is_server:
+		push_error("TurnPhaseController: Cannot offer to end the game on client")
+		return "offers are made on the server only"
+	if not game_result.is_empty():
+		return "the game is over"
+	var side: int = game_state.side_of_player(player_id)
+	if side < 0:
+		return "invalid player %d" % player_id
+	if player_id != game_state.senior_human_player(side):
+		return "only the side's senior human may offer to end the game"
+	game_state.end_offers[side] = offer
+	game_state.turn_log.add(PhaseEvents.Type.END_OFFER, current_phase, "", {"side": side, "offer": offer})
+	return ""
+
+
 ## This g-t's talks the player is in.
 func talks_for(player_id: int) -> Array:
 	var out: Array = []

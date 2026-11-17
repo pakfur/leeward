@@ -78,6 +78,8 @@ const FORBIDDEN := [
 	["\\b(GameState|game_state)\\.(players|groups)\\.(append|clear|erase|merge|set|assign)\\(", "players or groups changed in place from view code"],
 	["\\b(GameState|game_state)\\.signals\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "signals written from view code"],
 	["\\b(GameState|game_state)\\.signals\\.(append|append_array|clear|erase|remove_at|push_back|insert|sort|sort_custom)\\(", "signals changed in place from view code"],
+	["\\b(GameState|game_state)\\.end_offers\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "end_offers written from view code"],
+	["\\b(GameState|game_state)\\.end_offers\\.(clear|erase|merge)\\(", "end_offers changed in place from view code"],
 	["\\b(GameState|game_state)\\.talks\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "talks written from view code"],
 	["\\b(GameState|game_state)\\.talks\\.(append|append_array|clear|erase|remove_at|push_back|insert|sort|sort_custom)\\(", "talks changed in place from view code"],
 	["\\.(delivered|words|address)\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "a signal field written from view code"],

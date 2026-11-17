@@ -47,7 +47,9 @@ func check(turn: int) -> Dictionary:
 	## {} while the game continues; otherwise
 	## {"winner": player id or -1 for a draw, "reason", "points": {0: float, 1: float}, "turn"}.
 	var reason := ""
-	if _is_defeated(0) or _is_defeated(1):
+	if _all_agree():
+		reason = "agreement"
+	elif _is_defeated(0) or _is_defeated(1):
 		reason = "all struck"
 	elif _is_unable(0) or _is_unable(1):
 		reason = "no ship able to move or fight"
@@ -65,6 +67,22 @@ func check(turn: int) -> Dictionary:
 	elif points[1] > points[0]:
 		winner = 1
 	return {"winner": winner, "reason": reason, "points": points, "turn": turn}
+
+
+func _all_agree() -> bool:
+	## 2.A.1: every side present has offered. A side with no human never does (offers come only
+	## from a side's senior human).
+	var sides: Array[int] = []
+	for id in game_state.players:
+		var side: int = game_state.players[id].side
+		if not sides.has(side):
+			sides.append(side)
+	if sides.is_empty():
+		return false
+	for side in sides:
+		if not game_state.end_offers.get(side, false):
+			return false
+	return true
 
 
 static func _detached(ship: ShipState, section: int) -> int:
