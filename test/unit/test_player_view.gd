@@ -216,3 +216,82 @@ func test_events_for_past_turn_and_no_mutation() -> void:
 	assert_eq(ev.data["rigging"], 1, "the log itself is untouched")
 	assert_eq(_view().events_for(0, turn + 50), [] as Array[Dictionary])
 	GameState.turn_logs.erase(turn)
+
+
+func test_fire_event_hides_target_hits_from_the_firer_side() -> void:
+	GameState.turn_log.add(TYPES.FIRE, 0, "brit_a1", {"side": 0, "bgn": 20, "modifiers": [], "mgn": 20,
+		"d6": 3, "fgn": 23, "rigging": 2, "hull": 1, "crew": 1, "ch_number": 2}, "fr_a1")
+	var firer: Dictionary = _events(0, TYPES.FIRE)[0]["data"]
+	for key in ["rigging", "hull", "crew"]:
+		assert_false(firer.has(key), "%s hidden" % key)
+	assert_eq(firer["bgn"], 20, "gun data stays (14.C.1d)")
+	var target: Dictionary = _events(2, TYPES.FIRE)[0]["data"]
+	assert_eq([target["rigging"], target["hull"], target["crew"]], [2, 1, 1])
+
+
+func test_recaptured_hides_boxes_by_owner() -> void:
+	GameState.turn_log.add(TYPES.RECAPTURED, 0, "brit_a1", {"cause": "rose", "original_boxes": 9,
+		"prize_boxes": 3, "cq": "G", "mr": 6, "prisoners": 3, "captor_id": "fr_a1"}, "fr_a1")
+	var own: Dictionary = _events(0, TYPES.RECAPTURED)[0]["data"]
+	assert_eq(own["original_boxes"], 9)
+	assert_false(own.has("prisoners"), "the captor's boxes")
+	var captor: Dictionary = _events(2, TYPES.RECAPTURED)[0]["data"]
+	assert_false(captor.has("original_boxes"))
+	assert_false(captor.has("prize_boxes"))
+	assert_eq(captor["prisoners"], 3)
+	assert_eq(captor["cq"], "G")
+
+
+func test_reorganizing_aborted_hides_the_crew_below() -> void:
+	GameState.turn_log.add(TYPES.REORGANIZING_ABORTED, 0, "brit_a1", {"sections": [0], "action": 1,
+		"original_crew": 8}, "fr_a1")
+	assert_false(_events(0, TYPES.REORGANIZING_ABORTED)[0]["data"].has("original_crew"))
+	assert_eq(_events(2, TYPES.REORGANIZING_ABORTED)[0]["data"]["original_crew"], 8)
+
+
+func test_retake_logs_the_captor() -> void:
+	var sc: ShipStateController = GameState.ship_controller
+	sc.set_prize("brit_a1", {"captor_id": "fr_a1", "original_crew":
+		{"crew_count": [4, 4, 4, 4], "marine_count": 2}, "prize_crew_aboard": true}, true)
+	sc.set_status("brit_a1", ShipState.Status.CAPTURED)
+	assert_true(GameState.get_ship("brit_a1").is_captured())
+	GameState.boarding_controller.retake("brit_a1", "rose", 0)
+	var evs := GameState.turn_log.of_type(TYPES.RECAPTURED)
+	assert_eq(evs.size(), 1)
+	assert_eq(evs[0].data.get("captor_id", ""), "fr_a1")
+
+
+func test_plot_hidden_from_other_players() -> void:
+	GameState.get_ship("brit_a1").pending_turn = 1
+	var other: Dictionary = _view().ship_for(1, "brit_a1")
+	assert_false(other.has("plotted_actions"))
+	assert_false(other.has("pending_turn"))
+	assert_true(_view().ship_for(0, "brit_a1").has("plotted_actions"))
+	assert_true(_view().ship_for(0, "brit_a1").has("pending_turn"))
+
+
+func test_tournament_keeps_plot() -> void:
+	GameState.clear_ships()
+	_scenario["tournament"] = true
+	_start(_scenario)
+	assert_true(_view().ship_for(2, "brit_a1").has("plotted_actions"))
+
+
+func test_prize_crew_below_and_detached_boxes_hidden() -> void:
+	var sc: ShipStateController = GameState.ship_controller
+	sc.set_prize("fr_a1", {"captor_id": "brit_a1", "original_crew":
+		{"crew_count": [0, 3, 4, 4], "marine_count": 0, "crew_quality": "C", "morale_rating": 4},
+		"prize_crew_aboard": true}, true)
+	sc.add_detached_box("fr_a1", 0)
+	var d: Dictionary = _view().ship_for(0, "fr_a1")
+	assert_false(d.has("detached_boxes"))
+	var below: Dictionary = d["prize"]["original_crew"]
+	assert_false(below.has("crew_count"))
+	assert_false(below.has("marine_count"))
+	assert_eq(below["crew_sections_lost"], 1)
+	assert_true(below["marine_section_lost"])
+	assert_eq(below["crew_quality"], "C")
+	assert_eq(d["prize"]["captor_id"], "brit_a1")
+	var own: Dictionary = _view().ship_for(2, "fr_a1")
+	assert_eq(own["prize"]["original_crew"]["crew_count"], [0, 3, 4, 4])
+	assert_true(own.has("detached_boxes"))

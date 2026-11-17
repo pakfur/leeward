@@ -131,6 +131,8 @@ New pure class `PlayerView` (`scripts/server/player_view.gd`): `ship_for(player_
 - guns: all gun data (BGN inputs and modifiers, guns dismounted), 14.C.1d;
 - everything else a captain would see or ask for, 14.C.2: position, facing, sail state, speed, status, fires, fouled/grappled, critical effects, prize flag.
 
+Another ship's plotted actions are hidden from players who do not command her (ruling 2026-11-17).
+
 `PlayerView.events_for(player_id, turn)` filters the turn log by one rule (my call): any event field that counts boxes (rigging, hull, sailor or marine) of a ship the reader does not command is replaced by the sections lost by that event, with a marine-section flag (this covers DAMAGE, MARINE_FIRE, BOARDING_ROUND, BOARDING_RESULT, BLAST, PRIZE_CREW, DEFENCE_SPLIT and any later event; each event type declares its box fields in one table in `PlayerView`); everything else (crits, repairs, morale, crew tasks, fires) is shown, 14.C.2. `SIGNAL` events go only to the sending side; `TALK` events only to the two players talking; `END_OFFER` to everyone. Scenario `"tournament": true` turns limited information off (14.C.3); the default is on. My call: on by default, since giving a captain's view is the point (user's intent).
 
 The current view does not use `PlayerView` yet (non-goal). Its tests pin the projection.

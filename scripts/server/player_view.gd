@@ -16,11 +16,14 @@ extends RefCounted
 const Type := PhaseEvents.Type
 
 ## The box-count fields of each event type, as "<role>:<path>": role is the ship the field
-## describes ("ship_id" or "target_id" of the event), path a data key, dotted for a nested one.
+## describes ("ship_id" or "target_id" of the event, or the name of a data key holding a ship id,
+## e.g. "captor_id"), path a data key, dotted for a nested one.
 ## A field is hidden when the reader does not command that ship. DAMAGE alone gets a replacement
 ## ({sections_lost, marine_section_lost}, from its sections_emptied); the other types' losses also
 ## appear as DAMAGE events, so their fields are dropped with nothing in their place.
 const BOX_FIELDS := {
+	# The gunfire result on the target. BGN, modifiers, MGN, d6 and FGN stay (14.C.1d).
+	Type.FIRE: ["target_id:rigging", "target_id:hull", "target_id:crew"],
 	# The damaged ship's boxes lost, and what they could be counted from (one d6 per crew box,
 	# BCF lost, the emptied section indices). bcf_needed is the enemy's table result: kept.
 	Type.DAMAGE: ["ship_id:rigging", "ship_id:hull", "ship_id:crew", "ship_id:sailors_lost",
@@ -43,10 +46,18 @@ const BOX_FIELDS := {
 	Type.PRIZE_CREW: ["target_id:sailors", "target_id:marines", "ship_id:crew_count", "ship_id:marine_count"],
 	# Which defending sections face which attacker: section indices, no box counts.
 	Type.DEFENCE_SPLIT: [],
+	# ship_id is the retaken ship: her crew below and the prize crew she held; the prisoners are
+	# the captor's boxes (the boarding ship, target_id, may be another).
+	Type.RECAPTURED: ["ship_id:original_boxes", "ship_id:prize_boxes", "captor_id:prisoners"],
+	# ship_id is the captor, target_id the prize: the boxes of her original crew below.
+	Type.REORGANIZING_ABORTED: ["target_id:original_crew"],
 }
 
 ## ShipState.serialize keys replaced for a ship the reader does not command.
 const SHIP_BOX_KEYS: Array[String] = ["rigging_current_hp", "hull_current_hp", "crew_count", "marine_count"]
+## ShipState.serialize keys dropped for a ship the reader does not command: the boxes sent away as
+## a prize crew, and her plan (no captain sees another ship's plot; ruling 2026-11-17).
+const SHIP_HIDDEN_KEYS: Array[String] = ["detached_boxes", "plotted_actions", "pending_turn"]
 
 var game_state: Node = null
 
@@ -63,7 +74,8 @@ func limited() -> bool:
 ## The ship as `player_id` may see it: the full ShipState.serialize() for a ship they command (or
 ## with limited information off), else the same with the box counts replaced by
 ## rigging_sections_lost, hull_sections_lost, crew_sections_lost (sailor sections) and
-## marine_section_lost. {} for an unknown ship.
+## marine_section_lost, a prize's crew below (prize.original_crew) given the same way, and
+## detached_boxes, plotted_actions and pending_turn dropped. {} for an unknown ship.
 func ship_for(player_id: int, ship_id: String) -> Dictionary:
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
@@ -71,13 +83,20 @@ func ship_for(player_id: int, ship_id: String) -> Dictionary:
 	var data: Dictionary = ship.serialize()
 	if not limited() or game_state.commands(player_id, ship_id):
 		return data
-	for key in SHIP_BOX_KEYS:
+	for key in SHIP_BOX_KEYS + SHIP_HIDDEN_KEYS:
 		data.erase(key)
 	var type: Ship = ship.ship
 	data["rigging_sections_lost"] = _lost(ship.rigging_current_hp, type.rigging_hp if type else [])
 	data["hull_sections_lost"] = _lost(ship.hull_current_hp, type.hull_hp if type else [])
 	data["crew_sections_lost"] = _lost(ship.crew_count, type.crew_count if type else [])
 	data["marine_section_lost"] = ship.marine_count <= 0 and (type == null or type.marine_count > 0)
+	var prize: Dictionary = data.get("prize", {})
+	if prize.has("original_crew"):
+		var below: Dictionary = prize["original_crew"]
+		below["crew_sections_lost"] = _lost(below.get("crew_count", []), type.crew_count if type else [])
+		below["marine_section_lost"] = int(below.get("marine_count", 0)) <= 0 and (type == null or type.marine_count > 0)
+		below.erase("crew_count")
+		below.erase("marine_count")
 	return data
 
 
@@ -140,7 +159,7 @@ func _hide_boxes(player_id: int, ev: PhaseEvents.PhaseEvent, d: Dictionary) -> v
 	var hidden := false
 	for spec in fields:
 		var parts: PackedStringArray = str(spec).split(":", true, 1)
-		var ship_id: String = ev.ship_id if parts[0] == "ship_id" else ev.target_id
+		var ship_id := _role_ship(ev, parts[0])
 		if ship_id == "" or game_state.commands(player_id, ship_id):
 			continue
 		_erase_path(data, parts[1])
@@ -152,6 +171,16 @@ func _hide_boxes(player_id: int, ev: PhaseEvents.PhaseEvent, d: Dictionary) -> v
 			n += (emptied.get(kind, []) as Array).size()
 		data["sections_lost"] = n
 		data["marine_section_lost"] = (emptied.get("crew", []) as Array).has(ShipState.MARINES)
+
+
+## The ship id a BOX_FIELDS role names on `ev`.
+static func _role_ship(ev: PhaseEvents.PhaseEvent, role: String) -> String:
+	match role:
+		"ship_id":
+			return ev.ship_id
+		"target_id":
+			return ev.target_id
+	return str(ev.data.get(role, ""))
 
 
 static func _erase_path(data: Dictionary, path: String) -> void:

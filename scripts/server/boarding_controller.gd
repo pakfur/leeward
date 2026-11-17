@@ -1359,6 +1359,7 @@ func retake(ship_id: String, cause: String, phase: int, action: BoardingAction =
 		for s in secs:
 			prisoners += _cross_off(str(holder_id), s, phase)
 	data["prisoners"] = prisoners
+	data["captor_id"] = captor_id  # whose boxes the prisoners are (PlayerView, 14.C)
 	ctc.cancel_all_except(ship_id, "", "retaken", phase)
 	sc.clear_crew_plot(ship_id)
 	sc.set_crew_orders(ship_id, {"boarding": ""})
