@@ -795,6 +795,18 @@ func set_irons_entry_turn(ship_id: String, direction: int) -> bool:
 	ship_state_changed.emit(ship_id)
 	return true
 
+## A standing order from a delivered signal ({} clears it).
+func set_standing_order(ship_id: String, order: Dictionary) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot set a standing order on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.standing_order = order.duplicate(true)
+	ship_state_changed.emit(ship_id)
+	return true
+
 func set_rudder_destroyed(ship_id: String, destroyed: bool) -> bool:
 	if not is_server:
 		push_error("ShipStateController: Cannot modify rudder on client")

@@ -143,6 +143,10 @@ var ship_type: String:
 ## The way the ship turned (PORT, STARBOARD) to come to WF=L, -1 when it is not at WF=L or got
 ## there without turning (wind shift). Turning back the other way is a reverse tack (5.D.3b).
 @export var irons_entry_turn: int = -1
+## Standing order set by a delivered signal (SignalOrders): {} none, else {"order": engage|close|
+## follow|line|disengage, "target"/"range"/"leader"/"group"}. Mutated only through
+## ShipStateController.set_standing_order. Read it with current_order().
+@export var standing_order: Dictionary = {}
 
 # Crew tasks (4.A.3, 4.B; crew-tasks spec §2.2; mutated only through ShipStateController)
 ## Automatic crew allocation (spec §3.3): the server places the sections by CrewAuto's rules.
@@ -279,6 +283,21 @@ func commanding_player() -> int:
 ## Carries a fleet or squadron flag and is still in play.
 func is_flagship() -> bool:
 	return ship != null and ship.flag != "" and not is_out_of_play()
+
+
+## The order the ship's captain follows: the standing order, or plain engage when there is none or
+## its target or leader is out of play or off the map.
+func current_order() -> Dictionary:
+	if standing_order.is_empty():
+		return {"order": "engage"}
+	for key in ["target", "leader"]:
+		var other_id := str(standing_order.get(key, ""))
+		if other_id == "":
+			continue
+		var other: ShipState = GameState.ships.get(other_id)
+		if other == null or other.is_out_of_play() or not other.is_on_map():
+			return {"order": "engage"}
+	return standing_order.duplicate(true)
 
 
 func is_fleet_flagship() -> bool:
@@ -635,6 +654,7 @@ func serialize() -> Dictionary:
 		"pending_turn": pending_turn,
 		"last_step_direction": last_step_direction,
 		"irons_entry_turn": irons_entry_turn,
+		"standing_order": standing_order.duplicate(true),
 		"plotted_actions": plotted_actions.duplicate(true)
 	}
 	return data
@@ -748,6 +768,7 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.pending_turn = int(data.get("pending_turn", -1))
 	state.last_step_direction = int(data.get("last_step_direction", -1))
 	state.irons_entry_turn = int(data.get("irons_entry_turn", -1))
+	state.standing_order = (data.get("standing_order", {}) as Dictionary).duplicate(true)
 	
 	state.plotted_actions = plot_from(data.get("plotted_actions", {}))
 

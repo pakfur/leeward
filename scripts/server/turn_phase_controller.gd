@@ -1289,6 +1289,50 @@ func _deliver_signals() -> void:
 		sig.delivered = true
 		game_state.turn_log.add(PhaseEvents.Type.SIGNAL, current_phase, sig.from_ship,
 				{"from_player": sig.from_player, "address": sig.address.duplicate(), "words": sig.words.duplicate()})
+		_apply_signal_orders(sig)
+
+
+## Reads the signal as a standing order (the last one named wins) and sets it on every addressed
+## ship still in play, human-commanded ones too (information only). Spec 7.
+func _apply_signal_orders(sig: SignalState) -> void:
+	var by_word := {}
+	for s in game_state.ships.values():
+		var up: String = s.ship_name.strip_edges().to_upper()
+		by_word[up] = s.ship_id
+		var parts := up.split(" ", false)
+		if parts.size() > 1 and (parts[0].ends_with(".") or parts[0] in SignalText.PREFIXES):
+			by_word[" ".join(parts.slice(1))] = s.ship_id
+	var orders := SignalOrders.parse(sig.words, by_word)
+	if orders.is_empty():
+		return
+	var order: Dictionary = orders[orders.size() - 1]
+	var side: int = game_state.side_of_player(sig.from_player)
+	if order["order"] == "engage" and order.has("target"):
+		var target: ShipState = game_state.ships.get(order["target"])
+		if target == null or target.side == side:
+			return
+	if order["order"] == "follow":
+		var leader_id := str(order["leader"])
+		if leader_id == "FLAGSHIP":
+			leader_id = ""
+			for s in game_state.get_side_ships(side):
+				if s.is_fleet_flagship() and s.is_on_map():
+					leader_id = s.ship_id
+			if leader_id == "":
+				return
+			order["leader"] = leader_id
+		var leader: ShipState = game_state.ships.get(leader_id)
+		if leader == null or leader.side != side:
+			return
+	if order["order"] == "line":
+		order["group"] = str(sig.address.get("name", "")) if str(sig.address.get("kind", "")) == "group" else ""
+	for id in ships_addressed(sig):
+		var ship: ShipState = game_state.ships.get(id)
+		if ship == null or ship.is_out_of_play() or not ship.is_on_map():
+			continue
+		if order["order"] == "follow" and order["leader"] == id:
+			continue
+		game_state.ship_controller.set_standing_order(id, order)
 
 
 func _enter_message_delivery_phase() -> void:

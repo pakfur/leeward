@@ -14,6 +14,7 @@ const FORBIDDEN := [
 	# read-only queries (get_/is_/can_/has_) are allowed
 	["\\bship_controller\\.(?!get_|is_|can_|has_)", "a ShipStateController mutator called from view code"],
 	["\\bShipStateController\\b", "ShipStateController used from view code"],
+	["\\bset_standing_order\\(", "a standing order set from view code (orders come from delivered signals)"],
 	["\\benvironment_controller\\.set_", "an EnvironmentController mutator called from view code"],
 	# the crew overlay reads plans through these queries only; crew plots go through
 	# phase_controller.player_plot_crew / player_set_crew_auto
@@ -106,7 +107,7 @@ const FORBIDDEN := [
 	["\\.plotted_actions\\s*\\[[^\\]]*\\]\\s*=[^=]|\\.plotted_actions\\.(merge|erase|clear)\\(", "a plot written from view code"],
 	["\\b(environment|env)\\.(wind_speed|wind_direction|pending_wind_speed|pending_wind_direction|original_wind_speed|original_wind_direction|sea_state|visibility|time_of_day|precipitation)\\s*(=|\\+=|-=)[^=]",
 			"an EnvironmentState field written from view code"],
-	["\\b(_?ship|ship_state|ss|state|s)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots|crew_auto|plotted_sections|task_seq|fire_list|fire_seq|explosion_checks|checked_sections|mp_used_this_turn)\\s*(=|\\+=|-=)[^=]",
+	["\\b(_?ship|ship_state|ss|state|s)\\.(hex_position|facing|speed|sail_state|status|crew_count|marine_count|rigging_current_hp|hull_current_hp|crew_quality|plotted_actions|fouled_with|critical_effects|crew_tasks|crew_plots|crew_auto|standing_order|plotted_sections|task_seq|fire_list|fire_seq|explosion_checks|checked_sections|mp_used_this_turn)\\s*(=|\\+=|-=)[^=]",
 			"a ShipState field written from view code"],
 ]
 
