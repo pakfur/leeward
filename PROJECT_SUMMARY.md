@@ -123,8 +123,7 @@ Leeward/
 │   │   ├── hex_grid.gd        # Hex coordinate math
 │   │   ├── hex_map.gd         # 3D hex map rendering
 │   │   ├── isometric_camera.gd # Camera controls
-│   │   ├── game_controller.gd # Main game logic
-│   │   └── wave_calculator.gd # Water simulation
+│   │   └── game_controller.gd # Main game logic
 │   ├── state/                 # Pure data objects
 │   │   ├── ship_state.gd      # Ship data (Resource)
 │   │   └── environment_state.gd # Environment data (Resource)

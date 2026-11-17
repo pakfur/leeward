@@ -204,8 +204,6 @@ Generated: 2026-05-12T20:27:02Z | Files: 452 | Described: 0/452
 - `scripts/core/isometric_camera.gd.uid`
 - `scripts/core/main.gd`
 - `scripts/core/main.gd.uid`
-- `scripts/core/wave_calculator.gd`
-- `scripts/core/wave_calculator.gd.uid`
 
 ### scripts/server/
 - *(22 files: 11 .gd, 11 .uid)*

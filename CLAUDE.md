@@ -52,7 +52,7 @@ Manual testing also available via scenarios and the Developer UI (F12 in-game).
 ```
 scripts/
   autoload/       # Singletons: Trace, GameState, DataManager (see project.godot [autoload]); CombatTables (class, owned by DataManager)
-  core/           # Game controller, hex grid, hex map, camera, wave calc, fire_geometry (arcs, rake, line of sight)
+  core/           # Game controller, hex grid, hex map, camera, fire_geometry (arcs, rake, line of sight)
   state/          # Pure data objects: Ship (immutable), ShipState (mutable), EnvironmentState
   server/         # Server-authoritative controllers (phases, movement, gunnery, marine fire, damage, critical hits, crew tasks, fire, repairs, grappling, boarding, drift, morale, victory, AI)
   view/           # 3D presentation (ShipView, HexOverlay)

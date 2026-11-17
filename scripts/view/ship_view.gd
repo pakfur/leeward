@@ -7,9 +7,14 @@ signal selected()
 
 var state_id: String = ""  # Reference to ShipState in GameState
 var model_node: Node3D
-# Wave interaction (visual only, not part of game state)
-var wave_calculator: WaveCalculator
-var base_position: Vector3  # Position without wave offset
+# Riding the swell (visual only, not part of game state; ShipMotion, sea-state spec C)
+var base_position: Vector3  # Position without the swell
+var _heave := 0.0
+var _pitch := 0.0  # radians, bow up positive
+var _roll := 0.0   # radians, starboard up positive (from the swell)
+var _heel := 0.0   # radians, as a roll (steady heel to leeward)
+var _sail_state := "FS"  # sail carried, last synced (sets the heel)
+var _ship_class := 3
 var hex_grid_ref: HexGrid = null
 var _struck_flag: MeshInstance3D = null  # white flag shown while the ship is struck
 
@@ -62,13 +67,9 @@ static func owner_color(player_id: int) -> Color:
 	"""Owner colour for a player id (matches the minimap ship icons)."""
 	return PLAYER_COLOR if player_id == HUMAN_PLAYER_ID else ENEMY_COLOR
 
-func _ready() -> void:
-	wave_calculator = WaveCalculator.new()
-
 func _process(delta: float) -> void:
-	# Visual update only - wave bobbing
-	if wave_calculator != null:
-		_update_wave_position()
+	# Visual update only - the ship rides the swell (SeaModel)
+	_update_wave_position(delta)
 	# Fires break out and go out between view syncs (the Fire & Explosions sub-phase, a developer
 	# command): read the count from the state now and then.
 	_fire_poll -= delta
@@ -84,6 +85,8 @@ func initialize(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	"""Initialize view from state"""
 	state_id = ship_state.ship_id
 	hex_grid_ref = hex_grid
+	if ship_state.ship:
+		_ship_class = ship_state.ship.ship_class
 
 	# Placeholder model built from the ship's data (rating, class) and its footprint
 	_create_ship_model(ship_state)
@@ -122,6 +125,7 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	_seen_afloat = true
 	_update_fire_visual(ship_state.fire_count())
 
+	_sail_state = ship_state.sail_state
 	# Masts still standing and sails set; the pennant flies from the highest mast left
 	if _spec:
 		_rigging_level = ship_state.rigging_level()
@@ -525,39 +529,35 @@ func _add_click_collision() -> void:
 	body.add_child(shape)
 	model_node.add_child(body)
 
-func _update_wave_position() -> void:
-	"""Update ship position and rotation based on wave motion (visual only)"""
-	if wave_calculator == null:
-		position = base_position
-		return
+func _update_wave_position(delta: float = 0.0) -> void:
+	"""Ride the shared swell (visual only): heave, pitch and roll from the swell at bow, stern and
+	either beam, and a steady heel to leeward, each low-passed by the ship's class and the sea
+	state's inertia (ShipMotion). Level with no sea model or on the flat board. A wreck's sink, trim
+	and list go on top."""
+	var sea := SeaModel.instance
+	var yaw_deg := model_node.rotation_degrees.y if model_node else 0.0
+	var target := Vector4.ZERO
+	var inertia := 1.0
+	if sea != null:
+		var reach := (_spec.length if _spec else 1.7) * ShipMotion.PITCH_SAMPLE_SHARE
+		target = ShipMotion.targets(sea, Vector2(base_position.x, base_position.z), deg_to_rad(yaw_deg),
+				reach, _sail_state)
+		inertia = sea.inertia_mult
+	if delta > 0.0:
+		var tau := ShipMotion.time_constant(_ship_class, inertia)
+		_heave = ShipMotion.low_pass(_heave, target.x, delta, ShipMotion.HEAVE_TAU * tau)
+		_pitch = ShipMotion.low_pass(_pitch, target.y, delta, ShipMotion.PITCH_TAU * tau)
+		_roll = ShipMotion.low_pass(_roll, target.z, delta, ShipMotion.ROLL_TAU * tau)
+		_heel = ShipMotion.low_pass(_heel, target.w, delta, ShipMotion.HEEL_TAU * tau)
 
-	var current_time = Time.get_ticks_msec() / 1000.0
-
-	# Get wave displacement at ship position
-	var wave_offset = wave_calculator.get_wave_displacement(base_position, current_time)
-
-	# Dampen the wave motion by 70% (reduce amplitude to 30% of original)
-	var damping_factor = 0.3
-	wave_offset *= damping_factor
-
-	# Apply dampened wave height to ship position
-	position = base_position + wave_offset
+	position = base_position + Vector3(0.0, _heave, 0.0)
 	if _wrecked and model_node:
 		model_node.position.y = -WRECK_SINK - _leave_sink  # the hull settles; the debris stays on the surface
-
-	# Get wave normal for tilting the ship
-	var wave_normal = wave_calculator.get_wave_normal(base_position, current_time, 0.5)
-
-	# Calculate tilt angles from wave normal and dampen them too
-	var tilt_forward = -asin(clamp(wave_normal.z, -1.0, 1.0)) * damping_factor
-	var tilt_side = asin(clamp(wave_normal.x, -1.0, 1.0)) * damping_factor
-
-	# Apply rotation: first the ship's facing, then dampened wave tilt
-	# Get facing from current rotation (stored in model_node)
 	if model_node:
-		var facing_angle = model_node.rotation_degrees.y
+		var tilt_forward := _pitch
+		var tilt_side := _roll + _heel
 		if _wrecked:
 			tilt_forward += deg_to_rad(WRECK_TRIM_DEG)
 			tilt_side += deg_to_rad(WRECK_HEEL_DEG)
-		model_node.rotation = Vector3(tilt_forward, deg_to_rad(facing_angle), tilt_side)
+		model_node.rotation = Vector3(tilt_forward, deg_to_rad(yaw_deg), tilt_side)
 		_sync_ring_heading()  # follows the playback's turn tween too
