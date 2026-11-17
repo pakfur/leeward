@@ -159,6 +159,8 @@ func grapple_orders(player_ids: Array[int]) -> Array:
 	var grappling: GrapplingController = game_state.grappling_controller
 	var orders: Array = []
 	for ship_state in _ships_of(player_ids):
+		if ship_state.is_captured():
+			continue  # a prize never grapples (it may, 10.H.2, but the AI does not)
 		for target_id in grappling.grapple_options(ship_state.ship_id):
 			if _wants_grapple(ship_state, game_state.get_ship(target_id)):
 				orders.append([ship_state.ship_id, target_id])

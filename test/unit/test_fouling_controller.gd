@@ -170,6 +170,21 @@ func test_struck_ship_does_not_roll() -> void:
 	assert_eq(ships[1].unfoul_attempts, 1)
 
 
+func test_prize_with_prize_crew_rolls_to_unfoul() -> void:
+	# 10.H.2: a prize with her prize crew aboard unfouls; without it (captors reorganizing) she does not.
+	var ships := _foul_pair()
+	ships[0].status = ShipState.Status.CAPTURED
+	ships[0].prize = {"captor_id": "b", "prize_crew_aboard": true, "original_crew": {}}
+	_dice.queue([9, 9])
+	controller.resolve_unfouling(PHASE)
+	assert_eq(_events().size(), 2, "both ships roll")
+	assert_eq(ships[0].unfoul_attempts, 1)
+	ships[0].prize["prize_crew_aboard"] = false
+	_dice.queue([9])
+	controller.resolve_unfouling(PHASE)
+	assert_eq(ships[0].unfoul_attempts, 1, "no prize crew, no roll")
+
+
 func test_destroyed_ship_does_not_roll() -> void:
 	var ships := _foul_pair()
 	ships[0].status = ShipState.Status.DESTROYED

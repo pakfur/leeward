@@ -410,6 +410,65 @@ func test_ai_cuts_grapples_it_does_not_want() -> void:
 		"never from a struck enemy")
 
 
+# --- 10.H.2: prizes grapple and ungrapple ---
+
+## A prize of player 1 (a captured ship under its captor) alongside an enemy of player 0.
+func _prize_pair(prize_crew_aboard: bool = true) -> ShipState:
+	var prize := _make_ship("pz", 1, Vector2i(5, 5), "C")
+	prize.status = ShipState.Status.CAPTURED
+	prize.prize = {"captor_id": "x", "prize_crew_aboard": prize_crew_aboard, "original_crew": {}}
+	_make_ship("en", 0, Vector2i(6, 5), "D")
+	return prize
+
+
+func test_prize_with_prize_crew_may_grapple() -> void:
+	# 10.H.2: a prize with her prize crew aboard may grapple (8.C.3 limits still apply).
+	var prize := _prize_pair()
+	assert_eq(grappling.grapple_error("pz", "en"), "")
+	assert_eq(grappling.grapple_options("pz"), ["en"] as Array[String])
+	prize.crew_quality = "F"
+	assert_ne(grappling.grapple_error("pz", "en"), "", "CQ F of the prize crew still cannot (8.C.3)")
+
+
+func test_prize_without_prize_crew_may_not() -> void:
+	_prize_pair(false)  # the captors are still reorganizing
+	assert_ne(grappling.grapple_error("pz", "en"), "")
+
+
+func test_prize_may_ungrapple() -> void:
+	_prize_pair()
+	GameState.ship_controller.add_grapple("pz", "en")
+	assert_eq(grappling.ungrapple_options("pz"), ["en"] as Array[String])
+	_dice.queue([0])
+	grappling.resolve_ungrapples([["pz", "en"]], PHASE)
+	assert_false(GameState.get_ship("pz").is_grappled(), "a prize cuts its grapple")
+
+
+func test_prize_without_prize_crew_may_not_ungrapple() -> void:
+	_prize_pair(false)
+	GameState.ship_controller.add_grapple("pz", "en")
+	assert_eq(grappling.ungrapple_options("pz"), [] as Array[String])
+
+
+func test_player_prize_offered_in_maintenance_options() -> void:
+	_prize_pair()
+	var options: Array = GameState.phase_controller.maintenance_options(1, TurnPhaseController.MaintenanceStep.GRAPPLE)
+	assert_eq(options.size(), 1)
+	assert_eq(options[0]["ship_id"], "pz")
+	assert_eq(options[0]["target_id"], "en")
+
+
+func test_ai_prize_never_grapples_and_cuts_grapples() -> void:
+	var prize := _prize_pair()
+	prize.crew_quality = "B"
+	GameState.get_ship("en").crew_quality = "G"  # a weak enemy any live ship would grapple
+	assert_eq(GameState.stub_ai.grapple_orders([1] as Array[int]), [], "a prize never grapples")
+	GameState.ship_controller.add_grapple("pz", "en")
+	GameState.get_ship("en").crew_quality = "A"  # strong: it would neither board nor grapple
+	GameState.get_ship("en").marine_count = 6
+	assert_true(GameState.stub_ai.ungrapple_orders([1] as Array[int]).has(["pz", "en"]), "a prize cuts its grapples")
+
+
 # --- 5.D.5, the collision half ---
 
 func _moved_result(sid: String, from: Vector2i, to: Vector2i, facing: int, collided_with: String) -> MovementTypes.ResolutionLog:

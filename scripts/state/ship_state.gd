@@ -264,6 +264,11 @@ func is_french_gunned() -> bool:
 func is_out_of_play() -> bool:
 	return status != Status.ACTIVE
 
+## May try to grapple, ungrapple or unfoul (8.C, 8.D): a ship in play, or a prize with her prize crew
+## aboard (10.H.2). A struck, destroyed or crewless captured ship may not.
+func can_handle_lines() -> bool:
+	return status == Status.ACTIVE or has_prize_crew()
+
 ## Grappled to at least one ship (8.C.7: cannot move or turn).
 func is_grappled() -> bool:
 	return not grappled_with.is_empty()

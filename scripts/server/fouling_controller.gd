@@ -40,7 +40,7 @@ func resolve_unfouling(phase: int) -> void:
 
 
 func _attempt(ship: ShipState, partner: ShipState, phase: int) -> bool:
-	if ship.is_out_of_play():
+	if not ship.can_handle_lines():  # 10.H.2: a prize with her prize crew aboard rolls too
 		return false
 	var ship_id: String = ship.ship.ship_id
 	var attempts: int = ship.unfoul_attempts + 1
