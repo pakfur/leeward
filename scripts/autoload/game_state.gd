@@ -54,6 +54,7 @@ var ships: Dictionary = {}  # ship_id -> ShipState
 var ships_by_side: Dictionary = {0: [], 1: []}  # side -> Array[ship_id]
 var players: Dictionary = {}  # player id (int) -> PlayerState
 var groups: Dictionary = {}  # side (int) -> {group name -> Array[String] of ship ids}
+var talks: Array = []  # this game's talks between ships (11.B.3), Dictionaries; opened at PLANNING start
 var signals: Array[SignalState] = []  # flag signals sent this game (11.A); delivered at MESSAGE_DELIVERY
 
 # Shared seeded RNG — seeded from scenario on game start; all controllers share this instance
@@ -380,6 +381,7 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	boarding_actions = []
 	boarding_seq = 0
 	signals = []
+	talks = []
 	linked_at_plot = {}
 	boarding_history = {}
 	Trace.trace_log("GameState", "RNG seeded", seed_value)

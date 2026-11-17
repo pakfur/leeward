@@ -42,6 +42,7 @@ enum Type {
 	DEFENCE_SPLIT,  # 10.F.2 ship_id, boarded by several ships, shares out its defenders: {split: [{attacker_id, action, sections}]}
 	BEAR_OFF_ORDER,  # 6.D.3c potential collisions on one segment ordered by d10: {order: [{ship_id, rolls}]}; ship_id: the first
 	SIGNAL,  # 11.A a flag signal delivered, ship_id = the sending ship: {from_player, address: {kind, name}, words}
+	TALK,  # 11.B.3 a word passed between sterns-adjacent ships of one side, ship_id = the speaking ship: {talk_id, from_player, words}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -496,6 +497,8 @@ class PhaseEvent extends RefCounted:
 				return _victory_text()
 			Type.SIGNAL:
 				return _signal_text(who, ship_names)
+			Type.TALK:
+				return "%s calls across: %s" % [who, " ".join(data.get("words", []))]
 		return "%s: event %d" % [who, type]
 
 	## "X's damaged steering fails the turn (7 > 5) — one hex ahead" (6.F.3), or "answers the helm".

@@ -187,6 +187,7 @@ func _enter_planning_phase() -> void:
 	if game_state.stub_ai:
 		game_state.stub_ai.plot_all_ai_ships()
 	_auto_ready_players()
+	_open_talks()
 	# Announced last: listeners (the view) find the default courses stored and the AI's plan in.
 	phase_changed.emit(current_phase)
 	# Spec 2: the turn loop never waits on AI players or players commanding nothing in play; when
@@ -1128,6 +1129,85 @@ func _signal_request_error(player_id: int) -> String:
 	if players_ready[player_id]:
 		return "this player's plan is already submitted"
 	return ""
+
+
+## Talking between ships (11.B.3): ships of one side whose sterns touch, under different
+## players, may pass a word each way this g-t. One d6 per pair (1-3: ship_a's commander speaks
+## first, 4-6: ship_b's).
+func _open_talks() -> void:
+	var ids: Array = []
+	for s in game_state.ships_on_map():
+		if not s.is_out_of_play():
+			ids.append(s.ship_id)
+	ids.sort()
+	for i in ids.size():
+		for j in range(i + 1, ids.size()):
+			var a: ShipState = game_state.ships[ids[i]]
+			var b: ShipState = game_state.ships[ids[j]]
+			var pa: int = a.commanding_player()
+			var pb: int = b.commanding_player()
+			if a.side != b.side or pa == pb or _hex_dist(a.stern_hex(), b.stern_hex()) != 1:
+				continue
+			var d: int = game_state.dice.d6()
+			game_state.talks.append({
+				"id": "talk_%d_%s_%s" % [game_state.current_turn, ids[i], ids[j]],
+				"turn": game_state.current_turn, "ship_a": ids[i], "ship_b": ids[j],
+				"first_player": pa if d <= 3 else pb, "second_player": pb if d <= 3 else pa,
+				"messages": []})
+
+
+static func _hex_dist(a: Vector2i, b: Vector2i) -> int:
+	var dq: int = a.x - b.x
+	var dr: int = a.y - b.y
+	return (absi(dq) + absi(dr) + absi(dq + dr)) / 2
+
+
+## One word-limited message in an open talk (11.B.3): the first player, then the second, then
+## the exchange is over.
+func player_send_talk(player_id: int, talk_id: String, text: String) -> String:
+	if not is_server:
+		push_error("TurnPhaseController: Cannot send a talk on client")
+		return "talks are sent on the server only"
+	var reason: String = _signal_request_error(player_id)
+	if reason != "":
+		return reason
+	var talk: Dictionary = {}
+	for t in game_state.talks:
+		if t["id"] == talk_id and int(t["turn"]) == game_state.current_turn:
+			talk = t
+	if talk.is_empty():
+		return "no such talk this turn"
+	var msgs: Array = talk["messages"]
+	if msgs.size() >= 2:
+		return "The exchange is over"
+	var expected: int = int(talk["first_player"]) if msgs.is_empty() else int(talk["second_player"])
+	if player_id != expected:
+		return "it is not this player's turn to speak"
+	var names: Array[String] = []
+	for sh in game_state.ships.values():
+		names.append(sh.ship_name)
+	var parsed: Dictionary = SignalText.words(text, names)
+	if str(parsed["error"]) != "":
+		return str(parsed["error"])
+	var words: Array[String] = []
+	words.assign(parsed["words"])
+	if words.size() > SignalText.TALK_LIMIT:
+		return "a talk allows at most %d words (11.B.3)" % SignalText.TALK_LIMIT
+	msgs.append({"player": player_id, "words": words})
+	var from_ship: String = talk["ship_a"] if game_state.commander_of(talk["ship_a"]) == player_id else talk["ship_b"]
+	game_state.turn_log.add(PhaseEvents.Type.TALK, current_phase, from_ship,
+			{"talk_id": talk_id, "from_player": player_id, "words": words.duplicate()})
+	return ""
+
+
+## This g-t's talks the player is in.
+func talks_for(player_id: int) -> Array:
+	var out: Array = []
+	for t in game_state.talks:
+		if int(t["turn"]) == game_state.current_turn \
+				and (int(t["first_player"]) == player_id or int(t["second_player"]) == player_id):
+			out.append(t)
+	return out
 
 
 func _drop_pending_signal(player_id: int) -> void:
