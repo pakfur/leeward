@@ -59,6 +59,8 @@ func grapple_error(ship_id: String, target_id: String) -> String:
 	if ship_id == target_id:
 		return "a ship cannot grapple itself"
 	if not ship.can_handle_lines():  # 10.H.2: a prize with her prize crew aboard may
+		if ship.is_captured():
+			return "%s has no crew able to handle lines (10.H.2)" % ship.ship_name
 		return "%s has struck and cannot grapple (8.C.3)" % ship.ship_name
 	if ship.is_burning():
 		return "%s is on fire and cannot grapple (8.C.3)" % ship.ship_name
@@ -114,6 +116,8 @@ func ungrapple_error(ship_id: String, partner_id: String) -> String:
 	if not ship.is_grappled_to(partner_id):
 		return "not grappled to %s" % partner.ship_name
 	if not ship.can_handle_lines():  # 10.H.2
+		if ship.is_captured():
+			return "%s has no crew able to handle lines (10.H.2)" % ship.ship_name
 		return "%s has struck and cannot cut the grapples" % ship.ship_name
 	if locked_in_boarding(ship_id, partner_id):
 		return "locked in a boarding action with %s (8.C.5)" % partner.ship_name

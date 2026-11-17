@@ -432,7 +432,9 @@ func test_prize_with_prize_crew_may_grapple() -> void:
 
 func test_prize_without_prize_crew_may_not() -> void:
 	_prize_pair(false)  # the captors are still reorganizing
-	assert_ne(grappling.grapple_error("pz", "en"), "")
+	assert_string_contains(grappling.grapple_error("pz", "en"), "no crew able to handle lines")
+	GameState.ship_controller.add_grapple("pz", "en")
+	assert_string_contains(grappling.ungrapple_error("pz", "en"), "no crew able to handle lines")
 
 
 func test_prize_may_ungrapple() -> void:

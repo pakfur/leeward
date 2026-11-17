@@ -418,7 +418,9 @@ func set_status(ship_id: String, status: ShipState.Status) -> bool:
 
 func remove_from_map(ship_id: String) -> bool:
 	"""SERVER ONLY: Take the ship off the map (8.G.1f "remove ships"). It keeps its status and stays
-	in GameState.ships; it lets go of any partner (already none for a destroyed ship)."""
+	in GameState.ships; it lets go of any partner (already none for a destroyed ship).
+	Grappling, fouling, fire spread and debris, and AI targeting rely on the removed ship being out
+	of play (is_out_of_play()); any future caller (escaped ships, sub-project 3) must keep that true."""
 	if not is_server:
 		push_error("ShipStateController: Cannot remove a ship from the map on client")
 		return false

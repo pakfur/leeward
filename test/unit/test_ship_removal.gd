@@ -147,7 +147,7 @@ func test_removed_ship_no_longer_blocks_wind() -> void:
 
 
 func test_removed_ship_still_counts_as_lost_for_victory() -> void:
-	# 8.G.1f removes the ship from the map only; 12.1: a destroyed ship is lost at full value.
+	# 8.G.1f removes the ship from the map only; VI.B.2-3: a destroyed ship is lost at full value.
 	_make_ship("a", 0, Vector2i(0, 0))
 	var wreck := _make_ship("w", 1, Vector2i(5, 3))
 	GameState.damage_controller.destroy("w", "test", PHASES.COMBAT_RESOLUTION)
@@ -188,3 +188,35 @@ func test_remove_from_map_refused_on_client() -> void:
 	GameState.ship_controller.is_server = true
 	assert_push_error("Cannot remove a ship from the map on client")
 	assert_true(ship.is_on_map())
+
+
+func test_friendly_ships_skips_a_removed_ship() -> void:
+	# 8.G.1f: a removed wreck is not a friendly blocker (7.B.10-12).
+	var firer := _make_ship("a", 0, Vector2i(0, 0))
+	_make_ship("f", 0, Vector2i(3, 3))
+	var friends: Array[ShipState] = GameState.gunnery_calculator.friendly_ships(firer)
+	assert_eq(friends.size(), 1, "the friend on the map counts")
+	GameState.ship_controller.set_status("f", ShipState.Status.DESTROYED)
+	GameState.ship_controller.remove_from_map("f")
+	assert_eq(GameState.gunnery_calculator.friendly_ships(firer).size(), 0, "the removed ship does not")
+
+
+func test_movement_resolver_treats_a_removed_ships_hexes_as_empty() -> void:
+	# 8.G.1f: the mover sails W from (5,5); a wreck at bow (3,5) holds (3,5) and (4,5).
+	var mover := _make_ship("m", 0, Vector2i(5, 5), 3)
+	mover.speed = 2
+	var wreck := _make_ship("w", 1, Vector2i(3, 5), 3)
+	GameState.ship_controller.set_status("w", ShipState.Status.DESTROYED)
+	var steps: Array = []
+	for q in [4, 3]:
+		steps.append({"hex": {"q": q, "r": 5}, "facing": 3})
+	GameState.ship_controller.set_plotted_movement("m", steps)
+	GameState.ship_controller.remove_from_map("w")
+	assert_false(wreck.is_on_map())
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var resolver := MovementResolver.new(GameState, rng)
+	var log := resolver.run(GameState.ships_on_map(), GameState.environment)
+	var result := log.get_result("m")
+	assert_eq(result.final_hex, Vector2i(3, 5), "the mover sails through the removed wreck's hexes")
+	assert_eq(result.collided_with, "", "no collision with a removed ship")
