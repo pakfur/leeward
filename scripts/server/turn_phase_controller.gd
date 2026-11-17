@@ -9,6 +9,7 @@ signal resolution_log_ready(log: MovementTypes.ResolutionLog)
 signal fire_declaration_requested()
 signal combat_log_ready(log: PhaseEvents.PhaseLog)
 signal game_over(result: Dictionary)
+signal signals_delivered(turn: int)
 ## Movement playback reached a potential collision of a prompted player's ship (6.D.3): the
 ## commanding player (`player_id`) answers with player_submit_bear_off.
 signal bear_off_decision_requested(player_id: int, situation: MovementTypes.BearOffSituation)
@@ -1051,12 +1052,144 @@ func _enter_morale_check_phase() -> void:
 		game_state.morale_controller.resolve_checks(current_phase)
 	advance_phase()
 
+## Signals (11.A, 4.A.4). Sent in PLANNING, one per player per g-t (a new one replaces it),
+## delivered at MESSAGE_DELIVERY to the whole side (11.A.4). A sender struck or dismasted after
+## sending still delivers (8.G.1e is checked when sending only).
+func player_send_signal(player_id: int, from_ship: String, address: Dictionary, text: String) -> String:
+	if not is_server:
+		push_error("TurnPhaseController: Cannot send a signal on client")
+		return "signals are sent on the server only"
+	var reason: String = _signal_request_error(player_id)
+	if reason != "":
+		return reason
+	if not game_state.commands(player_id, from_ship):
+		return "player %d does not command %s" % [player_id, from_ship]
+	var ship: ShipState = game_state.ships[from_ship]
+	if ship.is_out_of_play():
+		return "a struck or lost ship cannot signal (11.B.2b)"
+	if ship.is_dismasted():
+		return "a dismasted ship cannot signal (11.B.2b)"
+	for s in game_state.ships_of_player(player_id):
+		if s.has_critical("signal_halyards_cut"):
+			return "signal halyards are cut: %s cannot signal (11.B.2c)" % s.ship_name
+	var side: int = game_state.side_of_player(player_id)
+	var kind := str(address.get("name", ""))
+	match str(address.get("kind", "")):
+		"fleet":
+			kind = ""
+		"group":
+			if not game_state.groups.get(side, {}).has(kind):
+				return "no group named '%s' on this side" % kind
+		"ship":
+			if not game_state.ships.has(kind) or game_state.ships[kind].side != side:
+				return "a signal can address only a ship of the sender's side"
+		_:
+			return "unknown address kind"
+	var names: Array[String] = []
+	for sh in game_state.ships.values():
+		names.append(sh.ship_name)
+	var parsed: Dictionary = SignalText.words(text, names)
+	if str(parsed["error"]) != "":
+		return str(parsed["error"])
+	var words: Array[String] = []
+	words.assign(parsed["words"])
+	var limit: int = SignalText.limit(ship, int(game_state.active_scenario.get("year", 0)))
+	if words.size() > limit:
+		return "%s may signal at most %d words (11.A.6)" % [ship.ship_name, limit]
+	_drop_pending_signal(player_id)
+	var sig := SignalState.new()
+	sig.turn = game_state.current_turn
+	sig.from_player = player_id
+	sig.from_ship = from_ship
+	sig.address = {"kind": str(address["kind"]), "name": kind}
+	sig.words = words
+	game_state.signals.append(sig)
+	return ""
+
+
+func player_cancel_signal(player_id: int) -> String:
+	if not is_server:
+		push_error("TurnPhaseController: Cannot cancel a signal on client")
+		return "signals are cancelled on the server only"
+	var reason: String = _signal_request_error(player_id)
+	if reason != "":
+		return reason
+	_drop_pending_signal(player_id)
+	return ""
+
+
+func _signal_request_error(player_id: int) -> String:
+	if not game_result.is_empty():
+		return "the game is over"
+	if current_phase != GamePhase.PLANNING:
+		return "signals are sent in the planning phase only"
+	if not players_ready.has(player_id):
+		return "invalid player %d" % player_id
+	if players_ready[player_id]:
+		return "this player's plan is already submitted"
+	return ""
+
+
+func _drop_pending_signal(player_id: int) -> void:
+	var pending: SignalState = pending_signal(player_id)
+	if pending != null:
+		game_state.signals.erase(pending)
+
+
+## The player's own undelivered signal this g-t, or null.
+func pending_signal(player_id: int) -> SignalState:
+	for sig in game_state.signals:
+		if sig.from_player == player_id and not sig.delivered and sig.turn == game_state.current_turn:
+			return sig
+	return null
+
+
+## Delivered signals the player's side may read (11.A.4), of one turn or (turn -1) all.
+func signals_for(player_id: int, turn: int = -1) -> Array[SignalState]:
+	var out: Array[SignalState] = []
+	var side: int = game_state.side_of_player(player_id)
+	for sig in game_state.signals:
+		if sig.delivered and game_state.side_of_player(sig.from_player) == side and (turn < 0 or sig.turn == turn):
+			out.append(sig)
+	return out
+
+
+## Ships a signal is addressed to: the fleet (every in-play ship of the side), a group's listed
+## ships, or the one ship.
+func ships_addressed(sig: SignalState) -> Array[String]:
+	var out: Array[String] = []
+	var side: int = game_state.side_of_player(sig.from_player)
+	match str(sig.address.get("kind", "")):
+		"fleet":
+			for s in game_state.get_side_ships(side):
+				if not s.is_out_of_play():
+					out.append(s.ship_id)
+		"group":
+			out.assign(game_state.groups.get(side, {}).get(str(sig.address.get("name", "")), []))
+		"ship":
+			out.append(str(sig.address.get("name", "")))
+	return out
+
+
+func _deliver_signals() -> void:
+	var due: Array[SignalState] = []
+	for sig in game_state.signals:
+		if not sig.delivered and sig.turn == game_state.current_turn:
+			due.append(sig)
+	due.sort_custom(func(a: SignalState, b: SignalState) -> bool: return a.from_player < b.from_player)
+	for sig in due:
+		sig.delivered = true
+		game_state.turn_log.add(PhaseEvents.Type.SIGNAL, current_phase, sig.from_ship,
+				{"from_player": sig.from_player, "address": sig.address.duplicate(), "words": sig.words.duplicate()})
+
+
 func _enter_message_delivery_phase() -> void:
 	"""SERVER ONLY: Enter message delivery phase"""
 	current_phase = GamePhase.MESSAGE_DELIVERY
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: MESSAGE_DELIVERY")
-	# TODO: Deliver flag messages
+	_deliver_signals()
+	signals_delivered.emit(game_state.current_turn)
 	advance_phase()
 
 func _enter_post_combat_phase() -> void:

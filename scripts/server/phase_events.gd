@@ -41,6 +41,7 @@ enum Type {
 	REORGANIZING_ABORTED,  # 10.G.5 ship_id's boarders reorganizing aboard prize target_id turn to defend her: {sections}
 	DEFENCE_SPLIT,  # 10.F.2 ship_id, boarded by several ships, shares out its defenders: {split: [{attacker_id, action, sections}]}
 	BEAR_OFF_ORDER,  # 6.D.3c potential collisions on one segment ordered by d10: {order: [{ship_id, rolls}]}; ship_id: the first
+	SIGNAL,  # 11.A a flag signal delivered, ship_id = the sending ship: {from_player, address: {kind, name}, words}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -493,6 +494,8 @@ class PhaseEvent extends RefCounted:
 				return _crew_task_text(who)
 			Type.VICTORY:
 				return _victory_text()
+			Type.SIGNAL:
+				return _signal_text(who, ship_names)
 		return "%s: event %d" % [who, type]
 
 	## "X's damaged steering fails the turn (7 > 5) — one hex ahead" (6.F.3), or "answers the helm".
@@ -508,6 +511,17 @@ class PhaseEvent extends RefCounted:
 			"carried over":
 				return text + " — one hex ahead; the turn carries over to next turn"
 		return text
+
+	## "HMS Victory signals the fleet: ENGAGE THE ENEMY".
+	func _signal_text(who: String, ship_names: Dictionary) -> String:
+		var address: Dictionary = data.get("address", {})
+		var to := "the fleet"
+		match str(address.get("kind", "fleet")):
+			"group":
+				to = "the %s" % str(address.get("name", ""))
+			"ship":
+				to = _name(ship_names, str(address.get("name", "")))
+		return "%s signals %s: %s" % [who, to, " ".join(data.get("words", []))]
 
 	## "X: critical hit roll 3 -2 = 1 ≤ 4 — critical hit!" or "… 6 +0 = 6 > 4, no critical".
 	func _critical_roll_text(who: String) -> String:
