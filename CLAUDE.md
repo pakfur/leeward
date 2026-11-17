@@ -272,7 +272,7 @@ Run the `scv-reviewer` agent as a **final step** before reporting any planned wo
 ### Known Limitations
 - Moves ahead are not limited to the map bounds (a bow may be plotted off the map), but a turn whose stern would leave the map is refused; drift treats the map edge as blocked.
 - The stub AI stalls instead of tacking when the wind blows straight against its approach.
-- Not implemented: sinking, signalling (signal halyards cut blocks nothing), the optional rules (14), towing (the `towing` flag is read but never set). A prize does not grapple, ungrapple or unfoul (10.H.2 allows it). An exploded ship stays on the map as a wreck. Milestone 3 items (anchoring, lower-deck guns, chase guns, medium guns, class 4 ships) are also absent. Everything else of Milestone 2 is in: crew tasks (manual or Automatic), tacking crew, reorganizing, fire and explosions, repairs, marine fire, grappling, boarding, prizes, recapture and multi-ship boarding; `docs/rules/feature_diff.md` has the details.
+- Not implemented: signalling (signal halyards cut blocks nothing), the optional rules (14), towing (the `towing` flag is read but never set). A prize does not grapple, ungrapple or unfoul (10.H.2 allows it). An exploded ship stays on the map as a wreck. Milestone 3 items (anchoring, lower-deck guns, chase guns, medium guns, class 4 ships) are also absent. Everything else of Milestone 2 is in: crew tasks (manual or Automatic), tacking crew, reorganizing, fire and explosions, repairs, marine fire, grappling, boarding, prizes, recapture and multi-ship boarding; `docs/rules/feature_diff.md` has the details.
 
 ### Developer UI
 - Press **F12** in-game to toggle the debug inspection panel

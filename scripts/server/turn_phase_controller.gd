@@ -164,7 +164,6 @@ func _enter_environment_phase() -> void:
 			game_state.environment.sea_state
 		])
 
-	# TODO: Perform sail checks based on new wind conditions
 	advance_phase()
 
 func _enter_planning_phase() -> void:

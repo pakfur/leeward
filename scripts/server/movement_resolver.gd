@@ -617,7 +617,8 @@ func _complete_overlap_partner(p: ResolutionPass, seg: Segment, sid: String, ent
 ## (STERN_BLOCKED "lost stern contest to <winner>"); one that must still move ahead to meet its
 ## deceleration minimum is queued in `p.contest_amendments` for a replay. In that replay a contest
 ## among the ships left (3+ sterns into `hex`) is not rolled again: it keeps its first winner and rolls.
-## Stub rule for 6.B.5 and 6.C.3: the winner always chooses to turn itself. Returns the winner.
+## Deliberate rule for 6.B.5 and 6.C.3: the winner always enters (turns itself); it never forces the loser
+## in (user decision 2026-11-16, feature_diff.md §4). Returns the winner.
 func _stern_contest(p: ResolutionPass, contest_ids: Array, impulse: int, hex: Vector2i) -> String:
 	var ids: Array = contest_ids.duplicate()
 	ids.sort()
@@ -899,6 +900,7 @@ func _cancel_turn(p: ResolutionPass, sid: String, blocker_id: String, impulse: i
 ## Contested hex resolution
 ## ============================================================================
 
+## Deliberate: the winner always enters (6.C.3, user decision 2026-11-16); it never forces the loser in.
 func _resolve_contested_hex(p: ResolutionPass, seg: Segment, contesting_ids: Array, target_hex: Vector2i) -> void:
 	var winner_id: String = _roll_contest(p, contesting_ids, seg.impulse)
 
