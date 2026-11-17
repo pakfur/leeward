@@ -188,6 +188,11 @@ func _enter_planning_phase() -> void:
 	_auto_ready_players()
 	# Announced last: listeners (the view) find the default courses stored and the AI's plan in.
 	phase_changed.emit(current_phase)
+	# Spec 2: the turn loop never waits on AI players or players commanding nothing in play; when
+	# that is everyone, planning ends at once (after listeners have seen PLANNING).
+	if current_phase == GamePhase.PLANNING and _all_players_ready():
+		Trace.trace_log("TurnPhase", "PLANNING: every player is ready at once, advancing phase")
+		_end_planning()
 
 ## Stores 6.G.2's default course for each human ship that can plot and records every human ship's
 ## planning start state (planning_snapshot).
@@ -336,14 +341,23 @@ func player_submit_plan(player_id: int) -> bool:
 	# Check if all players are ready (a player whose last ship left play since PLANNING began is
 	# not waited on either).
 	_auto_ready_players()
-	if players_ready.values().all(func(is_ready): return is_ready):
+	if _all_players_ready():
 		Trace.trace_log("TurnPhase", "All players ready, advancing phase")
-		# End Planning: every crew plot is made legal against its final movement plot.
-		if game_state.crew_task_controller:
-			game_state.crew_task_controller.finalize_plots()
-		advance_phase()
+		_end_planning()
 
 	return true
+
+
+func _all_players_ready() -> bool:
+	return players_ready.values().all(func(is_ready): return is_ready)
+
+
+## End Planning: every crew plot is made legal against its final movement plot, then the phase
+## advances.
+func _end_planning() -> void:
+	if game_state.crew_task_controller:
+		game_state.crew_task_controller.finalize_plots()
+	advance_phase()
 
 ## Read-only: why the player's plan cannot be submitted yet, {ship_id: reason} (empty when it can),
 ## over the ships that player commands.

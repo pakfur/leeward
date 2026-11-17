@@ -121,6 +121,19 @@ func test_player_left_with_nothing_is_not_waited_on() -> void:
 	assert_true(pc.is_player_ready(1), "ready at once at the next PLANNING")
 
 
+func test_planning_with_every_player_ready_moves_on() -> void:
+	_start([0] as Array[int])
+	GameState.boarding_controller.capture(_action("fr_a1", "brit_a1"), false, PHASES.COMBAT_RESOLUTION)
+	GameState.boarding_controller.capture(_action("fr_a2", "brit_a2"), false, PHASES.COMBAT_RESOLUTION)
+	assert_true(GameState.in_play_ships_of_player(0).is_empty(), "player 0's ships are prizes")
+	assert_true(pc.player_submit_plan(0))
+	_to_post_combat([0])
+	assert_true(pc.player_end_turn(0), "no human commands a ship in play: any human ends the turn")
+	assert_true(pc.game_result.is_empty(), "side 0 still has brit_b1")
+	assert_eq(pc.current_turn, 2)
+	assert_ne(pc.current_phase, PHASES.PLANNING, "nobody to wait for: planning ends at once")
+
+
 func test_fire_orders_only_for_own_ships() -> void:
 	_start([0, 1] as Array[int])
 	pc.current_phase = PHASES.COMBAT_RESOLUTION
