@@ -451,11 +451,15 @@ func start_new_game(scenario_data: Dictionary) -> void:
 ## footprints sharing a hex. One message each; empty when the placement is valid. Read-only.
 func placement_errors() -> Array[String]:
 	var errors: Array[String] = []
+	var terrain := TerrainMap.of(active_scenario)
+	errors.append_array(terrain.errors)
 	var all_ships := get_all_ships()
 	for s in all_ships:
 		for h in s.occupied_hexes():
 			if not Occupancy.in_bounds(h, active_scenario):
 				errors.append("GameState: ship '%s' occupies %s, outside map_bounds" % [s.ship_id, h])
+			elif terrain.is_land(h):
+				errors.append("GameState: ship '%s' occupies %s, which is land" % [s.ship_id, h])
 	for i in all_ships.size():
 		for j in range(i + 1, all_ships.size()):
 			var pair: Array[ShipState] = [all_ships[i], all_ships[j]]
