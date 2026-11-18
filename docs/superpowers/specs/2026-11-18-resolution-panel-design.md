@@ -33,6 +33,14 @@ replay must work per player.
   is moderate, see below): ships on the map show the state as of the step being shown, at the
   granularity below, not the end-of-turn state.
 
+- **Prompts are steps too** (user decision, 2026-11-18): a request for the player's input during
+  resolution is a step in the same panel with the same layout: a dice area (when a roll goes
+  with it), the picture, the description and question, and an answer section in place of
+  Next. The prompts: the bearing-off decision (6.D, during movement playback) and the
+  maintenance orders (grapple, ungrapple, prize-crew size, during STATUS_ADJUSTMENT). Answering
+  sends the existing server request (`player_submit_bear_off`,
+  `player_submit_maintenance_orders`); a refusal shows its reason on the step, which stays.
+
 ## Non-goals
 
 - No change to game rules, dice or the server's turn loop. No new server request.
@@ -40,7 +48,9 @@ replay must work per player.
 - No cannon-fire or smoke animation on the map (a later phase, user's note).
 - No player roster or ship-status-only left panel yet (see Later).
 - Movement playback is unchanged (it already animates); movement-phase rolls (tacking, bearing
-  off, collisions) are out of this panel for now.
+  off rolls, collisions) are out of this panel for now. The bear-off *decision* is a prompt
+  step (above); while movement plays the panel shows nothing else.
+- Fire declaration stays its own panel: it is part of planning the combat, not resolution.
 
 ## Anti-goals
 
@@ -131,9 +141,10 @@ then **Next ▸** and **Resolve all**. Keys: Space/Enter/→ = Next. The existin
   `on_combat_playback_completed()` as now. This is the one place a human's replay already holds
   the server, as today.
 - **After combat:** drift, status adjustment (grapple, fire, repairs, tows, fixes), morale and
-  messages resolve at once as now. On entering POST_COMBAT the view replays those phases'
-  steps, then shows the End Turn button as now. A maintenance prompt (grapple, prize size)
-  still comes when the server asks, before that replay (accepted limitation).
+  messages resolve at once as now, except where the server stops for a human's maintenance
+  orders. The view replays those phases' steps (see the queue below), then shows the End Turn
+  button as now. Resolve all runs up to the next prompt step and stops there: a prompt is never
+  skipped.
 - No replay steps: the panel does not open.
 - With `skip_post_combat_delay` (tests, AI-only runs) there is no replay: everything is instant, as
   now. The existing skip (Space/click on the log) acts as Resolve all.
@@ -143,8 +154,16 @@ then **Next ▸** and **Resolve all**. Keys: Space/Enter/→ = Next. The existin
 - The replay is dropped, with no further calls to the server, when the game ends (`game_over`),
   the game is left, or the phase moves on past the one it is replaying (the combat replay still
   calls `on_combat_playback_completed()` only under today's guard).
-- A maintenance prompt during STATUS_ADJUSTMENT shows as today, over the map; the post-combat
-  replay starts only once POST_COMBAT is entered, after it.
+- **The replay is a queue fed as the log grows.** The post-combat replay starts at whichever
+  comes first: the server asking this player for maintenance orders, or POST_COMBAT. It shows
+  the steps resolved so far (drift first), then the prompt step; once answered, the server goes
+  on and the steps it logs next are appended. So the player sees the drift before being asked
+  to grapple, and in order.
+- A bear-off prompt arrives while movement playback is paused at that segment: the panel opens
+  with just that prompt step (camera on the ship), and closes when it is answered and playback
+  resumes. It replaces the floating `BearOffPanel`; the maintenance step replaces the floating
+  `MaintenanceOrdersPanel`. Their answer controls (the bear-off buttons, the grapple checkboxes,
+  the prize-crew steppers) move into the step's answer section; their wording and checks stay.
 - The camera focus keeps the ship clear of the left panel (the same left-panel offset the game
   controller uses for framing).
 - In a networked game each client would run the same replay from the log it receives; nothing
