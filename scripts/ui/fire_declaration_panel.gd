@@ -63,6 +63,8 @@ const NO_SHOT_RANGE := "out of range"
 const NO_SHOT_LOS := "line of sight blocked"
 const NO_SHOT_CREW := "no crew to serve the guns"
 const NO_SHOT_STRUCK := "struck"
+const NO_SHOT_SURRENDERING := "surrendering"
+const NO_SHOT_SURRENDERED := "surrendered"
 const NO_SHOT_DESTROYED := "destroyed"
 const NO_SHOT_NO_ENEMY := "no enemy afloat"
 ## GunneryCalculator.preview's "Blocked by friendly ship <name>" (7.B.10), shown as it is.
@@ -492,6 +494,8 @@ static func no_shot_reason(reasons: Array) -> String:
 		return NO_SHOT_ARC
 	if chosen.contains("destroyed"):
 		return NO_SHOT_DESTROYED
+	if chosen.contains("surrendering"):
+		return NO_SHOT_SURRENDERING
 	if chosen.contains("struck"):
 		return NO_SHOT_STRUCK
 	if chosen.contains("line of sight"):
@@ -533,8 +537,12 @@ static func nearest_enemy(ship: ShipState, all_ships: Array, grid: HexGrid) -> S
 static func ship_no_shot_reason(ship: ShipState, all_ships: Array, calculator, grid: HexGrid) -> String:
 	if ship.is_destroyed():
 		return NO_SHOT_DESTROYED
+	if ship.is_struck() and ship.surrendered:
+		return NO_SHOT_SURRENDERED
 	if ship.is_struck():
 		return NO_SHOT_STRUCK
+	if ship.surrender_ordered:
+		return NO_SHOT_SURRENDERING
 	var reasons: Array = []
 	var target := nearest_enemy(ship, all_ships, grid)
 	if target and calculator:
