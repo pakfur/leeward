@@ -101,6 +101,7 @@ const MODIFIER_LABELS := {
 	"plain_sail": "plain sail",
 	"dismantling_shot": "dismantling shot",
 	"wind_speed_4": "wind speed 4",
+	"anchored": "anchored",
 	"dismasted": "dismasted",
 	"lower_deck_closed": "Lower deck guns closed",
 	"broadside_obscured": "broadside obscured",
