@@ -24,6 +24,15 @@ func ground(ship_id: String, data: Dictionary, phase: int) -> void:
 	Trace.trace_log("Map", "Ship %s aground (%s)" % [ship_id, str(data.get("terrain", ""))])
 
 
+## Whether `ship_id` is held by a live boarding action, as attacker or defender, and so may not
+## escape (ruling 2026-11-17): its escape crossings are blocked in plotting, movement and drift.
+## False when `gs` has no boarding controller (bare test fixtures).
+static func escape_locked(gs: Node, ship_id: String) -> bool:
+	if gs == null or gs.get("boarding_controller") == null:
+		return false
+	return gs.boarding_controller.live_action_of(ship_id) != null
+
+
 ## The ship escapes: `data` is {how, edge} or {how, range}. No-op for a ship already out of play.
 func escape(ship_id: String, data: Dictionary, phase: int) -> void:
 	if not is_server:
@@ -59,7 +68,8 @@ func pursuers(ship: ShipState) -> Array[ShipState]:
 
 
 ## End of the turn (V.D.1-4): first every declared ship in play is reported (ESCAPE_DECLARED, in
-## ship id order); then every declared ship in play, on the map and not fouled or grappled, of a
+## ship id order); then every declared ship in play, on the map, not fouled or grappled and in no
+## live boarding action, of a
 ## side that may escape this turn, escapes by distance or speed (MapRules.condition). Every
 ## condition is read from the positions before any ship leaves.
 func resolve_escapes(turn: int, phase: int) -> void:
@@ -77,7 +87,7 @@ func resolve_escapes(turn: int, phase: int) -> void:
 	var env: EnvironmentState = game_state.environment
 	var escapes: Array = []
 	for ship in declared:
-		if not ship.is_on_map() or ship.is_linked() \
+		if not ship.is_on_map() or ship.is_linked() or escape_locked(game_state, ship.ship_id) \
 				or not MapRules.may_declare(game_state.active_scenario, ship.side, turn):
 			continue
 		var how := MapRules.condition(ship, pursuers(ship), env.wind_direction, env.wind_speed)

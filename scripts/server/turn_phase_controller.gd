@@ -401,6 +401,7 @@ func _edge_error(ship: ShipState, course: Array[MovementTypes.PlotStep]) -> Stri
 	var scenario: Dictionary = game_state.active_scenario
 	var terrain := TerrainMap.of(scenario)
 	var turn: int = game_state.current_turn
+	var in_boarding := MapController.escape_locked(game_state, ship.ship_id)
 	var hex := ship.hex_position
 	var facing := ship.facing
 	for step in course:
@@ -409,9 +410,11 @@ func _edge_error(ship: ShipState, course: Array[MovementTypes.PlotStep]) -> Stri
 		if step.move_type != MovementTypes.MoveType.FORWARD:
 			from_hex = HexGrid.stern_of(hex, facing)
 			to_hex = HexGrid.stern_of(hex, step.facing)
-		var crossed := MapRules.crossing_outcome(scenario, ship, from_hex, to_hex, turn)
+		var crossed := MapRules.crossing_outcome(scenario, ship, from_hex, to_hex, turn, in_boarding)
 		if crossed["outcome"] == MapRules.BLOCKED:
 			var b := terrain.crossing(from_hex, to_hex)
+			if b != null and b.kind == TerrainMap.ESCAPE and in_boarding:
+				return "the course leaves the map at the %s edge: the ship is in a boarding action" % crossed["edge"]
 			if b != null and b.kind == TerrainMap.ESCAPE:
 				return "the course leaves the map at the %s edge: declare escape first (V.D.2)" % crossed["edge"]
 		hex = step.hex

@@ -681,9 +681,9 @@ func _fight(plan: Dictionary, phase: int) -> Dictionary:
 	var action: BoardingAction = plan["action"]
 	var att: ShipState = game_state.get_ship(action.attacker_id)
 	var def: ShipState = game_state.get_ship(action.defender_id)
-	if def == null or def.is_destroyed():
+	if def == null or def.is_destroyed() or not def.is_on_map():  # gone: blown up or escaped
 		return _no_round(action, "end", "target_gone", phase)
-	if att == null or att.is_out_of_play():
+	if att == null or att.is_out_of_play():  # struck, destroyed or escaped
 		return _no_round(action, "attackers_lost", "surrendered", phase)  # 10.D.6
 	if def.is_struck():
 		return _no_round(action, "capture", "struck_in_action", phase)  # 10.E.2c
@@ -1137,7 +1137,8 @@ func advance_reorganizing(phase: int) -> void:
 			continue
 		var att: ShipState = game_state.get_ship(action.attacker_id)
 		var prize: ShipState = game_state.get_ship(action.defender_id)
-		if att == null or prize == null or att.is_destroyed() or prize.is_destroyed():
+		if att == null or prize == null or att.is_destroyed() or prize.is_destroyed() \
+				or not att.is_on_map() or not prize.is_on_map():  # blown up or escaped
 			action.prize_aboard = true
 			continue
 		if _still_reorganizing(action, att):
@@ -1164,7 +1165,8 @@ func _awaiting_prize_crew(action: BoardingAction) -> bool:
 		return false
 	var att: ShipState = game_state.get_ship(action.attacker_id)
 	var prize: ShipState = game_state.get_ship(action.defender_id)
-	if att == null or prize == null or att.is_destroyed() or prize.is_destroyed() or not prize.is_captured():
+	if att == null or prize == null or att.is_destroyed() or prize.is_destroyed() or not prize.is_captured() \
+			or not att.is_on_map() or not prize.is_on_map():
 		return false
 	if prize.prize.get("captor_id", "") != att.ship_id:
 		return false

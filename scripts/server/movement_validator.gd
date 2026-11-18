@@ -434,7 +434,7 @@ func _crossing_allowed(ship_state: ShipState, from_hex: Vector2i, to_hex: Vector
 	if t != null:
 		turn = int(t)
 	var outcome: String = MapRules.crossing_outcome(game_state.active_scenario, ship_state,
-			from_hex, to_hex, turn)["outcome"]
+			from_hex, to_hex, turn, MapController.escape_locked(game_state, ship_state.ship_id))["outcome"]
 	return outcome == MapRules.CLEAR or outcome == MapRules.ESCAPE
 
 

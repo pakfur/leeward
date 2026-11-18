@@ -1011,7 +1011,7 @@ func _move_safe(ship_state: ShipState, move: MovementTypes.ValidMove) -> bool:
 		from = HexGrid.stern_of(pose_bow, pose_facing)
 		to = stern
 	var outcome: String = MapRules.crossing_outcome(scenario, ship_state, from, to,
-		game_state.current_turn)["outcome"]
+		game_state.current_turn, MapController.escape_locked(game_state, ship_state.ship_id))["outcome"]
 	if outcome != MapRules.CLEAR and outcome != MapRules.ESCAPE:
 		return false
 	if terrain.is_land(bow) or terrain.is_land(stern):

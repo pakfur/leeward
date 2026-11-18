@@ -373,6 +373,30 @@ func test_declared_ship_escapes_off_escape_edge() -> void:
 	assert_eq(b.status, ShipState.Status.ACTIVE)
 
 
+## Ruling 2026-11-17: a ship in a live boarding action meets the escape edge as a wall.
+func test_ship_in_a_boarding_action_does_not_escape() -> void:
+	GameState.active_scenario = _bounded({"W": "escape"}, {"escape": {"1": {}}})
+	var a := _ship("a", Vector2i(-4, 0), 3, 3, 1)
+	GameState.ship_controller.set_escape_declared("a", true)
+	_plot_straight(a, 3)
+	var action := BoardingAction.new()
+	action.attacker_id = "a"
+	action.defender_id = "x"
+	action.state = BoardingAction.DECLARED
+	var old_actions: Array = GameState.boarding_actions
+	GameState.boarding_actions = [action]
+	var ships: Array[ShipState] = [a]
+	var log = resolver.run(ships, env)
+	var r = log.get_result("a")
+	assert_eq(r.left_map, "")
+	assert_eq(r.final_hex, Vector2i(-5, 0))
+	assert_eq(_events_of(r, MovementTypes.ResolutionEventType.EDGE_BLOCKED).size(), 1)
+	resolver.apply_results(log, ships)
+	GameState.boarding_actions = old_actions
+	assert_true(a.is_on_map())
+	assert_eq(a.status, ShipState.Status.ACTIVE)
+
+
 # ===========================================================================
 # Determinism (spec §16)
 # ===========================================================================

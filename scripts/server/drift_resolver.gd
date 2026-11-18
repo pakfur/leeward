@@ -155,7 +155,8 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 			var sid: String = ship.ship.ship_id
 			targets[sid] = _hex_grid.get_neighbor(ship.hex_position.x, ship.hex_position.y, downwind_dir)
 			var move: Dictionary = MapRules.forced_move(game_state.active_scenario, ship,
-				ship.occupied_hexes(), _shifted(ship, downwind_dir), others, game_state.current_turn)
+				ship.occupied_hexes(), _shifted(ship, downwind_dir), others, game_state.current_turn,
+				MapController.escape_locked(game_state, sid))
 			moves[sid] = move
 			match move["result"]:
 				"edge":
@@ -205,7 +206,8 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 		var from_end: Vector2i = lone.stern_hex() if partial == "stern" else lone.hex_position
 		var to_end: Vector2i = _hex_grid.get_neighbor(from_end.x, from_end.y, downwind_dir)
 		var end_move: Dictionary = MapRules.forced_move(game_state.active_scenario, lone,
-			[from_end] as Array[Vector2i], [to_end] as Array[Vector2i], others, game_state.current_turn)
+			[from_end] as Array[Vector2i], [to_end] as Array[Vector2i], others, game_state.current_turn,
+			MapController.escape_locked(game_state, lone_id))
 		if end_move["result"] != "clear":
 			partial = ""
 		elif partial == "bow" and end_move["shallow_bow"]:

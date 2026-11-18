@@ -544,6 +544,37 @@ func test_40_parent_strikes_boarders_surrender() -> void:
 	assert_eq(_dice.remaining(), 0)
 
 
+## Safety net (ruling 2026-11-17): a defender that has left the map ends the action like a wreck.
+func test_escaped_defender_ends_the_action_with_no_roll() -> void:
+	var ships := _sailors_fight(8, 8)
+	var b: ShipState = ships[1]
+	b.status = ShipState.Status.ESCAPED
+	b.removed_from_map = true
+	boarding.resolve(PHASE)
+	var action: BoardingAction = GameState.boarding_actions[0]
+	assert_eq(action.outcome, "target_gone")
+	assert_eq(_dice.remaining(), 0)
+
+
+## Safety net: a captor that has left the map puts no prize crew aboard.
+func test_escaped_captor_puts_no_prize_crew_aboard() -> void:
+	var a := _ship("a", 1, Vector2i(5, 5), "B", 3, [4, 5, 6, 6], 6, 3)
+	var b := _ship("b", 0, Vector2i(6, 5), "C", 3, [2, 6, 6, 6], 4, 4, [6, 6, 7, 7], 7)
+	b.status = ShipState.Status.STRUCK
+	_link(a, b)
+	_task(a, "BA", M, "b")
+	_task(a, "BA", 0, "b")
+	boarding.declare(PHASE)
+	assert_true(b.is_captured())
+	a.status = ShipState.Status.ESCAPED
+	a.removed_from_map = true
+	boarding.advance_reorganizing(TurnPhaseController.GamePhase.STATUS_ADJUSTMENT)
+	var action: BoardingAction = GameState.boarding_actions[0]
+	assert_true(action.prize_aboard, "finished: no prize crew is coming")
+	assert_eq(_events(PhaseEvents.Type.PRIZE_CREW).size(), 0)
+	assert_eq(b.total_crew_boxes(), 0)
+
+
 # --- 10.D.7 (test 41) ---
 
 func test_41_gunfire_crew_loss_row_with_boarders() -> void:

@@ -242,6 +242,26 @@ func test_drift_at_escape_edge_without_declaring_is_blocked() -> void:
 	assert_eq(_drifts()[0].data["blocked"], "map edge")
 
 
+## Ruling 2026-11-17: a ship in a live boarding action cannot drift out of it by an escape edge.
+func test_drift_at_escape_edge_in_a_boarding_action_is_blocked() -> void:
+	GameState.active_scenario = _edge_scenario("escape")
+	GameState.active_scenario["escape"] = {"0": {"from_turn": 1}}
+	var a := _make_ship("a", Vector2i(-5, 0), 3)
+	a.escape_declared = true
+	var action := BoardingAction.new()
+	action.attacker_id = "x"
+	action.defender_id = "a"
+	action.state = BoardingAction.ENGAGED
+	var old_actions: Array = GameState.boarding_actions
+	GameState.boarding_actions = [action]
+	_dice.queue([9])
+	resolver.resolve(PHASE)
+	GameState.boarding_actions = old_actions
+	assert_false(a.is_escaped())
+	assert_eq(a.hex_position, Vector2i(-5, 0))
+	assert_eq(_drifts()[0].data["blocked"], "map edge")
+
+
 func test_group_member_lost_off_none_edge_others_drift() -> void:
 	# a (bow (-5,0), stern (-4,0)) and b (bow (-3,0), stern (-2,0)) are grappled. a's bow leaves the
 	# map by the none edge; b only moves one hex.

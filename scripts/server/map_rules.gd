@@ -49,8 +49,12 @@ static func may_declare(scenario: Dictionary, side: int, turn: int) -> bool:
 	return declare_error(scenario, side, turn) == ""
 
 
-static func may_cross(scenario: Dictionary, ship: ShipState, boundary: TerrainMap.Boundary, turn: int) -> bool:
-	if boundary == null or boundary.kind != TerrainMap.ESCAPE:
+## Whether `ship` may cross `boundary` now: an escape boundary open to its side this turn, which it
+## has declared escape for. `in_boarding`: the ship is in a live boarding action (MapController.
+## escape_locked) and may not leave it.
+static func may_cross(scenario: Dictionary, ship: ShipState, boundary: TerrainMap.Boundary, turn: int,
+		in_boarding: bool = false) -> bool:
+	if boundary == null or boundary.kind != TerrainMap.ESCAPE or in_boarding:
 		return false
 	var p := permission(scenario, ship.side)
 	if p.is_empty() or turn < int(p["from_turn"]):
@@ -66,8 +70,9 @@ static func share(scenario: Dictionary, side: int) -> float:
 
 
 ## What stepping from `from` to `to` does: {"outcome": CLEAR|BLOCKED|LOST|ESCAPE, "edge": name or ""}.
+## A ship `in_boarding` (a live boarding action) finds an escape boundary blocked.
 static func crossing_outcome(scenario: Dictionary, ship: ShipState, from: Vector2i, to: Vector2i,
-		turn: int) -> Dictionary:
+		turn: int, in_boarding: bool = false) -> Dictionary:
 	var b := TerrainMap.of(scenario).crossing(from, to)
 	if b == null:
 		return {"outcome": CLEAR, "edge": ""}
@@ -75,7 +80,7 @@ static func crossing_outcome(scenario: Dictionary, ship: ShipState, from: Vector
 		TerrainMap.NONE:
 			return {"outcome": LOST, "edge": b.name}
 		TerrainMap.ESCAPE:
-			if may_cross(scenario, ship, b, turn):
+			if may_cross(scenario, ship, b, turn, in_boarding):
 				return {"outcome": ESCAPE, "edge": b.name}
 	return {"outcome": BLOCKED, "edge": b.name}
 
@@ -88,11 +93,11 @@ static func crossing_outcome(scenario: Dictionary, ship: ShipState, from: Vector
 ## (bow first), else clear. `shallow_bow` (clear only) says the new bow hex is in a shallow area,
 ## so the caller rolls the depth.
 static func forced_move(scenario: Dictionary, ship: ShipState, old_hexes: Array[Vector2i],
-		new_hexes: Array[Vector2i], others: Dictionary, turn: int) -> Dictionary:
+		new_hexes: Array[Vector2i], others: Dictionary, turn: int, in_boarding: bool = false) -> Dictionary:
 	var lost := ""
 	var escape := ""
 	for i in new_hexes.size():
-		var crossing := crossing_outcome(scenario, ship, old_hexes[i], new_hexes[i], turn)
+		var crossing := crossing_outcome(scenario, ship, old_hexes[i], new_hexes[i], turn, in_boarding)
 		match crossing["outcome"]:
 			BLOCKED:
 				return {"result": "edge", "edge": crossing["edge"], "blocker": "", "shallow_bow": false}

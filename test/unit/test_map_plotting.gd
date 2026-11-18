@@ -200,6 +200,26 @@ func test_course_over_escape_edge_needs_declaration() -> void:
 	assert_string_contains(pc.plan_errors(1)["a"], "declare escape first")
 
 
+## Ruling 2026-11-17: a ship in a live boarding action may not plot over an escape edge.
+func test_course_over_escape_edge_refused_in_a_boarding_action() -> void:
+	var pc := _planning(_scenario({"W": "escape"}, {"escape": {"1": {}}}))
+	_make_ship("a", 1, Vector2i(-5, 0), 3, GameState)
+	assert_eq(pc.player_declare_escape(1, "a", true), "")
+	assert_eq(pc.player_extend_course(1, "a", Vector2i(-6, 0)), "")
+	var action := BoardingAction.new()
+	action.attacker_id = "x"
+	action.defender_id = "a"
+	action.state = BoardingAction.ENGAGED
+	var old_actions: Array = GameState.boarding_actions
+	GameState.boarding_actions = [action]
+	var errors: Dictionary = pc.plan_errors(1)
+	pc.player_reset_course(1, "a")
+	var extend := pc.player_extend_course(1, "a", Vector2i(-6, 0))
+	GameState.boarding_actions = old_actions
+	assert_string_contains(str(errors.get("a", "")), "boarding action")
+	assert_ne(extend, "", "the escape hex is not offered")
+
+
 func test_reset_planning_clears_the_lead() -> void:
 	var pc := _planning(_scenario({}))
 	var ship := _make_ship("a", 0, Vector2i(0, 0), 0, GameState)

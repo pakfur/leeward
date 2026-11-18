@@ -536,6 +536,11 @@ func _scenario() -> Dictionary:
 	return scenario if scenario is Dictionary else {}
 
 
+## The ship is in a live boarding action and may not escape (MapController.escape_locked).
+func _in_boarding(ship_id: String) -> bool:
+	return MapController.escape_locked(game_state, ship_id)
+
+
 func _turn() -> int:
 	var t = game_state.get("current_turn") if game_state else null
 	return int(t) if t != null else 1
@@ -556,7 +561,8 @@ func _settle_terrain(p: ResolutionPass, seg: Segment, ships: Array[ShipState]) -
 		var entered: Vector2i = _entered_hex(bow, facing, move.hex, move.facing)
 		var stern_entry: bool = _is_stern_entry(bow, facing, move.hex, move.facing)
 		var from: Vector2i = HexGrid.stern_of(bow, facing) if stern_entry else bow
-		var crossing: Dictionary = MapRules.crossing_outcome(_scenario(), ship_state, from, entered, _turn())
+		var crossing: Dictionary = MapRules.crossing_outcome(_scenario(), ship_state, from, entered, _turn(),
+			_in_boarding(sid))
 		if crossing["outcome"] == MapRules.BLOCKED:
 			seg.intended_moves.erase(sid)
 			_stop(p, sid, seg.impulse)
@@ -697,7 +703,7 @@ func _lead_side(p: ResolutionPass, sid: String, impulse: int) -> String:
 		var rank: int = LEAD_RANK_NO_WAY
 		var base: int = -1
 		if _terrain.in_bounds(ahead) and MapRules.crossing_outcome(_scenario(), ship_state, bow, ahead,
-				_turn())["outcome"] != MapRules.BLOCKED:
+				_turn(), _in_boarding(ship_state.ship_id))["outcome"] != MapRules.BLOCKED:
 			rank = ["never", "maybe", "always"].find(_terrain.grounds(ahead, _draft(ship_state)))
 			var area: TerrainMap.ShallowArea = _terrain.area_at(ahead)
 			if area != null:
@@ -774,7 +780,8 @@ func _note_left_map(p: ResolutionPass, seg: Segment) -> void:
 		var stern_entry: bool = _is_stern_entry(start_bow, start_facing, bow, facing)
 		var from: Vector2i = HexGrid.stern_of(start_bow, start_facing) if stern_entry else start_bow
 		var entered: Vector2i = _entered_hex(start_bow, start_facing, bow, facing)
-		var crossing: Dictionary = MapRules.crossing_outcome(_scenario(), p.ship_map[sid], from, entered, _turn())
+		var crossing: Dictionary = MapRules.crossing_outcome(_scenario(), p.ship_map[sid], from, entered, _turn(),
+			_in_boarding(sid))
 		var outcome: String = crossing["outcome"]
 		if outcome != MapRules.LOST and outcome != MapRules.ESCAPE:
 			continue
