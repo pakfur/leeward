@@ -17,6 +17,7 @@ const GameOverPanelScene = preload("res://scenes/ui/game_over_panel.tscn")
 const OceanViewScript = preload("res://scripts/view/ocean_view.gd")
 const PauseMenuScript = preload("res://scripts/ui/pause_menu.gd")
 const CrewOverlayScene = preload("res://scenes/ui/crew_overlay.tscn")
+const ResolutionPanelScene = preload("res://scenes/ui/resolution_panel.tscn")
 var current_planning_ui: Control = null
 var fire_panel: Control = null  # FireDeclarationPanel while fire orders are being declared
 var combat_panel: Control = null  # "Movement" / "Combat" context content while a phase plays back
@@ -29,7 +30,6 @@ var game_over_panel: GameOverPanel = null  # modal result card; non-null once th
 var _boarding_card: BoardingCard = null  # the boarding rounds of the last combat, over the map (boarding spec §4.5)
 var _boarding_card_log: PhaseEvents.PhaseLog = null  # the combat log the card shows
 var _combat_playback_active: bool = false  # true from combat_log_ready until playback finishes
-var _combat_playback_skip: bool = false
 var pause_menu: Control = null  # PauseMenu: Escape / the corner Menu button
 var menu_button: Button = null  # discreet corner button that opens the pause menu
 var _leaving: bool = false  # Leave game confirmed: playback is abandoned, nothing advances the game
@@ -37,7 +37,20 @@ var _leaving: bool = false  # Leave game confirmed: playback is abandoned, nothi
 ## planning panel's crew block. View code; changes go through the server's crew requests.
 var crew_client: CrewOverlayClient = null
 var crew_overlay: CrewOverlay = null
-const COMBAT_REVEAL_SECONDS := 0.6
+
+# The resolution replay (resolution panel spec): the combat steps on combat_log_ready, the
+# post-combat phases' steps before End Turn. View only; the map draws `display_states` meanwhile.
+## The phases the post-combat replay shows.
+const POST_COMBAT_PHASES: Array[int] = [TurnPhaseController.GamePhase.DRIFT_CALCULATION,
+	TurnPhaseController.GamePhase.STATUS_ADJUSTMENT, TurnPhaseController.GamePhase.MORALE_CHECK,
+	TurnPhaseController.GamePhase.MESSAGE_DELIVERY]
+var display_states := DisplayStates.new()
+var resolution_replay: ResolutionReplay = null  # made on first use (_replay())
+var resolution_panel: ResolutionPanel = null  # context-panel content while a replay runs
+var _replay_saved_view: Dictionary = {}  # the camera pose before the replay framed its first step
+var _replay_raw_index: PackedInt32Array = PackedInt32Array()  # filtered event index -> turn_log index
+var _replay_display_phase: int = -1  # the phase whose display copies the map shows
+var _post_events_read: int = 0  # filtered events of the turn the post-combat replay has built steps from
 
 const NO_SHOT_HEADLINE := "No broadside bears on an enemy this turn."
 
@@ -314,7 +327,8 @@ func _leave_game() -> void:
 	_leaving = true
 	Trace.trace_log("GameController", "Leaving the game in progress")
 	_combat_playback_active = false
-	_combat_playback_skip = true
+	if resolution_replay:
+		resolution_replay.cancel()  # no step reaches the server any more
 	if playback_controller:
 		if playback_controller.playback_completed.is_connected(_on_playback_completed):
 			playback_controller.playback_completed.disconnect(_on_playback_completed)
@@ -423,6 +437,10 @@ func _setup_scenario(scenario: Dictionary) -> void:
 
 ## A new game (or a Developer UI reset): one ShipView per ship the server built, replacing any old ones.
 func _on_game_started(_scenario: Dictionary) -> void:
+	if resolution_replay:
+		resolution_replay.cancel()
+	display_states.clear()
+	_replay_saved_view = {}
 	for id in ship_views.keys():
 		var old_view: Node = ship_views[id]
 		if is_instance_valid(old_view):
@@ -506,8 +524,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# Handle keyboard shortcuts
 	if event is InputEventKey and event.pressed and not event.echo:
-		if _combat_playback_active and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
-			_skip_combat_playback()
+		# The resolution panel takes Space / Enter as Next (its own key handling, which runs first);
+		# while its dice tumble they must not reach End Turn or anything else.
+		if _replay_running() and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
 			get_viewport().set_input_as_handled()
 			return
 		if event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER] and _end_turn_available():
@@ -868,6 +887,13 @@ func _center_camera_on_all_ships() -> void:
 		camera.center_on_ships(ship_positions)
 
 func _on_phase_changed(phase: GameState.GamePhase) -> void:
+	# The state before this phase, for the replay's display copies (combat's second emission, at
+	# DECLARE, is ignored by DisplayStates).
+	if GameState.phase_controller:
+		display_states.record_phase(phase, GameState.phase_controller.current_turn, GameState.get_all_ships())
+	if _replay_running() and replay_outlived(resolution_replay.kind, resolution_replay.phases, phase):
+		resolution_replay.cancel()
+		_end_resolution_display()
 	# Selection is a planning-time affordance — clear it (and any hover) on every phase change
 	# so the one-shot indicator snapshot can't go stale across resolution/turn boundaries.
 	_deselect_ship()
@@ -1465,46 +1491,35 @@ func _on_combat_log_ready(log: PhaseEvents.PhaseLog) -> void:
 	if _combat_playback_active:
 		return  # already playing this exchange
 	_combat_playback_active = true
-	_combat_playback_skip = false
 	_play_combat_log(log)
 
 
-## Reveal the combat events one at a time (skippable), syncing views as damage is read,
-## then tell the phase controller playback is finished.
+## The combat steps, one at a time in the resolution panel; when the player is through them (or
+## at once when there are none) the phase controller is told playback is finished. Tests and
+## AI-only runs (skip_post_combat_delay), and a scene without the side panel, skip the replay.
 func _play_combat_log(combat_log: PhaseEvents.PhaseLog) -> void:
-	var instant := skip_post_combat_delay or combat_log_panel == null
-	if combat_log_panel:
-		combat_log_panel.auto_expand(true)
-		combat_log_panel.set_skip_hint(not instant)
-	if instant:
+	if skip_post_combat_delay or context_panel == null:
 		for ev in combat_log.events:
 			if ev.type == PhaseEvents.Type.BOARDING_ROUND:
 				_show_boarding_card(combat_log, ev)
-	if not instant:
-		for ev in CombatLogPanel.playback_events(combat_log):
-			if _combat_playback_skip or _leaving:
-				break
-			combat_log_panel.set_reveal_limit(combat_log.events.find(ev) + 1)
-			if ev.type == PhaseEvents.Type.BOARDING_ROUND:
-				_show_boarding_card(combat_log, ev)
-			if CombatLogPanel.syncs_views(ev):
-				_sync_all_views()
-			var waited := 0.0
-			# process_frame fires even while the tree is paused, so paused frames are not counted:
-			# the pause menu holds the reveal.
-			while (waited < COMBAT_REVEAL_SECONDS or _tree_paused()) and not _combat_playback_skip:
-				await get_tree().process_frame
-				if _leaving or not is_inside_tree():
-					return  # the game was left: touch nothing, report nothing
-				if not _tree_paused():
-					waited += get_process_delta_time()
-	if _leaving:
+		_sync_all_views()
+		_finish_combat_playback()
 		return
-	if combat_log_panel:
-		combat_log_panel.clear_reveal_limit()
-		combat_log_panel.set_skip_hint(false)
-	_sync_all_views()
-	_finish_combat_playback()
+	var combat: Array[int] = [TurnPhaseController.GamePhase.COMBAT_RESOLUTION]
+	var steps := _replay_steps(0, combat)
+	if steps.is_empty():
+		_sync_all_views()
+		_finish_combat_playback()  # nothing to show: the panel never opens
+		return
+	_start_resolution_replay("combat", combat)
+	resolution_replay.append(steps)
+	resolution_replay.finish_when_drained(_on_combat_replay_drained)
+
+
+func _on_combat_replay_drained() -> void:
+	_finish_combat_playback()  # the server runs on to POST_COMBAT, which may start the next replay
+	if not _replay_running():
+		_end_resolution_display()
 
 
 ## The boarding card for a BOARDING_ROUND event (boarding spec §4.5): shown over the map until the
@@ -1539,13 +1554,10 @@ func _clear_boarding_card() -> void:
 	_boarding_card_log = null
 
 
+## A click on the combat log (or its old skip) is Resolve all.
 func _skip_combat_playback() -> void:
-	if _combat_playback_active:
-		_combat_playback_skip = true
-
-
-func _tree_paused() -> bool:
-	return is_inside_tree() and get_tree().paused
+	if _replay_running():
+		resolution_replay.resolve_all()
 
 
 func _finish_combat_playback() -> void:
@@ -1558,21 +1570,242 @@ func _finish_combat_playback() -> void:
 	var phase_controller = GameState.phase_controller
 	if phase_controller == null:
 		return
-	# The phase may have moved on (or the game ended) while we were revealing lines.
+	# The phase may have moved on (or the game ended) while the steps were shown.
 	if phase_controller.current_phase != TurnPhaseController.GamePhase.COMBAT_RESOLUTION \
 			or phase_controller.combat_step != TurnPhaseController.CombatStep.RESOLVE:
 		return
 	# Intentional view->controller callback so the turn keeps cycling  SCV:ALLOW
 	phase_controller.on_combat_playback_completed()
 
+## POST_COMBAT: the steps of drift, status adjustment, morale and messages are replayed first; the
+## End Turn button comes up when the player is through them (at once when there are none).
 func _enter_post_combat_phase() -> void:
 	if skip_post_combat_delay:
 		_request_end_turn()
 		return
 	Trace.trace_log("GameController", "Post-combat phase - waiting for player to end turn")
+	if context_panel != null:
+		_feed_post_combat_replay()
+		if _replay_running():
+			resolution_replay.finish_when_drained(_on_post_combat_replay_drained)
+			return
+	_show_post_combat_end_turn()
+
+
+## Puts the post-combat steps logged since the last call into the replay, starting the replay when
+## it is not running and there is something to show (or `open_empty`: a prompt is about to be
+## pushed). Steps of other phases are left out.
+func _feed_post_combat_replay(open_empty: bool = false) -> void:
+	var running := _replay_running() and resolution_replay.kind == "post_combat"
+	var steps := _replay_steps(_post_events_read if running else 0, POST_COMBAT_PHASES)
+	if not running:
+		if steps.is_empty() and not open_empty:
+			return
+		_start_resolution_replay("post_combat", POST_COMBAT_PHASES)
+	resolution_replay.append(steps)
+
+
+func _on_post_combat_replay_drained() -> void:
+	_end_resolution_display()
+	if GameState.phase_controller \
+			and GameState.phase_controller.current_phase == TurnPhaseController.GamePhase.POST_COMBAT:
+		_show_post_combat_end_turn()
+
+
+func _show_post_combat_end_turn() -> void:
 	if combat_log_panel:
 		combat_log_panel.auto_expand(true)  # let the player review the turn
 	_show_end_turn_ui()
+
+
+# --- The resolution replay ------------------------------------------------------------------
+
+func _replay() -> ResolutionReplay:
+	if resolution_replay == null:
+		resolution_replay = ResolutionReplay.new()
+		resolution_replay.name = "ResolutionReplay"
+		add_child(resolution_replay)
+		resolution_replay.step_shown.connect(_on_replay_step_shown)
+	return resolution_replay
+
+
+func _replay_running() -> bool:
+	return resolution_replay != null and resolution_replay.is_running()
+
+
+## The steps of this turn's events the local player may see, from filtered index `from_index`, in
+## `phases` only. Also refreshes the filtered -> raw index map the log's reveal limit uses.
+func _replay_steps(from_index: int, phases: Array[int]) -> Array[ResolutionStep]:
+	var out: Array[ResolutionStep] = []
+	var turn_log: PhaseEvents.PhaseLog = GameState.turn_log
+	if turn_log == null or GameState.player_view == null:
+		return out
+	var dicts: Array = GameState.player_view.events_for(HUMAN_PLAYER_ID, turn_log.turn)
+	_replay_raw_index = raw_indices(turn_log.events, dicts)
+	if phases == POST_COMBAT_PHASES:
+		_post_events_read = dicts.size()
+	for step in ResolutionSteps.build(dicts, from_index, CombatLogPanel.log_ships(GameState.get_all_ships())):
+		if phases.has(step.phase):
+			out.append(step)
+	return out
+
+
+## Starts a replay of `phases`: the panel goes into the side panel, the map shows each ship as she
+## was before the first phase, and the camera pose is kept for the end (kept across a combat
+## replay running straight into the post-combat one).
+func _start_resolution_replay(kind: String, phases: Array[int]) -> void:
+	_ensure_resolution_panel()
+	if _replay_saved_view.is_empty() and camera and camera.has_method("save_view"):
+		_replay_saved_view = camera.save_view()
+	_replay().start(kind, phases)
+	display_states.begin(phases)
+	_replay_display_phase = phases[0] if not phases.is_empty() else -1
+	if combat_log_panel:
+		combat_log_panel.set_skip_hint(false)
+		combat_log_panel.auto_expand(false)  # the log stays collapsed and fills in step by step
+	_sync_all_views()
+
+
+func _ensure_resolution_panel() -> void:
+	if resolution_panel == null or not is_instance_valid(resolution_panel) \
+			or resolution_panel.is_queued_for_deletion():
+		resolution_panel = ResolutionPanelScene.instantiate()
+	if context_panel:
+		context_panel.set_context_title("Resolution")
+		context_panel.set_context_content(resolution_panel)
+	elif resolution_panel.get_parent() == null:
+		add_child(resolution_panel)
+	current_planning_ui = null  # freed by the context panel
+	combat_panel = null
+	_replay().attach_panel(resolution_panel)
+
+
+## Each step as it comes up: the map shows the display copies for it, the log reveals up to its last
+## event, a boarding round brings up the boarding card, and (not during Resolve all) the camera
+## frames the ship and her target.
+func _on_replay_step_shown(step: ResolutionStep, index: int) -> void:
+	if step.phase != _replay_display_phase:
+		display_states.phase_reached(step.phase)
+		_replay_display_phase = step.phase
+	display_states.step_shown(step, resolution_replay.steps(), index)
+	var turn_log: PhaseEvents.PhaseLog = GameState.turn_log
+	if not step.events.is_empty() and turn_log != null:
+		if combat_log_panel and step.last_index < _replay_raw_index.size():
+			combat_log_panel.set_reveal_limit(_replay_raw_index[step.last_index] + 1)
+		if step.kind == "boarding" and step.first_index < _replay_raw_index.size():
+			var raw := _replay_raw_index[step.first_index]
+			if raw < turn_log.events.size() and turn_log.events[raw].type == PhaseEvents.Type.BOARDING_ROUND:
+				_show_boarding_card(turn_log, turn_log.events[raw])
+	_sync_all_views()
+	if not resolution_replay.is_resolving_all():
+		_frame_step(step)
+
+
+## Close on the step's ship (as the map draws her), with her target in the frame when there is one,
+## clear of the side panel. Never rotates.
+func _frame_step(step: ResolutionStep) -> void:
+	if not camera or not camera.has_method("frame_ship") or not hex_map:
+		return
+	var grid: HexGrid = hex_map.get_hex_grid()
+	var points: Array[Vector3] = []
+	for id in [step.ship_id, step.target_id]:
+		var s: ShipState = _drawn_state(id) if id != "" else null
+		if s != null and s.is_on_map():
+			points.append(grid.ship_center_world(s.hex_position, s.facing))
+	if points.is_empty():
+		return
+	var focus := points[0]
+	var separation := 0.0
+	if points.size() > 1:
+		focus = (points[0] + points[1]) * 0.5
+		separation = points[0].distance_to(points[1])
+	var ship_length := grid.axial_to_world(0, 0).distance_to(grid.axial_to_world(1, 0))
+	var safe := _map_safe_rect()
+	var distance := step_frame_distance(separation + 3.0 * ship_length, camera.max_zoom / 3.0,
+		camera.fov, get_viewport().get_visible_rect().size.y, safe.size)
+	camera.frame_ship(focus, distance, safe)
+
+
+## The camera distance that shows `span` world units within the smaller side of `safe_size`
+## (with room to spare), and never closer than `base`.
+static func step_frame_distance(span: float, base: float, fov_deg: float, viewport_height: float,
+		safe_size: Vector2) -> float:
+	var fit := minf(safe_size.x, safe_size.y) * 0.7
+	if fit <= 0.0 or viewport_height <= 0.0:
+		return base
+	var needed := span * viewport_height / (2.0 * tan(deg_to_rad(fov_deg) * 0.5) * fit)
+	return maxf(base, needed)
+
+
+## The replay is over (or dropped): the camera goes back, the map and log show live state again.
+## What the side panel shows next is the caller's (End Turn in POST_COMBAT, the next phase's UI).
+func _end_resolution_display() -> void:
+	if camera and not _replay_saved_view.is_empty() and camera.has_method("restore_view"):
+		camera.restore_view(_replay_saved_view)
+	_replay_saved_view = {}
+	display_states.end()
+	_replay_display_phase = -1
+	if combat_log_panel:
+		combat_log_panel.clear_reveal_limit()
+	_sync_all_views()
+
+
+## Whether the phase `phase` has moved past a replay of `phases`: before them, or after them (the
+## post-combat replay runs on while POST_COMBAT waits for it).
+static func replay_outlived(kind: String, phases: Array[int], phase: int) -> bool:
+	if phases.is_empty():
+		return true
+	if kind == "post_combat" and phase == TurnPhaseController.GamePhase.POST_COMBAT:
+		return false
+	return phase < (phases.min() as int) or phase > (phases.max() as int)
+
+
+## For each event dict of `filtered` (`PlayerView.events_for`: events dropped, never reordered), the
+## index of its event in `raw` (the turn log). Matched in order on type, phase, ships and every
+## plain data value both still hold (the filter only removes or adds fields); an event with no
+## match maps past the end of `raw`.
+static func raw_indices(raw: Array[PhaseEvents.PhaseEvent], filtered: Array) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var j := 0
+	for d in filtered:
+		var found := -1
+		for k in range(j, raw.size()):
+			if _same_event(raw[k], d):
+				found = k
+				break
+		if found < 0:
+			out.append(raw.size())
+		else:
+			out.append(found)
+			j = found + 1
+	return out
+
+
+static func _same_event(ev: PhaseEvents.PhaseEvent, d: Dictionary) -> bool:
+	if int(d.get("type", -1)) != int(ev.type) or int(d.get("phase", -1)) != ev.phase \
+			or str(d.get("ship_id", "")) != ev.ship_id or str(d.get("target_id", "")) != ev.target_id:
+		return false
+	var data: Dictionary = d.get("data", {})
+	for key in data:
+		var value: Variant = data[key]
+		if value is Dictionary or value is Array or not ev.data.has(key):
+			continue
+		if ev.data[key] != value:
+			return false
+	return true
+
+
+## The state the map draws for `ship_id`: its display copy while a replay shows one, else live.
+func _drawn_state(ship_id: String) -> ShipState:
+	var copy := display_states.state_for(ship_id)
+	return copy if copy != null else GameState.get_ship(ship_id)
+
+
+func _drawn_ships() -> Array:
+	var out: Array = []
+	for ship: ShipState in GameState.get_all_ships():
+		out.append(_drawn_state(ship.ship_id))
+	return out
 
 
 func _show_end_turn_ui() -> void:
@@ -1618,11 +1851,11 @@ func _clear_end_turn_ui() -> void:
 	end_turn_button = null
 
 
-## The End Turn key shortcut only applies while the button is showing and no combat playback is
-## running (that playback owns Space/Enter as its skip keys).
+## The End Turn key shortcut only applies while the button is showing and no combat playback or
+## resolution replay is running (the replay owns Space/Enter as Next).
 func _end_turn_available() -> bool:
 	return end_turn_button != null and is_instance_valid(end_turn_button) \
-			and not end_turn_button.disabled and not _combat_playback_active
+			and not end_turn_button.disabled and not _combat_playback_active and not _replay_running()
 
 
 func _on_end_turn_pressed() -> void:
@@ -1645,6 +1878,12 @@ func _request_end_turn() -> void:
 
 func _on_game_over(result: Dictionary) -> void:
 	Trace.trace_log("GameController", "Game over", result)
+	if resolution_replay:
+		resolution_replay.cancel()  # dropped: no further server calls
+	display_states.end()
+	_replay_saved_view = {}  # the final position is framed below instead
+	if combat_log_panel:
+		combat_log_panel.clear_reveal_limit()
 	_close_fire_panel()
 	_clear_end_turn_ui()
 	_deselect_ship()
@@ -1698,9 +1937,11 @@ func _sync_all_views() -> void:
 	# Reinforcements placed since the last sync (2.B.1) get their views first.
 	for ship_id in views_to_spawn(ship_views.keys(), GameState.get_all_ships()):
 		_spawn_ship_view(GameState.get_ship(ship_id))
+	# While a resolution replay runs each ship is drawn from her display copy (the state at the step
+	# on screen); a view leaves only when what it draws has left the map.
 	for ship_id in ship_views.keys():
 		var ship_view = ship_views[ship_id]
-		var ship_state = GameState.get_ship(ship_id)
+		var ship_state: ShipState = _drawn_state(ship_id)
 		if ship_state and ship_view and hex_map:
 			ship_view.sync_to_state(ship_state, hex_map.get_hex_grid())
 		if ship_state and not ship_state.is_on_map():
@@ -1709,25 +1950,26 @@ func _sync_all_views() -> void:
 			if selected_ship_id == ship_id:
 				_deselect_ship()
 	if hex_map:
+		var drawn := _drawn_ships()
 		if anchor_markers == null:
 			anchor_markers = AnchorMarkers.new()
 			add_child(anchor_markers)
-		anchor_markers.refresh(GameState.get_all_ships(), hex_map.get_hex_grid())
+		anchor_markers.refresh(drawn, hex_map.get_hex_grid())
 		if grapple_lines == null:
 			grapple_lines = GrappleLines.new()
 			add_child(grapple_lines)
-		grapple_lines.refresh(GameState.get_all_ships(), hex_map.get_hex_grid())
+		grapple_lines.refresh(drawn, hex_map.get_hex_grid())
 		if tow_lines == null:
 			tow_lines = TowLines.new()
 			add_child(tow_lines)
-		tow_lines.refresh(GameState.get_all_ships(), hex_map.get_hex_grid())
+		tow_lines.refresh(drawn, hex_map.get_hex_grid())
 
 ## The hawsers ride on the drawn ships every frame (view only): movement playback glides the views
 ## between hexes, and a hawser drawn from the hexes alone would hang still until the next sync.
 func _follow_tow_lines() -> void:
 	if tow_lines == null or hex_map == null:
 		return
-	var ships: Array = GameState.get_all_ships()
+	var ships: Array = _drawn_ships()
 	if TowLines.any_tow(ships):
 		tow_lines.follow_views(ships, ship_views, hex_map.get_hex_grid())
 

@@ -234,7 +234,7 @@ func pan_to_if_needed(world_pos: Vector3, edge_margin: float = 0.15) -> bool:
 	tween.set_trans(Tween.TRANS_CUBIC)
 	tween.tween_property(self, "camera_target", target_pos, focus_animation_duration)
 	tween.finished.connect(func():
-		is_tweening = false
+		_tween_done()
 		_update_camera_transform()
 	)
 	return true
@@ -304,7 +304,7 @@ func frame_points_if_needed(points: Array[Vector3], safe_rect: Rect2, margin_px:
 	if not is_equal_approx(plan["distance"], camera_distance):
 		tween.tween_property(self, "camera_distance", plan["distance"], focus_animation_duration)
 	tween.finished.connect(func():
-		is_tweening = false
+		_tween_done()
 		_update_camera_transform()
 	)
 	return true
@@ -342,6 +342,11 @@ func restore_view(view: Dictionary) -> void:
 	isometric_angle = view.get("angle", isometric_angle)
 	_animate_to(view.get("target", camera_target), view.get("distance", camera_distance),
 		view.get("rotation", camera_rotation_y))
+
+
+## A pan / focus tween ended: keep updating while a frame_ship / restore_view tween still runs.
+func _tween_done() -> void:
+	is_tweening = _frame_tween != null and _frame_tween.is_valid() and _frame_tween.is_running()
 
 
 func _animate_to(target: Vector3, distance: float, rotation_deg: float) -> void:
@@ -414,7 +419,7 @@ func focus_on_ship(world_pos: Vector3, ship_facing: int, zoom_distance: float = 
 
 	# Disable tweening flag when animation completes
 	tween.finished.connect(func():
-		is_tweening = false
+		_tween_done()
 		_update_camera_transform()  # Final update
 	)
 

@@ -314,7 +314,7 @@ func _flame(p: Vector2, u: float) -> void:
 		p + Vector2(-2, 0) * u, p + Vector2(0, -8) * u, p + Vector2(2, 0) * u]), FLAME_CORE)
 
 
-func _draw_caption(w: float, h: float) -> void:
+func _draw_caption(_w: float, h: float) -> void:
 	var font := get_theme_font("font", &"HeaderLabel")
 	var fs := clampi(int(h * 0.1), 14, 22)
 	var text := caption_for(kind)
