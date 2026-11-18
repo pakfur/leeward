@@ -6,6 +6,8 @@ extends Node3D
 ##   in green (orange where another ship is in the way); the selected ship at full strength
 ## - Blocked hexes: red, the moves the selected ship cannot make from its course end
 ## - Fire arcs and target outlines (fire declaration)
+## - Terrain (show_terrain): land and shallow tints, a depth label per shallow area, and strips along
+##   the escape (green) and none (red) boundaries
 
 const OVERLAY_Y = 0.1  # Slightly above water surface
 const HEX_INSET = 0.9  # Fraction of hex_size for slight inset from edges
@@ -22,12 +24,20 @@ const TARGET_RING_INNER = 0.92
 const ARC_RENDER_PRIORITY = 1  # above the transparent ocean (priority 0)
 const TARGET_RENDER_PRIORITY = 2
 const COLOR_COLLISION = Color(1.0, 0.5, 0.0, 0.6)   # Orange, an offered hex that holds another ship
+const COLOR_LAND = Color(0.76, 0.66, 0.45, 0.85)    # Sand
+const COLOR_SHALLOW = Color(0.55, 0.80, 0.70, 0.55)  # Pale green
+const COLOR_EDGE_ESCAPE = Color(0.2, 0.85, 0.35, 0.9)  # Green: ships may leave here and escape
+const COLOR_EDGE_NONE = Color(0.9, 0.2, 0.2, 0.9)      # Red: no sea room, a ship leaving is lost
+const TERRAIN_Y = 0.06  # under the course and arc layers
+const EDGE_STRIP_WIDTH = 0.14  # fraction of hex_size
+const DEPTH_LABEL_COLOR = Color(0.92, 0.97, 0.95, 1.0)
 
 # Child nodes for each layer
 var blocked_hexes_node: Node3D = null
 var courses_node: Node3D = null
 var arcs_node: Node3D = null
 var targets_node: Node3D = null
+var terrain_node: Node3D = null
 
 ## Grid used to place arc hexes; set by the owner (show_arc takes only hexes and a colour).
 var arc_grid: HexGrid = null
@@ -37,6 +47,7 @@ var _valid_material: StandardMaterial3D = null
 var _plotted_material: StandardMaterial3D = null
 var _blocked_material: StandardMaterial3D = null
 var _arc_materials: Dictionary = {}  # Color -> StandardMaterial3D
+var _terrain_materials: Dictionary = {}  # Color -> StandardMaterial3D
 var _target_material: StandardMaterial3D = null
 var _collision_material: StandardMaterial3D = null
 # Course layers of ships other than the selected one: the same colours at about half alpha.
@@ -46,6 +57,8 @@ var _collision_material_dim: StandardMaterial3D = null
 
 
 func _ready() -> void:
+	_ensure_terrain_node()
+
 	courses_node = Node3D.new()
 	courses_node.name = "Courses"
 	add_child(courses_node)
@@ -72,6 +85,139 @@ func _ready() -> void:
 	_valid_material_dim = _create_material(_half_alpha(COLOR_VALID))
 	_plotted_material_dim = _create_material(_half_alpha(COLOR_PLOTTED))
 	_collision_material_dim = _create_material(_half_alpha(COLOR_COLLISION))
+
+
+func _ensure_terrain_node() -> void:
+	if terrain_node == null:
+		terrain_node = Node3D.new()
+		terrain_node.name = "Terrain"
+		add_child(terrain_node)
+
+
+## The scenario's terrain (map and scenario spec §15): each land hex tinted sand (`Land_<q>_<r>`),
+## each shallow hex pale green (`Shallow_<q>_<r>`), one depth label per shallow area on its hex
+## nearest the area's centre (`DepthLabel_<area>`, "A 16–21 ft"), and a strip along every side of
+## an escape (green) or none (red) boundary (`Edge_<boundary>_<i>`). Replaces any earlier terrain.
+func show_terrain(terrain: TerrainMap, hex_grid: HexGrid) -> void:
+	clear_terrain()
+	if terrain == null or hex_grid == null:
+		return
+	_ensure_terrain_node()
+	var land_mat := _terrain_material(COLOR_LAND)
+	var shallow_mat := _terrain_material(COLOR_SHALLOW)
+	for hex: Vector2i in terrain.land:
+		_add_terrain_hex("Land_%d_%d" % [hex.x, hex.y], hex, hex_grid, land_mat)
+	for area in terrain.areas:
+		for hex in area.hexes:
+			_add_terrain_hex("Shallow_%d_%d" % [hex.x, hex.y], hex, hex_grid, shallow_mat)
+		if not area.hexes.is_empty():
+			_add_depth_label(area, hex_grid)
+	for b in terrain.boundaries:
+		if b.kind == TerrainMap.ESCAPE:
+			_add_edge_strips(b, hex_grid, _terrain_material(COLOR_EDGE_ESCAPE))
+		elif b.kind == TerrainMap.NONE:
+			_add_edge_strips(b, hex_grid, _terrain_material(COLOR_EDGE_NONE))
+
+
+func clear_terrain() -> void:
+	if terrain_node == null:
+		return
+	for child in terrain_node.get_children():
+		terrain_node.remove_child(child)
+		child.queue_free()
+
+
+## The depth label text of a shallow area: "<name> <base+1>–<base+6> ft".
+static func depth_label_text(area: TerrainMap.ShallowArea) -> String:
+	return "%s %d–%d ft" % [area.name, area.base + 1, area.base + TerrainMap.DEPTH_DIE]
+
+
+## The hex of `hexes` nearest their centroid (in world space); the first listed wins a tie.
+static func central_hex(hexes: Array[Vector2i], hex_grid: HexGrid) -> Vector2i:
+	var sum := Vector3.ZERO
+	for h in hexes:
+		sum += hex_grid.axial_to_world(h.x, h.y)
+	var centre := sum / float(hexes.size())
+	var best: Vector2i = hexes[0]
+	var best_d := INF
+	for h in hexes:
+		var d := hex_grid.axial_to_world(h.x, h.y).distance_squared_to(centre)
+		if d < best_d - 0.0001:
+			best_d = d
+			best = h
+	return best
+
+
+func _terrain_material(color: Color) -> StandardMaterial3D:
+	if not _terrain_materials.has(color):
+		var mat := _create_material(color)
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED  # strips are drawn whichever way they wind
+		_terrain_materials[color] = mat
+	return _terrain_materials[color]
+
+
+func _add_terrain_hex(node_name: String, hex: Vector2i, hex_grid: HexGrid, material: StandardMaterial3D) -> void:
+	var w := hex_grid.axial_to_world(hex.x, hex.y)
+	var mesh_instance := MeshInstance3D.new()
+	mesh_instance.name = node_name
+	mesh_instance.mesh = _create_hex_mesh(hex_grid.hex_size)  # full hex: neighbouring tints join up
+	mesh_instance.material_override = material
+	mesh_instance.position = Vector3(w.x, TERRAIN_Y, w.z)
+	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	terrain_node.add_child(mesh_instance)
+
+
+func _add_depth_label(area: TerrainMap.ShallowArea, hex_grid: HexGrid) -> void:
+	var hex := central_hex(area.hexes, hex_grid)
+	var w := hex_grid.axial_to_world(hex.x, hex.y)
+	var label := Label3D.new()
+	label.name = "DepthLabel_" + area.name
+	label.text = depth_label_text(area)
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.no_depth_test = true
+	label.fixed_size = true
+	label.pixel_size = 0.0011
+	label.font_size = 20
+	label.outline_size = 8
+	label.modulate = DEPTH_LABEL_COLOR
+	label.outline_modulate = Color(0.05, 0.15, 0.2, 0.9)
+	label.render_priority = ARC_RENDER_PRIORITY
+	label.position = Vector3(w.x, TERRAIN_Y + 0.1, w.z)
+	terrain_node.add_child(label)
+
+
+## One flat strip along each hex side of the boundary, centred on the side.
+func _add_edge_strips(b: TerrainMap.Boundary, hex_grid: HexGrid, material: StandardMaterial3D) -> void:
+	var i := 0
+	for key: Vector4i in b.sides:
+		var c1 := hex_grid.axial_to_world(key.x, key.y)
+		var c2 := hex_grid.axial_to_world(key.z, key.w)
+		var strip := MeshInstance3D.new()
+		strip.name = "Edge_%s_%d" % [b.name, i]
+		strip.mesh = _create_edge_strip_mesh(c2 - c1, hex_grid.hex_size)
+		strip.material_override = material
+		var mid := (c1 + c2) * 0.5
+		strip.position = Vector3(mid.x, TERRAIN_Y + 0.01, mid.z)
+		strip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		terrain_node.add_child(strip)
+		i += 1
+
+
+## A quad along the side shared by two hexes whose centres differ by `across`: as long as the side
+## (a hex side is as long as the hex's circumradius) and EDGE_STRIP_WIDTH wide, centred on the origin.
+func _create_edge_strip_mesh(across: Vector3, hex_size: float) -> ArrayMesh:
+	var d := Vector3(across.x, 0, across.z).normalized()
+	var along := Vector3(-d.z, 0, d.x) * hex_size * 0.5
+	var half_w := d * hex_size * EDGE_STRIP_WIDTH * 0.5
+	var vertices := PackedVector3Array([-along - half_w, -along + half_w, along + half_w, along - half_w])
+	var indices := PackedInt32Array([0, 1, 2, 0, 2, 3])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
 
 
 static func _half_alpha(c: Color) -> Color:
