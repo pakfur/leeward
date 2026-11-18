@@ -183,9 +183,41 @@ func test_haul_to_bear() -> void:
 func test_haul_skips_blocked_turn() -> void:
 	var ai := _anchored(true)
 	_make_ship("enemy", 0, Vector2i(4, 0), 1)
+	assert_eq(stub_ai.haul_choice(ai), "turn_starboard", "control: the starboard haul bears best")
 	# The starboard turn swings the stern into (0, -1).
 	_make_ship("friend", 1, Vector2i(0, -1), 0)
 	assert_ne(stub_ai.haul_choice(ai), "turn_starboard")
+
+
+func test_haul_refused_without_wind() -> void:
+	var ai := _anchored(true)
+	_make_ship("enemy", 0, Vector2i(4, 0), 1)
+	GameState.environment.wind_speed = 0
+	assert_eq(stub_ai.haul_choice(ai), "", "springs cannot be used in a calm (13.E.3)")
+
+
+# --- never cut back into danger -----------------------------------------------------
+
+func test_emergency_anchored_dismasted_ship_never_cuts() -> void:
+	var ai := _anchored(true)
+	ai.rigging_current_hp = [0, 0, 0, 0] as Array[int]
+	sc.set_standing_order("ai", {"order": "engage"})  # no enemy near
+	assert_ne(stub_ai.anchor_order(ai), "cut")
+	sc.set_standing_order("ai", {"order": "cut"})
+	assert_ne(stub_ai.anchor_order(ai), "cut")
+
+
+func test_cut_cables_not_with_land_to_leeward() -> void:
+	GameState.active_scenario = _scenario(true, {"land": [[-4, 0]]})
+	var ai := _anchored(true)
+	sc.set_standing_order("ai", {"order": "cut"})
+	assert_ne(stub_ai.anchor_order(ai), "cut")
+
+
+func test_cut_cables_in_open_water() -> void:
+	var ai := _anchored(true)
+	sc.set_standing_order("ai", {"order": "cut"})
+	assert_eq(stub_ai.anchor_order(ai), "cut")
 
 
 # --- emergency anchoring ------------------------------------------------------------
