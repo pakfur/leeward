@@ -216,3 +216,55 @@ func test_anchor_station_read_only() -> void:
 	assert_eq(CrewRules.station_of(1, {"code": "PBA"}), "anchor")
 	assert_eq(CrewRules.task_name("PBA"), "preparing the bow anchor")
 	assert_eq(CrewRules.task_name("HS"), "handling the springs")
+
+
+func test_a2c_after_fire() -> void:
+	# A1 first: with only the marines left, the fire takes them and the anchor order gets no one.
+	var a := _make_ship("a", true)
+	a.crew_count = [0, 0, 0, 0] as Array[int]
+	var ctx := _ctx(a)
+	ctx["fires"] = [1]
+	var out := CrewAuto.allocate(a, {"anchor": "prepare_bow"}, ctx)
+	assert_eq(out["assignments"].get(ShipState.MARINES, {}).get("code", ""), "FF")
+	assert_true(_anchoring_codes(out["assignments"]).is_empty())
+
+
+func test_a2c_after_boarding_order() -> void:
+	# A2b first: "ready" forms the marines and S1 as boarders; the anchor order takes S4.
+	var a := _make_ship("a", true)
+	var out := CrewAuto.allocate(a, {"anchor": "prepare_bow", "boarding": "ready"}, _ctx(a))
+	assert_eq(out["assignments"].get(ShipState.MARINES, {}).get("code", ""), "FB")
+	assert_eq(_anchoring_codes(out["assignments"]), {3: {"code": "PBA", "params": {}}})
+
+
+func test_a2c_before_sail_change() -> void:
+	# A3 after: the anchor order takes the marines, the sail change the next sections in worker order.
+	var a := _make_ship("a", true)
+	var target: String = SailController.targets_for(a)[0]
+	var needed := SailController.sections_needed(a, target)
+	var out := CrewAuto.allocate(a, {"anchor": "prepare_bow", "sail_target": target}, _ctx(a))
+	assert_eq(_anchoring_codes(out["assignments"]), {ShipState.MARINES: {"code": "PBA", "params": {}}})
+	var on_sails: Array = []
+	for s in out["assignments"]:
+		if str(out["assignments"][s].get("code", "")) == SailController.CODE:
+			on_sails.append(int(s))
+	on_sails.sort()
+	var expected: Array = [2, 3] if needed == 2 else [3]
+	assert_eq(on_sails, expected)
+
+
+func test_client_anchor_station_refusal() -> void:
+	_make_ship("a", false)
+	GameState.ship_controller.drop_anchor("a", _anchor_data("bow", true))
+	var old_ready: Dictionary = GameState.phase_controller.players_ready.duplicate()
+	GameState.phase_controller.players_ready = {0: false, 1: false}
+	var client := CrewOverlayClient.new(GameState, 0)
+	client.open_for("a")
+	assert_eq(client.refusal(3, "anchor"), CrewRules.ANCHOR_REFUSAL)
+	assert_eq(client.mark_for("anchor", 3), "invalid")
+	GameState.phase_controller.players_ready = old_ready
+
+
+func test_section_job_word_for_anchor_tasks() -> void:
+	var a := _make_ship("a", false)
+	assert_eq(CrewOverlayText.section_job(a, 2, {"code": "HS", "params": {"turn": "port"}})["text"], "anchor")

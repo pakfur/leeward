@@ -101,7 +101,7 @@ func refusal(section: int, station_id: String) -> String:
 	if st.is_empty():
 		return "That station is not available now."
 	if str(st.get("accepts", "")) == "none":
-		return CrewRules.refusal(s, plan(), ctx(), section, CrewRules.STATION_REORGANIZING)
+		return CrewRules.refusal(s, plan(), ctx(), section, station_id)
 	if str(st.get("disabled_reason", "")) != "":
 		return st["disabled_reason"]
 	return CrewRules.refusal(s, plan(), ctx(), section, station_id)

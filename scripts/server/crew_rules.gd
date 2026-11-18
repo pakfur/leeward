@@ -40,7 +40,7 @@ const ONE_TURN_CODES: Array[String] = ["T", "BD"]
 const DRAFT_TIE_ORDER: Array[String] = ["RS", "RR", "RH", "SAIL"]
 ## Short words for a section's task (the Crew line on a ship card, CrewOverlayText.section_job).
 const SUMMARY_WORDS := {"guns": "guns", "marine_fire": "fire", "sails": "sails", "braces": "braces",
-	"reorganizing": "RO", "boarders": "boarders"}
+	"reorganizing": "RO", "boarders": "boarders", "anchor": "anchor"}
 ## Station labels and short codes (small deck cards), spec §4.3.
 const STATION_LABELS := {"guns": "Serve the guns", "marine_fire": "Marine fire", "sails": "Sails aloft",
 	"braces": "Braces (tacking)", "reorganizing": "Reorganizing", "boarders": "Boarders", "rr": "Rigging repair",
