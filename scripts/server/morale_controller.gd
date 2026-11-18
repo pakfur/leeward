@@ -4,7 +4,8 @@ extends RefCounted
 ## ordered this g-t (14.B.2, `resolve_surrenders`), then the pending morale checks
 ## (`resolve_checks`); `resolve_phase` runs both in that order. Surrenders come first because a ship
 ## may surrender "before it is forced to strike": a ship that surrenders is out of play and her noted
-## checks are never rolled. A check rolls d10 and passes at or above the ship's morale rating. A
+## checks are never rolled. A surrendered ship's rally (14.B.3, `rally`) is rolled in PLANNING, at the
+## player's request: one d10 per attempt, one attempt a g-t. A check rolls d10 and passes at or above the ship's morale rating. A
 ## failure lowers crew quality one letter; failing while already at G strikes the ship. All
 ## mutations go through ShipStateController / DamageController.
 
@@ -69,6 +70,45 @@ func resolve_checks(phase: int) -> void:
 		game_state.ship_controller.clear_pending_morale_checks(ship_id)
 
 
+## SERVER ONLY: 14.B.3, the surrendered ship tries to rally (TurnPhaseController.player_rally has
+## checked that she may). The attempt is recorded for this g-t first, then one d10 (the only die):
+## at or above her morale rating she is ACTIVE again; a failure lowers her crew quality one letter;
+## a failure at G leaves her struck for good. Logs RALLY {roll, rating, passed, quality | breaks}.
+func rally(ship_id: String, phase: int) -> Dictionary:
+	if not is_server:
+		push_error("MoraleController: Cannot roll a rally on client")
+		return {"passed": false}
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null:
+		return {"passed": false}
+	game_state.ship_controller.set_rally_turn(ship_id, game_state.phase_controller.current_turn)
+	var roll: int = game_state.dice.d10()
+	var rating: int = ship.morale_rating
+	var passed: bool = roll >= rating
+	var data := {"roll": roll, "rating": rating, "passed": passed}
+	if passed:
+		game_state.ship_controller.restore_from_surrender(ship_id)
+	elif ship.crew_quality == "G":
+		game_state.ship_controller.end_surrender(ship_id)
+		data["breaks"] = true
+	else:
+		_lower_quality(ship)
+		data["quality"] = ship.crew_quality
+	game_state.turn_log.add(PhaseEvents.Type.RALLY, phase, ship_id, data)
+	return {"passed": passed}
+
+
+## One letter worse (QUALITY_ORDER), at most G; an unknown letter counts as D.
+func _lower_quality(ship: ShipState) -> void:
+	var index: int = QUALITY_ORDER.find(ship.crew_quality)
+	if index < 0:
+		push_warning("MoraleController: ship %s has unrecognised crew quality '%s'; treated as D" % [
+			ship.ship.ship_id, ship.crew_quality])
+		index = QUALITY_ORDER.find("D")
+	game_state.ship_controller.set_crew_quality(ship.ship.ship_id,
+		QUALITY_ORDER[mini(index + 1, QUALITY_ORDER.size() - 1)])
+
+
 func _check(ship: ShipState, phase: int) -> void:
 	var ship_id: String = ship.ship.ship_id
 	var roll: int = game_state.dice.d10()
@@ -76,12 +116,7 @@ func _check(ship: ShipState, phase: int) -> void:
 	var passed: bool = roll >= rating
 	var failed_at_g: bool = not passed and ship.crew_quality == "G"
 	if not passed and not failed_at_g:
-		var index: int = QUALITY_ORDER.find(ship.crew_quality)
-		if index < 0:
-			push_warning("MoraleController: ship %s has unrecognised crew quality '%s'; treated as D" % [
-				ship_id, ship.crew_quality])
-			index = QUALITY_ORDER.find("D")
-		game_state.ship_controller.set_crew_quality(ship_id, QUALITY_ORDER[mini(index + 1, QUALITY_ORDER.size() - 1)])
+		_lower_quality(ship)
 	var data := {"roll": roll, "rating": rating, "passed": passed}
 	if failed_at_g:
 		data["breaks"] = true  # already at G: no quality left to lose, the ship strikes

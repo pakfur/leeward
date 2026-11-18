@@ -58,7 +58,7 @@ enum Type {
 	TOW_BEGUN,  # 12.A.4 ship_id (the tower) rolls to take target_id in tow: {roll, modifier, modifiers, total, needed, success}; or her order lapses with no roll: {success: false, lapsed: reason}
 	TOW_CUT,  # 12.A.6, 12.A.9 the tow between ship_id (tower) and target_id (towed) is cut: {cause: tx/struck/destroyed/taken/aground/structural/dismasted, by}
 	SURRENDER,  # 14.B a ship hauls down her colours: {surrenders, permanent}
-	RALLY,  # 14.B a struck crew rallies (sub-project 7 Task 5; its data and text are added there)
+	RALLY,  # 14.B.3 a surrendered ship tries to rally: {roll, rating, passed, quality | breaks}
 	AIM_FORCED,  # 14.E a low aim forced high: {roll, rules: ["crew"|"heel"], sides, quality}
 }
 
@@ -564,6 +564,14 @@ class PhaseEvent extends RefCounted:
 				if data.get("permanent", false):
 					text += "; her second surrender: she cannot rally again"
 				return text
+			Type.RALLY:
+				var text := "%s tries to rally: rolled %d, needed %d" % [who, int(data.get("roll", 0)),
+					int(data.get("rating", 0))]
+				if data.get("passed", false):
+					return text + " — she rallies and fights on"
+				if data.get("breaks", false):
+					return text + " — fails; she has struck for good"
+				return text + " — fails; crew quality drops to %s" % str(data.get("quality", "?"))
 			Type.STRIKE:
 				return "%s strikes her colours (%s)" % [who,
 					PhaseEvents.STRIKE_REASONS.get(str(data.get("reason", "")), str(data.get("reason", "cause unknown")))]

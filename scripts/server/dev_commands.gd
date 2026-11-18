@@ -226,6 +226,34 @@ func grapple_ships(ship_id: String, other_id: String, count_now: bool = false) -
 	return ""
 
 
+## Orders (or withdraws) the ship's voluntary surrender (14.B.2) through the player request, as her
+## commander: the same checks (PLANNING, plan not in, eligible). "" or a reason.
+func surrender_ship(ship_id: String, on: bool = true) -> String:
+	var reason := _refusal()
+	if reason != "":
+		return reason
+	if game_state.get_ship(ship_id) == null:
+		return "no ship %s" % ship_id
+	reason = game_state.phase_controller.player_surrender(game_state.commander_of(ship_id), ship_id, on)
+	if reason == "":
+		Trace.trace_log("DevCommands", "%s surrender order %s" % [ship_id, "given" if on else "withdrawn"])
+	return reason
+
+
+## The surrendered ship tries to rally (14.B.3) through the player request, as her commander: one
+## d10 rolled at once. "" when the roll was made, or a reason.
+func rally_ship(ship_id: String) -> String:
+	var reason := _refusal()
+	if reason != "":
+		return reason
+	if game_state.get_ship(ship_id) == null:
+		return "no ship %s" % ship_id
+	reason = game_state.phase_controller.player_rally(game_state.commander_of(ship_id), ship_id)
+	if reason == "":
+		Trace.trace_log("DevCommands", "%s tried to rally" % ship_id)
+	return reason
+
+
 ## Skips to the next phase.
 func advance_phase() -> String:
 	var reason := _refusal()
