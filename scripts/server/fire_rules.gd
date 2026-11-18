@@ -19,6 +19,19 @@ const MAX_TARGETS := 2
 const MARINE_RANGE := 1
 ## House rule, register §5: each chaser (bow and stern) is one long-gun factor.
 const CHASE_GUN_FACTORS := {"lg": 1, "mg": 0, "cr": 0}
+## 14.D.2-3 (optional fatigue): no penalty for the first 5 firing turns, then -1, and a further -1
+## for each 10 more. The register reads "g-t 15" as -2 from the 16th firing turn; no recovery.
+const FATIGUE_FREE_TURNS := 5
+const FATIGUE_STEP_TURNS := 10
+
+
+## The fatigue penalty (a positive number to subtract) of a ship that has fired in `prior` earlier
+## turns: the shot of its 6th firing turn takes -1 (prior 5), its 16th -2 (prior 15), and so on.
+static func fatigue_penalty(prior: int) -> int:
+	if prior < FATIGUE_FREE_TURNS:
+		return 0
+	@warning_ignore("integer_division")
+	return 1 + (prior - FATIGUE_FREE_TURNS) / FATIGUE_STEP_TURNS
 
 
 ## Ranges from HIGH_ONLY_RANGE on allow only high fire.

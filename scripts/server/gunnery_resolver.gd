@@ -60,6 +60,16 @@ func resolve(orders: Array[GunneryTypes.FireOrder], phase: int) -> void:
 	for shot in shots:
 		_resolve_shot(shot, phase)
 
+	# 14.D: each ship that fired counts one firing turn, after all shots (no die).
+	var firers: Array[String] = []
+	for shot in shots:
+		var firer_id: String = shot["preview"].order.ship_id
+		if not firers.has(firer_id):
+			firers.append(firer_id)
+	firers.sort()
+	for firer_id in firers:
+		game_state.ship_controller.note_gunfire_turn(firer_id)
+
 
 func _shot_before(x: Dictionary, y: Dictionary) -> bool:
 	var px: GunneryTypes.ShotPreview = x["preview"]

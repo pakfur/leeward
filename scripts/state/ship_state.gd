@@ -135,6 +135,8 @@ var ship_type: String:
 @export var cable_cut_turn: int = -1
 ## The player has declared this ship's escape (leaving by the escape edge).
 @export var escape_declared: bool = false
+## 14.D.2: g-t's in which the ship fired any battery or chaser (the log's gunfire column).
+@export var gunfire_turns: int = 0
 ## A reinforcement not yet on the map: off the map and out of play until it arrives on `arrives_turn`.
 @export var awaiting_arrival: bool = false
 @export var arrives_turn: int = 1
@@ -730,6 +732,7 @@ func serialize() -> Dictionary:
 		"anchorings_used": anchorings_used,
 		"cable_cut_turn": cable_cut_turn,
 		"escape_declared": escape_declared,
+		"gunfire_turns": gunfire_turns,
 		"awaiting_arrival": awaiting_arrival,
 		"arrives_turn": arrives_turn,
 		"critical_effects": critical_effects.duplicate(true),
@@ -847,6 +850,7 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.anchorings_used = int(data.get("anchorings_used", 0))
 	state.cable_cut_turn = int(data.get("cable_cut_turn", -1))
 	state.escape_declared = bool(data.get("escape_declared", false))
+	state.gunfire_turns = int(data.get("gunfire_turns", 0))
 	state.awaiting_arrival = bool(data.get("awaiting_arrival", false))
 	state.arrives_turn = int(data.get("arrives_turn", 1))
 	state.critical_effects.clear()

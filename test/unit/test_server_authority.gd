@@ -48,6 +48,8 @@ const FORBIDDEN := [
 	# terrain, escape and arrival (map and scenario spec): the view reads is_aground() /
 	# is_escaped() / is_awaiting_arrival() / casts_lead()
 	["\\.(aground|aground_turn|escape_declared|awaiting_arrival|arrives_turn)\\s*(=|\\+=|-=)[^=]", "a terrain, escape or arrival field written from view code"],
+	["\\.gunfire_turns\\s*(=|\\+=|-=)[^=]", "the fatigue count written from view code"],
+	["\\bnote_gunfire_turn\\(", "the fatigue count changed from view code"],
 	["(?<!player_)\\b(set_aground|set_escape_declared|set_cast_lead|place_arrival|delay_arrival)\\(", "a terrain, escape or arrival mutator called from view code"],
 	# anchoring (anchoring spec): the view reads is_anchored() / has_springs() / anchored_end_hex()
 	["\\.(anchor|anchor_ready|springs_ready|anchorings_used|cable_cut_turn)\\s*(=|\\+=|-=)[^=]", "an anchor field written from view code"],
@@ -240,6 +242,32 @@ func test_boarding_patterns_catch_mutations() -> void:
 		"if BoardingController.recapture_due(s):",
 		"if ship.navy == \"French\":",
 		"GameState.phase_controller.player_submit_maintenance_orders(0, {\"prize_size\": {3: 4}})",
+	]
+	var checks: Array = []
+	for f in FORBIDDEN:
+		var re := RegEx.new()
+		re.compile(f[0])
+		checks.append(re)
+	for line in bad:
+		var hit := false
+		for re in checks:
+			if re.search(line) != null:
+				hit = true
+		assert_true(hit, "caught: %s" % line)
+	for line in good:
+		for re in checks:
+			assert_null(re.search(line), "allowed: %s" % line)
+
+
+## The fatigue patterns catch writes and the mutator, and let reads through.
+func test_fatigue_patterns_catch_mutations() -> void:
+	var bad := [
+		"ship.gunfire_turns = 3",
+		"GameState.ship_controller.note_gunfire_turn(\"a\")",
+	]
+	var good := [
+		"var n := ship.gunfire_turns",
+		"if ship.gunfire_turns >= 5:",
 	]
 	var checks: Array = []
 	for f in FORBIDDEN:

@@ -99,6 +99,7 @@ const MODIFIER_LABELS := {
 	"crew_quality": "crew",
 	"sections_firing": "sections firing",
 	"guns_dismounted": "guns dismounted",
+	"fatigue": "fatigue",
 	"rake": "rake",
 	"initial_broadside": "initial broadside",
 	"two_targets": "two targets",

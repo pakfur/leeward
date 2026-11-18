@@ -620,6 +620,18 @@ func set_escape_declared(ship_id: String, on: bool) -> bool:
 	ship_state_changed.emit(ship_id)
 	return true
 
+func note_gunfire_turn(ship_id: String) -> bool:
+	"""SERVER ONLY: The ship fired this g-t: one more firing turn (14.D.2)."""
+	if not is_server:
+		push_error("ShipStateController: Cannot note a gunfire turn on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.gunfire_turns += 1
+	ship_state_changed.emit(ship_id)
+	return true
+
 func set_cast_lead(ship_id: String, on: bool) -> bool:
 	"""SERVER ONLY: The ship casts the lead this turn; the flag lives in the plot."""
 	if not is_server:

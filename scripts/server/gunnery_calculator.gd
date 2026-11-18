@@ -22,8 +22,8 @@ func _init(p_game_state: Node) -> void:
 ## split side's bonus goes to the other battery.
 ## A chase order (side GunneryTypes.CHASE_BOW/CHASE_STERN, battery "chase"; house rule, register §5)
 ## fires one long-gun factor (FireRules.CHASE_GUN_FACTORS) from the bow or stern hex, round shot only.
-## It takes the ship-wide modifiers only: no half broadside, rake, initial broadside, guns dismounted,
-## broadside obscured or lower deck closed.
+## It takes the ship-wide modifiers only (fatigue, 14.D, included): no half broadside, rake, initial
+## broadside, guns dismounted, broadside obscured or lower deck closed.
 func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 		initial_broadside_allowed: bool = true) -> GunneryTypes.ShotPreview:
 	var p := GunneryTypes.ShotPreview.new()
@@ -113,6 +113,9 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 
 	_add_modifier(p, "crew_quality", tables.crew_quality_modifier(firer.crew_quality))
 	_add_modifier(p, "sections_firing", tables.sections_firing_modifier(sections))
+	# 14.D (optional): fatigue from the firing turns so far, chasers too.
+	if OptionalRules.fatigue(game_state.active_scenario):
+		_add_modifier(p, "fatigue", -FireRules.fatigue_penalty(firer.gunfire_turns))
 	if not chase:
 		_add_modifier(p, "guns_dismounted", -int(firer.guns_dismounted[order.side]))
 		# 7.C.11: -2 per broadside obscured entry on this side (Rigging #6; #10 obscures both).
