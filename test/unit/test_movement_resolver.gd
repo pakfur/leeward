@@ -2461,6 +2461,26 @@ func test_uncleared_sterns_together_overlap_rolls_both_back() -> void:
 	_assert_no_overlap(ships)
 
 
+func test_mid_plot_overlap_and_rollback_carry_their_segment_times() -> void:
+	# Same setup: the OVERLAP is at segment 0 (1/2) and the check at segment 1 (time 1), a real
+	# segment below the end check.
+	var ships := _sterns_together(true, true)
+	var log = resolver.run(ships, env)
+	assert_eq(log.segment_times.size(), log.max_impulses)
+	for sid in ["ship_a", "ship_b"]:
+		var result = log.get_result(sid)
+		var overlaps = _events_of(result, MovementTypes.ResolutionEventType.OVERLAP)
+		var rollbacks = _events_of(result, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
+		assert_eq(overlaps.size(), 1, sid)
+		assert_eq(rollbacks.size(), 1, sid)
+		if overlaps.size() == 1:
+			assert_eq(overlaps[0].time, log.segment_times[0], "%s overlap time" % sid)
+		if rollbacks.size() == 1:
+			assert_eq(rollbacks[0].impulse, 1)
+			assert_eq(rollbacks[0].time, log.segment_times[1], "%s rollback time" % sid)
+			assert_ne(rollbacks[0].time, MoveSchedule.END)
+
+
 func test_rollback_names_every_ship_still_overlapped() -> void:
 	# T lies on (4, 5). A and B both swing their sterns into it at 1/2 (each has a step ahead to follow,
 	# so no contest); at 1 A's step ahead runs into stopped S and B's into stopped R. A still overlaps
