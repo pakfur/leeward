@@ -209,7 +209,7 @@ func _store_default_courses() -> void:
 		if not human_player_ids.has(game_state.commander_of(s.ship_id)):
 			continue
 		var course: Array = []
-		if DefaultCourse.can_plot(s):
+		if DefaultCourse.can_move(game_state, s):
 			course = DefaultCourse.as_dicts(DefaultCourse.for_ship(game_state, s))
 			game_state.ship_controller.set_plotted_movement(s.ship_id, course)
 		var orders = s.plotted_actions.get("crew_orders", {})
@@ -375,7 +375,7 @@ func plan_errors(player_id: int) -> Dictionary:
 	var errors := {}
 	var validator := MovementValidator.new(game_state)
 	for ship in game_state.ships_of_player(player_id):
-		if not DefaultCourse.can_plot(ship):
+		if not DefaultCourse.can_move(game_state, ship):
 			continue
 		# The lead and the map edge read the stored or default course, plotted or not.
 		var course := stored_course(ship)
@@ -534,7 +534,7 @@ func player_cut_course(player_id: int, ship_id: String, step_index: int) -> Stri
 ## jammed-rudder text: the course is kept, the view warns). {} when the ship cannot plot.
 func course_options(ship_id: String) -> Dictionary:
 	var ship: ShipState = game_state.get_ship(ship_id)
-	if ship == null or not DefaultCourse.can_plot(ship):
+	if ship == null or not DefaultCourse.can_move(game_state, ship):
 		return {}
 	var path := stored_course(ship)
 	var cur_hex: Vector2i = ship.hex_position if path.is_empty() else path[-1].hex
@@ -580,15 +580,14 @@ func stored_course(ship: ShipState) -> Array[MovementTypes.PlotStep]:
 
 
 ## The `_crew_request_error` checks (phase, submitted plan, owner) plus: the ship must be able to
-## plot (not fouled, grappled, struck, dismasted, a prize).
+## plot (DefaultCourse.can_move: not fouled, grappled, struck, dismasted, a prize, in tow, or held
+## by a fouled or grappled tow).
 func _course_request_error(player_id: int, ship_id: String) -> String:
 	var why := _crew_request_error(player_id, ship_id)
 	if why != "":
 		return why
 	var ship: ShipState = game_state.get_ship(ship_id)
-	if not DefaultCourse.can_plot(ship):
-		return "%s cannot move" % ship_id
-	return ""
+	return DefaultCourse.cannot_move_reason(game_state, ship)
 
 
 ## SERVER ONLY: the player's crew plan for one ship (the crew overlay; crew-tasks spec §3.2, §4.4).

@@ -222,3 +222,35 @@ func test_no_anchoring_in_a_tow() -> void:
 	assert_true(sc.begin_tow("t", "w"))
 	assert_string_contains(AnchorRules.refusal(t, "A", {}, ctx, []), "cannot anchor")
 	assert_string_contains(AnchorRules.refusal(w, "A", {}, ctx, []), "cannot anchor")
+
+
+# --- planning requests refuse a held tower (controller ruling) -------------------------
+
+func test_planning_requests_refuse_a_held_tower() -> void:
+	var pc := GameState.phase_controller
+	var old_phase := pc.current_phase
+	var old_ready := pc.players_ready.duplicate()
+	var old_humans := pc.human_player_ids.duplicate()
+	pc.current_phase = TurnPhaseController.GamePhase.PLANNING
+	pc.players_ready = {0: false, 1: false}
+	pc.human_player_ids = [0] as Array[int]
+	var t := _t()
+	_w()
+	_ship("x", Vector2i(7, 6), 3, 3)
+	t.speed = 3
+	assert_true(sc.begin_tow("t", "w"))
+	var ahead := Vector2i(4, 5)
+	assert_false(pc.course_options("t").is_empty(), "precondition: a free tower may plot")
+	sc.set_fouled_with("w", "x")
+	sc.set_fouled_with("x", "w")
+	var why := pc.player_extend_course(0, "t", ahead)
+	assert_string_contains(why, "fouled or grappled")
+	assert_string_contains(why, "w")
+	assert_true(pc.course_options("t").is_empty())
+	assert_false(pc.plan_errors(0).has("t"))
+	pc._store_default_courses()
+	assert_eq(t.plotted_actions.get("movement", []).size(), 0, "no default course stored")
+	assert_eq(pc.planning_snapshot["t"]["course"].size(), 0)
+	pc.current_phase = old_phase
+	pc.players_ready = old_ready
+	pc.human_player_ids = old_humans

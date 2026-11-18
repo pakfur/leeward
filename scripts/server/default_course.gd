@@ -32,11 +32,26 @@ static func tow_held(game_state: Node, ship: ShipState) -> bool:
 	return towed != null and towed.is_linked()
 
 
+## True when `ship` may plot and move this g-t: `can_plot` and not `tow_held`. The test the planning
+## requests use (TurnPhaseController: default courses, course_options, plan_errors, course edits).
+static func can_move(game_state: Node, ship: ShipState) -> bool:
+	return can_plot(ship) and not tow_held(game_state, ship)
+
+
+## Why `ship` cannot plot or move, "" when she can (`can_move`).
+static func cannot_move_reason(game_state: Node, ship: ShipState) -> String:
+	if tow_held(game_state, ship):
+		return "%s cannot move: her tow %s is fouled or grappled (8.C.7)" % [ship.ship_id, ship.towing_id]
+	if not can_plot(ship):
+		return "%s cannot move" % ship.ship_id
+	return ""
+
+
 ## The default course: up to min(speed, MA) forward steps along the facing. Empty at MA 0, at
 ## speed 0, for a ship that cannot plot or is held by her tow, or when the next hex is not a legal forward move.
 static func for_ship(game_state: Node, ship: ShipState) -> Array[MovementTypes.PlotStep]:
 	var steps: Array[MovementTypes.PlotStep] = []
-	if not can_plot(ship) or tow_held(game_state, ship):
+	if not can_move(game_state, ship):
 		return steps
 	var count: int = mini(ship.speed, game_state.ship_controller.get_movement_allowance(ship.ship_id))
 	if count <= 0:
