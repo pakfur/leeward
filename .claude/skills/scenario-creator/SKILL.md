@@ -110,11 +110,55 @@ Each ship entry:
   is derived, the neighbour against the facing (`stern = bow + DIRECTIONS[(facing + 3) % 6]`, i.e.
   `HexGrid.stern_of(bow, facing)`; facing 0/E puts the stern at q−1). No two footprints (bow or
   stern) may share a hex — `GameState.add_ship` refuses an overlapping ship — and both hexes must lie
-  inside `map_bounds`
+  inside `map_bounds` and on water (not land)
 - `sea_state`: 0-5 (0 calm, 1 slight, 2 moderate, 3 rough, 4 very rough, 5 high; clamped on load)
 - `region`: `oceanic`, `coastal`, `harbor`
 - `wind_speed_change`: `steady`, `gusting`, `dying`
 - `wind_direction_change`: `none`, `veering`, `backing`
+
+## Map and terrain (spec `docs/superpowers/specs/2026-11-17-map-and-scenario-design.md`)
+
+`map_bounds` `{"width": W, "height": H}` is a rectangle of H rows of W hexes in **odd-r offset**
+(pointy-top, odd rows shifted half a hex right), centred on the origin: columns `-W/2 .. -W/2+W-1`,
+rows `-H/2 .. -H/2+H-1` (integer division). Axial (q, r) from offset (col, row):
+`q = col - (row - (row & 1)) / 2`, `r = row` (`TerrainMap.offset_to_axial`). Without `map_bounds` the board is
+unbounded. Every `[q, r]` below is axial.
+
+```json
+"terrain": {
+  "edges": { "N": "open", "E": "none", "S": "open", "W": "escape" },
+  "land": [[-3, 11], [-2, 11]],
+  "shallow": [ { "name": "A", "base": 15, "hexes": [[-4, 10], [-3, 10]] } ],
+  "boundaries": []
+},
+"escape": { "1": { "from_turn": 1, "edges": ["W"], "share": 0.5 } },
+"aground_counts_lost": true,
+"ai": { "1": "escape" }
+```
+
+- `terrain.edges`: kind of each map edge, default `open`. `open` is a wall (a plot cannot cross it, a
+  drift stops at it); `none` means a ship that leaves the map is lost (no sea room, III.C); `escape` lets a
+  side that may escape (below) leave and be scored as escaped.
+- `terrain.land`: land hexes (impassable; block line of sight, 7.B.7-9).
+- `terrain.shallow`: areas of shoal water; each hex has depth `base + 1d6`, rolled when a ship first enters
+  it; a ship whose `draft` exceeds the depth runs aground (13.G). A hex is in at most one area and is not land.
+- `terrain.boundaries`: extra lines `{"name", "kind", "sides": [[[q,r],[q,r]], ...]}` (each side is two
+  neighbouring hexes). Only `open` is supported for these for now; do not use `none` or `escape` off the map edge.
+- `escape`: keyed by side. `from_turn` (default 1), `edges` (names of escape boundaries the side may use; empty =
+  all), `share` (the fraction of an escaped ship's point value its own side scores, VI.B.6; default 0). A ship may leave only after the player declares escape
+  (`player_declare_escape`), and then escapes at the end of a turn by distance or speed from its pursuers (V.D).
+- `aground_counts_lost`: default `true`; an aground ship scores as lost (13.G.3). `false` scores it as in play.
+- `ai`: keyed by side; `"escape"` makes that side's stub AI run for a permitted escape edge. Absent = the
+  standing order decides (default engage).
+- Ship `arrives` (integer turn, default 1): a reinforcement waits off the map and enters on the start of that
+  turn at its `position` and `facing`, at its `sail_state` (**default `PS`**, not `MS`), at the speed of its
+  movement allowance there (2.B.1, 3.A). A held entry is put back a turn.
+
+Terrain checks (`TerrainMap.errors`, all start `Terrain:`, `start_scenario` refuses a scenario that has any):
+unknown edge name or kind, land or shallow hex off the map, a hex both land and shallow, a hex in two shallow
+areas, a negative shallow `base`, boundary side hexes that are not neighbours. `GameState.placement_errors()`
+adds: a ship hex (bow or stern, including a waiting reinforcement's entry footprint) off the map or on land, and
+overlapping ships. Keep ships clear of land, off the map edge, and avoid starting them in shallows.
 
 ## Output
 

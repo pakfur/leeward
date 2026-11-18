@@ -1,0 +1,110 @@
+{
+ "name": "Test Scenario - Reinforcements",
+ "description": "Two British frigates meet one French frigate; a French frigate arrives on turn 3 and a British one on turn 5.",
+ "region": "oceanic",
+ "seed": 7,
+ "wind_direction": 2,
+ "wind_speed": 2,
+ "wind_speed_change": "steady",
+ "wind_direction_change": "none",
+ "sea_state": 1,
+ "turn_limit": 30,
+ "map": {
+  "map_texture": "res://assets/textures/water_default.png",
+  "show_hex": true
+ },
+ "minimap_texture": "",
+ "map_bounds": {
+  "width": 100,
+  "height": 100
+ },
+ "ships": [
+  {
+   "id": "p0a",
+   "ship_name": "p0a",
+   "player_id": 0,
+   "ship_type": "frigate_38",
+   "position": {
+    "q": -10,
+    "r": 0
+   },
+   "facing": 0,
+   "speed": 0,
+   "movement_points": 0,
+   "acceleration": 0,
+   "sail_state": "MS",
+   "crew_quality": "Trained",
+   "crew_morale": 4
+  },
+  {
+   "id": "p0b",
+   "ship_name": "p0b",
+   "player_id": 0,
+   "ship_type": "frigate_32",
+   "position": {
+    "q": -10,
+    "r": 4
+   },
+   "facing": 0,
+   "speed": 0,
+   "movement_points": 0,
+   "acceleration": 0,
+   "sail_state": "MS",
+   "crew_quality": "Trained",
+   "crew_morale": 4
+  },
+  {
+   "id": "e0",
+   "ship_name": "e0",
+   "player_id": 1,
+   "ship_type": "frigate_32",
+   "position": {
+    "q": 10,
+    "r": 0
+   },
+   "facing": 3,
+   "speed": 0,
+   "movement_points": 0,
+   "acceleration": 0,
+   "sail_state": "MS",
+   "crew_quality": "Trained",
+   "crew_morale": 4
+  },
+  {
+   "id": "e_reinf",
+   "ship_name": "e_reinf",
+   "player_id": 1,
+   "ship_type": "frigate_32",
+   "position": {
+    "q": 30,
+    "r": 6
+   },
+   "facing": 3,
+   "speed": 0,
+   "movement_points": 0,
+   "acceleration": 0,
+   "sail_state": "MS",
+   "crew_quality": "Trained",
+   "crew_morale": 4,
+   "arrives": 3
+  },
+  {
+   "id": "p_reinf",
+   "ship_name": "p_reinf",
+   "player_id": 0,
+   "ship_type": "frigate_38",
+   "position": {
+    "q": -30,
+    "r": 6
+   },
+   "facing": 0,
+   "speed": 0,
+   "movement_points": 0,
+   "acceleration": 0,
+   "sail_state": "MS",
+   "crew_quality": "Trained",
+   "crew_morale": 4,
+   "arrives": 5
+  }
+ ]
+}
