@@ -367,6 +367,14 @@ class PhaseEvent extends RefCounted:
 			"sides": sides.duplicate(),
 		}
 
+	## The event a `to_dict()` describes (`type` comes back as the enum value).
+	static func from_dict(d: Dictionary) -> PhaseEvent:
+		var ev := PhaseEvent.new(int(d.get("type", Type.FIRE)) as Type, int(d.get("phase", 0)),
+				str(d.get("ship_id", "")), (d.get("data", {}) as Dictionary).duplicate(true),
+				str(d.get("target_id", "")))
+		ev.sides = (d.get("sides", {}) as Dictionary).duplicate()
+		return ev
+
 	## Every ship id the event's text names: ship_id, target_id and the ids kept in its data.
 	func ship_ids() -> PackedStringArray:
 		var ids := PackedStringArray()

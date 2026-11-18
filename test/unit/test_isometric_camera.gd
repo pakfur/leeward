@@ -143,3 +143,65 @@ func test_plan_frame_uses_the_screen_axes_of_the_rotation() -> void:
 	var plan: Dictionary = IsometricCameraScript.plan_frame(_pts(Vector3(0, 0, -50), Vector3(0, 0, 50)),
 		10.0, 0.05, 0.0, VP, Rect2(Vector2.ZERO, VP), 0.0, 40.0)
 	assert_almost_eq(plan["distance"], 20.0, 0.001)
+
+
+func _in_tree_camera() -> Camera3D:
+	camera.free()
+	camera = IsometricCameraScript.new()
+	camera.focus_animation_duration = 0.05
+	add_child(camera)
+	return camera
+
+
+func test_frame_ship_keeps_rotation() -> void:
+	_in_tree_camera()
+	camera.camera_rotation_y = 137.0
+	var tilt = camera.isometric_angle
+	camera.frame_ship(Vector3(10, 0, -4), 12.0, Rect2(Vector2.ZERO, get_viewport().get_visible_rect().size))
+	await wait_seconds(0.3)
+	assert_eq(camera.camera_rotation_y, 137.0, "rotation unchanged")
+	assert_eq(camera.isometric_angle, tilt, "tilt unchanged")
+	assert_almost_eq(camera.camera_distance, 12.0, 0.01)
+	assert_almost_eq(camera.camera_target.x, 10.0, 0.01, "full-window rect centres on the point")
+	assert_almost_eq(camera.camera_target.z, -4.0, 0.01)
+	assert_false(camera.is_tweening)
+
+
+func test_frame_ship_centres_in_the_safe_rect() -> void:
+	_in_tree_camera()
+	var size := get_viewport().get_visible_rect().size
+	var safe := Rect2(Vector2(size.x * 0.4, 0), Vector2(size.x * 0.6, size.y))
+	camera.frame_ship(Vector3(3, 0, 2), 12.0, safe)
+	await wait_seconds(0.3)
+	camera._update_camera_transform()
+	var screen := camera.unproject_position(Vector3(3, 0, 2))
+	assert_almost_eq(screen.x, safe.get_center().x, 1.0)
+	assert_almost_eq(screen.y, safe.get_center().y, 1.0)
+
+
+func test_frame_ship_clamps_zoom() -> void:
+	_in_tree_camera()
+	var rect := Rect2(Vector2.ZERO, get_viewport().get_visible_rect().size)
+	camera.frame_ship(Vector3.ZERO, 0.1, rect)
+	await wait_seconds(0.3)
+	assert_almost_eq(camera.camera_distance, camera.min_zoom, 0.001)
+	camera.frame_ship(Vector3.ZERO, 9999.0, rect)
+	await wait_seconds(0.3)
+	assert_almost_eq(camera.camera_distance, camera.max_zoom, 0.001)
+
+
+func test_restore_view_round_trips() -> void:
+	_in_tree_camera()
+	camera.camera_rotation_y = 200.0
+	camera.camera_target = Vector3(5, 0, 5)
+	camera.camera_distance = 20.0
+	var saved = camera.save_view()
+	camera.frame_ship(Vector3(-8, 0, 9), 6.0, Rect2(Vector2.ZERO, Vector2(800, 600)))
+	await wait_seconds(0.3)
+	camera.camera_rotation_y = 120.0  # the player rotated meanwhile
+	camera.restore_view(saved)
+	await wait_seconds(0.3)
+	assert_almost_eq(camera.camera_target.x, 5.0, 0.01)
+	assert_almost_eq(camera.camera_target.z, 5.0, 0.01)
+	assert_almost_eq(camera.camera_distance, 20.0, 0.01)
+	assert_eq(camera.camera_rotation_y, 120.0)

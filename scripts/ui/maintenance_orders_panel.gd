@@ -19,12 +19,14 @@ var _prizes: Dictionary = {}
 
 
 ## `step`: "grapple" or "ungrapple". `options`: TurnPhaseController.maintenance_options entries.
-## `names`: ship_id -> display name.
-func setup(step: String, options: Array, names: Dictionary) -> void:
+## `names`: ship_id -> display name. `compact`: the answer section of a resolution step, which shows
+## the title and the question itself: no intro line.
+func setup(step: String, options: Array, names: Dictionary, compact: bool = false) -> void:
 	_step = step
 	name = "MaintenanceOrdersPanel"
 	add_theme_constant_override("separation", 8)
-	_add_label(intro_text(step))
+	if not compact:
+		_add_label(intro_text(step))
 	if step == "prize_size":
 		for option in options:
 			_add_prize_stepper(option, names)
@@ -51,6 +53,7 @@ func setup(step: String, options: Array, names: Dictionary) -> void:
 	_done.pressed.connect(_on_done)
 	add_child(_done)
 	_error_label = _add_label("", &"SecondaryLabel")
+	_error_label.name = "ErrorLabel"
 	_error_label.visible = false
 
 
@@ -166,6 +169,11 @@ func show_error(reason: String) -> void:
 	_done.disabled = false
 	_error_label.text = reason
 	_error_label.visible = true
+
+
+## The refusal shown, "" when none.
+func error_text() -> String:
+	return _error_label.text if _error_label != null and _error_label.visible else ""
 
 
 func _add_label(text: String, variation: StringName = &"") -> Label:
