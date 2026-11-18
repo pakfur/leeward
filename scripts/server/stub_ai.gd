@@ -48,7 +48,7 @@ const ESCAPE_EXIT_SCORE := 10000
 const ESCAPE_LUFF_PENALTY := 50
 
 ## Plotting errors for ships that legitimately cannot move; the AI skips them without error.
-const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_GRAPPLED", "SHIP_CAPTURED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED", "SHIP_AGROUND", "SHIP_ANCHORED", "SHIP_OFF_MAP"]
+const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_GRAPPLED", "SHIP_CAPTURED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED", "SHIP_AGROUND", "SHIP_ANCHORED", "SHIP_OFF_MAP", "SHIP_TOWED", "TOW_HELD"]
 ## Submission refusals after which the ship is replotted with a plain course.
 const REPLOT_ERROR_CODES := ["RUDDER_JAMMED", "TOO_SLOW", "CANNOT_SUBMIT"]
 ## The most moves added to reach the deceleration limit (more than any movement allowance).

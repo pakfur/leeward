@@ -13,18 +13,30 @@ extends RefCounted
 
 
 ## The refusals of MovementPlottingController.handle_start_plotting (SHIP_CAPTURED, SHIP_FOULED,
-## SHIP_GRAPPLED, SHIP_OFF_MAP, SHIP_DESTROYED, SHIP_STRUCK, SHIP_AGROUND, SHIP_ANCHORED, SHIP_DISMASTED): such a ship cannot plot or move.
+## SHIP_GRAPPLED, SHIP_OFF_MAP, SHIP_DESTROYED, SHIP_STRUCK, SHIP_AGROUND, SHIP_ANCHORED,
+## SHIP_TOWED, SHIP_DISMASTED): such a ship cannot plot or move. TOW_HELD needs the game state:
+## see `tow_held`.
 static func can_plot(ship: ShipState) -> bool:
 	return not (ship.is_captured() or ship.fouled_with != "" or ship.is_grappled() \
 			or ship.is_destroyed() or ship.is_struck() or ship.is_dismasted() \
-			or ship.is_aground() or ship.is_anchored() or not ship.is_on_map() or ship.is_escaped())
+			or ship.is_aground() or ship.is_anchored() or not ship.is_on_map() or ship.is_escaped() \
+			or ship.is_towed())
+
+
+## True when `ship` tows a ship that is fouled or grappled (8.C.7): the tow cannot move, so
+## neither can her tower (the TOW_HELD refusal).
+static func tow_held(game_state: Node, ship: ShipState) -> bool:
+	if not ship.is_towing():
+		return false
+	var towed = game_state.get_ship(ship.towing_id)
+	return towed != null and towed.is_linked()
 
 
 ## The default course: up to min(speed, MA) forward steps along the facing. Empty at MA 0, at
-## speed 0, for a ship that cannot plot, or when the next hex is not a legal forward move.
+## speed 0, for a ship that cannot plot or is held by her tow, or when the next hex is not a legal forward move.
 static func for_ship(game_state: Node, ship: ShipState) -> Array[MovementTypes.PlotStep]:
 	var steps: Array[MovementTypes.PlotStep] = []
-	if not can_plot(ship):
+	if not can_plot(ship) or tow_held(game_state, ship):
 		return steps
 	var count: int = mini(ship.speed, game_state.ship_controller.get_movement_allowance(ship.ship_id))
 	if count <= 0:

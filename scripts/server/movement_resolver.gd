@@ -2213,10 +2213,12 @@ func _mps_plotted(ship_state: ShipState, steps_by_ship: Dictionary) -> int:
 
 
 func _get_plotted_steps(ship_state: ShipState) -> Array:
-	## Fouled, grappled (8.C.7), struck, destroyed, anchored (13.C.3) and aground (13.G) ships
-	## cannot move: any plot is ignored (defence behind the plotting check).
+	## Fouled, grappled (8.C.7), struck, destroyed, anchored (13.C.3), aground (13.G) and towed
+	## (12.A.6) ships, and a tower whose tow is fouled or grappled, cannot move: any plot is ignored
+	## (defence behind the plotting check).
 	if ship_state.is_linked() or ship_state.is_out_of_play() or ship_state.is_anchored() \
-			or ship_state.is_aground():
+			or ship_state.is_aground() or ship_state.is_towed() \
+			or DefaultCourse.tow_held(game_state, ship_state):
 		return []
 	var plot: Array = ship_state.plotted_actions.get("movement", [])
 	if plot.is_empty() and not ship_state.plotted_actions.get("movement_plotted", false):

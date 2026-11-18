@@ -28,6 +28,7 @@ const _ORDER_CODES := {
 const R_CREW := "The crew cannot handle the anchors (struck, or a prize)."
 const R_HS_PARAMS := "Handle springs needs a turn to port or starboard (13.D.2)."
 const R_ANCHORED := "Already anchored: cut the cable first (13.F)."
+const R_IN_TOW := "a ship towing or in tow cannot anchor: cut the tow first (ruling)"
 const R_TWICE := "Anchored twice already (13.A.5)."
 const R_READY := "An anchor is already ready (13.B.3)."
 const R_ONE_ANCHOR := "Only one anchor at a time (13.B.3)."
@@ -289,6 +290,8 @@ static func refusal(ship: ShipState, code: String, params: Dictionary, ctx: Dict
 			if ship.anchor_ready != end and not anchored_here:
 				return "Prepare the %s anchor first (13.B.3)." % end
 		"A":
+			if ship.is_towing() or ship.is_towed():
+				return R_IN_TOW
 			if ship.is_anchored():
 				return R_ANCHORED
 			if ship.anchor_ready == "":

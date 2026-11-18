@@ -5,10 +5,10 @@ extends RefCounted
 
 
 ## True when `ship` cannot be in irons on `turn`, whatever her wind facing: anchored (5.D.4a), in
-## the g-t after she cut her cable (5.D.4b, 13.F.3), or in the g-t after the wind rose from a calm
-## (3.D.4, 5.D.4c; `environment` may be null).
+## tow (5.D.7), in the g-t after she cut her cable (5.D.4b, 13.F.3), or in the g-t after the wind
+## rose from a calm (3.D.4, 5.D.4c; `environment` may be null).
 static func excused(ship: ShipState, environment: EnvironmentState, turn: int) -> bool:
-	if ship.is_anchored():
+	if ship.is_anchored() or ship.is_towed():
 		return true
 	if ship.cable_cut_turn >= 0 and ship.cable_cut_turn == turn - 1:
 		return true

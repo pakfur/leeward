@@ -46,6 +46,8 @@ func get_movement_allowance(ship_id: String, facing: int = -1) -> int:
 	)
 	# Sheets cut / shrouds severed (rigging #7, #9): -1 MP in every direction and sail state.
 	ma = maxi(ma - ship.critical_mp_loss(current_turn()), 0)
+	# 12.A.7: a ship towing loses MPs (never below 0).
+	ma = maxi(ma - tow_mp_loss(ship), 0)
 	# 5.G: blocked wind, after every other change to MA.
 	var ship_facing: int = ship.facing if facing < 0 else facing
 	ma = BlockedWind.apply(ma, BlockedWind.is_blocked(ship.hex_position, ship_facing, wind_dir,
@@ -53,6 +55,16 @@ func get_movement_allowance(ship_id: String, facing: int = -1) -> int:
 
 	Trace.trace_log("ShipState", "MA: %d | wind: %s | facing: %s | speed: %s | sail: %s" % [ma, wind_dir, wind_facing, wind_speed, ship.sail_state])
 	return ma
+
+## The MPs `ship` loses for the tow she has (12.A.7, TowRules.ma_loss): 0 unless she is towing
+## and her tow is known. The raw loss: callers floor the MA at 0.
+func tow_mp_loss(ship: ShipState) -> int:
+	if ship == null or not ship.is_towing():
+		return 0
+	var towed = game_state.get_ship(ship.towing_id)
+	if towed == null:
+		return 0
+	return TowRules.ma_loss(ship, towed)
 
 ## The g-t being played (0 when the game state has none, as in some test doubles).
 func current_turn() -> int:
