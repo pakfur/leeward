@@ -64,6 +64,7 @@ func before_each() -> void:
 
 func after_each() -> void:
 	pc._reset_maintenance()
+	pc.maintenance_prompt_player_ids = [] as Array[int]
 	pc.current_phase = _old_phase
 	GameState.dice = _old_dice
 	GameState.active_scenario = _old_scenario
@@ -200,6 +201,56 @@ func test_attempt_runs_before_grapple_step() -> void:
 	assert_eq(_dice.remaining(), 0)
 
 
+func test_no_grapple_within_a_tow() -> void:
+	# The two ends of one tow are not offered a grapple (12.A): no option, no GRAPPLE pause.
+	assert_true(tows.begin("t", "w", STATUS))
+	_ship("t").plotted_actions["crew_orders"] = {}
+	var gc: GrapplingController = GameState.grappling_controller
+	assert_eq(gc.grapple_error("t", "w"), "w is at the other end of t's tow (12.A)")
+	assert_eq(gc.grapple_error("w", "t"), "t is at the other end of w's tow (12.A)")
+	assert_eq(pc.maintenance_options(0, TurnPhaseController.MaintenanceStep.GRAPPLE), [])
+	pc.maintenance_prompt_player_ids = [0] as Array[int]
+	watch_signals(pc)
+	pc.current_phase = DRIFT
+	pc._enter_status_adjustment_phase()
+	assert_signal_not_emitted(pc, "maintenance_orders_requested")
+	assert_eq(_events(PhaseEvents.Type.GRAPPLE).size(), 0)
+	assert_eq(_dice.remaining(), 0)
+
+
+func test_failed_tow_attempt_is_the_grapple_at_that_ship() -> void:
+	# A tow attempt rolled this g-t was that ship's grapple at her target (8.C.1, 12.A.4b).
+	_dice.queue([6])
+	tows.resolve_tow_attempts(STATUS)
+	var gc: GrapplingController = GameState.grappling_controller
+	assert_string_contains(gc.grapple_error("t", "w"), "tried to take w in tow this turn")
+	assert_false(gc.grapple_options("t").has("w"))
+	assert_eq(gc.grapple_error("w", "t"), "")  # w rolled nothing
+
+
+func test_lapsed_order_does_not_block_grapple() -> void:
+	_ship("t").plotted_actions["crew_orders"] = {"tow": "take:nobody"}
+	tows.resolve_tow_attempts(STATUS)
+	assert_eq(GameState.grappling_controller.grapple_error("t", "w"), "")
+
+
+func test_tow_attempt_rolls_before_grapples() -> void:
+	# Dice order in one Grappling sub-phase: the tow attempts' d10s, then the grapples' d10s.
+	var g := _make_ship("g", Vector2i(5, 8), 0)
+	var x := _make_ship("x", Vector2i(5, 9), 0)
+	pc.maintenance_prompt_player_ids = [0] as Array[int]
+	_dice.queue([5, 4])
+	pc.current_phase = DRIFT
+	pc._enter_status_adjustment_phase()
+	assert_true(_ship("t").is_towing())  # the d10 5: 5 - 3 = 2
+	assert_eq(pc.player_submit_maintenance_orders(0, {"grapple": [["g", "x"]]}), "")
+	assert_true(g.is_grappled_to("x"))  # the d10 4: 4 - 2 = 2
+	assert_eq(int(_events(PhaseEvents.Type.GRAPPLE)[0].data["roll"]), 4)
+	assert_eq(_dice.remaining(), 0)
+	assert_eq(pc.player_submit_maintenance_orders(0, {"ungrapple": []}), "")
+	assert_true(x.is_grappled_to("g"))
+
+
 func test_tx_cuts_in_v_b() -> void:
 	assert_true(tows.begin("t", "w", STATUS))
 	_tx("w", GameState.current_turn)
@@ -288,6 +339,32 @@ func test_taken_cuts() -> void:
 	var cuts := _events(PhaseEvents.Type.TOW_CUT)
 	assert_eq(cuts.size(), 1)
 	assert_eq(str(cuts[0].data["cause"]), "taken")
+
+
+func test_dismasted_tower_casts_off() -> void:
+	# Ruling: a dismasted ship cannot tow, so a tower that loses her last rigging casts off her tow.
+	assert_true(tows.begin("t", "w", STATUS))
+	_ship("t").checked_sections["rigging"] = [true, true, true, true]  # no Rigging Checks to roll
+	GameState.damage_controller.apply_hits("t", 22, 0, 0, "other", COMBAT)
+	assert_true(_ship("t").is_dismasted())
+	assert_false(_ship("t").is_towing())
+	assert_false(_ship("w").is_towed())
+	var cuts := _events(PhaseEvents.Type.TOW_CUT)
+	assert_eq(cuts.size(), 1)
+	assert_eq(str(cuts[0].data["cause"]), "dismasted")
+	assert_eq(cuts[0].to_text({"t": "HMS t", "w": "HMS w"}),
+		"The tow between HMS t and HMS w parts: the tower is dismasted")
+
+
+func test_dismasted_tow_holds() -> void:
+	# w is already dismasted (the usual tow); more rigging hits on her do not part the tow.
+	assert_true(tows.begin("t", "w", STATUS))
+	_ship("w").rigging_current_hp = [1, 0, 0, 0] as Array[int]
+	_ship("w").checked_sections["rigging"] = [true, true, true, true]
+	GameState.damage_controller.apply_hits("w", 1, 0, 0, "other", COMBAT)
+	assert_true(_ship("w").is_dismasted())
+	assert_true(_ship("t").is_towing())
+	assert_eq(TowRules.broken_reason(_ship("t"), _ship("w")), "")
 
 
 func test_unbroken_tow_not_cut() -> void:

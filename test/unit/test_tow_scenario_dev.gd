@@ -121,6 +121,33 @@ func test_pt_events_hidden() -> void:
 	assert_eq(_codes(view.events_for(0, 3)), ["PT", "RR"])
 
 
+func test_lapsed_tow_order_hidden() -> void:
+	# A lapsed order (no roll) is the tower's secret plot: hidden from every other player, a
+	# teammate too, unless limited information is off; a rolled attempt is public.
+	_pair()
+	GameState.get_ship("w").commander_id = 2  # a teammate of side 0 under another player
+	var log := GameState.new_turn_log(3)
+	GameState.turn_log = log
+	log.add(PhaseEvents.Type.TOW_BEGUN, 7, "t", {"success": false, "lapsed": "Unknown ship"}, "w")
+	log.add(PhaseEvents.Type.TOW_BEGUN, 7, "t", {"roll": 6, "modifier": -3, "modifiers": [],
+		"total": 3, "needed": 2, "success": false}, "w")
+	var view := PlayerView.new(GameState)
+	assert_eq(_tow_begun(view.events_for(0, 3)), [true, false])
+	assert_eq(_tow_begun(view.events_for(2, 3)), [false])
+	assert_eq(_tow_begun(view.events_for(1, 3)), [false])
+	GameState.active_scenario = {"tournament": true}
+	assert_eq(_tow_begun(view.events_for(1, 3)), [true, false])
+
+
+## Whether each TOW_BEGUN shown lapsed.
+func _tow_begun(events: Array[Dictionary]) -> Array:
+	var out: Array = []
+	for e in events:
+		if int(e["type"]) == PhaseEvents.Type.TOW_BEGUN:
+			out.append((e["data"] as Dictionary).has("lapsed"))
+	return out
+
+
 func _codes(events: Array[Dictionary]) -> Array:
 	var out: Array = []
 	for e in events:

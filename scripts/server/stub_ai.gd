@@ -34,6 +34,8 @@ extends RefCounted
 ## A broadside shot at or inside this range scores as a firing position.
 const FIRING_RANGE := 5
 const FIRING_POSITION_BASE := 1000
+## Half FIRING_POSITION_BASE: an off-station tow pose with a way to the station scores from here.
+const TOW_WAY_BASE := 500
 ## A firing position loses this much per hex of range.
 const FIRING_RANGE_WEIGHT := 2
 ## Added to a firing position's score when its second battery bears too: worth more than one hex of
@@ -131,11 +133,16 @@ func assign_crew() -> void:
 
 
 ## The AI's tow order (towing spec §11), crew_orders.tow: a tower "cut" when an enemy in play is
-## within TOW_CUT_RANGE, else ""; a towed ship "" (the tower decides); otherwise "take:<id>" for
-## her tow target (tow_target), or "". A tow still being prepared is never cut.
+## within TOW_CUT_RANGE, or when she cannot make way at any heading with the tow in a wind (the
+## 12.A.7 loss stops her; controller ruling; in a calm nothing moves and she keeps it), else ""; a
+## towed ship "" (the tower decides); otherwise "take:<id>" for her tow target (tow_target), or
+## "". A tow still being prepared is never cut.
 func tow_order(ship_state: ShipState) -> String:
 	if ship_state.is_towing():
-		return "cut" if _enemy_within(ship_state, TOW_CUT_RANGE) else ""
+		var becalmed: bool = game_state.environment == null or game_state.environment.wind_speed <= 0
+		if _enemy_within(ship_state, TOW_CUT_RANGE) or (not becalmed and not _can_make_way(ship_state)):
+			return "cut"
+		return ""
 	if ship_state.is_towed():
 		return ""
 	var target := tow_target(ship_state)
@@ -864,7 +871,7 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 
 	# An escaping ship declares before plotting, so the validator offers the escape edge (V.D). A
 	# ship that cannot move declares nothing; the AI never withdraws a declaration.
-	if strategy == "escape" and not ship_state.escape_declared and DefaultCourse.can_plot(ship_state):
+	if strategy == "escape" and not ship_state.escape_declared and DefaultCourse.can_move(game_state, ship_state):
 		var refused: String = game_state.phase_controller.player_declare_escape(player_id, ship_id, true)
 		if refused != "":
 			Trace.trace_log("StubAI", "escape declaration refused", {"ship_id": ship_id, "reason": refused})
@@ -1135,7 +1142,7 @@ func _strategy_tow(
 		var key := Vector3i(bow.x, bow.y, facing)
 		if ways.has(key):
 			# Above 0, so _steer's hold makes only moves that bring her nearer.
-			return FIRING_POSITION_BASE / 2 - 2 * int(ways[key]) - luff
+			return TOW_WAY_BASE - 2 * int(ways[key]) - luff
 		# No way found from here: head for the ideal bow, below every pose with a way.
 		return -(2 * _axial_distance(bow, ideal_bow) + _misalignment(bow, facing, ideal_bow)) - luff \
 			- 2 * TOW_SEARCH_RADIUS * 6

@@ -55,8 +55,8 @@ enum Type {
 	CABLE_CUT,  # 13.F.2 a ship cuts her cable: {hex: the anchor}
 	SPRING_TURN,  # 13.D.2-3 a ship anchored with springs turns 60 degrees: {direction: port/starboard, pivot: bow/stern, from_facing, to_facing, refused}; target_id: the ship holding the hex. Refused (refused != "") she keeps from_facing; to_facing is the facing she would have taken
 	VEER_IN,  # 13.E.2 a ship veers in one hex: {cable, refused}; target_id: the ship in the way. cable is the cable after veering in; refused (refused != "") she keeps her cable
-	TOW_BEGUN,  # 12.A.4 ship_id (the tower) rolls to take target_id in tow: {roll, modifier, modifiers, total, needed, success}
-	TOW_CUT,  # 12.A.6, 12.A.9 the tow between ship_id (tower) and target_id (towed) is cut: {cause: tx/struck/destroyed/taken/aground/structural, by}
+	TOW_BEGUN,  # 12.A.4 ship_id (the tower) rolls to take target_id in tow: {roll, modifier, modifiers, total, needed, success}; or her order lapses with no roll: {success: false, lapsed: reason}
+	TOW_CUT,  # 12.A.6, 12.A.9 the tow between ship_id (tower) and target_id (towed) is cut: {cause: tx/struck/destroyed/taken/aground/structural/dismasted, by}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -134,6 +134,7 @@ const TOW_CUT_REASONS := {
 	"taken": "a ship has been taken",
 	"aground": "a ship is aground",
 	"structural": "structural damage",
+	"dismasted": "the tower is dismasted",
 }
 
 const SIDE_NAMES := ["port", "starboard"]

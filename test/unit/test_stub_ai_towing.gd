@@ -216,6 +216,25 @@ func test_tow_order() -> void:
 	assert_eq(stub_ai.tow_order(_ship("b")), "", "the towed ship never cuts")
 
 
+func test_tower_that_cannot_make_way_cuts() -> void:
+	# A tower whose 12.A.7 loss leaves her no way at any heading cuts (controller ruling); in a calm
+	# no ship makes way, and she keeps her tow.
+	_a_tows_b()
+	var a := _ship("a")
+	a.sail_state = "FS"
+	a.rigging_current_hp = [0, 0, 0, 1] as Array[int]
+	_ship("b").rigging_current_hp = [0, 0, 0, 0] as Array[int]
+	GameState.environment.wind_speed = 1
+	for f in range(6):
+		assert_eq(GameState.ship_controller.get_movement_allowance("a", f), 0, "no way at facing %d" % f)
+	assert_eq(stub_ai.tow_order(a), "cut")
+	GameState.environment.wind_speed = 0
+	assert_eq(stub_ai.tow_order(a), "", "a calm: she keeps her tow")
+	GameState.environment.wind_speed = 3
+	a.rigging_current_hp = [5, 5, 6, 6] as Array[int]
+	assert_eq(stub_ai.tow_order(a), "")
+
+
 func test_tow_being_prepared_is_not_cut() -> void:
 	var a := _ship("a")
 	a.tow_prepared = true
@@ -234,6 +253,18 @@ func test_strategy_choice() -> void:
 	_ship("a").towing_id = ""
 	_ship("b").towed_by = ""
 	assert_eq(stub_ai._get_strategy(_ship("a")), "tow")
+
+
+func test_held_tower_declares_no_escape() -> void:
+	# A tower held by her grappled tow cannot move (DefaultCourse.can_move): she declares nothing.
+	_a_on_station()
+	_a_tows_b()
+	_make_ship("x", 1, Vector2i(-6, -4), 3)
+	assert_true(sc.add_grapple("b", "x"))
+	GameState.active_scenario = _scenario(true)
+	assert_eq(stub_ai._get_strategy(_ship("a")), "escape")
+	stub_ai.plot_all_ai_ships()
+	assert_false(_ship("a").escape_declared)
 
 
 func test_tow_strategy_slows() -> void:

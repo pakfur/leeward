@@ -293,3 +293,16 @@ func test_broken_reason() -> void:
 	assert_eq(TowRules.broken_reason(t, w), "struck")
 	w.status = ShipState.Status.DESTROYED
 	assert_eq(TowRules.broken_reason(t, w), "destroyed")
+
+
+func test_broken_reason_dismasted_tower() -> void:
+	# Ruling: a dismasted tower casts off; a dismasted tow is the usual tow and holds.
+	var pair := _pair()
+	var t: ShipState = pair[0]
+	var w: ShipState = pair[1]
+	w.rigging_current_hp = [0, 0, 0, 0] as Array[int]
+	assert_eq(TowRules.broken_reason(t, w), "")
+	t.rigging_current_hp = [0, 0, 0, 0] as Array[int]
+	assert_eq(TowRules.broken_reason(t, w), "dismasted")
+	w.status = ShipState.Status.STRUCK
+	assert_eq(TowRules.broken_reason(t, w), "struck", "the other causes come first")

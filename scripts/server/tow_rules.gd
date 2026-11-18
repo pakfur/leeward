@@ -166,8 +166,9 @@ static func pair_error(tower: ShipState, towed: ShipState, setup: bool = false, 
 	return GrapplingController.mps_error(tower, towed)
 
 
-## Why a standing tow breaks now (spec §6), or "": "destroyed", "struck", "aground" (either ship) or
-## "taken" (the tower captured, or the tow no longer of the tower's side).
+## Why a standing tow breaks now (spec §6), or "": "destroyed", "struck", "aground" (either ship),
+## "taken" (the tower captured, or the tow no longer of the tower's side) or "dismasted" (the
+## tower: a dismasted ship cannot tow, so she casts off her tow; ruling).
 static func broken_reason(tower: ShipState, towed: ShipState) -> String:
 	if tower.is_destroyed() or towed.is_destroyed():
 		return "destroyed"
@@ -177,6 +178,8 @@ static func broken_reason(tower: ShipState, towed: ShipState) -> String:
 		return "aground"
 	if tower.is_captured() or towed.side != tower.side:
 		return "taken"
+	if tower.is_dismasted():
+		return "dismasted"  # a dismasted ship cannot tow: she casts off her tow (ruling)
 	return ""
 
 

@@ -72,9 +72,25 @@ func grapple_error(ship_id: String, target_id: String) -> String:
 		return target_error
 	if ship.is_grappled_to(target_id):
 		return "already grappled to %s" % target.ship_name
+	if ship.tow_partner() == target_id:
+		return "%s is at the other end of %s's tow (12.A)" % [target.ship_name, ship.ship_name]
+	if _tow_rolled_this_turn(ship_id, target_id):
+		return "%s tried to take %s in tow this turn (12.A.4b)" % [ship.ship_name, target.ship_name]
 	if not adjacent(ship, target):
 		return "%s is not alongside" % target.ship_name
 	return mps_error(ship, target)
+
+
+## Whether `ship_id` rolled a tow attempt (TOW_BEGUN with a roll) against `target_id` this g-t:
+## that throw was her grapple at that ship (12.A.4b, 8.C.1: once per g-t).
+func _tow_rolled_this_turn(ship_id: String, target_id: String) -> bool:
+	var turn_log = game_state.get("turn_log")
+	if turn_log == null:
+		return false
+	for ev in turn_log.of_type(PhaseEvents.Type.TOW_BEGUN):
+		if ev.ship_id == ship_id and ev.target_id == target_id and ev.data.has("roll"):
+			return true
+	return false
 
 
 ## Why `ship` may not throw a grapple at all (8.C.3: burning, or a crew at CQ F or G), or "".

@@ -97,10 +97,10 @@ func pursuers(ship: ShipState) -> Array[ShipState]:
 
 ## End of the turn (V.D.1-4): first every declared ship in play is reported (ESCAPE_DECLARED, in
 ## ship id order); then every declared ship in play, on the map, not fouled, grappled or anchored
-## (ruling 2026-11-18), not in tow (she escapes only with her tower, towing spec §8) and in no
-## live boarding action, of a side that may escape this turn, escapes by distance or speed
-## (MapRules.condition; a tower's 12.A.7 loss comes off her own speed). Every
-## condition is read from the positions before any ship leaves.
+## (ruling 2026-11-18), not in tow (she escapes only with her tower, towing spec §8), in no
+## live boarding action and not towing a ship that is fouled, grappled or in one, of a side that
+## may escape this turn, escapes by distance or speed (MapRules.condition; a tower's 12.A.7 loss
+## comes off her own speed). Every condition is read from the positions before any ship leaves.
 func resolve_escapes(turn: int, phase: int) -> void:
 	if not is_server:
 		push_error("MapController: Cannot resolve escapes on client")
@@ -117,7 +117,7 @@ func resolve_escapes(turn: int, phase: int) -> void:
 	var escapes: Array = []
 	for ship in declared:
 		if not ship.is_on_map() or ship.is_linked() or ship.is_anchored() or ship.is_towed() \
-				or escape_locked(game_state, ship.ship_id) \
+				or escape_locked(game_state, ship.ship_id) or _tow_held(ship) \
 				or not MapRules.may_declare(game_state.active_scenario, ship.side, turn):
 			continue
 		var how := MapRules.condition(ship, pursuers(ship), env.wind_direction, env.wind_speed,
@@ -126,6 +126,15 @@ func resolve_escapes(turn: int, phase: int) -> void:
 			escapes.append([ship.ship_id, how])
 	for e in escapes:
 		escape(e[0], e[1], phase)
+
+
+## Whether `ship`'s tow is fouled, grappled or in a live boarding action, so that she may not
+## escape with her (final-wave ruling: she would carry off a ship another holds).
+func _tow_held(ship: ShipState) -> bool:
+	if not ship.is_towing():
+		return false
+	var towed: ShipState = game_state.get_ship(ship.towing_id)
+	return towed != null and (towed.is_linked() or escape_locked(game_state, towed.ship_id))
 
 
 ## The ship leaves the map where there is no sea room and is lost.

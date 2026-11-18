@@ -181,6 +181,26 @@ func test_held_tower_cannot_plot() -> void:
 	assert_not_null(enemy)
 
 
+func test_towing_badge_does_not_mask_her_own_locks() -> void:
+	# The TOWING badge hides DISMASTED / FOULED / GRAPPLED: the planning card still refuses and names them.
+	var pair := _pair()
+	var t: ShipState = pair[0]
+	var e := _ship("e", Vector2i(5, 4), 3, 1)
+	sc.add_grapple("t", "e")
+	assert_eq(PlanningSailUi.status_badge(t), "TOWING")
+	assert_false(PlanningSailUi.can_plot_movement(t))
+	assert_string_contains(PlanningSailUi.movement_block_reason(t), "grappled to e")
+	sc.remove_grapple("t", "e")
+	t.fouled_with = "e"
+	assert_false(PlanningSailUi.can_plot_movement(t))
+	assert_string_contains(PlanningSailUi.movement_block_reason(t), "fouled with e")
+	t.fouled_with = ""
+	t.rigging_current_hp = [0, 0, 0, 0] as Array[int]
+	assert_eq(PlanningSailUi.status_badge(t), "TOWING")
+	assert_false(PlanningSailUi.can_plot_movement(t))
+	assert_eq(PlanningSailUi.movement_block_reason(t), "Ship is dismasted and cannot move.")
+
+
 func test_other_badges_win() -> void:
 	var pair := _pair()
 	var t: ShipState = pair[0]

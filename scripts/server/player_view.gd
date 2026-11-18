@@ -152,6 +152,10 @@ func events_for(player_id: int, turn: int) -> Array[Dictionary]:
 		if limit and ev.type == Type.CREW_TASK and _is_prep_code(str(ev.data.get("code", ""))) \
 				and not game_state.commands(player_id, ev.ship_id):
 			continue
+		# A lapsed tow order is the tower's plot (no roll was made): hidden like her preparation.
+		if limit and ev.type == Type.TOW_BEGUN and ev.data.has("lapsed") \
+				and not game_state.commands(player_id, ev.ship_id):
+			continue
 		var d: Dictionary = ev.to_dict()
 		if limit:
 			_hide_boxes(player_id, ev, d)

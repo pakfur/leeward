@@ -326,6 +326,33 @@ func test_towed_not_escaping_alone() -> void:
 	assert_eq(_events(PhaseEvents.Type.ESCAPED).size(), 0)
 
 
+func test_tower_held_while_her_tow_is_linked_or_boarded() -> void:
+	# A tower does not escape while her tow is fouled, grappled or in a boarding action: she would
+	# carry off a ship another holds (final-wave ruling).
+	var pair := _tow_pair()
+	var t: ShipState = pair[0]
+	t.escape_declared = true
+	_make_ship("e", Vector2i(60, 50), 1)  # far beyond 30 hexes: an escape by distance
+	_make_ship("x", Vector2i(7, 6), 0)
+	assert_true(sc.add_grapple("w", "x"))
+	GameState.map_controller.resolve_escapes(5, END)
+	assert_false(t.is_escaped(), "her tow is grappled")
+	assert_true(sc.remove_grapple("w", "x"))
+	var action := BoardingAction.new()
+	action.attacker_id = "z"
+	action.defender_id = "w"
+	action.state = BoardingAction.ENGAGED
+	var old_actions: Array = GameState.boarding_actions
+	GameState.boarding_actions = [action]
+	GameState.map_controller.resolve_escapes(5, END)
+	GameState.boarding_actions = old_actions
+	assert_false(t.is_escaped(), "her tow is in a boarding action")
+	assert_eq(_events(PhaseEvents.Type.ESCAPED).size(), 0)
+	GameState.map_controller.resolve_escapes(5, END)
+	assert_true(t.is_escaped(), "free, she escapes with her tow")
+	assert_true(pair[1].is_escaped())
+
+
 # ---------- the D.1c speed test ----------
 
 func test_condition_speed_with_loss() -> void:

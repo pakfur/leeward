@@ -80,13 +80,14 @@ static func card_badge(ship: ShipState) -> String:
 
 
 ## A towing ship plots her own course (TOWING does not block), unless her tow is fouled or grappled
-## and holds her (8.C.7, DefaultCourse.tow_held).
+## and holds her (8.C.7, DefaultCourse.tow_held), or she is herself dismasted, fouled or grappled
+## (the locks the TOWING badge hides): DefaultCourse.can_move.
 static func can_plot_movement(ship: ShipState) -> bool:
 	match status_badge(ship):
 		"":
 			return true
 		"TOWING":
-			return not DefaultCourse.tow_held(GameState, ship)
+			return DefaultCourse.can_move(GameState, ship)
 	return false
 
 
@@ -99,11 +100,22 @@ static func movement_block_reason(ship: ShipState) -> String:
 		"AGROUND": return "Ship is aground and cannot move (13.G.3)."
 		"ANCHORED": return "Ship is anchored: cut the cable (AX) to get under way (13.C.3)."
 		"TOWING":
+			var own := _lock_reason(ship)
+			if own != "":
+				return own
 			if DefaultCourse.tow_held(GameState, ship):
 				return "Ship's tow %s is fouled or grappled: neither can move (8.C.7)." % ship.towing_id
 			return ""
 		"IN TOW": return "Ship is in tow and follows her tower (12.A.6)."
-		"DISMASTED": return "Ship is dismasted and cannot move."
-		"FOULED": return "Ship is fouled with %s and cannot move until it breaks free." % ship.fouled_with
-		"GRAPPLED": return "Ship is grappled to %s and cannot move until the grapples are cut (8.C.7)." % ", ".join(ship.grappled_with)
+	return _lock_reason(ship)
+
+
+## Why the ship's own masts or lines hold her (dismasted, fouled, grappled), or "".
+static func _lock_reason(ship: ShipState) -> String:
+	if ship.is_dismasted():
+		return "Ship is dismasted and cannot move."
+	if ship.fouled_with != "":
+		return "Ship is fouled with %s and cannot move until it breaks free." % ship.fouled_with
+	if ship.is_grappled():
+		return "Ship is grappled to %s and cannot move until the grapples are cut (8.C.7)." % ", ".join(ship.grappled_with)
 	return ""

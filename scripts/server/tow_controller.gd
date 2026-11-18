@@ -17,8 +17,9 @@ extends CrewTaskHandler
 ##   success begins the tow (begin), which clears the order.
 ## - §6, cutting (resolve_cuts, SoP V.B, after anchoring in DRIFT_CALCULATION): a live TX begun
 ##   this g-t on either ship cuts its tow (TOW_CUT "tx"). Automatic cuts (on_ship_changed, called
-##   by DamageController.strike / destroy, BoardingController.capture / retake and
-##   MapController.ground): TowRules.broken_reason ("destroyed", "struck", "aground", "taken").
+##   by DamageController.strike / destroy / a dismasting rigging hit, BoardingController.capture /
+##   retake and MapController.ground): TowRules.broken_reason ("destroyed", "struck", "aground",
+##   "taken", "dismasted": the tower, ruling).
 ##
 ## Dice order (game_state.dice): STATUS_ADJUSTMENT, before the grapple prompt, one d10 per tow
 ## attempt made, towers by ship id (no die for a lapsed order or a pair_error). V.B rolls nothing.

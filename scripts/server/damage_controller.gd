@@ -469,6 +469,8 @@ func _apply_rigging(ship: ShipState, ship_id: String, amount: int, phase: int,
 			crits.clear_lines_jammed_on_dismasting(ship_id, phase)
 		if not struck_before:
 			_note_morale(ship_id, "dismasted", 1, phase)
+		if game_state.get("tow_controller") != null:
+			game_state.tow_controller.on_ship_changed(ship_id, phase)  # a dismasted tower casts off
 	return applied
 
 
