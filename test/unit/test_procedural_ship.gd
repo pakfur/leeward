@@ -35,6 +35,15 @@ func test_first_rate_has_three_gun_decks() -> void:
 
 func test_small_ship_has_two_masts() -> void:
 	assert_eq(ProceduralShipSpec.for_ship(_ship(18, 4), 1).masts, 2, "brig/sloop")
+	assert_eq(ProceduralShipSpec.for_ship(_ship(20, 4), 1).masts, 2, "class, not rating")
+
+func test_decks_follow_class() -> void:
+	assert_eq(ProceduralShipSpec.for_ship(_ship(50, 2), 1).gun_decks, 2)
+	assert_eq(ProceduralShipSpec.for_ship(_ship(44, 2), 1).gun_decks, 2)
+	assert_eq(ProceduralShipSpec.for_ship(_ship(44, 3), 1).gun_decks, 1)
+	assert_eq(ProceduralShipSpec.for_ship(_ship(100, 1), 1).gun_decks, 3)
+	assert_eq(ProceduralShipSpec.for_ship(_ship(20, 4), 1).gun_decks, 1)
+	assert_eq(ProceduralShipSpec.for_ship(_ship(20, 3), 1).masts, 3)
 
 func test_frigate_shorter_than_ship_of_the_line() -> void:
 	assert_lt(ProceduralShipSpec.for_ship(_ship(38, 3), 1).length, ProceduralShipSpec.for_ship(_ship(74, 2), 1).length)

@@ -20,10 +20,12 @@ static func data() -> Dictionary:
 	return _data
 
 
-## {"decks": [...], "gun_decks": [...]} for a ship type id (ships.json key).
-static func layout_for(ship_type: String) -> Dictionary:
+## {"decks": [...], "gun_decks": [...]} for a ship type id: its `ship_types` entry, else the layout
+## of its class (`classes`, so every nation's two- and three-deckers get one), else the default.
+static func layout_for(ship_type: String, ship_class: int = 0) -> Dictionary:
 	var d := data()
-	var key: String = d.get("ship_types", {}).get(ship_type, d.get("default_layout", "frigate"))
+	var key: String = d.get("ship_types", {}).get(ship_type,
+		d.get("classes", {}).get(str(ship_class), d.get("default_layout", "frigate")))
 	return d.get("layouts", {}).get(key, {"decks": [], "gun_decks": []})
 
 

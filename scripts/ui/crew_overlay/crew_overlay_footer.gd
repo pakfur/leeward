@@ -124,7 +124,7 @@ func _render_damage(ship: ShipState) -> void:
 func _render_roster(ship: ShipState, plan: Dictionary) -> void:
 	CrewOverlay._clear(_roster)
 	var assignments: Dictionary = plan.get("assignments", {})
-	var layout := CrewDeckLayouts.layout_for(ship.ship_type)
+	var layout := CrewDeckLayouts.layout_for(ship.ship_type, ship.ship.ship_class if ship.ship else 0)
 	for section in range(ShipState.MARINES + 1):
 		var row := PanelContainer.new()
 		row.name = "Roster_" + CrewOverlayText.section_name(section)

@@ -22,6 +22,8 @@ const SAILS_BY_STATE := {
 ## Hull length per hex of footprint, before the class scale.
 const LENGTH_PER_HEX := 1.3
 const CLASS_SCALE := {1: 1.0, 2: 1.0, 3: 0.92, 4: 0.8}
+## Gun decks by ship class (a class 2 two-decker of 44 or 50 guns has two; unknown class: one).
+const GUN_DECKS_BY_CLASS := {1: 3, 2: 2, 3: 1, 4: 1}
 const MIN_PORTS := 6
 const MAX_PORTS := 14
 ## Height of each mast tier (lower, top, topgallant) as a fraction of hull length, main mast.
@@ -54,13 +56,8 @@ static func for_ship(ship: Ship, hexes: int) -> ProceduralShipSpec:
 	var rating: int = ship.rating if ship else 38
 	var ship_class: int = ship.ship_class if ship else 3
 
-	if rating >= 90:
-		spec.gun_decks = 3
-	elif rating >= 60:
-		spec.gun_decks = 2
-	else:
-		spec.gun_decks = 1
-	spec.masts = 2 if rating < 20 else 3
+	spec.gun_decks = int(GUN_DECKS_BY_CLASS.get(ship_class, 1))
+	spec.masts = 2 if ship_class == 4 else 3
 	spec.ports_per_side = clampi(ceili(rating / (2.0 * spec.gun_decks)), MIN_PORTS, MAX_PORTS)
 
 	spec.length = LENGTH_PER_HEX * hexes * float(CLASS_SCALE.get(ship_class, 1.0))
