@@ -58,6 +58,16 @@ ERRORS (1):
 
 Without the validator, `DataManager.get_movement_allowance("F/F", 2, "B", "fs", 4)` would return `0` silently (the `fs` key isn't there — `FS` is), and the ship would sit in the harbor wondering why it can't move.
 
+## Ship types: validate_ships.py
+
+`data/rules/ships.json` has its own validator:
+
+```bash
+python3 .claude/skills/validate-rule-table/scripts/validate_ships.py
+```
+
+Optional `--file PATH` and `--rules-dir DIR`. Exit 1 on any error. It checks the id set (the 41 Ship Data Chart rows plus the four order-of-battle ships `br_44_diomede`, `fr_20_babet`, `fr_20_rosalie`, `fr_14_coureur`), the nation prefix against `nationality`, the allowed and leftover keys (the old `type`, `speed`, `crew_quality` are errors), hit-point rows that decrease, point-cost columns out of order, carronade twins that drifted apart from their long-gun twin, and bad aliases (`frigate_38`, `frigate_32`, `ship_of_line_74`). The rows were transcribed from the SDC scan (1997 Close Action p.106) and the OB scans, so run it after any edit to `ships.json` and check changed numbers against those scans.
+
 ## Extending to other rule tables
 
 `bearing_off_table.json`, `speed_change_table.json`, `tacking_table.json`, and `turning_table.json` have their own shapes — the script only validates `movement_allowance.json` today. If you add validation for another table, add a `validate_<table_name>()` function alongside `validate_movement_allowance()` and dispatch on the filename in `main()`.
