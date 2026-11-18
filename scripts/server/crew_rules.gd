@@ -75,6 +75,12 @@ static func _plotted_mps(game_state: Node, ship: ShipState, steps: Array) -> int
 		return steps.size()
 	if game_state == null or game_state.get("ship_controller") == null:
 		return 0
+	# Only while this g-t's course is still to be sailed: after movement the plot is cleared and the
+	# default course would be next g-t's (and costly on every overlay redraw).
+	var pc = game_state.get("phase_controller")
+	if pc != null and not pc.current_phase in [TurnPhaseController.GamePhase.PLANNING,
+			TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION]:
+		return 0
 	return DefaultCourse.for_ship(game_state, ship).size()
 
 
