@@ -1,0 +1,169 @@
+extends GutTest
+## Tests for ResolutionSteps (the replay step builder) and PhaseEvent.from_dict.
+
+const Type := PhaseEvents.Type
+const SHIPS := {
+	"a": {"name": "Alpha", "player": 0},
+	"b": {"name": "Bravo", "player": 1},
+	"c": {"name": "Charlie", "player": 0},
+	"d": {"name": "Delta", "player": 1},
+}
+
+
+func _ev(type: Type, ship: String, data: Dictionary = {}, target := "", phase := 4) -> Dictionary:
+	return PhaseEvents.PhaseEvent.new(type, phase, ship, data, target).to_dict()
+
+
+func _fire_data() -> Dictionary:
+	return {
+		"side": 1, "battery": "full", "range": 3, "aim": "low", "ammo": "round", "bgn": 22,
+		"modifiers": [{"name": "crew_quality", "value": 2}, {"name": "initial_broadside", "value": 3}],
+		"mgn": 27, "d6": 4, "fgn": 31, "rake": "", "rigging": 2, "hull": 1, "crew": 1,
+	}
+
+
+func test_from_dict_round_trips() -> void:
+	var ev := PhaseEvents.PhaseEvent.new(Type.GRAPPLE, 6, "a", {"roll": 2, "modifiers": [{"name": "skill", "value": -1}]}, "b")
+	ev.sides = {"a": 0, "b": 1}
+	var back := PhaseEvents.PhaseEvent.from_dict(ev.to_dict())
+	assert_eq(back.type, ev.type)
+	assert_eq(back.phase, ev.phase)
+	assert_eq(back.ship_id, ev.ship_id)
+	assert_eq(back.target_id, ev.target_id)
+	assert_eq(back.data, ev.data)
+	assert_eq(back.sides, ev.sides)
+	back.data["roll"] = 9
+	assert_eq(ev.data["roll"], 2, "the copy is detached")
+
+
+func test_fire_folds_its_damage_and_crit() -> void:
+	var evs: Array = [
+		_ev(Type.FIRE, "a", _fire_data(), "b"),
+		_ev(Type.DAMAGE, "b", {"hull": 1}),
+		_ev(Type.CRITICAL_HIT, "b", {"roll": 3, "table": "hull", "result_id": "rudder"}),
+		_ev(Type.GUNS_DISMOUNTED, "b", {"amount": 1, "side": 0}),
+		_ev(Type.FIRE, "c", _fire_data(), "d"),
+		_ev(Type.DAMAGE, "d", {"hull": 1}),
+	]
+	var steps := ResolutionSteps.build(evs, 0, SHIPS)
+	assert_eq(steps.size(), 2)
+	assert_eq(steps[0].events.size(), 4)
+	assert_eq(steps[0].kind, "gunfire")
+	assert_eq(steps[0].ship_id, "a")
+	assert_eq(steps[0].target_id, "b")
+	assert_eq(steps[0].first_index, 0)
+	assert_eq(steps[0].last_index, 3)
+	assert_eq(steps[1].first_index, 4)
+	assert_eq(steps[1].events.size(), 2)
+	assert_eq(steps[0].dice, [{"sides": 6, "values": [4]}])
+	assert_eq(steps[0].outcome_lines.size(), 4)
+
+
+func test_follower_of_another_pair_is_not_folded() -> void:
+	var evs: Array = [
+		_ev(Type.FIRE, "a", _fire_data(), "b"),
+		_ev(Type.DAMAGE, "d", {"hull": 1}),
+		_ev(Type.DAMAGE, "b", {"hull": 1}, "", 5),
+	]
+	var steps := ResolutionSteps.build(evs, 0, SHIPS)
+	assert_eq(steps.size(), 1)
+	assert_eq(steps[0].events.size(), 1, "another ship's damage and another phase's do not fold")
+
+
+func test_hold_fire_and_signal_are_not_steps() -> void:
+	var evs: Array = [
+		_ev(Type.HOLD_FIRE, "a"),
+		_ev(Type.SIGNAL, "a", {"from_player": 0, "words": ["ENGAGE"]}),
+		_ev(Type.MORALE_CHECK, "a", {"roll": 7, "rating": 4, "passed": true}, "", 7),
+	]
+	var steps := ResolutionSteps.build(evs, 0, SHIPS)
+	assert_eq(steps.size(), 1)
+	assert_eq(steps[0].kind, "morale")
+	assert_eq(steps[0].first_index, 2)
+
+
+func test_morale_dice_and_outcome() -> void:
+	var ev := _ev(Type.MORALE_CHECK, "a", {"roll": 7, "rating": 4, "passed": false}, "", 7)
+	var steps := ResolutionSteps.build([ev], 0, SHIPS)
+	assert_eq(steps[0].dice, [{"sides": 10, "values": [7]}])
+	var own := PhaseEvents.PhaseEvent.from_dict(ev)
+	var wording := own.to_text(CombatLogPanel.event_names(own, SHIPS))
+	assert_true(steps[0].outcome_lines[0].contains(wording))
+	assert_true(steps[0].title.contains("Alpha"))
+
+
+func test_fire_modifiers_copied() -> void:
+	var steps := ResolutionSteps.build([_ev(Type.FIRE, "a", _fire_data(), "b")], 0, SHIPS)
+	assert_eq(steps[0].modifiers, [
+		{"label": PhaseEvents.modifier_label("crew_quality"), "value": 2},
+		{"label": PhaseEvents.modifier_label("initial_broadside"), "value": 3},
+	])
+	assert_eq(steps[0].final_text, "Gunfire number 31")
+
+
+func test_build_from_index() -> void:
+	var evs: Array = [
+		_ev(Type.MORALE_CHECK, "a", {"roll": 7, "rating": 4, "passed": true}, "", 7),
+		_ev(Type.MORALE_CHECK, "b", {"roll": 2, "rating": 4, "passed": false}, "", 7),
+	]
+	var steps := ResolutionSteps.build(evs, 1, SHIPS)
+	assert_eq(steps.size(), 1)
+	assert_eq(steps[0].ship_id, "b")
+	assert_eq(steps[0].first_index, 1)
+	assert_eq(steps[0].last_index, 1)
+
+
+func test_drift_step() -> void:
+	var data := {"roll": 6, "needed": 4, "modifier": 1, "drifted": false, "from": {"q": 1, "r": 2}}
+	var steps := ResolutionSteps.build([_ev(Type.DRIFT, "a", data, "", 5)], 0, SHIPS)
+	assert_eq(steps[0].kind, "drift")
+	assert_eq(steps[0].dice, [{"sides": 10, "values": [6]}])
+	assert_eq(steps[0].modifiers, [{"label": "modifier", "value": 1}])
+	assert_eq(steps[0].final_text, "Needs 4 or less")
+
+
+func test_grapple_step() -> void:
+	var data := {"roll": 2, "modifiers": [{"name": "skill", "value": -1}], "modifier": -1,
+		"total": 1, "needed": 2, "success": true}
+	var steps := ResolutionSteps.build([_ev(Type.GRAPPLE, "a", data, "b", 6)], 0, SHIPS)
+	assert_eq(steps[0].kind, "grapple")
+	assert_eq(steps[0].dice, [{"sides": 10, "values": [2]}])
+	assert_eq(steps[0].modifiers, [{"label": PhaseEvents.modifier_label("skill"), "value": -1}])
+	assert_eq(steps[0].final_text, "Total 1, needs 2 or less")
+
+
+func test_lapsed_tow_has_no_dice() -> void:
+	var steps := ResolutionSteps.build([_ev(Type.TOW_BEGUN, "a", {"success": false, "lapsed": "gone"}, "b", 6)], 0, SHIPS)
+	assert_eq(steps[0].kind, "tow")
+	assert_eq(steps[0].dice, [])
+
+
+func test_two_d6_rolls_keep_their_count() -> void:
+	var steps := ResolutionSteps.build([_ev(Type.EXPLOSION_CHECK, "a", {"roll": 7, "needed": 3, "explodes": false}, "", 6)], 0, SHIPS)
+	assert_eq(steps[0].dice, [{"sides": 6, "values": [7], "count": 2}])
+
+
+func test_hidden_boxes_stay_hidden() -> void:
+	# What PlayerView gives for an enemy: no box fields, sections lost instead.
+	var fire := _fire_data()
+	for key in ["rigging", "hull", "crew"]:
+		fire.erase(key)
+	var evs: Array = [
+		_ev(Type.FIRE, "a", fire, "b"),
+		_ev(Type.DAMAGE, "b", {"cause": "other", "sections_lost": 1, "marine_section_lost": false}),
+	]
+	var steps := ResolutionSteps.build(evs, 0, SHIPS)
+	assert_eq(steps.size(), 1)
+	for line in steps[0].outcome_lines:
+		assert_false(line.contains("no damage"), line)
+		assert_false(line.contains("hull box"), line)
+	assert_true(steps[0].outcome_lines[1].contains("1 section"))
+
+
+func test_every_type_is_classified_exactly_once() -> void:
+	for type in PhaseEvents.Type.values():
+		var places := 0
+		places += 1 if ResolutionSteps.LEADS.has(type) else 0
+		places += 1 if ResolutionSteps.FOLLOWS.has(type) else 0
+		places += 1 if ResolutionSteps.SKIPPED.has(type) else 0
+		assert_eq(places, 1, "%s is in %d lists" % [PhaseEvents.Type.find_key(type), places])
