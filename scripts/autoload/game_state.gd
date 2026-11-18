@@ -73,6 +73,7 @@ var sail_controller: SailController = null
 var crew_task_controller: CrewTaskController = null
 var fire_controller: FireController = null
 var repair_controller: RepairController = null
+var anchor_controller: AnchorController = null
 var drift_resolver: DriftResolver = null
 var fouling_controller: FoulingController = null
 var grappling_controller: GrapplingController = null
@@ -137,6 +138,9 @@ func _initialize_server_controllers() -> void:
 	repair_controller = RepairController.new(self)
 	for code in RepairController.CODES:
 		crew_task_controller.register_handler(code, repair_controller)
+	anchor_controller = AnchorController.new(self)
+	for code in AnchorRules.CODES:
+		crew_task_controller.register_handler(code, anchor_controller)
 	drift_resolver = DriftResolver.new(self)
 	fouling_controller = FoulingController.new(self)
 	grappling_controller = GrapplingController.new(self)
