@@ -672,31 +672,40 @@ func submit_fire_orders() -> void:
 ## mgn >= 1 under the two-target penalty, the ship fires the one with the most shots, then the
 ## highest total mgn (FireRules + preview_orders), then the nearest, then by target_id. A ship
 ## ordered to engage a ship (spec 7) puts a combination that fires at her before all of these; its
-## sides offer their best shot at her too.
+## sides offer their best shot at her too. Only when no broadside combination is fireable does the
+## ship choose the same way between its bow and stern chasers (house rule; a chase shot is never
+## preferred to a broadside).
 func choose_fire_orders(player_id: int = -1) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	var calculator: GunneryCalculator = game_state.gunnery_calculator
 	for ship_state in _get_ai_ships(player_id):
 		var shots := calculator.eligible_shots(ship_state.ship_id)
 		var ordered := str(game_state.order_of(ship_state.ship_id).get("target", ""))
-		var offers: Array = []
-		for side in GunneryCalculator.SIDES:
-			offers.append(_side_offers(shots, side, ordered))
-		var best: Dictionary = {}
-		for port_offer in offers[0]:
-			for starboard_offer in offers[1]:
-				var orders: Array[GunneryTypes.FireOrder] = []
-				orders.append_array(port_offer)
-				orders.append_array(starboard_offer)
-				var candidate := _evaluate_orders(calculator, orders)
-				if not candidate.is_empty():
-					candidate["ordered"] = ordered != "" and ordered in candidate["targets"].split(",")
-				if not candidate.is_empty() and (best.is_empty() or _candidate_beats(candidate, best)):
-					best = candidate
+		var best := _best_of_sides(calculator, shots, ordered, GunneryCalculator.SIDES[0], GunneryCalculator.SIDES[1])
+		# No broadside is fireable: the same choice over the bow and stern chasers (house rule).
+		if best.is_empty():
+			best = _best_of_sides(calculator, shots, ordered, GunneryTypes.CHASE_BOW, GunneryTypes.CHASE_STERN)
 		if not best.is_empty():
 			for order in best["orders"]:
 				result.append(order.to_dict())
 	return result
+
+
+## The best legal combination of one offer from each of two sides (see choose_fire_orders), or {}.
+func _best_of_sides(calculator: GunneryCalculator, shots: Array[GunneryTypes.ShotPreview], ordered: String,
+		side_a: int, side_b: int) -> Dictionary:
+	var best: Dictionary = {}
+	for a_offer in _side_offers(shots, side_a, ordered):
+		for b_offer in _side_offers(shots, side_b, ordered):
+			var orders: Array[GunneryTypes.FireOrder] = []
+			orders.append_array(a_offer)
+			orders.append_array(b_offer)
+			var candidate := _evaluate_orders(calculator, orders)
+			if not candidate.is_empty():
+				candidate["ordered"] = ordered != "" and ordered in candidate["targets"].split(",")
+			if not candidate.is_empty() and (best.is_empty() or _candidate_beats(candidate, best)):
+				best = candidate
+	return best
 
 
 ## Marine fire orders ({ship_id, target_id}) for every AI ship whose marines may fire (7.G, boarding
