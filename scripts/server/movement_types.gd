@@ -493,6 +493,10 @@ class ShipResolutionResult extends RefCounted:
 	## Left the map this g-t: "" (no), MapRules.LOST (a `none` edge) or MapRules.ESCAPE; left_edge names the edge.
 	var left_map: String = ""
 	var left_edge: String = ""
+	## 13.G.4: each sounding made with the lead, in segment order: {segment, data}, `data` the LEAD_CAST
+	## event data {hex: {q, r}, depth (-1 for land), draft, outcome ("bore_off"|"entered"|"held"|
+	## "pm_failed"), side (ShipState.PORT / STARBOARD for bore_off, else -1)}.
+	var lead_events: Array = []
 
 	func _init(p_ship_id: String = "") -> void:
 		ship_id = p_ship_id
@@ -528,6 +532,8 @@ class ShipResolutionResult extends RefCounted:
 		if left_map != "":
 			d["left_map"] = left_map
 			d["left_edge"] = left_edge
+		if not lead_events.is_empty():
+			d["lead_events"] = lead_events.duplicate(true)
 		return d
 
 
