@@ -10,6 +10,9 @@ extends RefCounted
 ## this controller is holding or already draining. The queue is FIFO, so checks caused by a
 ## check's own boxes are rolled after the checks already waiting (7.D.12 chaining).
 ##
+## Dice: hull #6 rolls one d6 after its box, only for a ship towing or in tow (12.A.6: on a 1 the
+## tow is cut); every other result rolls as before.
+##
 ## Rolls only through game_state.dice. Struck and destroyed ships roll no critical hits, checks or fixes.
 ## All mutations go through ShipStateController and DamageController.
 ##
@@ -472,6 +475,12 @@ func _resolve_hull(ship_id: String, row: Dictionary, data: Dictionary, ctx: Dict
 			_leadership(ship_id, row, data, ctx, phase)
 		"hull_structural_damage":
 			_hull_boxes(ship_id, int(row.get("hull", 1)), ctx, phase)
+			if ship.is_towing() or ship.is_towed():
+				# 12.A.6: the strain may part the tow (the box may already have struck her, which cuts it).
+				var d6: int = game_state.dice.d6()
+				data["tow_roll"] = d6
+				if d6 == 1:
+					game_state.tow_controller.cut(ship_id, "structural", phase, ship_id)
 		"rigging_damage":
 			var roll: int = game_state.dice.two_d6()
 			data["sub_rolls"].append(roll)

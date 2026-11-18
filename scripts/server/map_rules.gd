@@ -174,9 +174,10 @@ static func max_ma_heading(ship: ShipState, facing: int, wind_direction: int, wi
 ## {} or {"how": "distance", "range": r} (r >= ESCAPE_DISTANCE, or -1 with no pursuer) or
 ## {"how": "speed", "range": r} (the nearest pursuer SPEED_RANGE_MIN..MAX off, her max_ma above 0
 ## and at least that of every pursuer in that band of her class or larger (class number no
-## higher)). Every max_ma is taken at the escaping ship's wind facing.
+## higher)). Every max_ma is taken at the escaping ship's wind facing. `mp_loss` comes off her own
+## max_ma, floored at 0: a tower's 12.A.7 loss for her tow (towing spec §8).
 static func condition(ship: ShipState, pursuers: Array[ShipState], wind_direction: int,
-		wind_speed: int) -> Dictionary:
+		wind_speed: int, mp_loss: int = 0) -> Dictionary:
 	var own_hexes := ship.occupied_hexes()
 	var nearest := -1
 	for p in pursuers:
@@ -188,7 +189,7 @@ static func condition(ship: ShipState, pursuers: Array[ShipState], wind_directio
 	if nearest < SPEED_RANGE_MIN or nearest > SPEED_RANGE_MAX:
 		return {}
 	var wind_facing := HexGrid.new().get_wind_facing(ship.facing, wind_direction)
-	var own := max_ma(ship, wind_facing, wind_speed)
+	var own := maxi(max_ma(ship, wind_facing, wind_speed) - mp_loss, 0)
 	if own <= 0:
 		return {}
 	for p in pursuers:

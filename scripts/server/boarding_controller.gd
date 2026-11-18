@@ -1309,9 +1309,9 @@ func start_of_turn(phase: int) -> void:
 
 
 ## 10.H.4: the prize crew is below the minimum and the original crew has at least twice its boxes
-## (and at least one). Pure.
+## (and at least one), and she is still on the map (a prize carried off is beyond it). Pure.
 static func recapture_due(ship: ShipState) -> bool:
-	if not ship.has_prize_crew():
+	if not ship.has_prize_crew() or not ship.is_on_map():
 		return false
 	var prize_boxes := ship.total_crew_boxes()
 	var below := ship.original_crew_boxes()

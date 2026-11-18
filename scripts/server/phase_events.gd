@@ -47,7 +47,7 @@ enum Type {
 	AGROUND,  # a ship runs or drifts aground: {cause: movement/drift, terrain: land/shallow, hex, depth, draft}
 	LEAD_CAST,  # a ship casts the lead: {hex, depth, draft, outcome, side}
 	ESCAPE_DECLARED,  # a ship declares it is trying to escape
-	ESCAPED,  # a ship escapes: {how: edge|distance|speed, edge | range (-1: no enemy on the map)}
+	ESCAPED,  # a ship escapes: {how: edge|distance|speed|in_tow, edge | range (-1: no enemy on the map) | tower (+ prize: true when carried off)}
 	ARRIVED,  # a reinforcement enters: {hex, facing, sail_state, speed}
 	ARRIVAL_DELAYED,  # a reinforcement cannot enter this turn; target_id: the ship in the way
 	ANCHORED,  # 13.C.2 a ship lets go her anchor: {end: bow/stern, springs, hex}
@@ -509,7 +509,7 @@ class PhaseEvent extends RefCounted:
 			Type.ESCAPE_DECLARED:
 				return "%s is trying to escape" % who
 			Type.ESCAPED:
-				return _escaped_text(who)
+				return _escaped_text(who, _name(ship_names, str(data.get("tower", ""))))
 			Type.ARRIVED:
 				var sail: String = PhaseEvents.SAIL_NAMES.get(str(data.get("sail_state", "")).to_upper(), "")
 				return "%s arrives at %s%s" % [who, _hex_text("hex"), " under %s" % sail if sail != "" else ""]
@@ -834,9 +834,13 @@ class PhaseEvent extends RefCounted:
 				text += ", %s" % outcome.replace("_", " ")
 		return text
 
-	func _escaped_text(who: String) -> String:
+	func _escaped_text(who: String, tower: String) -> String:
 		var hexes := PhaseEvents.plural(int(data.get("range", 0)), "hex", "hexes")
 		match str(data.get("how", "")):
+			"in_tow":
+				if data.get("prize", false):
+					return "%s carries off the prize %s" % [tower, who]
+				return "%s escapes in tow of %s" % [who, tower]
 			"distance":
 				if int(data.get("range", -1)) < 0:
 					return "%s escapes with no enemy in sight" % who
@@ -1093,6 +1097,8 @@ class PhaseEvent extends RefCounted:
 				var how := "fouled alongside"
 				if link == "grappled":
 					how = "grappled alongside"
+				elif link == "tow":
+					how = "at the other end of her tow"
 				elif link == "group":
 					how = "in the same grappled or fouled group"
 				return "%s would drift (%s) but is held back by %s, %s, and holds position%s" % [

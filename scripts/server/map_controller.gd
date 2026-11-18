@@ -35,7 +35,10 @@ static func escape_locked(gs: Node, ship_id: String) -> bool:
 	return gs.boarding_controller.live_action_of(ship_id) != null
 
 
-## The ship escapes: `data` is {how, edge} or {how, range}. No-op for a ship already out of play.
+## The ship escapes: `data` is {how, edge}, {how, range} or {how: "in_tow", tower}. No-op for a ship
+## already out of play. A tower takes her tow with her (towing spec §8): an own ship escapes in tow;
+## a prize is carried off the map and stays CAPTURED (her captor took her away, so her value stays
+## lost to her owner). The tow is then cleared, with no TOW_CUT.
 func escape(ship_id: String, data: Dictionary, phase: int) -> void:
 	if not is_server:
 		push_error("MapController: Cannot escape a ship on client")
@@ -46,6 +49,7 @@ func escape(ship_id: String, data: Dictionary, phase: int) -> void:
 		return
 	if ship.is_out_of_play():
 		return
+	var towed_id: String = ship.towing_id
 	var sc: ShipStateController = game_state.ship_controller
 	sc.set_status(ship_id, ShipState.Status.ESCAPED)
 	if game_state.get("crew_task_controller") != null:
@@ -55,6 +59,28 @@ func escape(ship_id: String, data: Dictionary, phase: int) -> void:
 	sc.remove_from_map(ship_id)
 	game_state.turn_log.add(PhaseEvents.Type.ESCAPED, phase, ship_id, data)
 	Trace.trace_log("Map", "Ship %s escaped (%s)" % [ship_id, str(data.get("how", ""))])
+	if towed_id != "":
+		_carry_tow(ship_id, towed_id, phase)
+		if ship.is_towing():
+			sc.cut_tow(ship_id)
+
+
+## The escaped tower `tower_id` takes `towed_id` with her (towing spec §8).
+func _carry_tow(tower_id: String, towed_id: String, phase: int) -> void:
+	var towed: ShipState = game_state.get_ship(towed_id)
+	if towed == null or not towed.is_on_map():
+		return
+	if towed.is_captured():
+		var sc: ShipStateController = game_state.ship_controller
+		if game_state.get("crew_task_controller") != null:
+			game_state.crew_task_controller.drop_all(towed_id, "carried off")
+		sc.clear_fires(towed_id)
+		sc.remove_from_map(towed_id)
+		game_state.turn_log.add(PhaseEvents.Type.ESCAPED, phase, towed_id,
+				{"how": "in_tow", "tower": tower_id, "prize": true})
+		Trace.trace_log("Map", "Prize %s carried off by %s" % [towed_id, tower_id])
+	elif towed.status == ShipState.Status.ACTIVE:
+		escape(towed_id, {"how": "in_tow", "tower": tower_id}, phase)
 
 
 ## The enemy ships that could chase `ship` (V.D.1): of another side, in play, on the map, not
@@ -71,8 +97,9 @@ func pursuers(ship: ShipState) -> Array[ShipState]:
 
 ## End of the turn (V.D.1-4): first every declared ship in play is reported (ESCAPE_DECLARED, in
 ## ship id order); then every declared ship in play, on the map, not fouled, grappled or anchored
-## (ruling 2026-11-18) and in no live boarding action, of a
-## side that may escape this turn, escapes by distance or speed (MapRules.condition). Every
+## (ruling 2026-11-18), not in tow (she escapes only with her tower, towing spec §8) and in no
+## live boarding action, of a side that may escape this turn, escapes by distance or speed
+## (MapRules.condition; a tower's 12.A.7 loss comes off her own speed). Every
 ## condition is read from the positions before any ship leaves.
 func resolve_escapes(turn: int, phase: int) -> void:
 	if not is_server:
@@ -89,11 +116,12 @@ func resolve_escapes(turn: int, phase: int) -> void:
 	var env: EnvironmentState = game_state.environment
 	var escapes: Array = []
 	for ship in declared:
-		if not ship.is_on_map() or ship.is_linked() or ship.is_anchored() \
+		if not ship.is_on_map() or ship.is_linked() or ship.is_anchored() or ship.is_towed() \
 				or escape_locked(game_state, ship.ship_id) \
 				or not MapRules.may_declare(game_state.active_scenario, ship.side, turn):
 			continue
-		var how := MapRules.condition(ship, pursuers(ship), env.wind_direction, env.wind_speed)
+		var how := MapRules.condition(ship, pursuers(ship), env.wind_direction, env.wind_speed,
+				game_state.ship_controller.tow_mp_loss(ship))
 		if not how.is_empty():
 			escapes.append([ship.ship_id, how])
 	for e in escapes:

@@ -7,7 +7,9 @@ extends RefCounted
 ## line itself names the ship in the way and says whether they fouled.
 ## Ships fouled or grappled together drift as one group (8.A.6): the connected ships over
 ## ShipState.linked_ids(), one d10 by the member least likely to drift, never a partial drift, and
-## the whole group stays when any of its hexes is blocked. An aground or anchored ship never drifts
+## the whole group stays when any of its hexes is blocked. A tower and her tow drift as one group
+## too (8.A.6, towing spec §7): the group is walked over ShipState.drift_group_ids(), and a towed
+## ship's eligibility is her tower's (she moves only in her tower's wake). An aground or anchored ship never drifts
 ## and holds its group (8.A.1; anchoring spec §6); a drift onto land or into shoals too shallow for the draft runs the ship aground
 ## where it stands (13.G.2); a drift across a `none` edge loses the ship, across a crossable escape
 ## edge escapes it (map and scenario spec).
@@ -28,8 +30,9 @@ func _init(p_game_state: Node) -> void:
 ## leeward-most first (8.A.2: largest projection of the footprint's middle, between bow and stern,
 ## on the downwind world vector; ties by ship_id), each seeing the positions left by those before
 ## it. Judging by the middle, a single ship whose hex would drift into another's is always the
-## later one. A group of fouled or grappled ships (8.A.6) is processed once, at its most leeward
-## member, so its other members may come before a ship they would drift into. For each ship or group:
+## later one. A group of fouled, grappled or towing ships (8.A.6) is processed once, at its most
+## leeward member, so its other members may come before a ship they would drift into (a tower and
+## her tow roll one d10 between them, not one each). For each ship or group:
 ##   1. the drift d10
 ##   2. only if that drift is blocked by another ship that may foul it: the fouling d10
 ##   3. only if nothing blocks: one depth d6 per member whose bow enters shallows, in group order
@@ -60,15 +63,15 @@ func resolve(phase: int) -> void:
 		_resolve_group(group, downwind_dir, wind_speed, phase)
 
 
-## `ship` and every ship fouled or grappled to it, directly or through others (8.A.6), `ship`
-## first, the rest by ship_id.
+## `ship` and every ship fouled, grappled or in a tow with it, directly or through others (8.A.6),
+## `ship` first, the rest by ship_id.
 func _linked_group(ship: ShipState) -> Array[ShipState]:
 	var seen := {ship.ship.ship_id: true}
 	var queue: Array[ShipState] = [ship]
 	var others: Array[ShipState] = []
 	while not queue.is_empty():
 		var current: ShipState = queue.pop_front()
-		for other_id in current.linked_ids():
+		for other_id in current.drift_group_ids():
 			if seen.has(other_id):
 				continue
 			var other: ShipState = game_state.get_ship(other_id)
@@ -116,8 +119,16 @@ func _is_eligible(group: Array[ShipState]) -> bool:
 			return false  # a wreck never drifts (its fouling was cleared when it blew up)
 		if _holds_group(ship):
 			return false
+	var ids := {}
 	for ship in group:
-		if not ship.moved_this_turn or ship.collision_this_turn or ship.is_linked():
+		ids[ship.ship.ship_id] = true
+	for ship in group:
+		# A towed ship moves only in her tower's wake: the tower's movement decides for the pair
+		# (a tower that only turned has not moved, though her tow's bow has).
+		var moved := ship.moved_this_turn
+		if ship.is_towed() and ids.has(ship.towed_by):
+			moved = true
+		if not moved or ship.collision_this_turn or ship.is_linked():
 			return true
 	return false
 
@@ -282,9 +293,14 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 				other_id = ship.fouled_with
 				if other_id == "" or not own_block.has(other_id):
 					other_id = _held_by(ship, own_block)
-				# How it is tied to that ship: fouled (no key), grappled, or through other ships.
+				# How it is tied to that ship: fouled (no key), grappled, her tow, or through other ships.
 				if ship.fouled_with != other_id:
-					data["link"] = "grappled" if ship.is_grappled_to(other_id) else "group"
+					if ship.is_grappled_to(other_id):
+						data["link"] = "grappled"
+					elif ship.tow_partner() == other_id:
+						data["link"] = "tow"
+					else:
+						data["link"] = "group"
 			if fouled != null:
 				data["fouled"] = fouled
 		game_state.turn_log.add(PhaseEvents.Type.DRIFT, phase, sid, data, other_id)
@@ -302,10 +318,10 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 		game_state.map_controller.ground(sid, grounded[sid], phase)
 
 
-## The blocked group member that holds `ship` back: a directly linked one if any, else the first
-## blocked member by ship_id.
+## The blocked group member that holds `ship` back: a directly linked one (fouled, grappled or her
+## tow partner) if any, else the first blocked member by ship_id.
 func _held_by(ship: ShipState, own_block: Dictionary) -> String:
-	for other_id in ship.linked_ids():
+	for other_id in ship.drift_group_ids():
 		if own_block.has(other_id):
 			return other_id
 	var ids: Array = own_block.keys()

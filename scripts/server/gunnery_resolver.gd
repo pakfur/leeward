@@ -160,7 +160,7 @@ func _resolve_shot(shot: Dictionary, phase: int) -> void:
 		# 8.F.6: the r marks nothing on a dismasted ship but cancels its rigging repairs.
 		game_state.damage_controller.rigging_hit_while_dismasted(order.target_id, phase)
 
-	if preview.rake != "" and target_dismasted:
+	if preview.rake != "" and target_dismasted and not _rigged_tower_holds(order.target_id):
 		var turn: int = game_state.phase_controller.current_turn
 		var trigger := "raked_dismasted_t%d" % turn
 		if game_state.ship_controller.note_morale_check(order.target_id, trigger):
@@ -169,3 +169,12 @@ func _resolve_shot(shot: Dictionary, phase: int) -> void:
 
 	crits.check_gunfire_crit(ctx, phase)
 	crits.release(phase)
+
+
+## 9.B.1b: a dismasted ship raked while in tow takes no MC unless her tower is dismasted too.
+func _rigged_tower_holds(target_id: String) -> bool:
+	var target: ShipState = game_state.get_ship(target_id)
+	if target == null or not target.is_towed():
+		return false
+	var tower: ShipState = game_state.get_ship(target.towed_by)
+	return tower != null and not tower.is_dismasted()
