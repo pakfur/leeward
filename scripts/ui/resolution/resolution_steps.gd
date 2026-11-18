@@ -132,7 +132,10 @@ static func build(event_dicts: Array, from_index: int, ship_info: Dictionary) ->
 	for i in range(maxi(from_index, 0), event_dicts.size()):
 		var ev := PhaseEvents.PhaseEvent.from_dict(event_dicts[i])
 		var kind := lead_kind(ev.type)
-		if kind != "":
+		if kind == "drift" and open != null and _same_drift_group(open_events, ev, i, open.last_index):
+			open_events.append(ev)
+			open.last_index = i
+		elif kind != "":
 			if open != null:
 				open.events = open_events
 			open = ResolutionStep.new()
@@ -152,6 +155,29 @@ static func build(event_dicts: Array, from_index: int, ship_info: Dictionary) ->
 	for step in steps:
 		_fill(step, ship_info)
 	return steps
+
+
+## A drift group (8.A.6) logs one DRIFT per member in a row, all with the group's one roll: `ev`
+## belongs to the open drift step when it follows at once, in the phase, with the same roll, needed,
+## modifier and result, from a hex within three of the step's first ship.
+static func _same_drift_group(open_events: Array[PhaseEvents.PhaseEvent], ev: PhaseEvents.PhaseEvent,
+		index: int, last_index: int) -> bool:
+	var lead := open_events[0]
+	if lead.type != PhaseEvents.Type.DRIFT or ev.phase != lead.phase or index != last_index + 1:
+		return false
+	for key in ["roll", "needed", "modifier", "drifted"]:
+		if not lead.data.has(key) or lead.data.get(key) != ev.data.get(key):
+			return false
+	if lead.data.has("partial") or ev.data.has("partial"):
+		return false
+	var a: Dictionary = lead.data.get("from", {})
+	var b: Dictionary = ev.data.get("from", {})
+	if a.is_empty() or b.is_empty():
+		return false
+	var dq := int(a["q"]) - int(b["q"])
+	var dr := int(a["r"]) - int(b["r"])
+	@warning_ignore("integer_division")
+	return (absi(dq) + absi(dq + dr) + absi(dr)) / 2 <= 3
 
 
 # --- Filling a step -----------------------------------------------------------
@@ -281,8 +307,19 @@ static func _outcome_text(ev: PhaseEvents.PhaseEvent, ship_info: Dictionary) -> 
 			if not d.has("hull"):
 				return text.trim_suffix(": no damage")
 		PhaseEvents.Type.MARINE_FIRE:
-			if not d.has("crew"):
-				return text.trim_suffix(": no effect")
+			if not d.has("crew") or not d.has("boxes"):
+				return _hidden_marine_text(ev, names)
+		PhaseEvents.Type.PRIZE_CREW:
+			if not d.has("sailors") or not d.has("marines"):
+				return "A prize crew from %s goes aboard %s" % [
+					str(names.get(ev.target_id, ev.target_id)), str(names.get(ev.ship_id, ev.ship_id))]
+		PhaseEvents.Type.RECAPTURED:
+			if not d.has("original_boxes") or not d.has("prize_boxes"):
+				var who := str(names.get(ev.ship_id, ev.ship_id))
+				if str(d.get("cause", "")) == "boarded":
+					return "%s is retaken by %s: her crew is freed from below" % [
+						who, str(names.get(ev.target_id, ev.target_id))]
+				return "%s's crew rises and retakes the ship" % who
 		PhaseEvents.Type.DAMAGE:
 			if d.has("sections_lost"):
 				var who := str(names.get(ev.ship_id, ev.ship_id))
@@ -298,4 +335,25 @@ static func _outcome_text(ev: PhaseEvents.PhaseEvent, ship_info: Dictionary) -> 
 				return "Boarding, %s onto %s: attacker %s, defender %s" % [
 					str(names.get(ev.ship_id, ev.ship_id)), str(names.get(ev.target_id, ev.target_id)),
 					str(a.get("total", "?")), str(df.get("total", "?"))]
+	return text
+
+
+## The marine fire line with only the numbers the player's view kept: no box count when `boxes` is
+## hidden (the firer is not hers), no result when `crew` is hidden (the target is not hers).
+static func _hidden_marine_text(ev: PhaseEvents.PhaseEvent, names: Dictionary) -> String:
+	var d := ev.data
+	var calc := PackedStringArray(["d6 %s" % str(d.get("d6", "?"))])
+	for m in d.get("modifiers", []):
+		var v := int(m.get("value", 0))
+		calc.append("%s %s%d" % [PhaseEvents.modifier_label(str(m.get("name", "?"))),
+			"−" if v < 0 else "+", absi(v)])
+	var setup := "column %s" % str(d.get("column", "?"))
+	if d.has("boxes"):
+		setup = "%s, %s" % [PhaseEvents.plural(int(d["boxes"]), "box", "boxes"), setup]
+	var text := "%s's marines fire on %s (%s) — %s → %s" % [
+		str(names.get(ev.ship_id, ev.ship_id)), str(names.get(ev.target_id, ev.target_id)),
+		setup, ", ".join(calc), str(d.get("total", "?"))]
+	if d.has("crew"):
+		var crew := int(d["crew"])
+		text += ": " + ("no effect" if crew <= 0 else PhaseEvents.plural(crew, "crew box", "crew boxes"))
 	return text
