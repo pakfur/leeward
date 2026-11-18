@@ -58,3 +58,13 @@ Parked minors: none beyond those recorded in feature_diff §4.
 10. **Process:** SCV audit clean.
 
 Parked minors: a tow rollback that undid a bear-off can name the wrong ship in its STOPPED_SHORT line when land held the tow; `TowRules` reads ship names from the GameState autoload for messages; the per-frame hawser mesh is rebuilt rather than scaled.
+
+## Sub-project 6 — ships and guns (merged 2026-11-18)
+
+1. **Chase guns (house rule, user decision) fire to range 7 only:** a chaser is one long-gun factor (TGF 1) and the BGN chart has no number for TGF 1 beyond range 7, so its 60° arc reaches 15 but it can hit only to 7 (the chart wins). *If wrong:* give chasers more factors.
+2. **Chasers take no rake, half-broadside, obscured, lower-deck, dismounted or initial-broadside effects;** sections-firing, two-target −12, anchored +1, plain sail and the other flat modifiers apply; a chaser is one of the ship's ≤ 2 targets; chasers do not count toward "able to move or fight"; the AI fires them only when no broadside bears. A holding chaser's arc is drawn faint.
+3. **Ship types:** all 41 SDC rows with nation-prefixed ids (the three old ids are aliases); the class-4 corvettes Babet and Rosalie and the brig Coureur come from the scenario orders of battle (the SDC has none); Diomede is her own type (no per-scenario overrides). The procedural model takes its gun decks from the class (1 → 3, 2 → 2, 3–4 → 1) and class 4 gets a two-masted rig; the crew overlay picks its deck drawing by class.
+4. **Removed data fields:** `type`, `speed`, `crew_quality` on the type, `Ship.is_french_gunned` (the navy rule is `ShipState.is_french_gunned`). The three old parser warnings (ship_state.gd, turn_phase_controller.gd) are fixed.
+5. **Process:** ship rows checked against the scan three times (pre-flight, implementer, final review); SCV audit clean.
+
+Parked: a tow astern blocking a stern chaser is refused as "no line of sight" rather than "blocked by friendly ship"; the full-game test asserts a FIRE event but not specifically a chase shot.
