@@ -334,3 +334,98 @@ func test_leaving_mid_replay_reports_nothing() -> void:
 		assert_eq(pc.current_phase, TurnPhaseController.GamePhase.COMBAT_RESOLUTION,
 			"no completion after leaving")
 		assert_false(gc._replay_running()))
+
+
+func test_reset_mid_combat_replay_lets_the_next_combat_play() -> void:
+	var ctx := StubContextPanel.new()
+	add_child_autofree(ctx)
+	var gc := _combat_controller(ctx)
+	var combat_log := _with_combat_log([_ev(PhaseEvents.Type.FIRE, COMBAT, "a", "b")])
+	_run_combat(combat_log, func(pc: TurnPhaseController) -> void:
+		gc._on_combat_log_ready(combat_log)
+		assert_true(gc._replay_running())
+		gc._on_game_started({})  # Developer UI reset mid-replay
+		assert_false(gc._combat_playback_active, "the dropped replay does not hold the next combat")
+		assert_false(gc._replay_running())
+		gc._on_combat_log_ready(combat_log)
+		assert_true(gc._replay_running(), "the next combat plays")
+		gc.resolution_replay.next()
+		assert_ne(pc.current_phase, TurnPhaseController.GamePhase.COMBAT_RESOLUTION, "and completes"))
+
+
+func test_outlived_combat_replay_clears_the_playback_flag() -> void:
+	var ctx := StubContextPanel.new()
+	add_child_autofree(ctx)
+	var gc := _combat_controller(ctx)
+	var combat_log := _with_combat_log([_ev(PhaseEvents.Type.FIRE, COMBAT, "a", "b")])
+	_run_combat(combat_log, func(_pc: TurnPhaseController) -> void:
+		gc._on_combat_log_ready(combat_log)
+		gc._on_phase_changed(TurnPhaseController.GamePhase.END_TURN)
+		assert_false(gc._replay_running(), "outlived: dropped")
+		assert_false(gc._combat_playback_active))
+
+
+# --- GameController: a ship lost off the map in drift (Review Focus 4) ------------------------
+
+func _map_ship(id: String, side: int, hex: Vector2i) -> ShipState:
+	var state := ShipState.new()
+	state.ship = Ship.from_dict({
+		"ship_id": id, "player_id": side, "ship_name": id, "ship_type": "frigate_38",
+		"name": "38-gun Frigate", "nationality": "British", "rating": 38, "class": 3,
+		"maneuverability": "C", "speed_type": "F/F", "rigging_hp": [5, 5, 6, 6],
+		"hull_hp": [5, 5, 5, 6], "crew_count": [3, 3, 3, 3], "marine_count": 2,
+		"gun_factors": {"lg": 6, "mg": 0, "cr": 4},
+	})
+	state.hex_position = hex
+	var rigging: Array[int] = [5, 5, 6, 6]
+	state.rigging_current_hp = rigging
+	GameState.ships[id] = state
+	GameState.ships_by_side[side].append(id)
+	return state
+
+
+func _drift(ship: String, roll: int, hex: Vector2i) -> PhaseEvents.PhaseEvent:
+	return PhaseEvents.PhaseEvent.new(PhaseEvents.Type.DRIFT, DRIFT, ship,
+		{"roll": roll, "needed": 5, "modifier": 0, "drifted": true, "from": {"q": hex.x, "r": hex.y}})
+
+
+func test_ship_lost_in_drift_keeps_her_view_until_her_drift_step() -> void:
+	var P := TurnPhaseController.GamePhase
+	var pc := GameState.phase_controller
+	var old_ships := GameState.ships.duplicate()
+	var old_by_side := GameState.ships_by_side.duplicate(true)
+	var old_log := GameState.turn_log
+	var old_phase := pc.current_phase
+	GameState.ships.clear()
+	GameState.ships_by_side = {0: [], 1: []}
+	var keeper := _map_ship("keeper", 0, Vector2i(0, 0))
+	var lost := _map_ship("lost", 1, Vector2i(20, 0))
+	var ctx := StubContextPanel.new()
+	add_child_autofree(ctx)
+	var gc := _combat_controller(ctx)
+	for id in ["keeper", "lost"]:
+		var view := Node3D.new()
+		autofree(view)
+		gc.ship_views[id] = view
+	GameState.turn_log = _with_combat_log([_drift("keeper", 3, keeper.hex_position),
+		_drift("lost", 7, lost.hex_position)])
+
+	gc._on_phase_changed(P.DRIFT_CALCULATION)  # the state before drift is recorded
+	lost.removed_from_map = true  # drift carries her off a `none` edge (III.C)
+	for phase in [P.STATUS_ADJUSTMENT, P.MORALE_CHECK, P.MESSAGE_DELIVERY]:
+		gc._on_phase_changed(phase)
+	pc.current_phase = P.POST_COMBAT
+	gc._on_phase_changed(P.POST_COMBAT)
+
+	assert_true(gc._replay_running(), "the post-combat replay is on the keeper's drift step")
+	assert_eq(gc.resolution_replay.current_index(), 0)
+	assert_true(gc.ship_views.has("lost"), "her view stays while the replay shows her afloat")
+	gc.resolution_replay.next()
+	assert_false(gc.ship_views.has("lost"), "her drift step shown: the view leaves")
+	gc.resolution_replay.next()
+	assert_false(gc._replay_running())
+
+	pc.current_phase = old_phase
+	GameState.turn_log = old_log
+	GameState.ships = old_ships
+	GameState.ships_by_side = old_by_side

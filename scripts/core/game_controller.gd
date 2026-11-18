@@ -326,9 +326,7 @@ func _leave_game() -> void:
 		return
 	_leaving = true
 	Trace.trace_log("GameController", "Leaving the game in progress")
-	_combat_playback_active = false
-	if resolution_replay:
-		resolution_replay.cancel()  # no step reaches the server any more
+	_cancel_resolution_replay()  # no step reaches the server any more
 	if playback_controller:
 		if playback_controller.playback_completed.is_connected(_on_playback_completed):
 			playback_controller.playback_completed.disconnect(_on_playback_completed)
@@ -437,8 +435,7 @@ func _setup_scenario(scenario: Dictionary) -> void:
 
 ## A new game (or a Developer UI reset): one ShipView per ship the server built, replacing any old ones.
 func _on_game_started(_scenario: Dictionary) -> void:
-	if resolution_replay:
-		resolution_replay.cancel()
+	_cancel_resolution_replay()
 	display_states.clear()
 	_replay_saved_view = {}
 	for id in ship_views.keys():
@@ -892,7 +889,7 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 	if GameState.phase_controller:
 		display_states.record_phase(phase, GameState.phase_controller.current_turn, GameState.get_all_ships())
 	if _replay_running() and replay_outlived(resolution_replay.kind, resolution_replay.phases, phase):
-		resolution_replay.cancel()
+		_cancel_resolution_replay()
 		_end_resolution_display()
 	# Selection is a planning-time affordance — clear it (and any hover) on every phase change
 	# so the one-shot indicator snapshot can't go stale across resolution/turn boundaries.
@@ -924,8 +921,7 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 			_show_movement_panel()
 			_resolve_movement()
 		GameState.GamePhase.POST_COMBAT:
-			_sync_all_views()  # drift and other late phases move ships without their own playback
-			_enter_post_combat_phase()
+			_enter_post_combat_phase()  # syncs the views, after the replay's display copies are up
 
 func _enter_planning_phase() -> void:
 	Trace.trace_log("GameController", "Entering planning phase for player 0")
@@ -1579,16 +1575,21 @@ func _finish_combat_playback() -> void:
 
 ## POST_COMBAT: the steps of drift, status adjustment, morale and messages are replayed first; the
 ## End Turn button comes up when the player is through them (at once when there are none).
+## Drift and the other late phases move ships without their own playback, so the views are synced
+## here: once the replay has started (its display copies show each ship as she was before drift, so a
+## ship lost off the map in drift keeps her view until her drift step), or at once with no replay.
 func _enter_post_combat_phase() -> void:
 	if skip_post_combat_delay:
+		_sync_all_views()
 		_request_end_turn()
 		return
 	Trace.trace_log("GameController", "Post-combat phase - waiting for player to end turn")
 	if context_panel != null:
-		_feed_post_combat_replay()
+		_feed_post_combat_replay()  # a replay that starts syncs the views from its display copies
 		if _replay_running():
 			resolution_replay.finish_when_drained(_on_post_combat_replay_drained)
 			return
+	_sync_all_views()
 	_show_post_combat_end_turn()
 
 
@@ -1627,6 +1628,14 @@ func _replay() -> ResolutionReplay:
 		add_child(resolution_replay)
 		resolution_replay.step_shown.connect(_on_replay_step_shown)
 	return resolution_replay
+
+
+## Drops the replay with no further server calls. A combat replay dropped this way never reaches
+## `_finish_combat_playback`, so its playback flag is cleared here: the next combat_log_ready must play.
+func _cancel_resolution_replay() -> void:
+	_combat_playback_active = false
+	if resolution_replay:
+		resolution_replay.cancel()
 
 
 func _replay_running() -> bool:
@@ -1878,8 +1887,7 @@ func _request_end_turn() -> void:
 
 func _on_game_over(result: Dictionary) -> void:
 	Trace.trace_log("GameController", "Game over", result)
-	if resolution_replay:
-		resolution_replay.cancel()  # dropped: no further server calls
+	_cancel_resolution_replay()  # dropped: no further server calls
 	display_states.end()
 	_replay_saved_view = {}  # the final position is framed below instead
 	if combat_log_panel:
