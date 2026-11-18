@@ -294,6 +294,74 @@ func test_partial_drift_through_deep_enough_shoal_pivots() -> void:
 	assert_eq(_drifts()[0].data["partial"], "bow")
 
 
+func test_partial_drift_stern_free_in_shoal_rolls_no_depth() -> void:
+	# Facing 4: bow (5,5), stern (5,6). The blocker holds (4,5); the stern would slip to (4,6).
+	GameState.active_scenario = {"terrain": {"shallow": [
+		{"name": "bank", "base": 0, "hexes": _hexes([Vector2i(4, 6)])}]}}
+	var a := _make_ship("a", Vector2i(5, 5), 4)
+	var blocker := _make_ship("b", Vector2i(4, 5), 0, 1)
+	blocker.moved_this_turn = true
+	_dice.queue([9, 9])  # drift, fouling (fails); no depth die for a stern
+	resolver.resolve(PHASE)
+	assert_false(a.is_aground())
+	assert_eq(a.stern_hex(), Vector2i(4, 6))
+	assert_eq(a.facing, 5)
+
+
+# --- groups ----------------------------------------------------------------------
+
+func test_group_member_on_land_grounds_and_holds_the_group() -> void:
+	GameState.active_scenario = {"terrain": {"land": _hexes([Vector2i(4, 5)])}}
+	var a := _make_ship("a", Vector2i(5, 5))
+	var b := _make_ship("b", Vector2i(6, 5))
+	GameState.ship_controller.add_grapple("a", "b")
+	_dice.queue([9])
+	resolver.resolve(PHASE)
+	assert_true(a.is_aground())
+	assert_false(b.is_aground())
+	assert_eq(a.hex_position, Vector2i(5, 5))
+	assert_eq(b.hex_position, Vector2i(6, 5))
+	var by_ship := {}
+	for ev in _drifts():
+		by_ship[ev.ship_id] = ev
+	assert_eq(by_ship["a"].data["blocked"], "aground")
+	assert_eq(by_ship["b"].data["blocked"], "partner")
+
+
+func test_group_depth_dice_are_drawn_in_group_order() -> void:
+	# a's bow enters (4,5), b's bow enters (5,5): both shoals of base 15 (draft 16).
+	GameState.active_scenario = {"terrain": {"shallow": [
+		{"name": "bank", "base": 15, "hexes": _hexes([Vector2i(4, 5), Vector2i(5, 5)])}]}}
+	var a := _make_ship("a", Vector2i(5, 5))
+	var b := _make_ship("b", Vector2i(6, 5))
+	GameState.ship_controller.add_grapple("a", "b")
+	_dice.queue([9, 2, 1])  # drift; a: depth 17 (clear); b: depth 16 (aground)
+	resolver.resolve(PHASE)
+	assert_false(a.is_aground())
+	assert_true(b.is_aground())
+	assert_eq(a.hex_position, Vector2i(5, 5), "the group stays")
+	assert_eq(b.hex_position, Vector2i(6, 5))
+	var grounded := GameState.turn_log.of_type(PhaseEvents.Type.AGROUND)
+	assert_eq(grounded.size(), 1)
+	assert_eq(grounded[0].ship_id, "b")
+	assert_eq(grounded[0].data["depth"], 16)
+
+
+func test_group_member_escapes_off_permitted_edge_others_drift() -> void:
+	GameState.active_scenario = _edge_scenario("escape")
+	GameState.active_scenario["escape"] = {"0": {"from_turn": 1}}
+	var a := _make_ship("a", Vector2i(-5, 0), 3)
+	var b := _make_ship("b", Vector2i(-3, 0), 3)
+	a.escape_declared = true
+	GameState.ship_controller.add_grapple("a", "b")
+	_dice.queue([9])
+	resolver.resolve(PHASE)
+	assert_true(a.is_escaped())
+	assert_eq(b.hex_position, Vector2i(-4, 0))
+	assert_false(b.is_grappled())
+	assert_true(b.is_on_map())
+
+
 func test_land_under_the_free_end_grounds_instead_of_pivoting() -> void:
 	# Land outranks the blocking ship in forced_move, so the ship runs aground and nothing pivots.
 	GameState.active_scenario = {"terrain": {"land": _hexes([Vector2i(4, 5)])}}

@@ -208,7 +208,8 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 			[from_end] as Array[Vector2i], [to_end] as Array[Vector2i], others, game_state.current_turn)
 		if end_move["result"] != "clear":
 			partial = ""
-		elif end_move["shallow_bow"]:
+		elif partial == "bow" and end_move["shallow_bow"]:
+			# Only a too-shallow bow grounds (13.G.2a); a free stern in shallows rolls nothing.
 			var depth := _roll_depth(to_end)
 			if depth <= lone.ship.draft:
 				partial = ""
