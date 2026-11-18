@@ -243,6 +243,7 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 		log.longest_plot = maxi(log.longest_plot, n)
 	_final_segment_count = outcome.max_impulses
 	_stamp_times(log)
+	_schedule = null  # this run's; a later helper call on a pass built by hand builds its own (_schedule_of)
 
 	return log
 
@@ -250,6 +251,7 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 ## Fills `log.segment_times` and stamps every event not already stamped (the pre-movement ones are at
 ## START) with the time of its segment. Indices at or above the final pass's segment count (the end
 ## check, even a stale check index from an earlier pass) are END.
+@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 func _stamp_times(log: MovementTypes.ResolutionLog) -> void:
 	log.segment_times = []
 	for i in range(log.max_impulses):

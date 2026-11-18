@@ -708,6 +708,7 @@ func test_phase_controller_advances_after_on_playback_completed() -> void:
 
 ## Gives a hand-built log the resolver's timing for equal plots of `max_impulses` steps: segment i at
 ## time (i + 1) / n, every ship plotting n steps.
+@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 func _timed(log: MovementTypes.ResolutionLog) -> MovementTypes.ResolutionLog:
 	var n: int = log.max_impulses
 	log.segment_times = []
@@ -798,6 +799,88 @@ func test_resumed_log_plays_from_its_resume_impulse() -> void:
 	await wait_for_signal(spy.playback_completed, 3.0)
 	assert_signal_emitted(spy, "playback_completed")
 	assert_eq(spy.glided, [[2.0, 4.0]], "The clock already shown is not played again")
+
+
+## An overlap pending across the decision segment: the swinging ship turns on segment 0 (its check
+## is at segment 2) and a prompted ship pauses at segment 1. The paused log shows the swing as a MOVE;
+## the re-run with the answer rolls it back (OVERLAP at 0, OVERLAP_ROLLBACK at 2).
+func _swing_pending_logs() -> Array:
+	var swing := MovementTypes.ResolutionEvent.new("swinging_ship", 0, MovementTypes.ResolutionEventType.MOVE)
+	swing.from_hex = Vector2i(5, 5)
+	swing.to_hex = Vector2i(5, 5)
+	swing.from_facing = 0
+	swing.facing = 1
+	var paused := MovementTypes.ResolutionLog.new(1)
+	paused.max_impulses = 3
+	paused.pending_bear_off = MovementTypes.BearOffSituation.new()
+	paused.pending_bear_off.segment = 1
+	var r1 := MovementTypes.ShipResolutionResult.new("swinging_ship")
+	r1.events.append(swing)
+	paused.add_result(r1)
+	_timed(paused)
+
+	var resumed := MovementTypes.ResolutionLog.new(1)
+	resumed.max_impulses = 3
+	resumed.resume_impulse = 1
+	var r2 := MovementTypes.ShipResolutionResult.new("swinging_ship")
+	var overlap := MovementTypes.ResolutionEvent.new("swinging_ship", 0, MovementTypes.ResolutionEventType.OVERLAP)
+	overlap.from_hex = Vector2i(5, 5)
+	overlap.to_hex = Vector2i(5, 5)
+	overlap.from_facing = 0
+	overlap.facing = 1
+	r2.events.append(overlap)
+	var rollback := MovementTypes.ResolutionEvent.new("swinging_ship", 2, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
+	rollback.from_hex = Vector2i(5, 5)
+	rollback.to_hex = Vector2i(5, 5)
+	rollback.from_facing = 1
+	rollback.facing = 0
+	rollback.success = false
+	r2.events.append(rollback)
+	r2.final_hex = Vector2i(5, 5)
+	r2.final_facing = 0
+	resumed.add_result(r2)
+	_timed(resumed)
+	return [paused, resumed]
+
+
+func test_resumed_log_swings_back_a_turn_swung_out_before_the_pause() -> void:
+	var view := ShipView.new()
+	add_child_autofree(view)
+	view.initialize(_two_hex_state("swinging_ship", Vector2i(5, 5), 0), hex_grid)
+	var logs := _swing_pending_logs()
+	var first := MovementResolutionPlaybackController.new(hex_grid, {"swinging_ship": view}, 0)
+	add_child_autofree(first)
+	first.play(logs[0])
+	await wait_for_signal(first.playback_paused, 5.0)
+	assert_almost_eq(view.model_node.rotation_degrees.y, -1 * 60.0 - 90.0, 1.0, "paused swung out, facing SE")
+
+	var second := ClockSpy.new(hex_grid, {"swinging_ship": view}, 0)
+	add_child_autofree(second)
+	second.play(logs[1])
+	await wait_for_signal(second.playback_completed, 5.0)
+	assert_eq(second.glided, [[1.0, 3.0]], "glides from the resume clock to the rollback")
+	assert_eq(second._posed_by_impulse.get(2, []).size(), 1, "the rollback is posed")
+
+	var third := MovementResolutionPlaybackController.new(hex_grid, {"swinging_ship": view}, 0)
+	add_child_autofree(third)
+	third.play(logs[1])
+	await wait_for_signal(third.playback_completed, 5.0)
+	var expected := hex_grid.ship_center_world(Vector2i(5, 5), 0)
+	assert_almost_eq(view.base_position.x, expected.x, 0.01, "swung back to the old pose")
+	assert_almost_eq(view.base_position.z, expected.z, 0.01)
+	assert_almost_eq(view.model_node.rotation_degrees.y, -90.0, 1.0, "facing E again")
+
+
+func test_end_clock_of_a_resumed_log_counts_from_the_resume_clock() -> void:
+	var logs := _swing_pending_logs()
+	assert_eq(MovementResolutionPlaybackController.end_clock(logs[1]), 3.0, "the rollback at segment 2")
+	var done := _timed(_make_multi_impulse_log(1))
+	done.max_impulses = 4
+	done.segment_times = [Vector2i(1, 4), Vector2i(1, 2), Vector2i(3, 4), Vector2i(1, 1)] as Array[Vector2i]
+	done.longest_plot = 4
+	done.resume_impulse = 3
+	assert_eq(MovementResolutionPlaybackController.end_clock(done), 3.0,
+		"its one move was before the pause: nothing left to play, so the resume clock")
 
 
 ## ============================================================================

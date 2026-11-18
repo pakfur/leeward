@@ -104,7 +104,12 @@ func _play_all_impulses() -> void:
 	var stop_clock: float = end_clock(_log) if _log.is_complete() else _clock_before(clocks, last_impulse)
 
 	# Sort every segment's events, in order (_posed_events follows the swing outs from one to the next).
+	# On a resumed log the segments before resume_impulse were shown by the paused log: they are not
+	# played again, but a turn swung out there that this log rolls back later must swing back, so their
+	# swing outs are noted first.
 	_posed_by_impulse = {}
+	for impulse in range(_log.resume_impulse):
+		_posed_events(events_by_impulse.get(impulse, []))
 	var halts: Array = []  # [clock, special events] per segment with special events, in order
 	for impulse in range(_log.resume_impulse, last_impulse):
 		var impulse_events: Array = events_by_impulse.get(impulse, [])
@@ -159,7 +164,9 @@ static func _clock_before(clocks: Array, segment: int) -> float:
 	return _clock_at(clocks, segment - 1) if segment > 0 else 0.0
 
 
-## The clock at which the last posed event of `log` ends (0.0 if none): where a complete log stops.
+## The clock at which the last posed event of `log` ends: where a complete log stops. Only events from
+## the log's resume_impulse on are played (the swing outs before it are followed, see
+## _play_all_impulses); with none, the resume clock (0.0 for a log played from the start).
 @warning_ignore("shadowed_global_identifier")
 static func end_clock(log: MovementTypes.ResolutionLog) -> float:
 	var clocks: Array[float] = segment_clocks(log.segment_times, log.longest_plot)
@@ -167,9 +174,9 @@ static func end_clock(log: MovementTypes.ResolutionLog) -> float:
 	var impulses: Array = grouped.keys()
 	impulses.sort()
 	var swung_out: Dictionary = {}
-	var last := 0.0
+	var last := _clock_before(clocks, log.resume_impulse)
 	for impulse in impulses:
-		if _posed_in(grouped[impulse], log, swung_out).size() > 0:
+		if _posed_in(grouped[impulse], log, swung_out).size() > 0 and impulse >= log.resume_impulse:
 			last = maxf(last, _clock_at(clocks, impulse))
 	return last
 

@@ -237,6 +237,11 @@ last step.
   3. then segment by segment: contests, bear-off order, bear-off rolls, collision rigging and fouling.
   The re-run log therefore repeats every event before the decision's segment exactly. A test pins this
   with unequal paces (plan, Task 3).
+- One exception: a 6.B overlap whose check segment lies after the decision segment (the window can span
+  several segments at unequal paces). The paused log shows the swing as a MOVE; the re-run may roll it
+  back (OVERLAP before the decision, OVERLAP_ROLLBACK after it). Resolution still pauses at the decision
+  segment (controller ruling, no rules change); playback notes the swing outs before `resume_impulse`
+  without playing them, so the watched swing swings back like any rolled-back overlap.
 
 ### 5. Movement log
 

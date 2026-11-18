@@ -32,6 +32,7 @@ static func reduce(num: int, den: int) -> Vector2i:
 		b = t
 	if a == 0:
 		return Vector2i(num, den)
+	@warning_ignore("integer_division")
 	return Vector2i(num / a, den / a)
 
 
@@ -86,6 +87,7 @@ func step_at(ship_id: String, segment: int) -> int:
 	var t := times[segment]
 	if (t.x * n) % t.y != 0:
 		return -1
+	@warning_ignore("integer_division")
 	return t.x * n / t.y - 1
 
 

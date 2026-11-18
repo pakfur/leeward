@@ -3545,6 +3545,67 @@ func test_bear_off_rerun_repeats_the_prefix_with_unequal_paces() -> void:
 		assert_eq(before_b, before_a, "%s: the re-run repeats everything before segment 3" % sid)
 
 
+## An overlap still pending at a bear-off pause (6.B window spanning the decision segment). Segments:
+## 1/5, 1/3, 2/5, 1/2, 3/5, 2/3, 4/5, 1 (indices 0-7). ship_1 (2 MPs) turns at 1/2 (segment 3),
+## swinging its stern onto ship_2's bow (5,4); ship_2 (3 MPs) turns on that bow at 1/3 and again at
+## 2/3 (segment 5), so the overlap is checked, and fails, at segment 5. The prompted mover (5 ahead)
+## meets the blocker at 3/5 (segment 4), between the two.
+func _overlap_across_pause_setup() -> Array[ShipState]:
+	env.wind_direction = 3
+	var ship_1 = _make_ship_state(Vector2i(5, 5), 0, 2, "C", "ship_1")
+	var ahead: Vector2i = Vector2i(5, 5) + HexGrid.DIRECTIONS[1]
+	GameState.ship_controller.set_plotted_movement("ship_1", [
+		{"hex": {"q": 5, "r": 5}, "facing": 1},
+		{"hex": {"q": ahead.x, "r": ahead.y}, "facing": 1},
+	])
+	var ship_2 = _make_ship_state(Vector2i(5, 4), 1, 3, "C", "ship_2")
+	var west: Vector2i = Vector2i(5, 4) + HexGrid.DIRECTIONS[3]
+	GameState.ship_controller.set_plotted_movement("ship_2", [
+		{"hex": {"q": 5, "r": 4}, "facing": 2},
+		{"hex": {"q": 5, "r": 4}, "facing": 3},
+		{"hex": {"q": west.x, "r": west.y}, "facing": 3},
+	])
+	var mover = _make_ship_state(Vector2i(10, 10), 0, 7, "D", "mover", 3, "A")
+	_plot_straight(mover, 5)
+	var blocker = _make_ship_state(Vector2i(13, 10), 1, 0, "C", "blocker")
+	return [ship_1, ship_2, mover, blocker] as Array[ShipState]
+
+
+func test_overlap_pending_across_the_bear_off_pause_rolls_back_on_the_rerun() -> void:
+	var ships := _overlap_across_pause_setup()
+	rng.seed = 7
+	var paused = resolver.run(ships, env, {}, ["mover"])
+	assert_not_null(paused.pending_bear_off)
+	if paused.pending_bear_off == null:
+		return
+	assert_eq(paused.pending_bear_off.segment, 4, "the mover's decision at 3/5")
+	var swing: Array = _events_of(paused.get_result("ship_1"), MovementTypes.ResolutionEventType.MOVE).filter(
+		func(ev): return ev.impulse == 3)
+	assert_eq(swing.size(), 1, "the paused log shows ship_1's swing at 1/2 as a move")
+	if swing.size() == 1:
+		assert_eq(swing[0].facing, 1)
+	assert_false(_has_event(paused.get_result("ship_1"), MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK),
+		"not yet checked")
+
+	rng.seed = 7
+	var decided = resolver.run(ships, env, _decide("collide", 4), ["mover"])
+	decided.resume_impulse = 4
+	assert_true(decided.is_complete())
+	var result_1 = decided.get_result("ship_1")
+	assert_eq(_impulses(result_1, MovementTypes.ResolutionEventType.OVERLAP), [3], "the swing, before the pause")
+	assert_eq(_impulses(result_1, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK), [5], "rolled back after it")
+	assert_eq(result_1.final_facing, 0)
+	# Playback of the re-run swings ship_1 back: the swing out before resume_impulse is followed.
+	var playback := MovementResolutionPlaybackController.new(HexGrid.new(), {}, 0)
+	add_child_autofree(playback)
+	playback.play(decided)
+	await wait_for_signal(playback.playback_completed, 10.0)
+	var posed: Array = playback._posed_by_impulse.get(5, []).filter(func(ev): return ev.ship_id == "ship_1")
+	assert_eq(posed.size(), 1, "the rollback at segment 5 is posed")
+	if posed.size() == 1:
+		assert_eq(posed[0].event_type, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
+
+
 func test_ma0_turn_happens_at_time_one() -> void:
 	# The Tacking roll is drawn before movement (segment 0); the turn itself is at time 1 (segment 3).
 	var t = _make_ship_state(Vector2i(5, 5), 0, 0, "C", "t")

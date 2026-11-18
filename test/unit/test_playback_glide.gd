@@ -62,6 +62,7 @@ func _clocks(n: int) -> Array:
 
 
 ## Gives a hand-built log the resolver's timing for equal plots of `max_impulses` steps.
+@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 func _timed(log: MovementTypes.ResolutionLog) -> MovementTypes.ResolutionLog:
 	var n: int = log.max_impulses
 	log.segment_times = []
