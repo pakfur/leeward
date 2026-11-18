@@ -270,6 +270,11 @@ func _calculate_real_valid_hexes(
 	path_so_far: Array[MovementTypes.PlotStep]
 ) -> MovementTypes.ValidNextHexes:
 	var result = MovementTypes.ValidNextHexes.new()
+	# A plot that has left the map (an escape step) has no further moves.
+	var terrain := TerrainMap.of(game_state.active_scenario)
+	if not terrain.in_bounds(ps.current_hex) \
+			or not terrain.in_bounds(HexGrid.stern_of(ps.current_hex, ps.current_facing)):
+		return result
 	var last_step_was_pivot = false
 	if not path_so_far.is_empty():
 		var last_type = path_so_far.back().move_type
@@ -278,8 +283,9 @@ func _calculate_real_valid_hexes(
 	# Forward move: available if remaining_ma > 0, except where a left-over turn must come first (6.F.4)
 	if ps.remaining_ma > 0 and not _pending_turn_first(ps, ship_state):
 		var forward_hex = hex_grid.get_neighbor(ps.current_hex.x, ps.current_hex.y, ps.current_facing)
-		var forward_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.FORWARD, ps.current_facing, 1, forward_hex)
-		result.forward.append(MovementTypes.ValidMove.new(forward_hex, MovementTypes.MoveType.FORWARD, forward_meta))
+		if _crossing_allowed(ship_state, ps.current_hex, forward_hex):
+			var forward_meta = MovementTypes.MoveMetadata.new(MovementTypes.MoveType.FORWARD, ps.current_facing, 1, forward_hex)
+			result.forward.append(MovementTypes.ValidMove.new(forward_hex, MovementTypes.MoveType.FORWARD, forward_meta))
 
 	# Pivot rules
 	var can_pivot = true
@@ -361,9 +367,9 @@ func _add_pivot_options(
 	var starboard_facing = (ps.current_facing + 1) % 6
 	allow_port = allow_port and _steering_allows(ps, ship_state, ShipState.PORT)
 	allow_starboard = allow_starboard and _steering_allows(ps, ship_state, ShipState.STARBOARD)
-	if allow_port and not _stern_in_bounds(ps.current_hex, port_facing):
+	if allow_port and not _turn_crossing_allowed(ship_state, ps, port_facing):
 		allow_port = false
-	if allow_starboard and not _stern_in_bounds(ps.current_hex, starboard_facing):
+	if allow_starboard and not _turn_crossing_allowed(ship_state, ps, starboard_facing):
 		allow_starboard = false
 
 	if allow_port:
@@ -413,9 +419,23 @@ func _ship_ma(ps: PlottingState, wind_facing: String) -> int:
 	return maxi(ma - ps.mp_loss, 0)
 
 
-## A turn pivots on the bow (5.C.2): it is offered only if the swung stern stays on the map.
-func _stern_in_bounds(bow: Vector2i, new_facing: int) -> bool:
-	return Occupancy.in_bounds(HexGrid.stern_of(bow, new_facing), game_state.active_scenario)
+## A turn pivots on the bow (5.C.2): the stern swings from its hex to the new one, and that step
+## must not be refused at a typed boundary.
+func _turn_crossing_allowed(ship_state: ShipState, ps: PlottingState, new_facing: int) -> bool:
+	return _crossing_allowed(ship_state, HexGrid.stern_of(ps.current_hex, ps.current_facing),
+			HexGrid.stern_of(ps.current_hex, new_facing))
+
+
+## True when stepping `from_hex` to `to_hex` crosses no boundary, or one the ship may cross
+## (an escape edge it has declared for). Land and shallows are not refused here.
+func _crossing_allowed(ship_state: ShipState, from_hex: Vector2i, to_hex: Vector2i) -> bool:
+	var turn := 1
+	var t = game_state.get("current_turn")
+	if t != null:
+		turn = int(t)
+	var outcome: String = MapRules.crossing_outcome(game_state.active_scenario, ship_state,
+			from_hex, to_hex, turn)["outcome"]
+	return outcome == MapRules.CLEAR or outcome == MapRules.ESCAPE
 
 
 func _get_min_forward_for_pivot(

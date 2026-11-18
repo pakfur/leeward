@@ -270,6 +270,7 @@ func player_reset_planning(player_id: int) -> String:
 		if ship == null or not game_state.commands(player_id, ship_id):
 			continue
 		_restore_snapshot(ship_id, true)
+		game_state.ship_controller.set_cast_lead(ship_id, false)
 	Trace.trace_log("TurnPhase", "Player %d reset the planning" % player_id)
 	return ""
 
@@ -369,12 +370,88 @@ func plan_errors(player_id: int) -> Dictionary:
 	var errors := {}
 	var validator := MovementValidator.new(game_state)
 	for ship in game_state.ships_of_player(player_id):
-		if not DefaultCourse.can_plot(ship) or not ship.plotted_actions.get("movement_plotted", false):
+		if not DefaultCourse.can_plot(ship):
 			continue
-		var why := validator.deceleration_error(ship, stored_course(ship))
+		# The lead and the map edge read the stored or default course, plotted or not.
+		var course := stored_course(ship)
+		var why := _lead_error(ship, course)
+		if why == "":
+			why = _edge_error(ship, course)
+		if why == "" and ship.plotted_actions.get("movement_plotted", false):
+			why = validator.deceleration_error(ship, course)
 		if why != "":
 			errors[ship.ship_id] = why
 	return errors
+
+
+## 13.G.4a: a ship casting the lead plots at most 2 MPs.
+func _lead_error(ship: ShipState, course: Array[MovementTypes.PlotStep]) -> String:
+	if ship.casts_lead() and course.size() > 2:
+		return "casting the lead needs a course of at most 2 MPs (13.G.4a)"
+	return ""
+
+
+## A stored step that crosses an escape boundary the ship may not cross (not declared, or not
+## permitted) is refused: the ship must declare escape first (V.D.2).
+func _edge_error(ship: ShipState, course: Array[MovementTypes.PlotStep]) -> String:
+	var scenario: Dictionary = game_state.active_scenario
+	var terrain := TerrainMap.of(scenario)
+	var turn: int = game_state.current_turn
+	var hex := ship.hex_position
+	var facing := ship.facing
+	for step in course:
+		var from_hex := hex
+		var to_hex := step.hex
+		if step.move_type != MovementTypes.MoveType.FORWARD:
+			from_hex = HexGrid.stern_of(hex, facing)
+			to_hex = HexGrid.stern_of(hex, step.facing)
+		var crossed := MapRules.crossing_outcome(scenario, ship, from_hex, to_hex, turn)
+		if crossed["outcome"] == MapRules.BLOCKED:
+			var b := terrain.crossing(from_hex, to_hex)
+			if b != null and b.kind == TerrainMap.ESCAPE:
+				return "the course leaves the map at the %s edge: declare escape first (V.D.2)" % crossed["edge"]
+		hex = step.hex
+		facing = step.facing
+	return ""
+
+
+## SERVER ONLY: the player declares (or withdraws) the escape of one of their ships (V.D.2): it
+## may then plot across an escape boundary. Returns "" or the reason it is refused.
+func player_declare_escape(player_id: int, ship_id: String, on: bool) -> String:
+	if not is_server:
+		push_error("TurnPhaseController: Cannot declare escape on client")
+		return "escape is declared on the server only"
+	if not game_result.is_empty():
+		return "the game is over"
+	if current_phase != GamePhase.PLANNING:
+		return "escape is declared in the planning phase"
+	if not players_ready.has(player_id):
+		return "invalid player %d" % player_id
+	if players_ready[player_id]:
+		return "this player's plan is already submitted"
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null:
+		return "no ship %s" % ship_id
+	if not game_state.commands(player_id, ship_id):
+		return "%s is not this player's ship" % ship_id
+	if ship.is_out_of_play() or not ship.is_on_map():
+		return "%s is not in play" % ship_id
+	if on:
+		var why := MapRules.declare_error(game_state.active_scenario, ship.side, game_state.current_turn)
+		if why != "":
+			return why
+	game_state.ship_controller.set_escape_declared(ship_id, on)
+	return ""
+
+
+## SERVER ONLY: the player's order for a ship to cast the lead this turn (13.G). Same checks as
+## course plotting. Returns "" or the reason it is refused.
+func player_set_cast_lead(player_id: int, ship_id: String, on: bool) -> String:
+	var why := _course_request_error(player_id, ship_id)
+	if why != "":
+		return why
+	game_state.ship_controller.set_cast_lead(ship_id, on)
+	return ""
 
 
 ## SERVER ONLY: the player withdraws a ship's movement plot to plot it again (other plotted
