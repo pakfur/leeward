@@ -1,194 +1,2120 @@
 {
-  "frigate_38": {
-	"name": "38-gun Frigate",
-	"nationality": "British",
-	"rating": 38,
-	"class": 3,
-	"maneuverability": "C",
-	"speed_type": "F/F",
-	"type": "Frigate",
-	"speed": "Slow",
-	"draft": 18,
-	"freeboard": 6,
-	"rigging_hp": [
-	  5,
-	  5,
-	  6,
-	  6
-	],
-	"hull_hp": [
-	  5,
-	  5,
-	  5,
-	  6
-	],
-	"crew_count": [
-	  3,
-	  3,
-	  3,
-	  3
-	],
-	"marine_count": 2,
-	"crew_quality": "B",
-	"armament": {
-	  "long_guns": {
-		"main_deck_port": {
-		  "count": 19,
-		  "size": 18
-		},
-		"main_deck_starboard": {
-		  "count": 19,
-		  "size": 18
-		}
-	  },
-	  "bow_chasers": {
-		"count": 2,
-		"size": 9
-	  },
-	  "stern_chasers": {
-		"count": 2,
-		"size": 9
-	  }
-	},
-	"gun_factors": {
-	  "lg": 6,
-	  "mg": 0,
-	  "cr": 4
-	},
-	"ch_modifier": -2,
-	"lower_deck_modifier": -7,
-	"point_costs": {
-	  "A3": 54,
-	  "B3": 48,
-	  "C3": 43,
-	  "C4": 42,
-	  "C5": 41,
-	  "D4": 38,
-	  "D5": 36
-	}
+  "_doc": "Ship types. Source: Ship Data Chart (SDC, 1997 Close Action p.106) and the order-of-battle (OB) ships br_44_diomede, fr_20_babet, fr_20_rosalie, fr_14_coureur. Ids are <nation>_<rating>[suffix]: br British, fr French, sp Spanish, am American; l = large, c = carronades, rz = razee. point_costs hold only the chart's filled cells. year is the SDC's Year Avail. (1794 for the OB ships). aliases are the old ids, resolved by DataManager.",
+  "br_100": {
+    "name": "100-gun Ship of the Line",
+    "nationality": "British",
+    "rating": 100,
+    "year": 1793,
+    "class": 1,
+    "maneuverability": "A",
+    "speed_type": "L/F",
+    "draft": 27,
+    "ch_modifier": 1,
+    "rigging_hp": [
+      8,
+      8,
+      8,
+      9
+    ],
+    "hull_hp": [
+      10,
+      11,
+      11,
+      11
+    ],
+    "crew_count": [
+      8,
+      8,
+      9,
+      9
+    ],
+    "marine_count": 8,
+    "gun_factors": {
+      "lg": 24,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -3,
+    "point_costs": {
+      "A3": 135,
+      "B3": 120,
+      "C3": 108,
+      "C4": 104,
+      "C5": 102,
+      "D4": 96,
+      "D5": 94
+    }
   },
-  "frigate_32": {
-	"name": "32-gun Frigate",
-	"nationality": "British",
-	"rating": 32,
-	"class": 3,
-	"maneuverability": "C",
-	"speed_type": "F/S",
-	"type": "Frigate",
-	"speed": "Slow",
-	"draft": 16,
-	"freeboard": 5,
-	"rigging_hp": [
-	  4,
-	  5,
-	  5,
-	  5
-	],
-	"hull_hp": [
-	  4,
-	  4,
-	  4,
-	  5
-	],
-	"crew_count": [
-	  2,
-	  2,
-	  2,
-	  3
-	],
-	"marine_count": 2,
-	"crew_quality": "B",
-	"armament": {},
-	"gun_factors": {
-	  "lg": 4,
-	  "mg": 0,
-	  "cr": 2
-	},
-	"ch_modifier": -2,
-	"lower_deck_modifier": -7,
-	"point_costs": {
-	  "A3": 37,
-	  "B3": 33,
-	  "C3": 30,
-	  "C4": 29,
-	  "C5": 28,
-	  "D4": 26,
-	  "D5": 25
-	}
+  "br_98l": {
+    "name": "98-gun Ship of the Line (large)",
+    "nationality": "British",
+    "rating": 98,
+    "year": 1797,
+    "class": 1,
+    "maneuverability": "A",
+    "speed_type": "L/F",
+    "draft": 26,
+    "ch_modifier": 1,
+    "rigging_hp": [
+      8,
+      8,
+      8,
+      8
+    ],
+    "hull_hp": [
+      10,
+      10,
+      11,
+      11
+    ],
+    "crew_count": [
+      7,
+      8,
+      8,
+      8
+    ],
+    "marine_count": 7,
+    "gun_factors": {
+      "lg": 23,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 3,
+    "lower_deck_modifier": -3,
+    "point_costs": {
+      "A3": 128,
+      "B3": 114,
+      "C3": 103,
+      "C4": 99,
+      "C5": 97,
+      "D4": 91,
+      "D5": 89
+    }
   },
-  "ship_of_line_74": {
-	"name": "74-gun Ship of the Line",
-	"nationality": "British",
-	"rating": 74,
-	"class": 2,
-	"maneuverability": "B",
-	"speed_type": "L/F",
-	"type": "SOL",
-	"draft": 22,
-	"freeboard": 4,
-	"rigging_hp": [
-	  7,
-	  7,
-	  7,
-	  7
-	],
-	"hull_hp": [
-	  8,
-	  8,
-	  9,
-	  9
-	],
-	"crew_count": [
-	  6,
-	  6,
-	  6,
-	  6
-	],
-	"marine_count": 5,
-	"crew_quality": "B",
-	"armament": {
-	  "long_guns": {
-		"lower_deck_port": {
-		  "count": 14,
-		  "size": 32
-		},
-		"lower_deck_starboard": {
-		  "count": 14,
-		  "size": 32
-		},
-		"main_deck_port": {
-		  "count": 14,
-		  "size": 18
-		},
-		"main_deck_starboard": {
-		  "count": 14,
-		  "size": 18
-		},
-		"gun_deck_port": {
-		  "count": 14,
-		  "size": 12
-		},
-		"gun_deck_starboard": {
-		  "count": 14,
-		  "size": 12
-		}
-	  }
-	},
-	"gun_factors": {
-	  "lg": 17,
-	  "mg": 0,
-	  "cr": 1
-	},
-	"ch_modifier": 0,
-	"lower_deck_modifier": -5,
-	"point_costs": {
-	  "A3": 99,
-	  "B3": 88,
-	  "C3": 79,
-	  "C4": 77,
-	  "C5": 75,
-	  "D4": 71,
-	  "D5": 69
-	}
+  "br_98": {
+    "name": "98-gun Ship of the Line",
+    "nationality": "British",
+    "rating": 98,
+    "year": 1793,
+    "class": 1,
+    "maneuverability": "A",
+    "speed_type": "L/S",
+    "draft": 25,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      7,
+      8,
+      8,
+      8
+    ],
+    "hull_hp": [
+      10,
+      10,
+      10,
+      11
+    ],
+    "crew_count": [
+      7,
+      7,
+      8,
+      8
+    ],
+    "marine_count": 7,
+    "gun_factors": {
+      "lg": 21,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -4,
+    "point_costs": {
+      "A3": 118,
+      "B3": 105,
+      "C3": 95,
+      "C4": 91,
+      "C5": 89,
+      "D4": 84,
+      "D5": 82
+    }
+  },
+  "br_80": {
+    "name": "80-gun Ship of the Line",
+    "nationality": "British",
+    "rating": 80,
+    "year": 1794,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/F",
+    "draft": 24,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      7,
+      8,
+      8,
+      8
+    ],
+    "hull_hp": [
+      10,
+      10,
+      10,
+      10
+    ],
+    "crew_count": [
+      7,
+      7,
+      7,
+      8
+    ],
+    "marine_count": 7,
+    "gun_factors": {
+      "lg": 20,
+      "mg": 0,
+      "cr": 3
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -4,
+    "point_costs": {
+      "A3": 124,
+      "B3": 110,
+      "C3": 99,
+      "C4": 96,
+      "C5": 94,
+      "D4": 88,
+      "D5": 86
+    }
+  },
+  "br_74l": {
+    "name": "74-gun Ship of the Line (large)",
+    "nationality": "British",
+    "rating": 74,
+    "year": 1798,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/F",
+    "draft": 23,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      7,
+      7,
+      8,
+      8
+    ],
+    "hull_hp": [
+      9,
+      9,
+      9,
+      10
+    ],
+    "crew_count": [
+      6,
+      6,
+      7,
+      7
+    ],
+    "marine_count": 6,
+    "gun_factors": {
+      "lg": 18,
+      "mg": 0,
+      "cr": 4
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -4,
+    "point_costs": {
+      "A3": 116,
+      "B3": 103,
+      "C3": 93,
+      "C4": 90,
+      "C5": 88,
+      "D4": 82,
+      "D5": 80
+    }
+  },
+  "br_74c": {
+    "name": "74-gun Ship of the Line (carronades)",
+    "nationality": "British",
+    "rating": 74,
+    "year": 1798,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/F",
+    "draft": 22,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      7,
+      7,
+      7,
+      7
+    ],
+    "hull_hp": [
+      8,
+      8,
+      9,
+      9
+    ],
+    "crew_count": [
+      6,
+      6,
+      6,
+      6
+    ],
+    "marine_count": 5,
+    "gun_factors": {
+      "lg": 16,
+      "mg": 0,
+      "cr": 4
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -5,
+    "point_costs": {
+      "A3": 104,
+      "B3": 93,
+      "C3": 84,
+      "C4": 81,
+      "C5": 79,
+      "D4": 75,
+      "D5": 73
+    }
+  },
+  "br_74": {
+    "name": "74-gun Ship of the Line",
+    "nationality": "British",
+    "rating": 74,
+    "year": 1793,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/F",
+    "draft": 22,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      7,
+      7,
+      7,
+      7
+    ],
+    "hull_hp": [
+      8,
+      8,
+      9,
+      9
+    ],
+    "crew_count": [
+      6,
+      6,
+      6,
+      6
+    ],
+    "marine_count": 5,
+    "gun_factors": {
+      "lg": 17,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -5,
+    "point_costs": {
+      "A3": 99,
+      "B3": 88,
+      "C3": 79,
+      "C4": 77,
+      "C5": 75,
+      "D4": 71,
+      "D5": 69
+    },
+    "aliases": [
+      "ship_of_line_74"
+    ],
+    "armament": {
+      "long_guns": {
+        "lower_deck_port": {
+          "count": 14,
+          "size": 32
+        },
+        "lower_deck_starboard": {
+          "count": 14,
+          "size": 32
+        },
+        "main_deck_port": {
+          "count": 14,
+          "size": 18
+        },
+        "main_deck_starboard": {
+          "count": 14,
+          "size": 18
+        },
+        "gun_deck_port": {
+          "count": 14,
+          "size": 12
+        },
+        "gun_deck_starboard": {
+          "count": 14,
+          "size": 12
+        }
+      }
+    }
+  },
+  "br_64c": {
+    "name": "64-gun Ship of the Line (carronades)",
+    "nationality": "British",
+    "rating": 64,
+    "year": 1798,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/F",
+    "draft": 21,
+    "ch_modifier": -1,
+    "rigging_hp": [
+      6,
+      6,
+      6,
+      7
+    ],
+    "hull_hp": [
+      7,
+      7,
+      7,
+      8
+    ],
+    "crew_count": [
+      5,
+      5,
+      5,
+      5
+    ],
+    "marine_count": 4,
+    "gun_factors": {
+      "lg": 12,
+      "mg": 0,
+      "cr": 3
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -4,
+    "point_costs": {
+      "A3": 83,
+      "B3": 74,
+      "C3": 67,
+      "C4": 65,
+      "C5": 63,
+      "D4": 59,
+      "D5": 58
+    }
+  },
+  "br_64": {
+    "name": "64-gun Ship of the Line",
+    "nationality": "British",
+    "rating": 64,
+    "year": 1793,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/F",
+    "draft": 21,
+    "ch_modifier": -1,
+    "rigging_hp": [
+      6,
+      6,
+      6,
+      7
+    ],
+    "hull_hp": [
+      7,
+      7,
+      7,
+      8
+    ],
+    "crew_count": [
+      5,
+      5,
+      5,
+      5
+    ],
+    "marine_count": 4,
+    "gun_factors": {
+      "lg": 13,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -4,
+    "point_costs": {
+      "A3": 78,
+      "B3": 70,
+      "C3": 63,
+      "C4": 61,
+      "C5": 59,
+      "D4": 56,
+      "D5": 55
+    }
+  },
+  "br_50": {
+    "name": "50-gun Two-decker",
+    "nationality": "British",
+    "rating": 50,
+    "year": 1793,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/S",
+    "draft": 20,
+    "ch_modifier": -1,
+    "rigging_hp": [
+      5,
+      5,
+      6,
+      6
+    ],
+    "hull_hp": [
+      6,
+      6,
+      6,
+      7
+    ],
+    "crew_count": [
+      3,
+      3,
+      4,
+      4
+    ],
+    "marine_count": 3,
+    "gun_factors": {
+      "lg": 9,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -5,
+    "point_costs": {
+      "A3": 62,
+      "B3": 55,
+      "C3": 50,
+      "C4": 48,
+      "C5": 47,
+      "D4": 44,
+      "D5": 43
+    }
+  },
+  "br_44rz": {
+    "name": "44-gun Razee",
+    "nationality": "British",
+    "rating": 44,
+    "year": 1795,
+    "class": 3,
+    "maneuverability": "B",
+    "speed_type": "F/F",
+    "draft": 20,
+    "ch_modifier": -1,
+    "rigging_hp": [
+      6,
+      6,
+      6,
+      7
+    ],
+    "hull_hp": [
+      7,
+      7,
+      7,
+      7
+    ],
+    "crew_count": [
+      3,
+      3,
+      4,
+      4
+    ],
+    "marine_count": 3,
+    "gun_factors": {
+      "lg": 7,
+      "mg": 0,
+      "cr": 5
+    },
+    "freeboard": 5,
+    "lower_deck_modifier": -6,
+    "point_costs": {
+      "A3": 71,
+      "B3": 63,
+      "C3": 57,
+      "C4": 55,
+      "C5": 54,
+      "D4": 51,
+      "D5": 50
+    }
+  },
+  "br_40": {
+    "name": "40-gun Frigate",
+    "nationality": "British",
+    "rating": 40,
+    "year": 1813,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/F",
+    "draft": 19,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      5,
+      6,
+      6,
+      6
+    ],
+    "hull_hp": [
+      5,
+      6,
+      6,
+      6
+    ],
+    "crew_count": [
+      3,
+      3,
+      4,
+      4
+    ],
+    "marine_count": 3,
+    "gun_factors": {
+      "lg": 8,
+      "mg": 0,
+      "cr": 5
+    },
+    "freeboard": 6,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "A3": 67,
+      "B3": 60,
+      "C3": 54,
+      "C4": 52,
+      "C5": 51,
+      "D4": 48,
+      "D5": 47
+    }
+  },
+  "br_38": {
+    "name": "38-gun Frigate",
+    "nationality": "British",
+    "rating": 38,
+    "year": 1793,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/F",
+    "draft": 18,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      5,
+      5,
+      6,
+      6
+    ],
+    "hull_hp": [
+      5,
+      5,
+      5,
+      6
+    ],
+    "crew_count": [
+      3,
+      3,
+      3,
+      3
+    ],
+    "marine_count": 2,
+    "gun_factors": {
+      "lg": 6,
+      "mg": 0,
+      "cr": 4
+    },
+    "freeboard": 6,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "A3": 54,
+      "B3": 48,
+      "C3": 43,
+      "C4": 42,
+      "C5": 41,
+      "D4": 38,
+      "D5": 36
+    },
+    "aliases": [
+      "frigate_38"
+    ],
+    "armament": {
+      "long_guns": {
+        "main_deck_port": {
+          "count": 19,
+          "size": 18
+        },
+        "main_deck_starboard": {
+          "count": 19,
+          "size": 18
+        }
+      },
+      "bow_chasers": {
+        "count": 2,
+        "size": 9
+      },
+      "stern_chasers": {
+        "count": 2,
+        "size": 9
+      }
+    }
+  },
+  "br_36": {
+    "name": "36-gun Frigate",
+    "nationality": "British",
+    "rating": 36,
+    "year": 1793,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/F",
+    "draft": 18,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      5,
+      5,
+      5,
+      6
+    ],
+    "hull_hp": [
+      5,
+      5,
+      5,
+      5
+    ],
+    "crew_count": [
+      2,
+      3,
+      3,
+      3
+    ],
+    "marine_count": 2,
+    "gun_factors": {
+      "lg": 6,
+      "mg": 0,
+      "cr": 3
+    },
+    "freeboard": 6,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "A3": 49,
+      "B3": 44,
+      "C3": 40,
+      "C4": 39,
+      "C5": 38,
+      "D4": 35,
+      "D5": 34
+    }
+  },
+  "br_32l": {
+    "name": "32-gun Frigate (large)",
+    "nationality": "British",
+    "rating": 32,
+    "year": 1794,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/S",
+    "draft": 17,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      5,
+      5,
+      5,
+      5
+    ],
+    "hull_hp": [
+      4,
+      5,
+      5,
+      5
+    ],
+    "crew_count": [
+      2,
+      2,
+      3,
+      3
+    ],
+    "marine_count": 2,
+    "gun_factors": {
+      "lg": 6,
+      "mg": 0,
+      "cr": 2
+    },
+    "freeboard": 6,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "A3": 46,
+      "B3": 41,
+      "C3": 37,
+      "C4": 36,
+      "C5": 35,
+      "D4": 33,
+      "D5": 32
+    }
+  },
+  "br_32": {
+    "name": "32-gun Frigate",
+    "nationality": "British",
+    "rating": 32,
+    "year": 1793,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/S",
+    "draft": 16,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      4,
+      5,
+      5,
+      5
+    ],
+    "hull_hp": [
+      4,
+      4,
+      4,
+      5
+    ],
+    "crew_count": [
+      2,
+      2,
+      2,
+      3
+    ],
+    "marine_count": 2,
+    "gun_factors": {
+      "lg": 4,
+      "mg": 0,
+      "cr": 2
+    },
+    "freeboard": 5,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "A3": 37,
+      "B3": 33,
+      "C3": 30,
+      "C4": 29,
+      "C5": 28,
+      "D4": 26,
+      "D5": 25
+    },
+    "aliases": [
+      "frigate_32"
+    ],
+    "armament": {}
+  },
+  "fr_120": {
+    "name": "120-gun Ship of the Line",
+    "nationality": "French",
+    "rating": 120,
+    "year": 1793,
+    "class": 1,
+    "maneuverability": "A",
+    "speed_type": "L/F",
+    "draft": 29,
+    "ch_modifier": 1,
+    "rigging_hp": [
+      9,
+      9,
+      9,
+      9
+    ],
+    "hull_hp": [
+      12,
+      12,
+      12,
+      12
+    ],
+    "crew_count": [
+      10,
+      10,
+      11,
+      11
+    ],
+    "marine_count": 11,
+    "gun_factors": {
+      "lg": 29,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -4,
+    "point_costs": {
+      "B3": 154,
+      "C3": 133,
+      "C4": 127,
+      "C5": 121,
+      "D4": 111,
+      "D5": 106,
+      "E4": 96,
+      "E5": 89
+    }
+  },
+  "fr_110": {
+    "name": "110-gun Ship of the Line",
+    "nationality": "French",
+    "rating": 110,
+    "year": 1793,
+    "class": 1,
+    "maneuverability": "A",
+    "speed_type": "L/F",
+    "draft": 28,
+    "ch_modifier": 1,
+    "rigging_hp": [
+      8,
+      8,
+      9,
+      9
+    ],
+    "hull_hp": [
+      11,
+      11,
+      11,
+      11
+    ],
+    "crew_count": [
+      10,
+      10,
+      10,
+      10
+    ],
+    "marine_count": 10,
+    "gun_factors": {
+      "lg": 27,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -4,
+    "point_costs": {
+      "B3": 145,
+      "C3": 125,
+      "C4": 120,
+      "C5": 114,
+      "D4": 104,
+      "D5": 100,
+      "E4": 90,
+      "E5": 84
+    }
+  },
+  "fr_80c": {
+    "name": "80-gun Ship of the Line (carronades)",
+    "nationality": "French",
+    "rating": 80,
+    "year": 1807,
+    "class": 2,
+    "maneuverability": "A",
+    "speed_type": "L/F",
+    "draft": 24,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      8,
+      8,
+      8,
+      8
+    ],
+    "hull_hp": [
+      10,
+      10,
+      11,
+      11
+    ],
+    "crew_count": [
+      8,
+      8,
+      8,
+      8
+    ],
+    "marine_count": 8,
+    "gun_factors": {
+      "lg": 23,
+      "mg": 0,
+      "cr": 3
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -5,
+    "point_costs": {
+      "B3": 128,
+      "C3": 110,
+      "C4": 105,
+      "C5": 100,
+      "D4": 92,
+      "D5": 88,
+      "E4": 80,
+      "E5": 74
+    }
+  },
+  "fr_80": {
+    "name": "80-gun Ship of the Line",
+    "nationality": "French",
+    "rating": 80,
+    "year": 1793,
+    "class": 2,
+    "maneuverability": "A",
+    "speed_type": "L/F",
+    "draft": 24,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      8,
+      8,
+      8,
+      8
+    ],
+    "hull_hp": [
+      10,
+      10,
+      11,
+      11
+    ],
+    "crew_count": [
+      8,
+      8,
+      8,
+      8
+    ],
+    "marine_count": 8,
+    "gun_factors": {
+      "lg": 24,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -5,
+    "point_costs": {
+      "B3": 123,
+      "C3": 106,
+      "C4": 102,
+      "C5": 97,
+      "D4": 89,
+      "D5": 85,
+      "E4": 77,
+      "E5": 71
+    }
+  },
+  "fr_74l": {
+    "name": "74-gun Ship of the Line (large)",
+    "nationality": "French",
+    "rating": 74,
+    "year": 1793,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/F",
+    "draft": 23,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      7,
+      7,
+      8,
+      8
+    ],
+    "hull_hp": [
+      9,
+      9,
+      10,
+      10
+    ],
+    "crew_count": [
+      6,
+      7,
+      7,
+      7
+    ],
+    "marine_count": 7,
+    "gun_factors": {
+      "lg": 21,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -5,
+    "point_costs": {
+      "B3": 109,
+      "C3": 94,
+      "C4": 90,
+      "C5": 86,
+      "D4": 78,
+      "D5": 75,
+      "E4": 68,
+      "E5": 63
+    }
+  },
+  "fr_74c": {
+    "name": "74-gun Ship of the Line (carronades)",
+    "nationality": "French",
+    "rating": 74,
+    "year": 1807,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/F",
+    "draft": 22,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      7,
+      7,
+      7,
+      8
+    ],
+    "hull_hp": [
+      9,
+      9,
+      9,
+      9
+    ],
+    "crew_count": [
+      6,
+      6,
+      7,
+      7
+    ],
+    "marine_count": 7,
+    "gun_factors": {
+      "lg": 18,
+      "mg": 0,
+      "cr": 3
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -5,
+    "point_costs": {
+      "B3": 100,
+      "C3": 86,
+      "C4": 83,
+      "C5": 79,
+      "D4": 72,
+      "D5": 69,
+      "E4": 63,
+      "E5": 58
+    }
+  },
+  "fr_74": {
+    "name": "74-gun Ship of the Line",
+    "nationality": "French",
+    "rating": 74,
+    "year": 1793,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/F",
+    "draft": 22,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      7,
+      7,
+      7,
+      8
+    ],
+    "hull_hp": [
+      9,
+      9,
+      9,
+      9
+    ],
+    "crew_count": [
+      6,
+      6,
+      7,
+      7
+    ],
+    "marine_count": 7,
+    "gun_factors": {
+      "lg": 19,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -5,
+    "point_costs": {
+      "B3": 97,
+      "C3": 84,
+      "C4": 80,
+      "C5": 76,
+      "D4": 70,
+      "D5": 67,
+      "E4": 61,
+      "E5": 56
+    }
+  },
+  "fr_50rz": {
+    "name": "50-gun Razee",
+    "nationality": "French",
+    "rating": 50,
+    "year": 1793,
+    "class": 3,
+    "maneuverability": "B",
+    "speed_type": "F/F",
+    "draft": 21,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      7,
+      7,
+      7,
+      7
+    ],
+    "hull_hp": [
+      8,
+      8,
+      8,
+      8
+    ],
+    "crew_count": [
+      4,
+      5,
+      5,
+      5
+    ],
+    "marine_count": 5,
+    "gun_factors": {
+      "lg": 14,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 5,
+    "lower_deck_modifier": -6,
+    "point_costs": {
+      "B3": 80,
+      "C3": 69,
+      "C4": 66,
+      "C5": 63,
+      "D4": 57,
+      "D5": 55,
+      "E4": 50,
+      "E5": 46
+    }
+  },
+  "fr_44": {
+    "name": "44-gun Frigate",
+    "nationality": "French",
+    "rating": 44,
+    "year": 1794,
+    "class": 3,
+    "maneuverability": "B",
+    "speed_type": "F/F",
+    "draft": 20,
+    "ch_modifier": -1,
+    "rigging_hp": [
+      6,
+      7,
+      7,
+      7
+    ],
+    "hull_hp": [
+      6,
+      7,
+      7,
+      7
+    ],
+    "crew_count": [
+      4,
+      4,
+      5,
+      5
+    ],
+    "marine_count": 4,
+    "gun_factors": {
+      "lg": 10,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 6,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "B3": 62,
+      "C3": 54,
+      "C4": 52,
+      "C5": 49,
+      "D4": 45,
+      "D5": 43,
+      "E4": 39,
+      "E5": 36
+    }
+  },
+  "fr_40c": {
+    "name": "40-gun Frigate (carronades)",
+    "nationality": "French",
+    "rating": 40,
+    "year": 1807,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/F",
+    "draft": 18,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      5,
+      5,
+      6,
+      6
+    ],
+    "hull_hp": [
+      5,
+      5,
+      5,
+      6
+    ],
+    "crew_count": [
+      3,
+      3,
+      4,
+      4
+    ],
+    "marine_count": 3,
+    "gun_factors": {
+      "lg": 6,
+      "mg": 0,
+      "cr": 3
+    },
+    "freeboard": 6,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "B3": 47,
+      "C3": 42,
+      "C4": 40,
+      "C5": 38,
+      "D4": 34,
+      "D5": 33,
+      "E4": 30,
+      "E5": 28
+    }
+  },
+  "fr_40": {
+    "name": "40-gun Frigate",
+    "nationality": "French",
+    "rating": 40,
+    "year": 1793,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/F",
+    "draft": 18,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      5,
+      5,
+      6,
+      6
+    ],
+    "hull_hp": [
+      5,
+      5,
+      5,
+      6
+    ],
+    "crew_count": [
+      3,
+      3,
+      4,
+      4
+    ],
+    "marine_count": 3,
+    "gun_factors": {
+      "lg": 7,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 6,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "B3": 43,
+      "C3": 37,
+      "C4": 36,
+      "C5": 34,
+      "D4": 31,
+      "D5": 30,
+      "E4": 27,
+      "E5": 25
+    }
+  },
+  "fr_38": {
+    "name": "38-gun Frigate",
+    "nationality": "French",
+    "rating": 38,
+    "year": 1793,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/F",
+    "draft": 18,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      5,
+      5,
+      5,
+      6
+    ],
+    "hull_hp": [
+      5,
+      5,
+      5,
+      5
+    ],
+    "crew_count": [
+      3,
+      3,
+      3,
+      4
+    ],
+    "marine_count": 3,
+    "gun_factors": {
+      "lg": 6,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 5,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "B3": 42,
+      "C3": 36,
+      "C4": 35,
+      "C5": 33,
+      "D4": 30,
+      "D5": 29,
+      "E4": 26,
+      "E5": 24
+    }
+  },
+  "fr_36": {
+    "name": "36-gun Frigate",
+    "nationality": "French",
+    "rating": 36,
+    "year": 1793,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/F",
+    "draft": 16,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      5,
+      5,
+      5,
+      5
+    ],
+    "hull_hp": [
+      4,
+      4,
+      5,
+      5
+    ],
+    "crew_count": [
+      2,
+      3,
+      3,
+      3
+    ],
+    "marine_count": 3,
+    "gun_factors": {
+      "lg": 4,
+      "mg": 0,
+      "cr": 1
+    },
+    "freeboard": 5,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "B3": 32,
+      "C3": 27,
+      "C4": 26,
+      "C5": 25,
+      "D4": 23,
+      "D5": 22,
+      "E4": 20,
+      "E5": 18
+    }
+  },
+  "sp_130": {
+    "name": "130-gun Ship of the Line",
+    "nationality": "Spanish",
+    "rating": 130,
+    "year": 1793,
+    "class": 1,
+    "maneuverability": "A",
+    "speed_type": "L/S",
+    "draft": 29,
+    "ch_modifier": 1,
+    "rigging_hp": [
+      8,
+      8,
+      9,
+      9
+    ],
+    "hull_hp": [
+      11,
+      11,
+      12,
+      12
+    ],
+    "crew_count": [
+      10,
+      10,
+      11,
+      11
+    ],
+    "marine_count": 11,
+    "gun_factors": {
+      "lg": 28,
+      "mg": 0,
+      "cr": 0
+    },
+    "freeboard": 3,
+    "lower_deck_modifier": -3,
+    "point_costs": {
+      "C3": 125,
+      "C4": 117,
+      "C5": 110,
+      "D4": 102,
+      "D5": 96,
+      "E4": 86,
+      "E5": 77
+    }
+  },
+  "sp_112": {
+    "name": "112-gun Ship of the Line",
+    "nationality": "Spanish",
+    "rating": 112,
+    "year": 1793,
+    "class": 1,
+    "maneuverability": "A",
+    "speed_type": "L/S",
+    "draft": 28,
+    "ch_modifier": 1,
+    "rigging_hp": [
+      8,
+      8,
+      9,
+      9
+    ],
+    "hull_hp": [
+      11,
+      11,
+      11,
+      12
+    ],
+    "crew_count": [
+      10,
+      10,
+      10,
+      10
+    ],
+    "marine_count": 10,
+    "gun_factors": {
+      "lg": 26,
+      "mg": 0,
+      "cr": 0
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -3,
+    "point_costs": {
+      "C3": 118,
+      "C4": 111,
+      "C5": 105,
+      "D4": 97,
+      "D5": 92,
+      "E4": 82,
+      "E5": 73
+    }
+  },
+  "sp_80l": {
+    "name": "80-gun Ship of the Line (large)",
+    "nationality": "Spanish",
+    "rating": 80,
+    "year": 1795,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/S",
+    "draft": 24,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      7,
+      8,
+      8,
+      8
+    ],
+    "hull_hp": [
+      10,
+      10,
+      10,
+      11
+    ],
+    "crew_count": [
+      7,
+      8,
+      8,
+      8
+    ],
+    "marine_count": 8,
+    "gun_factors": {
+      "lg": 22,
+      "mg": 0,
+      "cr": 0
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -4,
+    "point_costs": {
+      "C3": 100,
+      "C4": 94,
+      "C5": 89,
+      "D4": 81,
+      "D5": 77,
+      "E4": 68,
+      "E5": 61
+    }
+  },
+  "sp_80": {
+    "name": "80-gun Ship of the Line",
+    "nationality": "Spanish",
+    "rating": 80,
+    "year": 1793,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/S",
+    "draft": 23,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      7,
+      7,
+      8,
+      8
+    ],
+    "hull_hp": [
+      9,
+      10,
+      10,
+      10
+    ],
+    "crew_count": [
+      7,
+      7,
+      8,
+      8
+    ],
+    "marine_count": 7,
+    "gun_factors": {
+      "lg": 20,
+      "mg": 0,
+      "cr": 0
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -5,
+    "point_costs": {
+      "C3": 94,
+      "C4": 88,
+      "C5": 83,
+      "D4": 76,
+      "D5": 72,
+      "E4": 64,
+      "E5": 57
+    }
+  },
+  "sp_74": {
+    "name": "74-gun Ship of the Line",
+    "nationality": "Spanish",
+    "rating": 74,
+    "year": 1793,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/S",
+    "draft": 22,
+    "ch_modifier": 0,
+    "rigging_hp": [
+      7,
+      7,
+      7,
+      7
+    ],
+    "hull_hp": [
+      8,
+      9,
+      9,
+      9
+    ],
+    "crew_count": [
+      6,
+      6,
+      7,
+      7
+    ],
+    "marine_count": 6,
+    "gun_factors": {
+      "lg": 15,
+      "mg": 0,
+      "cr": 0
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -4,
+    "point_costs": {
+      "C3": 74,
+      "C4": 70,
+      "C5": 66,
+      "D4": 60,
+      "D5": 57,
+      "E4": 51,
+      "E5": 45
+    }
+  },
+  "sp_64": {
+    "name": "64-gun Ship of the Line",
+    "nationality": "Spanish",
+    "rating": 64,
+    "year": 1793,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/S",
+    "draft": 21,
+    "ch_modifier": -1,
+    "rigging_hp": [
+      6,
+      6,
+      6,
+      7
+    ],
+    "hull_hp": [
+      7,
+      7,
+      7,
+      8
+    ],
+    "crew_count": [
+      5,
+      5,
+      6,
+      6
+    ],
+    "marine_count": 5,
+    "gun_factors": {
+      "lg": 12,
+      "mg": 0,
+      "cr": 0
+    },
+    "freeboard": 4,
+    "lower_deck_modifier": -5,
+    "point_costs": {
+      "C3": 60,
+      "C4": 56,
+      "C5": 53,
+      "D4": 48,
+      "D5": 46,
+      "E4": 40,
+      "E5": 37
+    }
+  },
+  "sp_40": {
+    "name": "40-gun Frigate",
+    "nationality": "Spanish",
+    "rating": 40,
+    "year": 1793,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/S",
+    "draft": 18,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      5,
+      5,
+      6,
+      6
+    ],
+    "hull_hp": [
+      5,
+      5,
+      6,
+      6
+    ],
+    "crew_count": [
+      3,
+      3,
+      4,
+      4
+    ],
+    "marine_count": 3,
+    "gun_factors": {
+      "lg": 7,
+      "mg": 0,
+      "cr": 0
+    },
+    "freeboard": 6,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "C3": 38,
+      "C4": 36,
+      "C5": 34,
+      "D4": 31,
+      "D5": 29,
+      "E4": 26,
+      "E5": 23
+    }
+  },
+  "sp_34": {
+    "name": "34-gun Frigate",
+    "nationality": "Spanish",
+    "rating": 34,
+    "year": 1793,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/S",
+    "draft": 17,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      5,
+      5,
+      5,
+      5
+    ],
+    "hull_hp": [
+      4,
+      5,
+      5,
+      5
+    ],
+    "crew_count": [
+      2,
+      3,
+      3,
+      3
+    ],
+    "marine_count": 3,
+    "gun_factors": {
+      "lg": 4,
+      "mg": 0,
+      "cr": 0
+    },
+    "freeboard": 5,
+    "lower_deck_modifier": -8,
+    "point_costs": {
+      "C3": 25,
+      "C4": 23,
+      "C5": 22,
+      "D4": 20,
+      "D5": 19,
+      "E4": 17,
+      "E5": 15
+    }
+  },
+  "am_44": {
+    "name": "44-gun Frigate",
+    "nationality": "American",
+    "rating": 44,
+    "year": 1798,
+    "class": 3,
+    "maneuverability": "B",
+    "speed_type": "F/F",
+    "draft": 21,
+    "ch_modifier": -1,
+    "rigging_hp": [
+      7,
+      7,
+      7,
+      7
+    ],
+    "hull_hp": [
+      7,
+      8,
+      8,
+      8
+    ],
+    "crew_count": [
+      4,
+      5,
+      5,
+      5
+    ],
+    "marine_count": 4,
+    "gun_factors": {
+      "lg": 8,
+      "mg": 0,
+      "cr": 6
+    },
+    "freeboard": 6,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "A3": 79,
+      "B3": 73,
+      "C3": 68,
+      "C4": 66,
+      "C5": 65,
+      "D4": 61,
+      "D5": 60
+    }
+  },
+  "am_38": {
+    "name": "38-gun Frigate",
+    "nationality": "American",
+    "rating": 38,
+    "year": 1798,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/F",
+    "draft": 19,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      6,
+      6,
+      6,
+      6
+    ],
+    "hull_hp": [
+      6,
+      6,
+      6,
+      6
+    ],
+    "crew_count": [
+      3,
+      4,
+      4,
+      4
+    ],
+    "marine_count": 3,
+    "gun_factors": {
+      "lg": 6,
+      "mg": 0,
+      "cr": 4
+    },
+    "freeboard": 6,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "A3": 56,
+      "B3": 52,
+      "C3": 48,
+      "C4": 47,
+      "C5": 46,
+      "D4": 44,
+      "D5": 43
+    }
+  },
+  "am_36": {
+    "name": "36-gun Frigate",
+    "nationality": "American",
+    "rating": 36,
+    "year": 1800,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/F",
+    "draft": 18,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      5,
+      5,
+      5,
+      6
+    ],
+    "hull_hp": [
+      5,
+      5,
+      5,
+      5
+    ],
+    "crew_count": [
+      3,
+      3,
+      3,
+      4
+    ],
+    "marine_count": 3,
+    "gun_factors": {
+      "lg": 6,
+      "mg": 0,
+      "cr": 3
+    },
+    "freeboard": 6,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "A3": 49,
+      "B3": 45,
+      "C3": 42,
+      "C4": 41,
+      "C5": 40,
+      "D4": 38,
+      "D5": 37
+    }
+  },
+  "am_32": {
+    "name": "32-gun Frigate",
+    "nationality": "American",
+    "rating": 32,
+    "year": 1799,
+    "class": 3,
+    "maneuverability": "C",
+    "speed_type": "F/F",
+    "draft": 17,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      5,
+      5,
+      5,
+      5
+    ],
+    "hull_hp": [
+      4,
+      5,
+      5,
+      5
+    ],
+    "crew_count": [
+      3,
+      3,
+      3,
+      3
+    ],
+    "marine_count": 2,
+    "gun_factors": {
+      "lg": 1,
+      "mg": 0,
+      "cr": 8
+    },
+    "freeboard": 5,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "A3": 51,
+      "B3": 47,
+      "C3": 44,
+      "C4": 43,
+      "C5": 42,
+      "D4": 39,
+      "D5": 38
+    }
+  },
+  "br_44_diomede": {
+    "name": "44-gun Two-decker (Diomede)",
+    "nationality": "British",
+    "rating": 44,
+    "year": 1794,
+    "class": 2,
+    "maneuverability": "B",
+    "speed_type": "L/S",
+    "draft": 19,
+    "ch_modifier": -2,
+    "rigging_hp": [
+      4,
+      5,
+      5,
+      5
+    ],
+    "hull_hp": [
+      5,
+      5,
+      6,
+      6
+    ],
+    "crew_count": [
+      2,
+      3,
+      3,
+      3
+    ],
+    "marine_count": 2,
+    "gun_factors": {
+      "lg": 4,
+      "mg": 3,
+      "cr": 0
+    },
+    "freeboard": 3,
+    "lower_deck_modifier": -4,
+    "point_costs": {
+      "D4": 27
+    }
+  },
+  "fr_20_babet": {
+    "name": "20-gun Corvette (Babet)",
+    "nationality": "French",
+    "rating": 20,
+    "year": 1794,
+    "class": 4,
+    "maneuverability": "D",
+    "speed_type": "C/S",
+    "draft": 14,
+    "ch_modifier": -3,
+    "rigging_hp": [
+      4,
+      4,
+      4,
+      4
+    ],
+    "hull_hp": [
+      3,
+      3,
+      3,
+      3
+    ],
+    "crew_count": [
+      1,
+      2,
+      2,
+      2
+    ],
+    "marine_count": 2,
+    "gun_factors": {
+      "lg": 2,
+      "mg": 0,
+      "cr": 0
+    },
+    "freeboard": 5,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "D4": 12
+    }
+  },
+  "fr_20_rosalie": {
+    "name": "20-gun Corvette (Rosalie)",
+    "nationality": "French",
+    "rating": 20,
+    "year": 1794,
+    "class": 4,
+    "maneuverability": "C",
+    "speed_type": "C/F",
+    "draft": 14,
+    "ch_modifier": -3,
+    "rigging_hp": [
+      4,
+      4,
+      4,
+      4
+    ],
+    "hull_hp": [
+      3,
+      3,
+      3,
+      3
+    ],
+    "crew_count": [
+      1,
+      2,
+      2,
+      2
+    ],
+    "marine_count": 2,
+    "gun_factors": {
+      "lg": 2,
+      "mg": 0,
+      "cr": 0
+    },
+    "freeboard": 5,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "D6": 10
+    }
+  },
+  "fr_14_coureur": {
+    "name": "14-gun Brig (Coureur)",
+    "nationality": "French",
+    "rating": 14,
+    "year": 1794,
+    "class": 4,
+    "maneuverability": "D",
+    "speed_type": "C/S",
+    "draft": 12,
+    "ch_modifier": -4,
+    "rigging_hp": [
+      2,
+      3,
+      3,
+      3
+    ],
+    "hull_hp": [
+      2,
+      2,
+      2,
+      2
+    ],
+    "crew_count": [
+      1,
+      1,
+      1,
+      2
+    ],
+    "marine_count": 2,
+    "gun_factors": {
+      "lg": 1,
+      "mg": 0,
+      "cr": 0
+    },
+    "freeboard": 5,
+    "lower_deck_modifier": -7,
+    "point_costs": {
+      "D5": 6
+    }
   }
 }

@@ -19,8 +19,7 @@ var rating: int = 0
 var ship_class: int = 0  # "class" is a reserved keyword, using "ship_class"
 var maneuverability: String = ""
 var speed_type: String = ""
-var type: String = ""
-var speed: String = ""  # Optional: "Fast", "Slow", etc.
+var year: int = 0  # Ship Data Chart "Year Avail."
 
 # Physical characteristics
 var draft: int = 0
@@ -62,8 +61,7 @@ static func from_dict(data: Dictionary) -> Ship:
 	ship.ship_class = data.get("class", 0)
 	ship.maneuverability = data.get("maneuverability", "")
 	ship.speed_type = data.get("speed_type", "F/F")
-	ship.type = data.get("type", "")
-	ship.speed = data.get("speed", "")
+	ship.year = int(data.get("year", 0))
 
 	# Physical characteristics
 	ship.draft = data.get("draft", 0)
@@ -128,8 +126,7 @@ func to_dict() -> Dictionary:
 		"class": ship_class,
 		"maneuverability": maneuverability,
 		"speed_type": speed_type,
-		"type": type,
-		"speed": speed,
+		"year": year,
 		"draft": draft,
 		"freeboard": freeboard,
 		"rigging_hp": rigging_hp,
@@ -180,9 +177,6 @@ func get_gun_count() -> int:
 						total += gun_group.get("count", 0)
 
 	return total
-
-func is_french_gunned() -> bool:
-	return nationality == "French"
 
 func point_value(crew_quality_letter: String, morale_rating: int) -> float:
 	"""Purchase cost for a crew quality / morale rating. Exact "<CQ><MR>" key, else the

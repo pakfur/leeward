@@ -6,7 +6,8 @@ var movement_allowance_table: Dictionary = {}
 var speed_change_table: Dictionary = {}
 var tacking_table: Dictionary = {}
 var turning_table: Dictionary = {}
-var ship_definitions: Dictionary = {}  # Dictionary[String, Ship]
+var ship_definitions: Dictionary = {}  # Dictionary[String, Ship], canonical ids only
+var ship_type_aliases: Dictionary = {}  # alias -> canonical ship id
 var bearing_off_table: Dictionary = {}
 var scenarios: Dictionary = {}
 var combat_tables: CombatTables = CombatTables.new()
@@ -314,17 +315,35 @@ func load_ship_definitions(file_path: String = "res://data/rules/ships.json") ->
 
 	# Convert JSON dictionary to Dictionary[String, Ship]
 	ship_definitions.clear()
+	ship_type_aliases.clear()
 	var raw_data = json.data
 	if raw_data is Dictionary:
 		for ship_id in raw_data.keys():
+			if str(ship_id).begins_with("_"):
+				continue
 			var ship_data = raw_data[ship_id]
 			if ship_data is Dictionary:
 				ship_definitions[ship_id] = Ship.from_dict(ship_data)
 			else:
 				push_warning("Invalid ship data for '%s'" % ship_id)
+		for ship_id in ship_definitions:
+			_register_aliases(ship_id, raw_data[ship_id].get("aliases", []))
 
 	Trace.trace_log("DataManager", "Loaded %d ship definitions" % ship_definitions.size())
 	return true
+
+## Record each alias of a ship type; an alias naming an existing id or another alias is an error.
+func _register_aliases(ship_id: String, aliases: Array) -> void:
+	for alias in aliases:
+		var alias_id := str(alias)
+		if ship_definitions.has(alias_id) or ship_type_aliases.has(alias_id):
+			push_error("Ship type alias '%s' (of %s) names an existing id or alias" % [alias_id, ship_id])
+			continue
+		ship_type_aliases[alias_id] = ship_id
+
+## The canonical ship type id: an alias's target, else the id itself.
+func canonical_ship_type(type_id: String) -> String:
+	return str(ship_type_aliases.get(type_id, type_id))
 
 func load_scenario(scenario_name: String, file_path: String = "") -> Dictionary:
 	if file_path == "":
@@ -384,8 +403,8 @@ func assign_fallback_ship_names(ships: Array) -> void:
 			continue
 		var type_id := str(ship.get("ship_type", ""))
 		var type_name := type_id
-		if ship_definitions.has(type_id):
-			type_name = ship_definitions[type_id].name
+		if ship_definitions.has(canonical_ship_type(type_id)):
+			type_name = ship_definitions[canonical_ship_type(type_id)].name
 		var key := "%d:%s" % [int(ship.get("side", ship.get("player_id", 0))), type_name]
 		counts[key] = int(counts.get(key, 0)) + 1
 		ship["ship_name"] = "%s %d" % [type_name, counts[key]]
@@ -487,8 +506,9 @@ func get_movement_allowance(speed_type: String, wind_speed: int, wind_facing: St
 
 func get_ship_definition(ship_id: String) -> Ship:
 	"""Get a ship definition by ID"""
-	if ship_definitions.has(ship_id):
-		return ship_definitions[ship_id]
+	var canonical := canonical_ship_type(ship_id)
+	if ship_definitions.has(canonical):
+		return ship_definitions[canonical]
 
 	push_warning("Ship definition not found: %s" % ship_id)
 	return null
@@ -576,19 +596,20 @@ func _create_default_movement_table() -> void:
 func _create_default_ships() -> void:
 	"""Create default ship definitions for testing"""
 	ship_definitions.clear()
+	ship_type_aliases.clear()
 
 	var chart_rows := {
-		"frigate_38": {"name": "38-gun Frigate", "rating": 38, "class": 3, "maneuverability": "C",
+		"br_38": {"aliases": ["frigate_38"], "name": "38-gun Frigate", "rating": 38, "class": 3, "maneuverability": "C",
 			"speed_type": "F/F", "draft": 18, "freeboard": 6, "rigging_hp": [5, 5, 6, 6],
 			"hull_hp": [5, 5, 5, 6], "crew_count": [3, 3, 3, 3], "marine_count": 2,
 			"gun_factors": {"lg": 6, "mg": 0, "cr": 4}, "ch_modifier": -2, "lower_deck_modifier": -7,
 			"point_costs": {"A3": 54, "B3": 48, "C3": 43, "C4": 42, "C5": 41, "D4": 38, "D5": 36}},
-		"frigate_32": {"name": "32-gun Frigate", "rating": 32, "class": 3, "maneuverability": "C",
+		"br_32": {"aliases": ["frigate_32"], "name": "32-gun Frigate", "rating": 32, "class": 3, "maneuverability": "C",
 			"speed_type": "F/S", "draft": 16, "freeboard": 5, "rigging_hp": [4, 5, 5, 5],
 			"hull_hp": [4, 4, 4, 5], "crew_count": [2, 2, 2, 3], "marine_count": 2,
 			"gun_factors": {"lg": 4, "mg": 0, "cr": 2}, "ch_modifier": -2, "lower_deck_modifier": -7,
 			"point_costs": {"A3": 37, "B3": 33, "C3": 30, "C4": 29, "C5": 28, "D4": 26, "D5": 25}},
-		"ship_of_line_74": {"name": "74-gun Ship of the Line", "rating": 74, "class": 2, "maneuverability": "B",
+		"br_74": {"aliases": ["ship_of_line_74"], "name": "74-gun Ship of the Line", "rating": 74, "class": 2, "maneuverability": "B",
 			"speed_type": "L/F", "draft": 22, "freeboard": 4, "rigging_hp": [7, 7, 7, 7],
 			"hull_hp": [8, 8, 9, 9], "crew_count": [6, 6, 6, 6], "marine_count": 5,
 			"gun_factors": {"lg": 17, "mg": 0, "cr": 1}, "ch_modifier": 0, "lower_deck_modifier": -5,
@@ -598,6 +619,7 @@ func _create_default_ships() -> void:
 		var row: Dictionary = chart_rows[ship_id]
 		row["nationality"] = "British"
 		ship_definitions[ship_id] = Ship.from_dict(row)
+		_register_aliases(ship_id, row["aliases"])
 
 	Trace.trace_log("DataManager", "Created default ship definitions: %d ships" % ship_definitions.size())
 
