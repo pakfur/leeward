@@ -588,6 +588,10 @@ func test_panel_lists_a_ship_with_only_a_marine_shot() -> void:
 	var firer := _armed("firer", 0, Vector2i.ZERO, 0)
 	firer.marine_count = 7
 	_armed("foe", 1, Vector2i(2, 0), 0)  # stern (1,0) alongside the firer's bow
+	# The bow chaser bears on the foe (every adjacent ship lies in some arc), so every sailor section
+	# is put on a task: no gun bears.
+	firer.plotted_sections = [0, 1, 2, 3] as Array[int]
+	assert_true(GameState.gunnery_calculator.eligible_shots("firer").is_empty(), "no gun bears (every section busy)")
 	var panel: Control = load("res://scenes/ui/fire_declaration_panel.tscn").instantiate()
 	add_child_autofree(panel)
 	assert_eq(panel.setup(["firer"]), 1, "listed for its marines")

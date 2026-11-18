@@ -689,6 +689,7 @@ func test_manual_readied_section_moved_off_stands_down() -> void:
 
 func test_combat_runs_boarding_alone_with_no_shot() -> void:
 	# a bow (0,0) facing E, b bow (2,0) facing E: b's stern alongside a's bow, no broadside bears.
+	# Each ship's chaser bears on the other, so every sailor section is put on a task (4.B.4).
 	var a := _ship("a", 0, Vector2i(0, 0), "D", 3, [8, 3, 3, 3], 0)
 	var b := _ship("b", 1, Vector2i(2, 0), "D", 3, [8, 3, 3, 3], 0)
 	a.facing = 0
@@ -697,7 +698,9 @@ func test_combat_runs_boarding_alone_with_no_shot() -> void:
 	_link(a, b)
 	_task(a, "BA", 0, "b")
 	_task(b, "FB", 0)
-	assert_false(GameState.gunnery_calculator.any_eligible_shot(), "no gun shot")
+	a.plotted_sections = [0, 1, 2, 3] as Array[int]
+	b.plotted_sections = [0, 1, 2, 3] as Array[int]
+	assert_false(GameState.gunnery_calculator.any_eligible_shot(), "no gun bears (every section busy)")
 	var pc: TurnPhaseController = GameState.phase_controller
 	pc.current_phase = TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
 	_dice.queue([5, 5, 4, 5])

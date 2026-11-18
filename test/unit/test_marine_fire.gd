@@ -215,7 +215,9 @@ func test_orientation_does_not_matter() -> void:
 	b.hex_position = Vector2i(2, 0)
 	b.facing = 0  # stern (1,0), adjacent to a's bow (0,0)
 	assert_true(mf.preview("a_ship", "b_ship")["can_fire"])
-	assert_true(GameState.gunnery_calculator.eligible_shots("a_ship").is_empty(), "no broadside bears")
+	var shots := GameState.gunnery_calculator.eligible_shots("a_ship")
+	assert_eq(shots.map(func(s): return s.order.side), [GunneryTypes.CHASE_BOW],
+		"no broadside bears: only the bow chaser")
 
 
 func test_struck_own_side_and_no_marines_refused() -> void:
@@ -257,6 +259,10 @@ func test_combat_not_skipped_for_a_marine_shot_alone() -> void:
 	# Spec §3.1: combat is skipped only when there is neither gunfire nor marine fire to declare.
 	b.hex_position = Vector2i(2, 0)
 	b.facing = 0  # b's stern alongside a's bow: no broadside bears either way
+	# The chasers bear on each other, so every sailor section is put on a task: no gun bears.
+	a.plotted_sections = [0, 1, 2, 3] as Array[int]
+	b.plotted_sections = [0, 1, 2, 3] as Array[int]
+	assert_false(GameState.gunnery_calculator.any_eligible_shot(), "no gun bears (every section busy)")
 	var pc: TurnPhaseController = GameState.phase_controller
 	pc.current_phase = TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
 	pc.on_playback_completed()

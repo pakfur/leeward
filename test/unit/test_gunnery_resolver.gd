@@ -406,3 +406,29 @@ func test_reduction_below_one_does_no_damage_and_no_crit() -> void:
 	assert_eq(ev.data["rigging"] + ev.data["hull"] + ev.data["crew"], 0)
 	assert_true(ev.data["modifiers"].any(func(m): return m["name"] == "voluntary_reduction"))
 	assert_eq(GameState.turn_log.events.filter(func(e): return e.type == PhaseEvents.Type.CRITICAL_ROLL).size(), 0)
+
+
+# --- chasers (house rule, register §5; spec §4.4) ---
+
+func test_chase_shot_does_not_spend_initial_broadside() -> void:
+	# B dead ahead of A at range 1: bow (2,0) facing E, hexes (2,0), (1,0).
+	_setup_ships(0, Vector2i(2, 0))
+	_dice.queue([1])
+	_sixes(20)
+	_fire([_order("a_ship", "b_ship", "round", "low", GunneryTypes.BATTERY_CHASE, GunneryTypes.CHASE_BOW)])
+	assert_eq(a.initial_broadside_fired, [false, false] as Array[bool])
+	var events := _fire_events()
+	assert_eq(events.size(), 1)
+	assert_eq(events[0].data["side"], GunneryTypes.CHASE_BOW)
+	assert_eq(events[0].data["battery"], "chase")
+	assert_eq(events[0].data["rake"], "")
+	assert_eq(events[0].data["d6"], 1)
+
+
+func test_broadside_sets_resolve_as_before() -> void:
+	# The set of test_simultaneous_fire_uses_pre_fire_state: numbers and dice use are unchanged.
+	_sixes()
+	_fire([_order("a_ship", "b_ship"), _order("b_ship", "a_ship")])
+	assert_eq(_fire_events().map(func(e): return [e.ship_id, e.data["fgn"]]),
+		[["b_ship", 34], ["a_ship", 34]])
+	assert_eq(_dice.remaining(), 192, "8 dice used, as before chasers")

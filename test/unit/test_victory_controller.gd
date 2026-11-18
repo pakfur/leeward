@@ -212,6 +212,16 @@ func test_one_side_of_guns_left_counts_as_armed() -> void:
 	assert_true(controller.can_move_or_fight(ship))
 
 
+func test_chasers_do_not_keep_a_ship_in_the_fight() -> void:
+	# Spec §4.5: a dismasted ship with every broadside gun dismounted is out of the fight, although
+	# her chasers never dismount.
+	var ship := _make_ship("b", 1)
+	_dismast(ship)
+	_arm(ship)
+	ship.guns_dismounted = [10, 10]
+	assert_false(controller.can_move_or_fight(ship))
+
+
 func test_fouled_or_grappled_ship_counts_as_able() -> void:
 	var fouled := _make_ship("a", 0)
 	fouled.fouled_with = "b"
