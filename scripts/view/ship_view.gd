@@ -121,7 +121,7 @@ func sync_to_state(ship_state: ShipState, hex_grid: HexGrid) -> void:
 	_update_wave_position()
 
 	if ship_state.is_destroyed():
-		if _seen_afloat and not _wrecked:
+		if explodes_on_sync(_seen_afloat, _wrecked, ship_state):
 			_play_explosion()
 		_update_fire_visual(0)
 		_apply_wreck(ship_state)
@@ -386,6 +386,13 @@ func _update_fire_visual(count: int) -> void:
 		model_node.add_child(_fire_effect)
 	if _fire_effect.fires != count:
 		_fire_effect.set_fires(count)
+
+## Whether a sync that finds the ship destroyed shows the explosion: only for a ship this view saw
+## afloat, not yet drawn as a wreck, and still on the map (a ship lost off a `none` edge is
+## destroyed off the map and just fades out).
+static func explodes_on_sync(seen_afloat: bool, wrecked: bool, ship_state: ShipState) -> bool:
+	return seen_afloat and not wrecked and ship_state.is_on_map()
+
 
 func _play_explosion() -> void:
 	var boom := ShipExplosionEffect.new()

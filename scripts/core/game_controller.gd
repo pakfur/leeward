@@ -429,6 +429,33 @@ func _on_game_started(_scenario: Dictionary) -> void:
 	ship_views.clear()
 	for ship_state in GameState.ships_on_map():
 		_spawn_ship_view(ship_state)
+	# The board: the scenario's rectangle, its land, shallows and typed edges (map spec §15).
+	var terrain := TerrainMap.of(GameState.active_scenario)
+	if hex_map:
+		hex_map.resize_to(terrain)
+		if hex_overlay:
+			hex_overlay.show_terrain(terrain, hex_map.get_hex_grid())
+
+
+## The ids of the ships on the map that have no view yet (reinforcements that have just arrived),
+## sorted.
+static func views_to_spawn(view_ids: Array, ships: Array[ShipState]) -> Array[String]:
+	var out: Array[String] = []
+	for ship_state in ships:
+		if ship_state.is_on_map() and not view_ids.has(ship_state.ship_id):
+			out.append(ship_state.ship_id)
+	out.sort()
+	return out
+
+
+## The ships that get a planning-panel card: those on the map (no card for a reinforcement still
+## waiting to arrive, or a ship gone off the map).
+static func planning_ships(ships: Array[ShipState]) -> Array[ShipState]:
+	var out: Array[ShipState] = []
+	for ship_state in ships:
+		if ship_state.is_on_map():
+			out.append(ship_state)
+	return out
 
 
 func _spawn_ship_view(ship_state: ShipState) -> void:
@@ -867,7 +894,7 @@ func _enter_planning_phase() -> void:
 		combat_log_panel.auto_expand(false)  # the map is what matters while plotting
 
 	# Get player ships
-	var player_0_ships := GameState.ships_of_player(HUMAN_PLAYER_ID)
+	var player_0_ships := planning_ships(GameState.ships_of_player(HUMAN_PLAYER_ID))
 	if player_0_ships.is_empty():
 		Trace.trace_log("GameController", "No ships for player %d" % HUMAN_PLAYER_ID)
 		return
@@ -1630,6 +1657,9 @@ func _on_back_to_scenarios() -> void:
 	back_to_scenarios_requested.emit()
 
 func _sync_all_views() -> void:
+	# Reinforcements placed since the last sync (2.B.1) get their views first.
+	for ship_id in views_to_spawn(ship_views.keys(), GameState.get_all_ships()):
+		_spawn_ship_view(GameState.get_ship(ship_id))
 	for ship_id in ship_views.keys():
 		var ship_view = ship_views[ship_id]
 		var ship_state = GameState.get_ship(ship_id)

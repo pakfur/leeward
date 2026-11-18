@@ -7,7 +7,10 @@ extends RefCounted
 ## line itself names the ship in the way and says whether they fouled.
 ## Ships fouled or grappled together drift as one group (8.A.6): the connected ships over
 ## ShipState.linked_ids(), one d10 by the member least likely to drift, never a partial drift, and
-## the whole group stays when any of its hexes is blocked.
+## the whole group stays when any of its hexes is blocked. An aground ship never drifts and holds its
+## group (8.A.1); a drift onto land or into shoals too shallow for the draft runs the ship aground
+## where it stands (13.G.2); a drift across a `none` edge loses the ship, across a crossable escape
+## edge escapes it (map and scenario spec).
 ## All mutations go through ShipStateController.
 
 var is_server: bool = true
@@ -29,6 +32,8 @@ func _init(p_game_state: Node) -> void:
 ## member, so its other members may come before a ship they would drift into. For each ship or group:
 ##   1. the drift d10
 ##   2. only if that drift is blocked by another ship that may foul it: the fouling d10
+##   3. only if nothing blocks: one depth d6 per member whose bow enters shallows, in group order
+##      (for a partial drift, one d6 for the moving end, after the fouling d10)
 ## At wind speed 0 nothing is rolled and nothing is logged.
 func resolve(phase: int) -> void:
 	if not is_server:
@@ -91,10 +96,18 @@ func _projection(ship: ShipState, downwind_vector: Vector3) -> float:
 	return _hex_grid.ship_center_world(ship.hex_position, ship.facing).dot(downwind_vector)
 
 
+## Whether `ship` is held in place and holds every ship tied to it (8.A.1: an aground ship never
+## drifts). Anchoring will extend this one test; so will towing for the group.
+func _holds_group(ship: ShipState) -> bool:
+	return ship.is_aground()
+
+
 func _is_eligible(group: Array[ShipState]) -> bool:
 	for ship in group:
 		if ship.is_destroyed():
 			return false  # a wreck never drifts (its fouling was cleared when it blew up)
+		if _holds_group(ship):
+			return false
 	for ship in group:
 		if not ship.moved_this_turn or ship.collision_this_turn or ship.is_linked():
 			return true
@@ -121,7 +134,7 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 	var roll: int = game_state.dice.d10()
 	var drifts: bool = roll + modifier >= needed
 
-	## Per ship: what stops it ("map edge" / "ship"), and the ship in the way.
+	## Per ship: what stops it ("map edge" / "aground" / "ship"), and the ship in the way.
 	var targets := {}
 	var own_block := {}
 	var own_blocker := {}
@@ -130,6 +143,8 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 	var partial := ""
 	var pivot := {}
 	var others := {}
+	var moves := {}      # ship_id -> MapRules.forced_move result (a drift that is not stopped)
+	var grounded := {}   # ship_id -> AGROUND data of the ships this drift runs aground
 	if drifts:
 		## The whole footprint shifts one hex downwind. The group's own hexes never block.
 		var group_ids: Array = []
@@ -139,17 +154,25 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 		for ship in group:
 			var sid: String = ship.ship.ship_id
 			targets[sid] = _hex_grid.get_neighbor(ship.hex_position.x, ship.hex_position.y, downwind_dir)
-			var block: Dictionary = _first_block(ship, downwind_dir, others)
-			if block.is_empty():
-				continue
-			own_block[sid] = block["blocked"]
-			if block["blocked"] == "map edge":
-				blocked = "map edge"
-				continue
-			own_blocker[sid] = block["blocker"]
-			if blocked == "":
-				blocked = "ship"
-				blocker = game_state.get_ship(block["blocker"])
+			var move: Dictionary = MapRules.forced_move(game_state.active_scenario, ship,
+				ship.occupied_hexes(), _shifted(ship, downwind_dir), others, game_state.current_turn,
+				MapController.escape_locked(game_state, sid))
+			moves[sid] = move
+			match move["result"]:
+				"edge":
+					own_block[sid] = "map edge"
+					blocked = "map edge"
+				"land":
+					own_block[sid] = "aground"
+					grounded[sid] = _ground_data(ship, _land_hex(ship, downwind_dir), -1)
+					if blocked != "map edge":
+						blocked = "aground"
+				"ship":
+					own_block[sid] = "ship"
+					own_blocker[sid] = move["blocker"]
+					if blocked == "":
+						blocked = "ship"
+						blocker = game_state.get_ship(move["blocker"])
 
 	# The fouled_with check is unreachable under the 8.A.2 order (a blocker is always resolved
 	# first); kept so a fouled ship never partially drifts (8.A.6), e.g. one whose partner id is
@@ -169,12 +192,47 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 				partial = free_end
 				pivot = result
 
-	var moved: bool = drifts and blocked == ""
 	# The fouling roll comes after the drift roll (dice order unchanged); its outcome is logged on
 	# the drift line, so a single line tells what happened. null: no fouling roll was made.
 	var fouled: Variant = null
 	if blocked == "ship" and group.size() == 1:
 		fouled = _try_foul(group[0], blocker)
+
+	if partial != "":
+		# The moving end meets the terrain on its own (8.A.5): an edge or land stops the pivot, a
+		# shoal under the bow end rolls its depth (after the fouling roll).
+		var lone: ShipState = group[0]
+		var lone_id: String = lone.ship.ship_id
+		var from_end: Vector2i = lone.stern_hex() if partial == "stern" else lone.hex_position
+		var to_end: Vector2i = _hex_grid.get_neighbor(from_end.x, from_end.y, downwind_dir)
+		var end_move: Dictionary = MapRules.forced_move(game_state.active_scenario, lone,
+			[from_end] as Array[Vector2i], [to_end] as Array[Vector2i], others, game_state.current_turn,
+			MapController.escape_locked(game_state, lone_id))
+		if end_move["result"] != "clear":
+			partial = ""
+		elif partial == "bow" and end_move["shallow_bow"]:
+			# Only a too-shallow bow grounds (13.G.2a); a free stern in shallows rolls nothing.
+			var depth := _roll_depth(to_end)
+			if depth <= lone.ship.draft:
+				partial = ""
+				own_block[lone_id] = "aground"
+				own_blocker.erase(lone_id)
+				blocker = null
+				blocked = "aground"
+				grounded[lone_id] = _ground_data(lone, to_end, depth)
+	elif drifts and blocked == "":
+		# Depth dice, one per member whose bow enters shallows, in group order.
+		for ship in group:
+			var sid: String = ship.ship.ship_id
+			if not moves[sid]["shallow_bow"]:
+				continue
+			var depth := _roll_depth(targets[sid])
+			if depth <= ship.ship.draft:
+				own_block[sid] = "aground"
+				blocked = "aground"
+				grounded[sid] = _ground_data(ship, targets[sid], depth)
+
+	var moved: bool = drifts and blocked == ""
 
 	if partial != "":
 		var lone: ShipState = group[0]
@@ -225,6 +283,15 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 	if moved:
 		for ship in group:
 			game_state.ship_controller.set_ship_position(ship.ship.ship_id, targets[ship.ship.ship_id])
+		for ship in group:
+			var sid: String = ship.ship.ship_id
+			var move: Dictionary = moves[sid]
+			if move["result"] == "lost":
+				game_state.map_controller.lose_off_map(sid, move["edge"], phase)
+			elif move["result"] == "escape":
+				game_state.map_controller.escape(sid, {"how": "edge", "edge": move["edge"]}, phase)
+	for sid in grounded:
+		game_state.map_controller.ground(sid, grounded[sid], phase)
 
 
 ## The blocked group member that holds `ship` back: a directly linked one if any, else the first
@@ -238,19 +305,34 @@ func _held_by(ship: ShipState, own_block: Dictionary) -> String:
 	return str(ids[0]) if not ids.is_empty() else ""
 
 
-## What first stops `ship`'s whole footprint shifting one hex downwind: {} when nothing does,
-## {"blocked": "map edge"} when a hex would leave the map (that outranks a ship), otherwise
-## {"blocked": "ship", "blocker": id} for the first of its hexes (bow, then stern) that would enter
-## a hex in `others` (hex -> ship id).
-func _first_block(ship: ShipState, downwind_dir: int, others: Dictionary) -> Dictionary:
-	var result := {}
+## `ship`'s hexes (bow, stern) each one hex downwind.
+func _shifted(ship: ShipState, downwind_dir: int) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
 	for hex in ship.occupied_hexes():
-		var shifted: Vector2i = _hex_grid.get_neighbor(hex.x, hex.y, downwind_dir)
-		if not _in_bounds(shifted):
-			return {"blocked": "map edge"}
-		if result.is_empty() and others.has(shifted):
-			result = {"blocked": "ship", "blocker": others[shifted]}
-	return result
+		out.append(_hex_grid.get_neighbor(hex.x, hex.y, downwind_dir))
+	return out
+
+
+## The first of `ship`'s shifted hexes (bow first) that is land.
+func _land_hex(ship: ShipState, downwind_dir: int) -> Vector2i:
+	var terrain := TerrainMap.of(game_state.active_scenario)
+	var shifted := _shifted(ship, downwind_dir)
+	for hex in shifted:
+		if terrain.is_land(hex):
+			return hex
+	return shifted[0]
+
+
+## Depth of the shallow hex a drifting bow enters (13.G.1): base + d6, rolled through game_state.dice.
+func _roll_depth(hex: Vector2i) -> int:
+	var area := TerrainMap.of(game_state.active_scenario).area_at(hex)
+	return (area.base if area != null else 0) + game_state.dice.d6()
+
+
+## AGROUND data for a ship that drifts onto `hex` (`depth` -1 for land).
+func _ground_data(ship: ShipState, hex: Vector2i, depth: int) -> Dictionary:
+	return {"cause": "drift", "terrain": "land" if depth < 0 else "shallow",
+		"hex": {"q": hex.x, "r": hex.y}, "depth": depth, "draft": ship.ship.draft}
 
 
 ## The footprint after only one end of `ship` drifts one hex downwind: the free end ("bow" or
@@ -287,7 +369,3 @@ func _try_foul(drifter: ShipState, other: ShipState) -> Variant:
 	game_state.ship_controller.set_fouled_with(a, b)
 	game_state.ship_controller.set_fouled_with(b, a)
 	return true
-
-
-func _in_bounds(hex: Vector2i) -> bool:
-	return Occupancy.in_bounds(hex, game_state.active_scenario)

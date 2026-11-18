@@ -298,7 +298,7 @@ func test_overlapping_placement_rejected() -> void:
 	GameState.clear_ships()
 
 func test_stern_outside_map_bounds_reported() -> void:
-	# 10x10 map spans q,r -5..4; the bow is on the map, the stern at q=5 is not
+	# 10x10 board spans columns/rows -5..4; the bow is on the map, the stern at column 5 is not
 	var scenario := {
 		"name": "edge", "wind_direction": 0, "wind_speed": 2, "sea_state": 1,
 		"map_bounds": {"width": 10, "height": 10},
@@ -309,5 +309,19 @@ func test_stern_outside_map_bounds_reported() -> void:
 	}
 	_start_with_ships(scenario)
 	assert_push_error("outside map_bounds")
+	assert_eq(GameState.placement_errors().size(), 1)
+	GameState.clear_ships()
+
+func test_ship_on_land_reported() -> void:
+	var scenario := {
+		"name": "land", "wind_direction": 0, "wind_speed": 2, "sea_state": 1,
+		"terrain": {"land": [[-1, 0]]},
+		"ships": [
+			{"id": "a", "player_id": 0, "ship_type": "frigate_38", "ship_name": "A",
+				"position": {"q": 0, "r": 0}, "facing": 0, "sail_state": "MS"},
+		],
+	}
+	_start_with_ships(scenario)
+	assert_push_error("which is land")
 	assert_eq(GameState.placement_errors().size(), 1)
 	GameState.clear_ships()

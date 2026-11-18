@@ -33,10 +33,14 @@ static func target_button_text(target: String, cost: Dictionary) -> String:
 static func status_badge(ship: ShipState) -> String:
 	if ship.is_destroyed():
 		return "DESTROYED"
+	if ship.is_escaped():
+		return "ESCAPED"
 	if ship.is_struck():
 		return "STRUCK"
 	if ship.is_captured():
 		return "PRIZE"
+	if ship.is_aground():
+		return "AGROUND"
 	if ship.is_dismasted():
 		return "DISMASTED"
 	if ship.fouled_with != "":
@@ -54,10 +58,16 @@ static func fire_badge(ship: ShipState) -> String:
 	return "AFIRE" if ship.fire_count() == 1 else "AFIRE ×%d" % ship.fire_count()
 
 
-## The card badge text: the status badge and the fire badge, joined.
+## "ESCAPING" for a ship in play that has declared it is trying to escape (V.D), else "".
+static func escape_badge(ship: ShipState) -> String:
+	return "ESCAPING" if ship.escape_declared and not ship.is_out_of_play() else ""
+
+
+## The card badge text: the status badge, the fire badge and the escape badge, joined.
 static func card_badge(ship: ShipState) -> String:
 	var parts: PackedStringArray = []
-	for b in [status_badge(ship), fire_badge(ship), "BOARDERS" if ship.has_boarders() else ""]:
+	for b in [status_badge(ship), fire_badge(ship), escape_badge(ship),
+			"BOARDERS" if ship.has_boarders() else ""]:
 		if b != "":
 			parts.append(b)
 	return " · ".join(parts)
@@ -70,8 +80,10 @@ static func can_plot_movement(ship: ShipState) -> bool:
 static func movement_block_reason(ship: ShipState) -> String:
 	match status_badge(ship):
 		"DESTROYED": return "Ship has been destroyed."
+		"ESCAPED": return "Ship has escaped."
 		"STRUCK": return "Ship has struck its colours and cannot move."
 		"PRIZE": return "Prize: cannot sail (10.H.2)."
+		"AGROUND": return "Ship is aground and cannot move (13.G.3)."
 		"DISMASTED": return "Ship is dismasted and cannot move."
 		"FOULED": return "Ship is fouled with %s and cannot move until it breaks free." % ship.fouled_with
 		"GRAPPLED": return "Ship is grappled to %s and cannot move until the grapples are cut (8.C.7)." % ", ".join(ship.grappled_with)

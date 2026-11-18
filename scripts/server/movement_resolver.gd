@@ -13,6 +13,20 @@ extends RefCounted
 ## there (the log comes back incomplete, see ResolutionLog.pending_bear_off), any other ship decides
 ## by StubAI.bear_off_choice. A ship that bears off turns, then moves ahead to its deceleration
 ## minimum: its plot is amended and the resolution run again, like an overlap rollback.
+## The board (map and scenario spec §3-§4): each segment, before the hexes held are built, a step
+## across an open edge is not made (EDGE_BLOCKED), a step into land, or ahead into shallows rolled
+## too shallow for the draft, runs the ship aground where it stands (AGROUND, 13.G.2), and a step off
+## the map by a `none` or crossable escape edge is made and then ends the ship's movement (LEFT_MAP).
+## A ship casting the lead (13.G.4) sounds land and shallows before its bow enters them (LEAD_SOUNDING):
+## too shallow, it bears off to the deeper side (a plot amendment of kind "lead", no Bearing Off
+## roll), holds back when no turn will do, or, Poor Maneuvering and failing its roll, runs aground.
+
+## The most MPs a ship may plot and still cast the lead (13.G.4a).
+const LEAD_MAX_MPS := 2
+## A turn's hex ahead, ranked for the lead's deeper side: off the map or across a blocking edge.
+const LEAD_RANK_NO_WAY := 3
+## The area base deep water counts as when choosing the deeper side.
+const LEAD_DEEP_BASE := 1000
 
 var game_state: Node = null
 var hex_grid: HexGrid = null
@@ -25,6 +39,10 @@ var _steering_failed_tacks: Dictionary = {}
 ## rewritten them (see run()). Amended plots never change it.
 var _schedule: MoveSchedule = null
 var _final_segment_count: int = 0  # the last pass's segment count (see _stamp_times)
+var _terrain: TerrainMap = null  # this run's board (see run())
+## ship_id -> true for the ships that cast the lead this run: ordered to, with a plot of at most 2 MPs
+## (13.G.4a; a longer plot ignores the order). Set in run().
+var _lead_casters: Dictionary = {}
 
 
 ## One resolution pass (see run()): every ship's steps, pose and progress, and the overlap bookkeeping
@@ -73,6 +91,10 @@ class ResolutionPass:
 	## ship_id -> the bear-off rollback (kind "bear_off") of a ship that bore off in an earlier pass
 	## (input): it bears off once per g-t (6.D.5), so a later potential collision is automatic.
 	var settled_bear_offs: Dictionary = {}
+	## "<ship_id>:<segment>" -> the sides (MovementTypes.BEAR_OFF_*) of lead bear-offs (13.G.4) made there
+	## in an earlier pass whose turn was then undone (input): _lead_side no longer offers them, so the
+	## replay cannot amend the same turn again.
+	var settled_leads: Dictionary = {}
 	## Bear-offs that succeeded this pass: rollbacks of kind "bear_off" (with `step`, the blocked step) that
 	## amend the ship's plot.
 	var bear_off_amendments: Array = []
@@ -133,6 +155,7 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 		prompt_ids: Array = []) -> MovementTypes.ResolutionLog:
 	@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 	var log = MovementTypes.ResolutionLog.new(game_state.current_turn if game_state else 0)
+	_terrain = TerrainMap.of(_scenario())
 
 	# An overlap that is not cleared by the end of the next segment on which either ship moves amends the
 	# turning ship's plot (6.B.4: "change all ship logs to reflect the actual moves"), and the whole
@@ -170,8 +193,11 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 		# An amended plot is never longer than the plot or the deceleration minimum.
 		step_bound += maxi(plotted[ship_state.ship_id].size(), _deceleration_minimum(ship_state))
 	var plot_sizes: Dictionary = {}
+	_lead_casters = {}
 	for sid in plotted:
 		plot_sizes[sid] = plotted[sid].size()
+		if ship_map[sid].casts_lead() and plotted[sid].size() <= LEAD_MAX_MPS:
+			_lead_casters[sid] = true
 	_schedule = MoveSchedule.new(plot_sizes)
 	var pass_limit: int = (step_bound + 1) * (step_bound + 1)
 	var rng_start: int = rng.state
@@ -181,13 +207,17 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 	var cycle_breaks: Dictionary = {}  # cycle key -> segment (ResolutionPass.cycle_breaks)
 	var settled_contests: Dictionary = {}  # ResolutionPass.settled_contests
 	var settled_bear_offs: Dictionary = {}  # ResolutionPass.settled_bear_offs
+	# Lead bear-offs (kind "lead", 13.G.4) that amended a plot, in the order found; several per ship
+	# are all kept (see _record_lead).
+	var lead_records: Array = []
+	var settled_leads: Dictionary = {}  # ResolutionPass.settled_leads
 	var outcome: Dictionary = {}
 	# All overlaps that fail at the same segment end are rolled back together (they are simultaneous,
 	# 6.B.4); the pass then restarts.
 	for attempt in range(pass_limit):
 		rng.state = rng_start
 		outcome = _resolve_pass(ships, ship_map, plotted, amended, cycle_breaks, settled_contests, environment,
-			bear_off_decisions, prompt_ids, settled_bear_offs)
+			bear_off_decisions, prompt_ids, settled_bear_offs, settled_leads)
 		if outcome.rollbacks.is_empty() and outcome.failed_cycles.is_empty():
 			break
 		if attempt == pass_limit - 1:
@@ -204,7 +234,15 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 				if cycle_breaks[key] >= rb.segment:
 					cycle_breaks.erase(key)
 			amended[sid] = _amended_steps(ship_map[sid], amended.get(sid, plotted[sid]), rb)
-			rollbacks[sid] = rb
+			# The plot changes from rb.segment on: a lead bear-off of this ship there or later is replayed
+			# anew (and found again if it still happens). One whose own turn this rollback undoes (same
+			# segment) keeps its side out of the replay, else the ship would sound and turn the same way
+			# again, pass after pass.
+			lead_records = _drop_lead_records(lead_records, rb, settled_leads)
+			if rb.get("kind", "") == "lead":
+				lead_records.append(rb)  # not the 6.D.5 bear-off, and not the ship's rollback
+			else:
+				rollbacks[sid] = rb
 			if rb.get("kind", "") == "contest":
 				settled_contests[_segment_hex_key(rb.segment, rb.hex)] = {"winner": rb.other_id, "rolls": rb.rolls}
 			if rb.get("kind", "") == "bear_off":
@@ -234,6 +272,8 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 		log.max_impulses = maxi(log.max_impulses, rollbacks[sid].check_segment + 1)
 	for contest in undone_contests:
 		_record_undone_contest(results, contest)
+	for record in lead_records:
+		_record_lead(results, record)
 	for sid in steering:
 		_record_steering(ship_map[sid], results[sid], steering[sid], amended.get(sid, plotted[sid]), amended.has(sid))
 	for sid in results:
@@ -282,7 +322,8 @@ func _resolve_pass(
 	environment: EnvironmentState,
 	bear_off_decisions: Dictionary = {},
 	prompt_ids: Array = [],
-	settled_bear_offs: Dictionary = {}
+	settled_bear_offs: Dictionary = {},
+	settled_leads: Dictionary = {}
 ) -> Dictionary:
 	var p := ResolutionPass.new()
 	p.ship_map = ship_map
@@ -292,6 +333,7 @@ func _resolve_pass(
 	p.bear_off_decisions = bear_off_decisions
 	p.prompt_ids = prompt_ids
 	p.settled_bear_offs = settled_bear_offs
+	p.settled_leads = settled_leads
 	for sid in amended:
 		if _find_tacking_impulse(ship_map[sid], plotted[sid]) == 0 \
 				and _find_tacking_impulse(ship_map[sid], amended[sid]) != 0:
@@ -412,6 +454,7 @@ func _resolve_impulse(p: ResolutionPass, impulse: int, ships: Array[ShipState]) 
 
 		seg.intended_moves[sid] = {"hex": step_hex, "facing": step_facing}
 
+	_settle_terrain(p, seg, ships)
 	if seg.intended_moves.is_empty():
 		return seg
 
@@ -480,7 +523,278 @@ func _resolve_impulse(p: ResolutionPass, impulse: int, ships: Array[ShipState]) 
 	_resolve_pending_bear_offs(p, seg)
 	if not seg.speculations.is_empty():
 		p.failed_cycles = _failed_speculations(p, seg)
+	_note_left_map(p, seg)
 	return seg
+
+
+## ============================================================================
+## The board: edges and running aground (map and scenario spec §3-§4, 13.G.2)
+## ============================================================================
+
+func _scenario() -> Dictionary:
+	var scenario = game_state.get("active_scenario") if game_state else null
+	return scenario if scenario is Dictionary else {}
+
+
+## The ship is in a live boarding action and may not escape (MapController.escape_locked).
+func _in_boarding(ship_id: String) -> bool:
+	return MapController.escape_locked(game_state, ship_id)
+
+
+func _turn() -> int:
+	var t = game_state.get("current_turn") if game_state else null
+	return int(t) if t != null else 1
+
+
+## The terrain checks of every intended move this segment, in ship order (so the depth dice come in a
+## fixed order): a step across a blocking edge is dropped and the ship stops (EDGE_BLOCKED); a step
+## into land, or ahead into shallows whose rolled depth is at most the draft, runs aground. A turn
+## never rolls the depth: it does not move the bow.
+func _settle_terrain(p: ResolutionPass, seg: Segment, ships: Array[ShipState]) -> void:
+	for ship_state in ships:
+		var sid: String = ship_state.ship_id
+		if not seg.intended_moves.has(sid):
+			continue
+		var move: Dictionary = seg.intended_moves[sid]
+		var bow: Vector2i = p.current_hexes[sid]
+		var facing: int = p.current_facings[sid]
+		var entered: Vector2i = _entered_hex(bow, facing, move.hex, move.facing)
+		var stern_entry: bool = _is_stern_entry(bow, facing, move.hex, move.facing)
+		var from: Vector2i = HexGrid.stern_of(bow, facing) if stern_entry else bow
+		var crossing: Dictionary = MapRules.crossing_outcome(_scenario(), ship_state, from, entered, _turn(),
+			_in_boarding(sid))
+		if crossing["outcome"] == MapRules.BLOCKED:
+			seg.intended_moves.erase(sid)
+			_stop(p, sid, seg.impulse)
+			var ev = MovementTypes.ResolutionEvent.new(sid, seg.impulse, MovementTypes.ResolutionEventType.EDGE_BLOCKED)
+			ev.from_hex = bow
+			ev.to_hex = move.hex
+			ev.facing = facing
+			ev.success = false
+			ev.detail = str(crossing["edge"])
+			p.results[sid].events.append(ev)
+			continue
+		var at := {"q": entered.x, "r": entered.y}
+		var area: TerrainMap.ShallowArea = _terrain.area_at(entered)
+		if _lead_casters.has(sid) and not stern_entry and (_terrain.is_land(entered) or area != null):
+			_cast_lead(p, seg, ship_state, entered, area)
+			continue
+		if _terrain.is_land(entered):
+			_run_aground(p, seg, sid, {"terrain": "land", "hex": at, "depth": -1})
+			continue
+		if area != null and not stern_entry:
+			var depth := _roll_depth(area)
+			if depth <= _draft(ship_state):
+				_run_aground(p, seg, sid, {"terrain": "shallow", "hex": at, "depth": depth})
+
+
+## Depth of a shallow hex as the ship enters it (13.G.1): base + d6, from the resolver's rng so that
+## re-runs of the resolution repeat it.
+func _roll_depth(area: TerrainMap.ShallowArea) -> int:
+	return area.base + rng.randi_range(1, TerrainMap.DEPTH_DIE)
+
+
+func _draft(ship_state: ShipState) -> int:
+	return ship_state.ship.draft if ship_state.ship else 0
+
+
+## 13.G.2: the ship stops in the hexes it held before the step and loses rigging as in a collision
+## (6.E.3; its rigging dice follow its depth die).
+func _run_aground(p: ResolutionPass, seg: Segment, sid: String, data: Dictionary) -> void:
+	var ship_state: ShipState = p.ship_map[sid]
+	var result: MovementTypes.ShipResolutionResult = p.results[sid]
+	var move: Dictionary = seg.intended_moves[sid]
+	seg.intended_moves.erase(sid)
+	_stop(p, sid, seg.impulse)
+	result.aground = true
+	result.aground_data = data.merged({"draft": _draft(ship_state)})
+	var loss: int = _roll_collision_rigging_loss(ship_state)
+	result.rigging_damage += loss
+	var ev = MovementTypes.ResolutionEvent.new(sid, seg.impulse, MovementTypes.ResolutionEventType.AGROUND)
+	ev.from_hex = p.current_hexes[sid]
+	ev.to_hex = move.hex
+	ev.facing = p.current_facings[sid]
+	ev.success = false
+	ev.detail = "%s at (%d,%d), depth=%d, draft=%d, rigging_loss=%d" % [data["terrain"], data["hex"]["q"],
+		data["hex"]["r"], int(data["depth"]), _draft(ship_state), loss]
+	result.events.append(ev)
+
+
+## 13.G.4b: a casting ship's step ahead into land or shallows. The depth is rolled (none for land).
+## Deep enough, the step is made ("entered"). Too shallow: a Poor Maneuvering ship rolls its d10 and on
+## a failure sails on into the shoal and runs aground ("pm_failed", even with no turn to make); else it
+## bears off to `_lead_side` ("bore_off": a plot amendment of kind "lead", always successful, not the
+## 6.D.5 bear-off), or with no such side stops before the hex ("held", not aground). Dice: the depth
+## d6, then the PM d10, then the rigging dice if aground.
+func _cast_lead(p: ResolutionPass, seg: Segment, ship_state: ShipState, entered: Vector2i,
+		area: TerrainMap.ShallowArea) -> void:
+	var sid: String = ship_state.ship_id
+	var result: MovementTypes.ShipResolutionResult = p.results[sid]
+	var bow: Vector2i = p.current_hexes[sid]
+	var facing: int = p.current_facings[sid]
+	var land: bool = _terrain.is_land(entered)
+	var depth: int = -1 if land else _roll_depth(area)
+	var draft: int = _draft(ship_state)
+	var sounding = MovementTypes.ResolutionEvent.new(sid, seg.impulse, MovementTypes.ResolutionEventType.LEAD_SOUNDING)
+	sounding.from_hex = bow
+	sounding.to_hex = seg.intended_moves[sid].hex
+	sounding.facing = facing
+	sounding.roll = float(-1 if land else depth - area.base)
+	sounding.threshold = float(draft)
+	var events: Array = [sounding]
+	var outcome := "entered"
+	var side := ""
+	if land or depth <= draft:
+		var steered := true
+		if ship_state.is_poor_maneuvering():
+			steered = _roll_steering(ship_state, seg.impulse, events, "sails on into the shoal")
+			events[-1].from_hex = bow
+			events[-1].to_hex = bow
+			events[-1].facing = facing
+		if not steered:
+			outcome = "pm_failed"
+		else:
+			side = _lead_side(p, sid, seg.impulse)
+			outcome = "held" if side == "" else "bore_off"
+	sounding.success = outcome == "entered"
+	sounding.detail = "outcome=%s side=%s depth=%d" % [outcome, side, depth]
+	var lead := {"segment": seg.impulse, "data": {"hex": {"q": entered.x, "r": entered.y}, "depth": depth,
+		"draft": draft, "outcome": outcome, "side": _side_index(side)}}
+
+	if outcome == "bore_off":
+		var new_facing: int = (facing + 5) % 6 if side == MovementTypes.BEAR_OFF_PORT else (facing + 1) % 6
+		p.bear_off_amendments.append({"kind": "lead", "ship_id": sid, "segment": seg.impulse,
+			"step": _schedule_of(p).step_at(sid, seg.impulse), "pre_bow": bow, "pre_facing": facing,
+			"facing": new_facing, "other_id": "", "reason": "cast the lead", "events": events, "lead": lead,
+			"side": side})
+		seg.intended_moves.erase(sid)
+		_stop(p, sid, seg.impulse)
+		return
+	result.events.append_array(events)
+	result.lead_events.append(lead)
+	if outcome == "held":
+		seg.intended_moves.erase(sid)
+		_stop(p, sid, seg.impulse)
+	elif outcome == "pm_failed":
+		_run_aground(p, seg, sid, {"terrain": "land" if land else "shallow",
+			"hex": {"q": entered.x, "r": entered.y}, "depth": depth})
+
+
+## The side a casting ship bears off to (MovementTypes.BEAR_OFF_PORT / _STARBOARD), or "" when no turn
+## will do. Of the turns legal here whose new stern is not land, the one whose hex ahead grounds least
+## (never < maybe < always; off the map or across a blocking edge worst), then the deeper area base
+## (deep water deepest, land shallowest), then starboard. A side whose lead turn here was undone in an
+## earlier pass (ResolutionPass.settled_leads) is not offered again.
+func _lead_side(p: ResolutionPass, sid: String, impulse: int) -> String:
+	var ship_state: ShipState = p.ship_map[sid]
+	var bow: Vector2i = p.current_hexes[sid]
+	var facing: int = p.current_facings[sid]
+	var eligible: Array[String] = _eligible_turns(p, sid, impulse)
+	var undone: Array = p.settled_leads.get(_lead_key(sid, impulse), [])
+	var best := ""
+	var best_key: Array = []
+	for side in [MovementTypes.BEAR_OFF_STARBOARD, MovementTypes.BEAR_OFF_PORT]:  # ties go to starboard
+		if not side in eligible or side in undone:
+			continue
+		var new_facing: int = (facing + 5) % 6 if side == MovementTypes.BEAR_OFF_PORT else (facing + 1) % 6
+		if _terrain.is_land(HexGrid.stern_of(bow, new_facing)):
+			continue
+		var ahead: Vector2i = bow + HexGrid.DIRECTIONS[new_facing]
+		var rank: int = LEAD_RANK_NO_WAY
+		var base: int = -1
+		if _terrain.in_bounds(ahead) and MapRules.crossing_outcome(_scenario(), ship_state, bow, ahead,
+				_turn(), _in_boarding(ship_state.ship_id))["outcome"] != MapRules.BLOCKED:
+			rank = ["never", "maybe", "always"].find(_terrain.grounds(ahead, _draft(ship_state)))
+			var area: TerrainMap.ShallowArea = _terrain.area_at(ahead)
+			if area != null:
+				base = area.base
+			elif not _terrain.is_land(ahead):
+				base = LEAD_DEEP_BASE
+		if best == "" or rank < best_key[0] or (rank == best_key[0] and base > best_key[1]):
+			best = side
+			best_key = [rank, base]
+	return best
+
+
+static func _lead_key(sid: String, segment: int) -> String:
+	return "%s:%d" % [sid, segment]
+
+
+## `records` (kind "lead" amendments) without those of `rollback`'s ship at its segment or later: its
+## plot changes from there. A lead record on the rollback's own segment whose turn the rollback undoes
+## (any other kind: an overlap, a lost stern contest) adds its side to `settled_leads`.
+static func _drop_lead_records(records: Array, rollback: Dictionary, settled_leads: Dictionary) -> Array:
+	var kept: Array = []
+	for rec in records:
+		if rec.ship_id != rollback.ship_id or rec.segment < rollback.segment:
+			kept.append(rec)
+			continue
+		if rec.segment == rollback.segment and rollback.get("kind", "") != "lead":
+			var key := _lead_key(rec.ship_id, rec.segment)
+			if not settled_leads.has(key):
+				settled_leads[key] = []
+			settled_leads[key].append(rec.side)
+	return kept
+
+
+static func _side_index(side: String) -> int:
+	match side:
+		MovementTypes.BEAR_OFF_PORT:
+			return ShipState.PORT
+		MovementTypes.BEAR_OFF_STARBOARD:
+			return ShipState.STARBOARD
+	return -1
+
+
+## Put a lead bear-off back into the final log: its sounding (and PM roll), told on its segment before
+## the turn the amended plot makes there, and its LEAD_CAST data in `lead_events`. Skipped when the ship
+## no longer reaches that segment.
+func _record_lead(results: Dictionary, record: Dictionary) -> void:
+	var result: MovementTypes.ShipResolutionResult = results[record.ship_id]
+	if not _reached_segment(result, record.segment):
+		return
+	_insert_at_segment_start(result, record.segment, record.events)
+	var at: int = 0
+	while at < result.lead_events.size() and int(result.lead_events[at].segment) <= record.segment:
+		at += 1
+	result.lead_events.insert(at, record.lead)
+
+
+func _stop(p: ResolutionPass, sid: String, impulse: int) -> void:
+	p.stopped[sid] = true
+	p.results[sid].stopped_at_impulse = impulse
+
+
+## Every ship whose step this segment took its bow or stern off the map (by a `none` edge, or an
+## escape edge it may cross) stops there: LEFT_MAP, and `left_map` is the crossing's outcome.
+func _note_left_map(p: ResolutionPass, seg: Segment) -> void:
+	if not _terrain.bounded:
+		return
+	for sid in seg.moves:
+		var bow: Vector2i = p.current_hexes[sid]
+		var facing: int = p.current_facings[sid]
+		if _terrain.in_bounds(bow) and _terrain.in_bounds(HexGrid.stern_of(bow, facing)):
+			continue
+		var start_bow: Vector2i = seg.start_bows[sid]
+		var start_facing: int = seg.start_facings[sid]
+		var stern_entry: bool = _is_stern_entry(start_bow, start_facing, bow, facing)
+		var from: Vector2i = HexGrid.stern_of(start_bow, start_facing) if stern_entry else start_bow
+		var entered: Vector2i = _entered_hex(start_bow, start_facing, bow, facing)
+		var crossing: Dictionary = MapRules.crossing_outcome(_scenario(), p.ship_map[sid], from, entered, _turn(),
+			_in_boarding(sid))
+		var outcome: String = crossing["outcome"]
+		if outcome != MapRules.LOST and outcome != MapRules.ESCAPE:
+			continue
+		var result: MovementTypes.ShipResolutionResult = p.results[sid]
+		result.left_map = outcome
+		result.left_edge = str(crossing["edge"])
+		_stop(p, sid, seg.impulse)
+		var ev = MovementTypes.ResolutionEvent.new(sid, seg.impulse, MovementTypes.ResolutionEventType.LEFT_MAP)
+		ev.from_hex = bow
+		ev.to_hex = bow
+		ev.facing = facing
+		ev.detail = "%s %s" % [result.left_edge, outcome]
+		result.events.append(ev)
 
 
 ## The ship's step this segment is settled: a ship that did not move keeps its old stern hex.
@@ -791,9 +1105,9 @@ func _check_overlaps(p: ResolutionPass, impulse: int) -> Array:
 ## like any other, so they may meet a ship and bear off or collide.
 func _amended_steps(ship_state: ShipState, steps: Array, rollback: Dictionary) -> Array:
 	var kept: Array = steps.slice(0, rollback.step)
-	if rollback.get("kind", "") == "bear_off":
-		# 6.D.4: the ship turns where it bore off, then moves ahead only as far as its deceleration
-		# limit requires, on its new heading.
+	if rollback.get("kind", "") in ["bear_off", "lead"]:
+		# 6.D.4 (and 13.G.4b): the ship turns where it bore off, then moves ahead only as far as its
+		# deceleration limit requires, on its new heading.
 		var turned_bow: Vector2i = rollback.pre_bow
 		kept.append({"hex": {"q": turned_bow.x, "r": turned_bow.y}, "facing": rollback.facing})
 		var needed: int = _deceleration_minimum(ship_state, rollback.facing)
@@ -1296,24 +1610,7 @@ func bear_off_situation(p: ResolutionPass, sid: String, blocker_id: String, impu
 	situation.bow = p.current_hexes[sid]
 	situation.facing = p.current_facings[sid]
 	var schedule: MoveSchedule = _schedule_of(p)
-	var path: Array[MovementTypes.PlotStep] = []
-	var facing: int = ship_state.facing
-	for step in p.steps_by_ship[sid].slice(0, schedule.step_at(sid, impulse)):
-		var step_facing: int = int(step.get("facing", facing))
-		var hex := Vector2i(int(step.get("hex", {}).get("q", 0)), int(step.get("hex", {}).get("r", 0)))
-		var move_type := MovementTypes.MoveType.FORWARD
-		if step_facing == (facing + 5) % 6:
-			move_type = MovementTypes.MoveType.PORT
-		elif step_facing != facing:
-			move_type = MovementTypes.MoveType.STARBOARD
-		path.append(MovementTypes.PlotStep.new(hex, step_facing, move_type))
-		facing = step_facing
-	if ship_state.speed > 0:  # a stopped ship cannot turn away (the turning chart has no speed 0 row)
-		var moves = _validator().calculate_valid_moves(ship_state, situation.bow, situation.facing, path)
-		if moves.valid_hexes.port != null:
-			situation.eligible.append(MovementTypes.BEAR_OFF_PORT)
-		if moves.valid_hexes.starboard != null:
-			situation.eligible.append(MovementTypes.BEAR_OFF_STARBOARD)
+	situation.eligible = _eligible_turns(p, sid, impulse)
 	var maneuverability: String = ship_state.ship.maneuverability if ship_state.ship else "b"
 	situation.number = DataManager.get_bearing_off_number(ship_state.crew_quality, maneuverability)
 	situation.drm = _bearing_off_drm(ship_state, p.steps_by_ship[sid].size())
@@ -1331,6 +1628,34 @@ func bear_off_situation(p: ResolutionPass, sid: String, blocker_id: String, impu
 		if not hexes.is_empty():
 			situation.other_plots[other_id] = hexes
 	return situation
+
+
+## The turns (MovementTypes.BEAR_OFF_PORT / _STARBOARD) the ship may make where it stands on `impulse`:
+## the turning rules the plotting validator applies, on the path made so far. None for a ship that was
+## stopped last turn (the turning chart has no speed 0 row).
+func _eligible_turns(p: ResolutionPass, sid: String, impulse: int) -> Array[String]:
+	var ship_state: ShipState = p.ship_map[sid]
+	var eligible: Array[String] = []
+	if ship_state.speed <= 0:
+		return eligible
+	var path: Array[MovementTypes.PlotStep] = []
+	var facing: int = ship_state.facing
+	for step in p.steps_by_ship[sid].slice(0, _schedule_of(p).step_at(sid, impulse)):
+		var step_facing: int = int(step.get("facing", facing))
+		var hex := Vector2i(int(step.get("hex", {}).get("q", 0)), int(step.get("hex", {}).get("r", 0)))
+		var move_type := MovementTypes.MoveType.FORWARD
+		if step_facing == (facing + 5) % 6:
+			move_type = MovementTypes.MoveType.PORT
+		elif step_facing != facing:
+			move_type = MovementTypes.MoveType.STARBOARD
+		path.append(MovementTypes.PlotStep.new(hex, step_facing, move_type))
+		facing = step_facing
+	var moves = _validator().calculate_valid_moves(ship_state, p.current_hexes[sid], p.current_facings[sid], path)
+	if moves.valid_hexes.port != null:
+		eligible.append(MovementTypes.BEAR_OFF_PORT)
+	if moves.valid_hexes.starboard != null:
+		eligible.append(MovementTypes.BEAR_OFF_STARBOARD)
+	return eligible
 
 
 ## The run's schedule; for a pass built outside run() (unit tests of the bear-off helpers), a
@@ -1973,16 +2298,32 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			# So is any ship in a collision (5.E.3b; at WF=L that is in irons, 5.D.5): next g-t it
 			# has no deceleration minimum and accelerates from 0 (5.E.7).
 			sc.set_ship_speed(sid, _count_steps_executed(result) if moved_ahead and not rudder_irons \
-					and result.collided_with == "" else 0)
+					and result.collided_with == "" and not result.aground else 0)
 			if result.collided_with != "":
 				sc.set_collision_this_turn(sid, true)
 			if result.fouled_with != "":
 				sc.set_fouled_with(sid, result.fouled_with)
+			var map_controller = game_state.get("map_controller")
+			if result.aground and map_controller != null:
+				map_controller.ground(sid, {"cause": "movement"}.merged(result.aground_data),
+						TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION)
 			if result.rigging_damage > 0:
 				_apply_rigging_damage(sid, result.rigging_damage, sc)
+			if result.left_map != "" and map_controller != null:
+				_leave_map(map_controller, sid, result)
 			sc.clear_plotted_actions(sid)
 		else:
 			push_error("MovementResolver: No ship_controller available")
+
+## The ship left the map this g-t (spec §3): lost by a `none` edge, escaped by an escape edge.
+func _leave_map(map_controller: MapController, sid: String, result: MovementTypes.ShipResolutionResult) -> void:
+	var phase := TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
+	match result.left_map:
+		MapRules.LOST:
+			map_controller.lose_off_map(sid, result.left_edge, phase)
+		MapRules.ESCAPE:
+			map_controller.escape(sid, {"how": "edge", "edge": result.left_edge}, phase)
+
 
 ## _last_step_direction when the ship executed no step.
 const NO_STEP := -2
@@ -2073,6 +2414,8 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 			if ev.event_type == MovementTypes.ResolutionEventType.POOR_MANEUVERING_ROLL:
 				turn_log.add(PhaseEvents.Type.POOR_MANEUVERING, phase, sid, {"roll": int(ev.roll),
 					"needed": int(ev.threshold), "success": ev.success, "outcome": ev.detail})
+		for lead in result.lead_events:
+			turn_log.add(PhaseEvents.Type.LEAD_CAST, phase, sid, (lead.data as Dictionary).duplicate(true))
 		for ev in result.events:
 			if ev.event_type == MovementTypes.ResolutionEventType.BEAR_OFF_ORDER:
 				turn_log.add(PhaseEvents.Type.BEAR_OFF_ORDER, phase, sid, {"order": _order_from_detail(ev.detail)})
@@ -2088,11 +2431,14 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 				turn_log.add(PhaseEvents.Type.COLLISION, phase, sid, {"hex": {"q": at.x, "r": at.y}},
 					result.collided_with)
 		var planned: int = _get_plotted_steps(ship_state).size()
-		if not result.tacking_failed and planned > 0 and _count_steps_executed(result) < planned:
+		var off_course: bool = result.aground or result.left_map != ""  # MapController logs these
+		if not result.tacking_failed and not off_course and planned > 0 and _count_steps_executed(result) < planned:
 			var data := {"moved": _count_steps_executed(result), "planned": planned}
 			var cause := stop_cause(result)
 			if not cause.is_empty():
 				data["cause"] = cause["cause"]
+			if cause.has("edge"):
+				data["edge"] = cause["edge"]
 			_add_contest_rolls(data, result, log.get_result(str(cause.get("other", ""))))
 			turn_log.add(PhaseEvents.Type.STOPPED_SHORT, phase, sid, data, str(cause.get("other", "")))
 		elif not result.tacking_failed and planned > 0:
@@ -2154,16 +2500,22 @@ static func _last_contest_roll(result: MovementTypes.ShipResolutionResult) -> Mo
 ## "other": id} when it bore off to avoid the ship in its way, {"cause": "stern_contest", "other": id}
 ## when it lost a stern contest to that ship (6.C.5), {"cause": "stern_blocked", "other": id} when its
 ## turn was otherwise cancelled because its stern would swing into that ship, {"cause": "overlap",
-## "other": id} when its stern swung into that ship and the turn was rolled back (6.B.4), {} when the
+## "other": id} when its stern swung into that ship and the turn was rolled back (6.B.4), {"cause":
+## "map_edge", "edge": name} when a step was refused at that map edge (spec §3), {} when the
 ## result names no cause. A cancelled or rolled-back turn after which the ship made no step comes first,
 ## so a ship run into later is not said to have stopped for that.
 static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary:
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.EDGE_BLOCKED:
+			return {"cause": "map_edge", "edge": ev.detail}  # it ends the ship's movement
 	if _undone_turn_ended_movement(result, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK):
 		return {"cause": "overlap", "other": result.blocked_by}
 	if _undone_turn_ended_movement(result, MovementTypes.ResolutionEventType.STERN_BLOCKED):
 		return _stern_blocked_cause(result)
 	if result.collided_with != "":
 		return {"cause": "collision", "other": result.collided_with}
+	if _lead_ended_movement(result):
+		return {"cause": "lead"}
 	for ev in result.events:
 		if ev.event_type == MovementTypes.ResolutionEventType.BEARING_OFF_ROLL and ev.success:
 			return {"cause": "bore_off", "other": result.blocked_by}
@@ -2172,6 +2524,21 @@ static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary
 		if ev.event_type == MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK:
 			return {"cause": "overlap", "other": result.blocked_by}
 	return {}
+
+
+## True when a sounding with the lead found the water too shallow (13.G.4: the ship held back or bore
+## off) and the ship made no step after that segment.
+static func _lead_ended_movement(result: MovementTypes.ShipResolutionResult) -> bool:
+	var segment := -1
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.LEAD_SOUNDING and not ev.success:
+			segment = maxi(segment, ev.impulse)
+	if segment < 0:
+		return false
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.MOVE and ev.impulse > segment:
+			return false
+	return true
 
 
 static func _stern_blocked_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary:

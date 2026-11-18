@@ -475,15 +475,15 @@ func test_turn_keeps_bow_hex() -> void:
 
 func test_turn_refused_when_stern_off_map() -> void:
 	mock_gs.environment.wind_direction = 3
-	mock_gs.active_scenario = {"map_bounds": {"width": 10, "height": 10}}  # q -5..4, r -5..4
+	mock_gs.active_scenario = {"map_bounds": {"width": 10, "height": 10}}  # columns -5..4, rows -5..4
 	var ss = _make_ship_state(_make_ship("F/F", "b"), 0, 3, "MS")
-	ss.hex_position = Vector2i(4, 4)
+	ss.hex_position = Vector2i(2, 4)  # rectangle board: row 4, column 4 (was (4, 4), the parallelogram)
 
 	var valid = validator.calculate_valid_moves(ss, ss.hex_position, ss.facing, []).valid_hexes
 
-	# Port turn to facing 5 would swing the stern to (3,5), off the map.
+	# Port turn to facing 5 would swing the stern to (1,5), off the map.
 	assert_null(valid.port, "Turn whose new stern is off the map is not offered")
-	assert_not_null(valid.starboard, "Turn whose stern stays on the map is offered (stern at (4,3))")
+	assert_not_null(valid.starboard, "Turn whose stern stays on the map is offered (stern at (2,3))")
 
 
 # ============================================================================

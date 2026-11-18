@@ -32,6 +32,8 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 		return _refuse(p, "a destroyed ship cannot fire or be fired on")
 	if firer.is_captured():
 		return _refuse(p, "a prize does not fight (10.H.2)")
+	if firer.is_aground():
+		return _refuse(p, "an aground ship cannot fire its guns (13.G.3)")
 	if firer.is_out_of_play() or not target.is_targetable():
 		return _refuse(p, "a struck ship cannot fire or be fired on")
 	if firer.side == target.side:
@@ -277,9 +279,13 @@ func _blocking_friend(battery_hex: Vector2i, firer: ShipState, side: int, target
 	return first_with_hexes
 
 
-## Bow and stern hex of every ship (struck ones included), minus `exclude_ids`.
+## Bow and stern hex of every ship (struck ones included), minus `exclude_ids`, and every land
+## hex ("land"): land blocks line of sight like a ship (7.B.7-9; shallows do not).
 func _occupied_hexes(exclude_ids: Array = []) -> Dictionary:
-	return Occupancy.build(game_state.get_all_ships(), exclude_ids)
+	var occupied := Occupancy.build(game_state.get_all_ships(), exclude_ids)
+	for hex in TerrainMap.of(game_state.active_scenario).land:
+		occupied[hex] = "land"
+	return occupied
 
 
 ## The firer hexes a battery fires from: `ship_hexes` is [bow, stern].

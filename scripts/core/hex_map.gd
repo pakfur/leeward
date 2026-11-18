@@ -99,29 +99,36 @@ func _create_water_plane() -> void:
 	Trace.trace_log("HexMap", "Water plane created on XZ plane: X=%.1f Z=%.1f with %d subdivisions" % [map_width_x, map_depth_z, WATER_SUBDIVISIONS])
 
 func _initialize_hex_tracking() -> void:
-	"""Initialize hex coordinate tracking (no visible meshes)"""
+	"""Track the hexes of the board: the grid_width x grid_height rectangle (TerrainMap.rect_hexes)."""
 	Trace.trace_log("HexMap", "Initializing hex tracking: %dx%d" % [grid_width, grid_height])
-
-	# Calculate offset to center the grid
-	@warning_ignore("integer_division")
-	var offset_q = -grid_width / 2
-	@warning_ignore("integer_division")
-	var offset_r = -grid_height / 2
-
-	var sample_printed = false
-	for q in range(grid_width):
-		for r in range(grid_height):
-			var hex_coord = Vector2i(q + offset_q, r + offset_r)
-			# Store hex coordinate for tracking (no mesh creation)
-			hex_meshes[hex_coord] = null
-
-			# Print first hex for debugging
-			if not sample_printed and q == 0 and r == 0:
-				var world_pos = hex_grid.axial_to_world(hex_coord.x, hex_coord.y)
-				Trace.trace_log("HexMap", "First hex at coord %s -> world pos %s" % [hex_coord, world_pos])
-				sample_printed = true
-
+	hex_meshes.clear()
+	for hex_coord in TerrainMap.rect_hexes(grid_width, grid_height):
+		hex_meshes[hex_coord] = null  # coordinate tracking only, no mesh
 	Trace.trace_log("HexMap", "Initialized tracking for %d hex coordinates" % hex_meshes.size())
+
+
+## The board of a scenario with map_bounds: track (and redraw the grid and coordinate labels for)
+## its rectangle. A scenario without bounds keeps the default board.
+func resize_to(terrain: TerrainMap) -> void:
+	if terrain == null or not terrain.bounded:
+		return
+	if terrain.width == grid_width and terrain.height == grid_height:
+		return
+	grid_width = terrain.width
+	grid_height = terrain.height
+	_initialize_hex_tracking()
+	if grid_overlay:
+		var was_visible := grid_overlay.visible
+		grid_overlay.queue_free()
+		grid_overlay = null
+		_create_grid_overlay()
+		grid_overlay.visible = was_visible
+	if hex_labels_container:
+		var labels_were_visible := hex_labels_container.visible
+		hex_labels_container.queue_free()
+		hex_labels_container = null
+		_create_hex_labels()
+		hex_labels_container.visible = labels_were_visible
 
 func _create_hex_tile(coord: Vector2i) -> void:
 	"""Create a single hex tile at the given axial coordinates"""
@@ -198,52 +205,46 @@ func _create_grid_overlay() -> void:
 
 	var overlay_y = 0.05  # Slightly above water surface
 	var line_width = 0.04  # Width of grid lines
-	@warning_ignore("integer_division")
-	var offset_q = -grid_width / 2
-	@warning_ignore("integer_division")
-	var offset_r = -grid_height / 2
 
 	var vertex_index = 0
 
-	# Create line segments for each hex edge
-	for q in range(grid_width):
-		for r in range(grid_height):
-			var hex_coord = Vector2i(q + offset_q, r + offset_r)
-			var center = hex_grid.axial_to_world(hex_coord.x, hex_coord.y)
-			center.y = overlay_y
+	# Create line segments for each hex edge of the board's rectangle
+	for hex_coord in TerrainMap.rect_hexes(grid_width, grid_height):
+		var center = hex_grid.axial_to_world(hex_coord.x, hex_coord.y)
+		center.y = overlay_y
 
-			# Create 6 edges of the hex
-			for i in range(6):
-				var angle1 = deg_to_rad(60.0 * i - 30.0)
-				var angle2 = deg_to_rad(60.0 * (i + 1) - 30.0)
+		# Create 6 edges of the hex
+		for i in range(6):
+			var angle1 = deg_to_rad(60.0 * i - 30.0)
+			var angle2 = deg_to_rad(60.0 * (i + 1) - 30.0)
 
-				var p1 = center + Vector3(hex_size * cos(angle1), 0, hex_size * sin(angle1))
-				var p2 = center + Vector3(hex_size * cos(angle2), 0, hex_size * sin(angle2))
+			var p1 = center + Vector3(hex_size * cos(angle1), 0, hex_size * sin(angle1))
+			var p2 = center + Vector3(hex_size * cos(angle2), 0, hex_size * sin(angle2))
 
-				# Create a quad for the line segment
-				var dir = (p2 - p1).normalized()
-				var perp = Vector3(-dir.z, 0, dir.x) * line_width * 0.5
+			# Create a quad for the line segment
+			var dir = (p2 - p1).normalized()
+			var perp = Vector3(-dir.z, 0, dir.x) * line_width * 0.5
 
-				# Four corners of the line quad
-				vertices.append(p1 - perp)
-				vertices.append(p1 + perp)
-				vertices.append(p2 + perp)
-				vertices.append(p2 - perp)
+			# Four corners of the line quad
+			vertices.append(p1 - perp)
+			vertices.append(p1 + perp)
+			vertices.append(p2 + perp)
+			vertices.append(p2 - perp)
 
-				# White color for grid lines
-				for j in range(4):
-					colors.append(Color.WHITE)
+			# White color for grid lines
+			for j in range(4):
+				colors.append(Color.WHITE)
 
-				# Two triangles for the quad
-				indices.append(vertex_index + 0)
-				indices.append(vertex_index + 1)
-				indices.append(vertex_index + 2)
+			# Two triangles for the quad
+			indices.append(vertex_index + 0)
+			indices.append(vertex_index + 1)
+			indices.append(vertex_index + 2)
 
-				indices.append(vertex_index + 0)
-				indices.append(vertex_index + 2)
-				indices.append(vertex_index + 3)
+			indices.append(vertex_index + 0)
+			indices.append(vertex_index + 2)
+			indices.append(vertex_index + 3)
 
-				vertex_index += 4
+			vertex_index += 4
 
 	# Build the mesh
 	var arrays = []
@@ -327,28 +328,21 @@ func _create_hex_labels() -> void:
 	hex_labels_container.name = "HexLabels"
 	add_child(hex_labels_container)
 
-	@warning_ignore("integer_division")
-	var offset_q = -grid_width / 2
-	@warning_ignore("integer_division")
-	var offset_r = -grid_height / 2
+	for hex_coord in TerrainMap.rect_hexes(grid_width, grid_height):
+		var world_pos = hex_grid.axial_to_world(hex_coord.x, hex_coord.y)
 
-	for q in range(grid_width):
-		for r in range(grid_height):
-			var hex_coord = Vector2i(q + offset_q, r + offset_r)
-			var world_pos = hex_grid.axial_to_world(hex_coord.x, hex_coord.y)
-
-			var label = Label3D.new()
-			label.text = "q=%d,r=%d" % [hex_coord.x, hex_coord.y]
-			label.font_size = 32
-			label.pixel_size = 0.005
-			label.position = Vector3(world_pos.x, 0.15, world_pos.z)
-			label.rotation_degrees = Vector3(-90, 0, 0)  # Face up, text reads left-to-right with north up
-			label.modulate = Color(1.0, 1.0, 0.6, 0.8)
-			label.outline_modulate = Color(0, 0, 0, 0.9)
-			label.outline_size = 8
-			label.no_depth_test = true
-			label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-			hex_labels_container.add_child(label)
+		var label = Label3D.new()
+		label.text = "q=%d,r=%d" % [hex_coord.x, hex_coord.y]
+		label.font_size = 32
+		label.pixel_size = 0.005
+		label.position = Vector3(world_pos.x, 0.15, world_pos.z)
+		label.rotation_degrees = Vector3(-90, 0, 0)  # Face up, text reads left-to-right with north up
+		label.modulate = Color(1.0, 1.0, 0.6, 0.8)
+		label.outline_modulate = Color(0, 0, 0, 0.9)
+		label.outline_size = 8
+		label.no_depth_test = true
+		label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+		hex_labels_container.add_child(label)
 
 	Trace.trace_log("HexMap", "Created %d hex coordinate labels" % (grid_width * grid_height))
 

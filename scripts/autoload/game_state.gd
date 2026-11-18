@@ -65,6 +65,7 @@ var dice: Dice = null
 var fire_geometry: FireGeometry = null
 var gunnery_calculator: GunneryCalculator = null
 var damage_controller: DamageController = null
+var map_controller: MapController = null
 var critical_hit_controller: CriticalHitController = null
 var gunnery_resolver: GunneryResolver = null
 var marine_fire_resolver: MarineFireResolver = null
@@ -122,6 +123,7 @@ func _initialize_server_controllers() -> void:
 	fire_geometry = FireGeometry.new(HexGrid.new())
 	gunnery_calculator = GunneryCalculator.new(self)
 	damage_controller = DamageController.new(self)
+	map_controller = MapController.new(self)
 	critical_hit_controller = CriticalHitController.new(self)
 	gunnery_resolver = GunneryResolver.new(self)
 	marine_fire_resolver = MarineFireResolver.new(self)
@@ -188,6 +190,12 @@ func _initialize_server_controllers() -> void:
 func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int]) -> bool:
 	if not is_server:
 		push_error("GameState: Cannot start a scenario on client")
+		return false
+	var terrain_errors := TerrainMap.of(scenario_data).errors
+	if not terrain_errors.is_empty():
+		for message in terrain_errors:
+			push_error(message)
+		push_error("GameState: scenario not started: bad terrain")
 		return false
 	clear_ships()
 	var navies: Variant = scenario_data.get("navies", {})
@@ -451,11 +459,19 @@ func start_new_game(scenario_data: Dictionary) -> void:
 ## footprints sharing a hex. One message each; empty when the placement is valid. Read-only.
 func placement_errors() -> Array[String]:
 	var errors: Array[String] = []
-	var all_ships := get_all_ships()
-	for s in all_ships:
+	var terrain := TerrainMap.of(active_scenario)
+	errors.append_array(terrain.errors)
+	var all_ships: Array[ShipState] = []
+	var waiting: Array[ShipState] = []
+	for s in get_all_ships():
+		(waiting if s.is_awaiting_arrival() else all_ships).append(s)
+	# a waiting ship holds no hexes yet, but its entry footprint must be on the board and in the water
+	for s in waiting + all_ships:
 		for h in s.occupied_hexes():
 			if not Occupancy.in_bounds(h, active_scenario):
 				errors.append("GameState: ship '%s' occupies %s, outside map_bounds" % [s.ship_id, h])
+			elif terrain.is_land(h):
+				errors.append("GameState: ship '%s' occupies %s, which is land" % [s.ship_id, h])
 	for i in all_ships.size():
 		for j in range(i + 1, all_ships.size()):
 			var pair: Array[ShipState] = [all_ships[i], all_ships[j]]
@@ -515,7 +531,8 @@ func add_ship(ship_state: ShipState) -> bool:
 	others.assign(ships.values())
 	var occupied := Occupancy.build(others)
 	for h in ship_state.occupied_hexes():
-		if occupied.has(h):
+		# a waiting reinforcement holds no hexes until it arrives
+		if occupied.has(h) and not ship_state.is_awaiting_arrival():
 			push_error("GameState: ship '%s' starts on %s, already occupied by '%s'; rejected" % [
 				ship_state.ship_id, h, occupied[h]])
 			return false

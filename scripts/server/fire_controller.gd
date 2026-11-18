@@ -79,14 +79,14 @@ func skill(ship: ShipState) -> int:
 
 
 ## A fire breaks out aboard `ship_id`. `extra` is added to the FIRE_STARTED event (rolls).
-## Returns the fire's seq, or -1 (no ship, or a wreck: a destroyed ship does not burn).
+## Returns the fire's seq, or -1 (no ship, a wreck: a destroyed ship does not burn, or off the map).
 func start_fire(ship_id: String, cause: String, phase: int, source_id: String = "",
 		in_fire_subphase: bool = false, extra: Dictionary = {}) -> int:
 	if not is_server:
 		push_error("FireController: Cannot start a fire on client")
 		return -1
 	var ship: ShipState = game_state.get_ship(ship_id)
-	if ship == null or ship.is_destroyed():
+	if not _burns(ship):
 		return -1
 	var sc: ShipStateController = game_state.ship_controller
 	var seq: int = sc.add_fire(ship_id, cause, in_fire_subphase)
@@ -158,7 +158,7 @@ func resolve(phase: int) -> void:
 	# 1. Firefighting
 	for ship_id: String in ids:
 		var ship: ShipState = game_state.get_ship(ship_id)
-		if ship == null or ship.is_destroyed():
+		if not _burns(ship):
 			continue
 		for seq in ship.fire_seqs():
 			var task := ship.fire_task(seq).duplicate(true)
@@ -185,7 +185,7 @@ func resolve(phase: int) -> void:
 	# 2. Damage
 	for ship_id: String in ids:
 		var ship: ShipState = game_state.get_ship(ship_id)
-		if ship == null or ship.is_destroyed():
+		if not _burns(ship):
 			continue
 		var burning := 0
 		for fire in ship.fire_list:
@@ -197,7 +197,7 @@ func resolve(phase: int) -> void:
 	var at_start := {}
 	for ship_id: String in ids:
 		var ship: ShipState = game_state.get_ship(ship_id)
-		if ship != null and not ship.is_destroyed() and ship.is_burning():
+		if _burns(ship) and ship.is_burning():
 			at_start[ship_id] = ship.fire_list.duplicate(true)
 	var growth := tables.fire_rule("growth_turns")
 	for ship_id: String in ids:
@@ -209,11 +209,11 @@ func resolve(phase: int) -> void:
 		if not at_start.has(ship_id):
 			continue
 		var ship: ShipState = game_state.get_ship(ship_id)
-		if ship == null or ship.is_destroyed():
+		if not _burns(ship):
 			continue
 		for partner_id in _attached_ids(ship):
 			var partner: ShipState = game_state.get_ship(partner_id)
-			if partner == null or partner.is_destroyed():
+			if not _burns(partner):
 				continue
 			var roll: int = game_state.dice.d10()
 			var needed: int = tables.fire_rule("spread_number") + skill(partner)
@@ -225,7 +225,7 @@ func resolve(phase: int) -> void:
 	# 4. Explosions
 	for ship_id: String in ids:
 		var ship: ShipState = game_state.get_ship(ship_id)
-		if ship == null or ship.is_destroyed() or not ship.is_burning() or _hull_boxes(ship) > 0:
+		if not _burns(ship) or not ship.is_burning() or _hull_boxes(ship) > 0:
 			continue
 		game_state.damage_controller.strike(ship_id, "hull destroyed", phase)  # no-op if already struck
 		var roll: int = game_state.dice.two_d6()
@@ -252,6 +252,12 @@ func resolve(phase: int) -> void:
 				{"fire": seq, "number": ship.fire_seqs().find(seq) + 1, "mc": mc})
 			if mc:
 				game_state.turn_log.add(PhaseEvents.Type.MORALE_NOTED, phase, ship_id, {"trigger": trigger, "count": 1})
+
+
+## Whether fires aboard `ship` are resolved: afloat on the map (a wreck does not burn, spec Q10; an
+## escaped ship has left the map, map and scenario spec §9).
+func _burns(ship: ShipState) -> bool:
+	return ship != null and not ship.is_destroyed() and ship.is_on_map()
 
 
 ## 10.H.3: a prize's original crew, locked below, fights its fires itself (boarding spec §4.5:
@@ -320,7 +326,7 @@ func explode(ship_id: String, phase: int) -> void:
 	var ids := _sorted_ids()
 	for other_id: String in ids:
 		var other: ShipState = game_state.get_ship(other_id)
-		if other_id == ship_id or other == null or other.is_destroyed():
+		if other_id == ship_id or other == null or other.is_destroyed() or not other.is_on_map():
 			continue
 		var r: int = game_state.fire_geometry.range_between(hexes, other.occupied_hexes())
 		var mgn: int = tables.blast_mgn(ship_class, r)
@@ -330,7 +336,7 @@ func explode(ship_id: String, phase: int) -> void:
 	var never: int = tables.fire_rule("debris_never")
 	for other_id: String in ids:
 		var other: ShipState = game_state.get_ship(other_id)
-		if other_id == ship_id or other == null or other.is_destroyed():
+		if other_id == ship_id or other == null or other.is_destroyed() or not other.is_on_map():
 			continue
 		var r: int = game_state.fire_geometry.range_between(hexes, other.occupied_hexes())
 		if r < 0 or r > radius:

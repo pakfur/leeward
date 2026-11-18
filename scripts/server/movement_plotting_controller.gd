@@ -38,6 +38,8 @@ func _plot_refusal(ship_state: ShipState) -> Array:
 	if DefaultCourse.can_plot(ship_state):
 		return []
 	var ship_id := ship_state.ship_id
+	if not ship_state.is_on_map() or ship_state.is_escaped():
+		return ["SHIP_OFF_MAP", "Ship %s is not on the map" % ship_id]
 	if ship_state.is_captured():  # 10.H.2: a prize cannot sail
 		return ["SHIP_CAPTURED", "Ship %s is a prize and cannot sail (10.H.2)" % ship_id]
 	if ship_state.fouled_with != "":
@@ -48,6 +50,8 @@ func _plot_refusal(ship_state: ShipState) -> Array:
 		return ["SHIP_DESTROYED", "Ship %s has been destroyed and cannot move" % ship_id]
 	if ship_state.is_struck():
 		return ["SHIP_STRUCK", "Ship %s has struck its colours and cannot move" % ship_id]
+	if ship_state.is_aground():  # 13.G.3
+		return ["SHIP_AGROUND", "Ship %s is aground and cannot move (13.G.3)" % ship_id]
 	return ["SHIP_DISMASTED", "Ship %s is dismasted and cannot move" % ship_id]
 
 

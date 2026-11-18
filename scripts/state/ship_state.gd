@@ -9,7 +9,7 @@ extends Resource
 ## and line of sight.
 ## CAPTURED: taken by boarding (10.H; boarding spec §2.5). Out of play for its holder (it never moves,
 ## fires or keeps a side alive) but, unlike a struck ship, a target for its old side (10.H.1).
-enum Status { ACTIVE, STRUCK, DESTROYED, CAPTURED }
+enum Status { ACTIVE, STRUCK, DESTROYED, CAPTURED, ESCAPED }
 
 const PORT := 0
 const STARBOARD := 1
@@ -117,6 +117,15 @@ var ship_type: String:
 ## Taken off the map (8.G.1f "remove ships": an exploded ship at the end of the g-t). The ship stays
 ## in GameState.ships for logs, history and victory, but no map query sees it (is_on_map()).
 @export var removed_from_map: bool = false
+## Terrain, escape and arrival (map and scenario spec §7; mutated only through ShipStateController).
+## Aground on a shoal (13.G): in play and targetable, but cannot move. `aground_turn` = the turn it grounded.
+@export var aground: bool = false
+@export var aground_turn: int = -1
+## The player has declared this ship's escape (leaving by the escape edge).
+@export var escape_declared: bool = false
+## A reinforcement not yet on the map: off the map and out of play until it arrives on `arrives_turn`.
+@export var awaiting_arrival: bool = false
+@export var arrives_turn: int = 1
 
 # Critical hits (7.D.11-12; mutated only through ShipStateController)
 ## Each entry: {"seq": int, "id": String (CRITICAL_EFFECT_IDS), "turn": int,
@@ -182,6 +191,8 @@ static func empty_plot() -> Dictionary:
 		# defaults (tasks in progress stay, CrewRules.plan_of)
 		"crew_plotted": false,
 		"gunnery": [],
+		# the lead is cast this turn (13.G); lives in the plot, so it lapses with it
+		"cast_lead": false,
 	}
 
 func _init() -> void:
@@ -210,6 +221,20 @@ func is_struck() -> bool:
 func is_destroyed() -> bool:
 	return status == Status.DESTROYED
 
+## Left the map by the escape edge.
+func is_escaped() -> bool:
+	return status == Status.ESCAPED
+
+func is_aground() -> bool:
+	return aground
+
+func is_awaiting_arrival() -> bool:
+	return awaiting_arrival
+
+## The lead is cast this turn (plotted).
+func casts_lead() -> bool:
+	return bool(plotted_actions.get("cast_lead", false))
+
 ## Taken by boarding (10.H): a prize of the side in controller_side.
 func is_captured() -> bool:
 	return status == Status.CAPTURED
@@ -217,12 +242,12 @@ func is_captured() -> bool:
 ## May be fired on (gunfire and marine fire): in play, or a prize, which its old side may fire on
 ## (10.H.1). Struck and destroyed ships are not targets (feature_diff §4).
 func is_targetable() -> bool:
-	return status == Status.ACTIVE or status == Status.CAPTURED
+	return (status == Status.ACTIVE or status == Status.CAPTURED) and not awaiting_arrival
 
 ## May be boarded (10.A.2-3, 10.G.5): in play, struck or a prize, and not on fire.
 func can_be_boarded() -> bool:
 	return (status == Status.ACTIVE or status == Status.STRUCK or status == Status.CAPTURED) \
-		and not is_burning()
+		and not is_burning() and not awaiting_arrival
 
 ## The morale rating that fixes the ship's point value (VI.B): the original crew's while a prize,
 ## the one before a recapture after it (value_morale_rating), else the current one.
@@ -269,9 +294,10 @@ func is_french_gunned() -> bool:
 	return gunnery_navy() == "French"
 
 ## On the map: holds its two hexes, blocks movement, drift, line of sight and wind. False once
-## ShipStateController.remove_from_map has taken it off (8.G.1f).
+## ShipStateController.remove_from_map has taken it off (8.G.1f), and while the ship awaits its
+## arrival as a reinforcement.
 func is_on_map() -> bool:
-	return not removed_from_map
+	return not removed_from_map and not awaiting_arrival
 
 ## The player commanding the ship: commander_id, or, for a ship given no commander (a game set up
 ## without a roster, as headless tests do), its side's default player, whose id is the side number
@@ -289,10 +315,11 @@ func is_fleet_flagship() -> bool:
 	return ship != null and ship.flag == "fleet" and not is_out_of_play()
 
 
-## Struck or destroyed: cannot move, fire, change sail, unfoul, fix or check morale, and is not a
-## target. A struck ship still drifts; a destroyed one does not.
+## Struck, destroyed, captured or escaped, or still awaiting arrival: cannot move, fire, change sail,
+## unfoul, fix or check morale, and is not a target. A struck ship still drifts; a destroyed one does
+## not. An aground ship is still in play.
 func is_out_of_play() -> bool:
-	return status != Status.ACTIVE
+	return status != Status.ACTIVE or awaiting_arrival
 
 ## May try to grapple, ungrapple or unfoul (8.C, 8.D): a ship in play, or a prize with her prize crew
 ## aboard (10.H.2). A struck, destroyed or crewless captured ship may not.
@@ -629,6 +656,11 @@ func serialize() -> Dictionary:
 		"morale_triggers_used": morale_triggers_used,
 		"unfoul_attempts": unfoul_attempts,
 		"removed_from_map": removed_from_map,
+		"aground": aground,
+		"aground_turn": aground_turn,
+		"escape_declared": escape_declared,
+		"awaiting_arrival": awaiting_arrival,
+		"arrives_turn": arrives_turn,
 		"critical_effects": critical_effects.duplicate(true),
 		"critical_seq": critical_seq,
 		"rudder_destroyed": rudder_destroyed,
@@ -734,6 +766,11 @@ static func deserialize(data: Dictionary) -> ShipState:
 		state.morale_triggers_used.append(str(trigger))
 	state.unfoul_attempts = int(data.get("unfoul_attempts", 0))
 	state.removed_from_map = bool(data.get("removed_from_map", false))
+	state.aground = bool(data.get("aground", false))
+	state.aground_turn = int(data.get("aground_turn", -1))
+	state.escape_declared = bool(data.get("escape_declared", false))
+	state.awaiting_arrival = bool(data.get("awaiting_arrival", false))
+	state.arrives_turn = int(data.get("arrives_turn", 1))
 	state.critical_effects.clear()
 	for effect in data.get("critical_effects", []):
 		state.critical_effects.append(_critical_effect_from(effect))
@@ -857,6 +894,12 @@ func initialize_from_scenario(data: Dictionary, ship_ref: Ship) -> void:
 
 	# Sail state
 	sail_state = data.get("sail_state", "MS")
+
+	# Reinforcements ("arrives": the turn the ship enters; 1 or absent = on the map from the start)
+	arrives_turn = int(data.get("arrives", 1))
+	awaiting_arrival = arrives_turn >= 2
+	if awaiting_arrival and not data.has("sail_state"):
+		sail_state = "PS"
 
 	# Rigging HP - from scenario or copy from ship definition
 	var rigging_hp_scenario = data.get("rigging_current_hp", null)
