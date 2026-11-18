@@ -45,6 +45,11 @@ const BLOCKED_LAND := "land"
 const BLOCKED_EDGE := "edge"
 const BLOCKED_LINKED := "linked"
 
+## The springs step's refusal of a fouled or grappled ship (SPRING_TURN / VEER_IN `refused`).
+const REFUSED_LINKED := "fouled or grappled (13.D.2)"
+## The springs step's refusal of a veer in with nothing veered out, or no cable to take in.
+const REFUSED_NOTHING_TO_VEER_IN := "nothing to veer in (13.E.2)"
+
 
 func _init(p_game_state: Node) -> void:
 	super(p_game_state)
@@ -352,7 +357,7 @@ func _spring_turn(ship: ShipState, task: Dictionary, phase: int) -> void:
 	elif not ship.has_springs():
 		refused = "springs not rigged (13.D)"
 	elif ship.is_linked():
-		refused = "fouled or grappled (13.D.2)"
+		refused = REFUSED_LINKED
 	else:
 		var check := _move_check(ship, new_hexes)
 		refused = str(check["refused"])
@@ -379,8 +384,12 @@ func _veer_in(ship: ShipState, phase: int) -> void:
 	var cable := old_cable - 1
 	var new_hexes := AnchorRules.footprint(anchor.get("hex", ship.hex_position),
 		str(anchor.get("end", "bow")), cable, ship.facing, int(game_state.environment.wind_direction))
-	var check := {"refused": "fouled or grappled", "blocker": ""}
-	if not ship.is_linked():  # a linked ship holds, as in V.A
+	var check := {"refused": "", "blocker": ""}
+	if int(anchor.get("veered", 0)) <= 0 or old_cable <= 1:
+		check["refused"] = REFUSED_NOTHING_TO_VEER_IN  # prepare refuses it; re-checked here
+	elif ship.is_linked():  # a linked ship holds, as in V.A
+		check["refused"] = REFUSED_LINKED
+	else:
 		check = _move_check(ship, new_hexes)
 	var refused := str(check["refused"])
 	game_state.turn_log.add(PhaseEvents.Type.VEER_IN, phase, id,

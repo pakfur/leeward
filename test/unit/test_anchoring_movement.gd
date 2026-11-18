@@ -8,6 +8,7 @@ extends GutTest
 ## is 0, a stern anchor's 3.
 
 const CrewFixtures = preload("res://test/unit/crew_fixtures.gd")
+const GameControllerScript = preload("res://scripts/core/game_controller.gd")
 const PLANNING := TurnPhaseController.GamePhase.PLANNING
 const MOVE := TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
 
@@ -277,7 +278,7 @@ func test_veer_in_refused_when_linked() -> void:
 	assert_eq(a.hex_position, Vector2i(-2, 0))
 	assert_eq(int(a.anchor["cable"]), 2)
 	assert_eq(int(a.anchor["veered"]), 1)
-	assert_eq(str(_veers()[0].data["refused"]), "fouled or grappled")
+	assert_eq(str(_veers()[0].data["refused"]), AnchorController.REFUSED_LINKED)
 
 
 func test_spring_step_skips_aground_ships() -> void:
@@ -402,3 +403,72 @@ func test_in_irons_again_next_turn() -> void:
 	var ship := _make_ship("cut", Vector2i(5, 5), 0)
 	ship.cable_cut_turn = GameState.current_turn - 2
 	assert_true(resolver._is_in_irons(ship, GameState.environment))
+
+
+# --- review fixes -------------------------------------------------------------------
+
+func test_veer_in_rechecks_nothing_veered() -> void:
+	var a := _anchored("a", Vector2i(-2, 0), 0, Vector2i(0, 0), 2, "bow", false, 0)
+	_task(a, "VI")
+	anchors.resolve_spring_step(MOVE)
+	assert_eq(a.hex_position, Vector2i(-2, 0))
+	assert_eq(int(a.anchor["cable"]), 2)
+	assert_eq(str(_veers()[0].data["refused"]), AnchorController.REFUSED_NOTHING_TO_VEER_IN)
+
+
+func test_veer_in_refused_up_front_when_linked() -> void:
+	var a := _anchored("a", Vector2i(-2, 0), 0, Vector2i(0, 0), 2, "bow", false, 1)
+	_make_ship("b", Vector2i(-2, 1), 0, 1)
+	assert_eq(AnchorRules.refusal(a, "VI", {}, {"wind_speed": 3}, []), "")
+	sc.add_grapple("a", "b")
+	assert_eq(AnchorRules.refusal(a, "VI", {}, {"wind_speed": 3}, []), AnchorRules.R_VI_LINKED)
+
+
+## Spec §1, 13.D.1: a springs ship keeps her WF, so V.A after the springs step leaves her on her
+## new bearing (no swing back, no move, no die).
+func test_riding_keeps_the_spring_turned_bearing() -> void:
+	var a := _anchored("a", Vector2i(-1, 0), 0, Vector2i(0, 0), 1)
+	_task(a, "HS", {"turn": "starboard"})
+	var s := _anchored("s", Vector2i(-1, 6), 3, Vector2i(1, 6), 1, "stern")
+	_task(s, "HS", {"turn": "port"})
+	anchors.resolve_spring_step(MOVE)
+	anchors.resolve_anchoring(TurnPhaseController.GamePhase.DRIFT_CALCULATION)
+	assert_eq(a.facing, 1)
+	assert_eq(a.occupied_hexes(), [Vector2i(-1, 0), Vector2i(-1, -1)] as Array[Vector2i])
+	assert_eq(s.facing, 2)
+	assert_eq(s.occupied_hexes(), [Vector2i(-1, 7), Vector2i(0, 6)] as Array[Vector2i])
+	assert_eq(GameState.turn_log.of_type(PhaseEvents.Type.ANCHOR_MOVE).size(), 0)
+
+
+func test_spring_step_ship_ids_names_the_ships_moved() -> void:
+	var a := _anchored("a", Vector2i(-1, 0), 0, Vector2i(0, 0), 1)
+	_task(a, "HS", {"turn": "starboard"})
+	var c := _anchored("c", Vector2i(-2, 6), 0, Vector2i(0, 6), 2, "bow", false, 1)
+	_task(c, "VI")
+	var b := _anchored("b", Vector2i(-1, 12), 0, Vector2i(0, 12), 1, "bow", false)
+	_task(b, "HS", {"turn": "port"})  # refused: no springs
+	anchors.resolve_spring_step(MOVE)
+	assert_eq(GameControllerScript.spring_step_ship_ids(GameState.turn_log), ["a", "c"] as Array[String])
+	assert_eq(GameControllerScript.spring_step_ship_ids(null), [] as Array[String])
+
+
+func test_irons_excused() -> void:
+	var env: EnvironmentState = GameState.environment
+	var turn := GameState.current_turn
+	var plain := _make_ship("plain", Vector2i(5, 5), 0)
+	assert_false(IronsRules.excused(plain, env, turn))
+	plain.cable_cut_turn = turn - 1
+	assert_true(IronsRules.excused(plain, env, turn), "5.D.4b: the g-t after the cut")
+	plain.cable_cut_turn = turn - 2
+	assert_false(IronsRules.excused(plain, env, turn))
+	var a := _anchored("a", Vector2i(-1, 0), 0, Vector2i(0, 0), 1, "bow", false)
+	assert_true(IronsRules.excused(a, env, turn), "5.D.4a: anchored")
+	env.calm_ended_turn = turn
+	assert_true(IronsRules.excused(_make_ship("calm", Vector2i(5, 9), 0), env, turn), "3.D.4")
+	# The planning note follows it: head to wind the g-t after a cut cable is not in irons.
+	plain.cable_cut_turn = turn - 1
+	assert_eq(CourseView.course_note({}, "C", "L", IronsRules.excused(plain, null, turn)),
+		PlanningText.HEAD_TO_WIND_NOTE)
+	plain.cable_cut_turn = -1
+	assert_eq(CourseView.course_note({}, "C", "L", IronsRules.excused(plain, null, turn)),
+		PlanningText.IRONS_NOTE)

@@ -43,7 +43,8 @@ const R_VO_LINKED := "Fouled or grappled: cannot veer out."
 const R_VO_TURN := "Not on a g-t it turns (13.E.1d)."
 const R_VEER_BOTH := "Veer out or veer in, not both."
 const R_VI_NONE := "Nothing to veer in (13.E.2)."
-const R_VI_TURN := "Not on a g-t it turns (13.E.2)."
+const R_VI_LINKED := "Fouled or grappled: cannot veer in."
+const R_VI_TURN :="Not on a g-t it turns (13.E.2)."
 const R_HS_NO_SPRINGS := "Springs are not rigged (13.D)."
 const R_HS_CALM := "No wind: springs cannot be used (13.E.3)."
 const R_HS_LINKED := "Fouled or grappled ships cannot turn (13.D.2)."
@@ -323,6 +324,8 @@ static func _anchored_refusal(ship: ShipState, code: String, wind: int, plan_cod
 		"VI":
 			if veered <= 0:
 				return R_VI_NONE
+			if ship.is_linked():
+				return R_VI_LINKED
 			if plan_codes.has("HS"):
 				return R_VI_TURN
 			if plan_codes.has("AX"):
