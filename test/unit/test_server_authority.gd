@@ -92,7 +92,7 @@ const FORBIDDEN := [
 	["\\bboarding_controller\\.(?!preview\\(|tbcf\\(|live_action_of\\(|live_action_between\\(|locked_in_boarding\\(|counter_board\\(|action_by_id\\(|actions\\(|has_actions_to_resolve\\(|drms_for\\(|marines_in_boarding\\(|prize_size_options\\(|defence_tbcf\\(|attack_tbcf\\(|reorganizing_capture_of\\()",
 			"a BoardingController mutator called from view code (use player_plot_crew)"],
 	["\\b(BoardingController|BoardingTaskHandler)\\.new\\b", "a boarding controller made in view code"],
-	["(?<!dev_commands\\.)(?<!display_states\\.)(?<!func )\\b(declare|capture|advance_reorganizing|end_of_turn|take_link_snapshot|transfer_control|set_controller_side|set_prize|set_crew|add_detached_box|remove_crew_box_from|apply_boarding_losses|apply_boarding_losses_shared|detach_prize_crew|grapple_ships|start_of_turn|retake|set_prize_size|set_navy|set_value_morale_rating)\\(",
+	["(?<!dev_commands\\.)\\b(declare|capture|advance_reorganizing|end_of_turn|take_link_snapshot|transfer_control|set_controller_side|set_prize|set_crew|add_detached_box|remove_crew_box_from|apply_boarding_losses|apply_boarding_losses_shared|detach_prize_crew|grapple_ships|start_of_turn|retake|set_prize_size|set_navy|set_value_morale_rating)\\(",
 			"a boarding or capture mutator called from view code"],
 	["\\.(controller_side|prize|detached_boxes|navy|value_morale_rating|boarding_actions|linked_at_plot|boarding_seq|boarding_history)\\s*(\\[[^\\]]*\\]\\s*)?(=|\\+=|-=)[^=]", "a boarding or capture field written from view code"],
 	["\\b(set_commander)\\(", "a commander mutator called from view code"],

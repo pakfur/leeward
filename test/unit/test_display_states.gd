@@ -46,16 +46,16 @@ func _damage(state: ShipState) -> void:
 	state.rigging_current_hp = r
 
 
-func test_capture_ignores_second_emit() -> void:
-	_ds.capture(4, 1, [_a, _b])
+func test_record_ignores_second_emit() -> void:
+	_ds.record_phase(4, 1, [_a, _b])
 	_damage(_a)
-	_ds.capture(4, 1, [_a, _b])
+	_ds.record_phase(4, 1, [_a, _b])
 	_ds.begin([4] as Array[int])
 	assert_eq(_ds.state_for("a").rigging_current_hp[0], 5)
 
 
 func test_begin_shows_pre_phase_copy() -> void:
-	_ds.capture(4, 1, [_a, _b])
+	_ds.record_phase(4, 1, [_a, _b])
 	_damage(_a)
 	_ds.begin([4] as Array[int])
 	assert_true(_ds.active())
@@ -66,9 +66,9 @@ func test_begin_shows_pre_phase_copy() -> void:
 
 
 func test_ship_switches_after_its_last_step() -> void:
-	_ds.capture(4, 1, [_a, _b])
+	_ds.record_phase(4, 1, [_a, _b])
 	_damage(_a)
-	_ds.capture(5, 1, [_a, _b])
+	_ds.record_phase(5, 1, [_a, _b])
 	_ds.begin([4, 5] as Array[int])
 	var steps := _steps([_step(4, "a", "b"), _step(4, "b"), _step(4, "a")])
 	_ds.step_shown(steps[0], steps, 0)
@@ -78,9 +78,9 @@ func test_ship_switches_after_its_last_step() -> void:
 
 
 func test_other_ship_waits_for_its_own_step() -> void:
-	_ds.capture(4, 1, [_a, _b])
+	_ds.record_phase(4, 1, [_a, _b])
 	_damage(_b)
-	_ds.capture(5, 1, [_a, _b])
+	_ds.record_phase(5, 1, [_a, _b])
 	_ds.begin([4, 5] as Array[int])
 	var steps := _steps([_step(4, "a"), _step(4, "b")])
 	_ds.step_shown(steps[0], steps, 0)
@@ -90,7 +90,7 @@ func test_other_ship_waits_for_its_own_step() -> void:
 
 
 func test_last_phase_switches_to_live() -> void:
-	_ds.capture(4, 1, [_a])
+	_ds.record_phase(4, 1, [_a])
 	_ds.begin([4] as Array[int])
 	var steps := _steps([_step(4, "a")])
 	_ds.step_shown(steps[0], steps, 0)
@@ -98,19 +98,19 @@ func test_last_phase_switches_to_live() -> void:
 
 
 func test_phase_reached_and_new_turn() -> void:
-	_ds.capture(4, 1, [_a])
+	_ds.record_phase(4, 1, [_a])
 	_damage(_a)
-	_ds.capture(5, 1, [_a])
+	_ds.record_phase(5, 1, [_a])
 	_ds.begin([4, 5] as Array[int])
 	_ds.phase_reached(5)
 	assert_eq(_ds.state_for("a").rigging_current_hp[0], 0)
-	_ds.capture(4, 2, [_b])
+	_ds.record_phase(4, 2, [_b])
 	_ds.begin([4] as Array[int])
 	assert_null(_ds.state_for("a"), "older turn's copies are dropped")
 
 
 func test_end_returns_live() -> void:
-	_ds.capture(4, 1, [_a])
+	_ds.record_phase(4, 1, [_a])
 	_ds.begin([4] as Array[int])
 	_ds.end()
 	assert_false(_ds.active())
@@ -118,7 +118,7 @@ func test_end_returns_live() -> void:
 
 
 func test_copy_is_detached() -> void:
-	_ds.capture(4, 1, [_a])
+	_ds.record_phase(4, 1, [_a])
 	_damage(_a)
 	_a.facing = 3
 	_ds.begin([4] as Array[int])

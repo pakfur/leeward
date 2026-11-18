@@ -12,9 +12,9 @@ var _shown: Dictionary = {}
 var _active: bool = false
 
 
-## Stores a detached copy of every ship as the state before `phase`. A second capture of the same
+## Stores a detached copy of every ship as the state before `phase`. A second record of the same
 ## (turn, phase) is ignored; a new turn drops the older turn's copies.
-func capture(phase: int, turn: int, ships: Array) -> void:
+func record_phase(phase: int, turn: int, ships: Array) -> void:
 	if turn != _turn:
 		_copies.clear()
 		_shown.clear()
