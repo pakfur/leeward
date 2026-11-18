@@ -108,6 +108,12 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 		adjacent_names.append(str(pair[1]))
 	var turn = game_state.get("current_turn") if game_state != null else null
 	var boarding := boarding_context(game_state, ship)
+	# Towing (CrewAuto A2d): why each other ship may not be taken in tow, {id: reason or ""}.
+	var tow_target_errors := {}
+	if game_state != null:
+		for other: ShipState in game_state.get_all_ships():
+			if other.ship_id != ship.ship_id:
+				tow_target_errors[other.ship_id] = TowRules.take_target_error(ship, other)
 	var env = game_state.get("environment") if game_state != null else null
 	var scenario = game_state.get("active_scenario") if game_state != null else null
 	var ma0_turn := false
@@ -141,6 +147,7 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 		"board_refusals": boarding["board_refusals"],
 		"counter_board": boarding["counter_board"],
 		"ship_names": boarding["ship_names"],
+		"tow_target_errors": tow_target_errors,
 	}
 
 

@@ -15,7 +15,9 @@ extends RefCounted
 ##      already placed (a preparation in progress continues under A2);
 ##   A2d the tow order (crew_orders.tow, TowRules.order_task): PT for "take:<id>", TX for "cut";
 ##      its task goes to the first free section in worker order, when TowRules.refusal allows it
-##      beside the towing tasks already placed (a PT in progress continues under A2);
+##      beside the towing tasks already placed and, for "take:", the target may still be taken in
+##      tow (ctx.tow_target_errors; a standing order whose target struck places nothing); a PT in
+##      progress continues under A2;
 ##   A3 the ordered sail change, 1 or 2 sections in worker order;
 ##   A4 tacking crew: when the movement plot holds a turn at MA 0, as many of 3 sections as are
 ##      free, in worker order (5.D.2a);
@@ -77,7 +79,12 @@ static func allocate(ship: ShipState, orders: Dictionary, ctx: Dictionary) -> Di
 				taken[free[0]] = wanted
 	# A2d: the tow order (towing spec §3): its task, if TowRules allows it beside the towing tasks
 	# already placed, goes to the first free section in worker order.
-	var tow_wanted := TowRules.order_task(ship, str(orders.get("tow", "")))
+	var tow_order := str(orders.get("tow", ""))
+	var tow_wanted := TowRules.order_task(ship, tow_order)
+	var tow_parsed := TowRules.parse_order(tow_order)
+	if str(tow_parsed["kind"]) == "take" and str((ctx.get("tow_target_errors", {}) as Dictionary).get(
+			str(tow_parsed["target"]), "Unknown ship")) != "":
+		tow_wanted = {}
 	if not tow_wanted.is_empty():
 		var tow_accepted: Array = []
 		for section in taken:

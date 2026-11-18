@@ -119,6 +119,19 @@ func test_take_order_refused_for_enemy_and_unknown() -> void:
 	assert_eq(_plot_order("t", "tow"), "Unknown tow order tow")
 
 
+func test_standing_take_order_kept_when_target_strikes() -> void:
+	_ship("t").crew_auto = true
+	assert_eq(_plot_order("t", "take:w"), "")
+	assert_eq(_ship("t").tow_order(), "take:w")
+	_ship("w").status = ShipState.Status.STRUCK
+	# The unchanged standing order is not re-checked: the plot is accepted, and no PT is placed.
+	assert_eq(_plot_order("t", "take:w"), "")
+	assert_true(_tow_codes(ctrl.current_plan("t")).is_empty())
+	# A new order naming the struck ship is refused.
+	assert_eq(_plot_order("t", ""), "")
+	assert_string_contains(_plot_order("t", "take:w"), "has struck")
+
+
 func test_no_pt_when_prepared() -> void:
 	var t := _ship("t")
 	t.crew_auto = true
