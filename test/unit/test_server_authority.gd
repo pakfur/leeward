@@ -54,6 +54,10 @@ const FORBIDDEN := [
 	["\\.anchor\\[[^\\]]*\\]\\s*=[^=]", "an anchor field written from view code"],
 	["(?<!player_)\\b(drop_anchor|update_anchor|cut_cable|set_anchor_ready|set_springs_ready)\\(", "an anchor mutator called from view code"],
 	["\\banchor_controller\\.", "AnchorController used from view code"],
+	# towing (towing spec): the view reads is_towing() / is_towed() / tow_partner()
+	["\\.(towing_id|towed_by|tow_prepared)\\s*(=|\\+=|-=)[^=]", "a tow field written from view code"],
+	["(?<!player_)\\b(begin_tow|cut_tow|set_tow_prepared)\\(", "a tow mutator called from view code"],
+	["\\btow_controller\\.", "TowController used from view code"],
 	["(?<!dev_commands\\.)\\b(start_fire|explode|add_fire|remove_fire|clear_fires|set_explosion_checks)\\(",
 			"a fire mutator called from view code"],
 	# gunfire and marine fire (7.G): the view previews through GunneryCalculator and
@@ -312,6 +316,35 @@ func test_anchor_patterns_catch_mutations() -> void:
 		for re in checks:
 			assert_null(re.search(line), "allowed: %s" % line)
 
+
+## The tow patterns catch writes and mutator calls, and let the queries and dev requests through.
+func test_tow_patterns_catch_mutations() -> void:
+	var bad := [
+		"ship.towing_id = \"w\"",
+		"s.tow_prepared = true",
+		"GameState.ship_controller.begin_tow(\"t\", \"w\")",
+		"game_state.tow_controller.cut(\"t\", \"tx\", 3)",
+	]
+	var good := [
+		"if ship.is_towing():",
+		"var p := ship.towed_by",
+		"game_state.dev_commands.cast_off_tow(id)",
+		"game_state.dev_commands.take_in_tow(id)",
+	]
+	var checks: Array = []
+	for f in FORBIDDEN:
+		var re := RegEx.new()
+		re.compile(f[0])
+		checks.append(re)
+	for line in bad:
+		var hit := false
+		for re in checks:
+			if re.search(line) != null:
+				hit = true
+		assert_true(hit, "caught: %s" % line)
+	for line in good:
+		for re in checks:
+			assert_null(re.search(line), "allowed: %s" % line)
 
 func test_dev_commands_refuse_unknown_property() -> void:
 	var dc := DevCommands.new(GameState)

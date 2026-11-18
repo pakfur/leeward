@@ -76,7 +76,7 @@ func speed_change_limits(ship: ShipState) -> Dictionary:
 	var reduction := 0
 	if ship.rigging_sections_lost() >= 2:
 		reduction += 1
-	if ship.towing:
+	if ship.is_towing():
 		reduction += 1
 	var wind_speed: int = game_state.environment.wind_speed if game_state.get("environment") else 2
 	if wind_speed == 1:
@@ -447,8 +447,66 @@ func remove_from_map(ship_id: String) -> bool:
 			set_fouled_with(partner_id, "")
 	for grappled_id in ship.grappled_with.duplicate():
 		remove_grapple(ship_id, grappled_id)
+	if ship.tow_partner() != "":
+		cut_tow(ship_id)
 	ship.removed_from_map = true
 	ship.anchor = {}
+	ship_state_changed.emit(ship_id)
+	return true
+
+## SERVER ONLY: `tower_id` takes `towed_id` in tow (12.A.4); the prepared tow is used up. Refused
+## (push_error, false) for an unknown ship, a ship to herself, or a ship already towing or in tow.
+func begin_tow(tower_id: String, towed_id: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot begin a tow on client")
+		return false
+	if tower_id == towed_id:
+		push_error("[Server] A ship cannot tow herself: %s" % tower_id)
+		return false
+	var tower = _server_ship(tower_id)
+	var towed = _server_ship(towed_id)
+	if not tower or not towed:
+		return false
+	for ship in [tower, towed]:
+		if ship.tow_partner() != "":
+			push_error("[Server] begin_tow: %s is already in a tow with %s" % [ship.ship_id, ship.tow_partner()])
+			return false
+	tower.towing_id = towed_id
+	towed.towed_by = tower_id
+	tower.tow_prepared = false
+	ship_state_changed.emit(tower_id)
+	ship_state_changed.emit(towed_id)
+	return true
+
+## SERVER ONLY: casts off the tow `ship_id` is in, from either end. False (no error) when in no tow.
+func cut_tow(ship_id: String) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot cut a tow on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship or ship.tow_partner() == "":
+		return false
+	var tower_id: String = ship_id if ship.is_towing() else ship.towed_by
+	var towed_id: String = ship.towing_id if ship.is_towing() else ship_id
+	var tower = game_state.get_ship(tower_id)
+	var towed = game_state.get_ship(towed_id)
+	if tower != null and tower.towing_id == towed_id:
+		tower.towing_id = ""
+		ship_state_changed.emit(tower_id)
+	if towed != null and towed.towed_by == tower_id:
+		towed.towed_by = ""
+		ship_state_changed.emit(towed_id)
+	return true
+
+## SERVER ONLY: a tow is made ready (PT done, 12.A.3), or the prepared tow is given up.
+func set_tow_prepared(ship_id: String, on: bool) -> bool:
+	if not is_server:
+		push_error("ShipStateController: Cannot set tow prepared on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.tow_prepared = on
 	ship_state_changed.emit(ship_id)
 	return true
 
@@ -657,8 +715,14 @@ func clear_crew_plot(ship_id: String) -> bool:
 	# The boarding order is a standing order (boarding spec §2.4 #6): "ready" and "board:<id>" stand
 	# until changed (BoardingController turns "board" back to "ready" once the boarders go away);
 	# "stand_down" is carried out this g-t and lapses.
+	# The tow order "take:<id>" stands likewise until the tow is made or changed; "cut" lapses.
 	var boarding := str(ship.plotted_actions.get("crew_orders", {}).get("boarding", ""))
-	ship.plotted_actions["crew_orders"] = {"sail_target": "", "boarding": "" if boarding == "stand_down" else boarding}
+	var tow: String = ship.tow_order()
+	ship.plotted_actions["crew_orders"] = {
+		"sail_target": "",
+		"boarding": "" if boarding == "stand_down" else boarding,
+		"tow": tow if tow.begins_with("take:") else "",
+	}
 	ship.plotted_actions["crew_plotted"] = false
 	ship_state_changed.emit(ship_id)
 	return true
@@ -1184,10 +1248,14 @@ func clear_plotted_actions(ship_id: String) -> bool:
 		return false
 
 	# The boarding order is a standing order (boarding spec §2.4 #6); "stand_down" lapses.
+	# The tow order "take:<id>" stands too; "cut" lapses.
 	var boarding: String = ship.boarding_order()
+	var tow: String = ship.tow_order()
 	ship.plotted_actions = ShipState.empty_plot()
 	if boarding != "" and boarding != "stand_down":
 		ship.plotted_actions["crew_orders"]["boarding"] = boarding
+	if tow.begins_with("take:"):
+		ship.plotted_actions["crew_orders"]["tow"] = tow
 	return true
 
 func clear_turn_flags(ship_id: String) -> bool:

@@ -380,7 +380,7 @@ func test_tacking_drm_with_lost_rigging() -> void:
 
 func test_tacking_drm_with_towing() -> void:
 	var state = _make_ship_state(Vector2i(5, 5), 3, 3)
-	state.towing = true
+	state.towing_id = "tow"
 	assert_eq(resolver._calculate_tacking_drm(state), -3, "-2 SK -2 off the wind +1 towing")
 
 
@@ -500,7 +500,7 @@ func test_tacking_drm_crew_quality() -> void:
 func test_tacking_drm_compound() -> void:
 	var state = _make_ship_state()
 	env.wind_direction = 0
-	state.towing = true
+	state.towing_id = "tow"
 	var compound_rigging: Array[int] = [0, 5, 6, 0]
 	state.rigging_current_hp = compound_rigging
 	assert_eq(resolver._calculate_tacking_drm(state), 3, "SK -2 + towing 1 + 2 rigging lost 4")

@@ -1983,7 +1983,7 @@ func _calculate_tacking_drm(ship_state: ShipState, sections: int = -1, turn_dire
 	if is_reverse_tack(ship_state, _turn_direction_or_plotted(ship_state, turn_direction)):
 		drm += REVERSE_TACK_DRM
 
-	if ship_state.towing:
+	if ship_state.is_towing():
 		drm += 1
 
 	if ship_state.rudder_destroyed:

@@ -72,8 +72,10 @@ var ship_type: String:
 @export var max_ma: int = 0 # current speed + acceleration and ma considerations
 @export var acceleration: int = 0 # current ships acceleration, negative value indicates deceleration
 
-# Towing
-@export var towing: bool = false
+# Towing (12.A; towing spec). The tow is not a link: linked_ids() leaves it out.
+@export var towing_id: String = ""  # the ship this one tows
+@export var towed_by: String = ""  # the ship towing this one
+@export var tow_prepared: bool = false  # a tow made ready (PT done, 12.A.3)
 
 # Sail and rigging state
 @export var sail_state: String = "MS"  # FS, MS, PS, NS
@@ -369,6 +371,27 @@ func linked_ids() -> Array[String]:
 ## Fouled or grappled to another ship.
 func is_linked() -> bool:
 	return fouled_with != "" or is_grappled()
+
+## Towing another ship (12.A).
+func is_towing() -> bool:
+	return towing_id != ""
+
+## In tow of another ship (12.A).
+func is_towed() -> bool:
+	return towed_by != ""
+
+## The other end of this ship's tow: the ship she tows, else the ship towing her, else "".
+func tow_partner() -> String:
+	return towing_id if towing_id != "" else towed_by
+
+## The ships that drift with this one: linked_ids() plus the tow partner, sorted, each once.
+func drift_group_ids() -> Array[String]:
+	var ids: Array[String] = linked_ids()
+	var partner := tow_partner()
+	if partner != "" and not ids.has(partner):
+		ids.append(partner)
+		ids.sort()
+	return ids
 
 func is_dismasted() -> bool:
 	return rigging_level() == 0
@@ -667,7 +690,9 @@ func serialize() -> Dictionary:
 		"movement_allowance": movement_allowance,
 		"min_ma": min_ma,
 		"max_ma": max_ma,
-		"towing": towing,
+		"towing_id": towing_id,
+		"towed_by": towed_by,
+		"tow_prepared": tow_prepared,
 		"acceleration": acceleration,
 		"sail_state": sail_state,
 		"rigging_current_hp": rigging_current_hp,
@@ -752,7 +777,9 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.collision_this_turn = data.get("collision_this_turn", false)
 	state.min_ma = int(data.get("min_ma", 0))
 	state.max_ma = int(data.get("max_ma", 0))
-	state.towing = bool(data.get("towing", false))
+	state.towing_id = str(data.get("towing_id", ""))
+	state.towed_by = str(data.get("towed_by", ""))
+	state.tow_prepared = bool(data.get("tow_prepared", false))
 	state.acceleration = data.get("acceleration", 0)
 	state.sail_state = data.get("sail_state", "MS")
 
@@ -999,3 +1026,8 @@ func _clear_turn_flags() -> void:
 func boarding_order() -> String:
 	var orders = plotted_actions.get("crew_orders", {})
 	return str(orders.get("boarding", "")) if orders is Dictionary else ""
+
+## The tow crew order ("" / "take:<id>" / "cut"; towing spec).
+func tow_order() -> String:
+	var orders = plotted_actions.get("crew_orders", {})
+	return str(orders.get("tow", "")) if orders is Dictionary else ""
