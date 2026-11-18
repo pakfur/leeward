@@ -55,6 +55,25 @@ Also optional: `tournament` (bool, default false): a tournament game (14.C.3) sh
 the full box counts of every ship; otherwise each player sees only the sections lost of ships
 they do not command (limited information, 14.C.1, `PlayerView`).
 
+Also optional: `optional_rules`, the optional rules of section 14 this scenario plays with. Every key is
+off when absent; a bad value reads as off, and `GameState.start_scenario` refuses a bad block:
+
+```json
+"optional_rules": {"voluntary_surrender": true, "fatigue": true, "gunfire_limits": "both"}
+```
+
+- `voluntary_surrender` (bool, default false): 14.B. A ship of CQ F or G, or with five sections lost, may
+  be ordered to surrender in PLANNING (she strikes at the end of the turn) and may try to rally later.
+- `fatigue` (bool, default false): 14.D. The gunfire number takes -1 from a ship's 6th firing turn and
+  -2 from its 16th.
+- `gunfire_limits` (`"none"` default, `"crew"`, `"heel"`, `"both"`): 14.E. `crew`: a CQ E, F or G crew's
+  low shot is fired high on a d6 of 4+; `heel`: so is a low shot fired to windward at WF=C/B; `both` is
+  both (one d6 per ship per turn covers them).
+
+A lobby may override the block: `GameState.start_scenario(scenario, humans, {"fatigue": true})` lays the
+given keys over the scenario's. `test_optional_rules.json` is the example (every rule on, French crews CQ E,
+wind from the north-east so each side has a windward broadside).
+
 Players (optional; spec `docs/superpowers/specs/2026-11-17-players-and-sides-design.md`): without them each
 side is one player whose id is the side number.
 

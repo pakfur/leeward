@@ -52,3 +52,15 @@ func test_destroyed_ship_cannot_plot() -> void:
 	assert_eq(PlanningSailUi.status_badge(state), "DESTROYED")
 	assert_false(PlanningSailUi.can_plot_movement(state))
 	assert_eq(PlanningSailUi.movement_block_reason(state), "Ship has been destroyed.")
+
+
+func test_surrendered_badge() -> void:
+	var s := _ship()
+	s.status = ShipState.Status.STRUCK
+	assert_eq(PlanningSailUi.status_badge(s), "STRUCK")
+	s.surrendered = true
+	assert_eq(PlanningSailUi.status_badge(s), "SURRENDERED")
+	assert_eq(ShipStatusBars.last_line(s, ""), ["Status", "Surrendered"] as Array[String])
+	var o := _ship()
+	o.surrender_ordered = true
+	assert_true(PlanningSailUi.card_badge(o).contains("SURRENDERING"))

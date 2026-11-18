@@ -35,6 +35,8 @@ static func status_badge(ship: ShipState) -> String:
 		return "DESTROYED"
 	if ship.is_escaped():
 		return "ESCAPED"
+	if ship.is_struck() and ship.surrendered:
+		return "SURRENDERED"
 	if ship.is_struck():
 		return "STRUCK"
 	if ship.is_captured():
@@ -69,10 +71,15 @@ static func escape_badge(ship: ShipState) -> String:
 	return "ESCAPING" if ship.escape_declared and not ship.is_out_of_play() else ""
 
 
+## "SURRENDERING" for a ship in play that has ordered a voluntary surrender (14.B), else "".
+static func surrender_badge(ship: ShipState) -> String:
+	return "SURRENDERING" if ship.surrender_ordered and not ship.is_out_of_play() else ""
+
+
 ## The card badge text: the status badge, the fire badge and the escape badge, joined.
 static func card_badge(ship: ShipState) -> String:
 	var parts: PackedStringArray = []
-	for b in [status_badge(ship), fire_badge(ship), escape_badge(ship),
+	for b in [status_badge(ship), fire_badge(ship), escape_badge(ship), surrender_badge(ship),
 			"BOARDERS" if ship.has_boarders() else ""]:
 		if b != "":
 			parts.append(b)
@@ -95,6 +102,7 @@ static func movement_block_reason(ship: ShipState) -> String:
 	match status_badge(ship):
 		"DESTROYED": return "Ship has been destroyed."
 		"ESCAPED": return "Ship has escaped."
+		"SURRENDERED": return "Ship has surrendered (14.B) and cannot move unless she rallies."
 		"STRUCK": return "Ship has struck its colours and cannot move."
 		"PRIZE": return "Prize: cannot sail (10.H.2)."
 		"AGROUND": return "Ship is aground and cannot move (13.G.3)."

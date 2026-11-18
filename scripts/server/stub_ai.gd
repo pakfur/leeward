@@ -71,13 +71,19 @@ const TOW_GIVE_UP_TURNS := 6
 const TOW_SEARCH_RADIUS := 30
 ## The distance of a pose with no way to the tow station.
 const TOW_UNREACHABLE := 100000
+## 14.B rallying: no enemy in play on the map within this many hexes (closest hexes).
+const RALLY_CLEAR_RANGE := 5
+## 14.B surrender: enemies within this range count toward the odds against the ship.
+const SURRENDER_ODDS_RANGE := 3
+## 14.B surrender: the enemy's gun factors within range must reach this multiple of her own.
+const SURRENDER_ODDS := 2
 
 var game_state: Node = null
 var _request_counter: int = 0
 ## When non-empty, forces this strategy for every AI ship (used by tests).
 var strategy_override: String = ""
 ## Submissions refused during the last plot_all_ai_ships, as {ship_id, error} (diagnostics; a refused
-## course is replotted plain).
+## course is replotted plain); a refused 14.B request adds `request` ("rally" or "surrender").
 var refusals: Array = []
 ## The give-up rule's memory (_update_tow_memory): ship id -> {target, best, since}.
 var _tow_progress: Dictionary = {}
@@ -107,13 +113,89 @@ func plot_all_ai_ships() -> void:
 	refusals = []
 	_update_tow_memory()
 
+	var surrender_on: bool = OptionalRules.voluntary_surrender(game_state.active_scenario)
+	if surrender_on:
+		_rally_ai_ships()
+
 	var ai_ships := _get_ai_ships()
 	Trace.trace_log("StubAI", "plot_all_ai_ships: %d AI ships" % ai_ships.size())
 
 	for ship_state in ai_ships:
 		var strategy := _get_strategy(ship_state)
 		_plot_ship(ship_state, controller, strategy)
+	if surrender_on:
+		_surrender_ai_ships()
 	assign_crew()
+
+
+## 14.B.3: each AI ship that has surrendered and has no enemy near tries to rally (before plotting,
+## so a ship that passes plots this turn). Refusals are recorded like plotting refusals.
+func _rally_ai_ships() -> void:
+	for ship_state in _get_ai_ships():
+		if wants_to_rally(ship_state):
+			_record_request_refusal(ship_state, "rally", game_state.phase_controller.player_rally(
+				game_state.commander_of(ship_state.ship_id), ship_state.ship_id))
+
+
+## 14.B.2: each AI ship in play that wants to surrender orders it (the AI never withdraws an order).
+func _surrender_ai_ships() -> void:
+	for ship_state in _get_ai_ships():
+		if wants_to_surrender(ship_state):
+			_record_request_refusal(ship_state, "surrender", game_state.phase_controller.player_surrender(
+				game_state.commander_of(ship_state.ship_id), ship_state.ship_id, true))
+
+
+func _record_request_refusal(ship_state: ShipState, request: String, reply: String) -> void:
+	if reply != "":
+		refusals.append({"ship_id": ship_state.ship_id, "request": request, "error": reply})
+
+
+## The ship's gun factors for one broadside: the larger side's lg + mg + cr less its dismounted guns,
+## at least 0; 0 once out of play. Chasers are not counted (spec §5).
+static func gun_strength(ship_state: ShipState) -> int:
+	if ship_state.is_out_of_play():
+		return 0
+	var gf: Dictionary = ship_state.ship.gun_factors
+	var total: int = int(gf.get("lg", 0)) + int(gf.get("mg", 0)) + int(gf.get("cr", 0))
+	var best := 0
+	for side in range(2):
+		best = maxi(best, total - ship_state.guns_dismounted[side])
+	return best
+
+
+## The summed gun_strength of the enemies in play on the map within `max_range` (footprint to footprint).
+func enemy_guns_within(ship_state: ShipState, max_range: int) -> int:
+	var sum := 0
+	for other: ShipState in game_state.get_all_ships():
+		if other.side == ship_state.side or other.is_out_of_play() or not other.is_on_map():
+			continue
+		var r: int = game_state.fire_geometry.range_between(ship_state.occupied_hexes(), other.occupied_hexes())
+		if r >= 0 and r <= max_range:
+			sum += gun_strength(other)
+	return sum
+
+
+## 14.B.2: the ship is eligible, has not ordered it, did not just rally, and is either linked to an
+## enemy in play with boarders or outgunned SURRENDER_ODDS : 1 within SURRENDER_ODDS_RANGE.
+func wants_to_surrender(ship_state: ShipState) -> bool:
+	if SurrenderRules.surrender_error(ship_state, game_state.phase_controller.current_turn) != "" \
+			or ship_state.surrender_ordered:
+		return false
+	if not SurrenderRules.eligible(ship_state):
+		return false
+	for id in ship_state.linked_ids():
+		var other: ShipState = game_state.get_ship(id)
+		if other != null and other.side != ship_state.side and not other.is_out_of_play() \
+				and other.has_boarders():
+			return true
+	var enemy := enemy_guns_within(ship_state, SURRENDER_ODDS_RANGE)
+	return enemy > 0 and enemy >= SURRENDER_ODDS * gun_strength(ship_state)
+
+
+## 14.B.3: a surrendered ship (one surrender so far) with no enemy within RALLY_CLEAR_RANGE rallies.
+func wants_to_rally(ship_state: ShipState) -> bool:
+	return ship_state.can_rally() and ship_state.surrenders < SurrenderRules.MAX_SURRENDERS \
+			and not _enemy_within(ship_state, RALLY_CLEAR_RANGE)
 
 
 ## The AI's crew orders (crew-tasks spec §3.3). It gives the orders only (no sail changes today)

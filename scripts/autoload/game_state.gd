@@ -194,10 +194,24 @@ func _initialize_server_controllers() -> void:
 ## type from ships.json, its navy per ship or per side, 1.G.8), sets which players are human
 ## by player id (they are asked about bearing off and the maintenance orders; every other player is
 ## the AI, whose plan is in as soon as PLANNING begins), then start_new_game. The view creates its ship
-## views on game_started. Returns false when refused.
-func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int]) -> bool:
+## views on game_started. `optional_rules` (a lobby's choice, 14.B/14.D/14.E) is laid over the
+## scenario's own `optional_rules` block on a copy; a bad block or override refuses the start.
+## Returns false when refused.
+func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int],
+		optional_rules: Dictionary = {}) -> bool:
 	if not is_server:
 		push_error("GameState: Cannot start a scenario on client")
+		return false
+	var rule_errors := OptionalRules.errors(scenario_data)
+	rule_errors.append_array(OptionalRules.errors({OptionalRules.KEY: optional_rules}))
+	if rule_errors.is_empty() and not optional_rules.is_empty():
+		scenario_data = scenario_data.duplicate(true)
+		scenario_data[OptionalRules.KEY] = OptionalRules.merged(
+			scenario_data.get(OptionalRules.KEY, {}), optional_rules)
+	if not rule_errors.is_empty():
+		for message in rule_errors:
+			push_error(message)
+		push_error("GameState: scenario not started: bad optional_rules")
 		return false
 	var terrain_errors := TerrainMap.of(scenario_data).errors
 	if not terrain_errors.is_empty():

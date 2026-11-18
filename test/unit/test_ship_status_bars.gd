@@ -283,3 +283,10 @@ func test_status_plate_only_for_enemy_ships() -> void:
 	assert_false(GC.shows_status_plate(own), "the planning panel covers our own ships")
 	assert_true(GC.shows_status_plate(enemy))
 	assert_false(GC.shows_status_plate(null))
+
+
+func test_last_line_says_surrendered_for_a_voluntary_surrender() -> void:
+	var s := ShipState.new()
+	s.status = ShipState.Status.STRUCK
+	s.surrendered = true
+	assert_eq(ShipStatusBars.last_line(s, "Reach"), ["Status", "Surrendered"] as Array[String])

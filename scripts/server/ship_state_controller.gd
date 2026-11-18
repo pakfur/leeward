@@ -437,6 +437,8 @@ func set_status(ship_id: String, status: ShipState.Status) -> bool:
 	if not ship:
 		return false
 	ship.status = status
+	if status != ShipState.Status.STRUCK:
+		ship.surrendered = false  # 14.B.2: captured, destroyed, rallied or retaken: no rally left
 	ship_state_changed.emit(ship_id)
 	return true
 
@@ -617,6 +619,73 @@ func set_escape_declared(ship_id: String, on: bool) -> bool:
 	if not ship:
 		return false
 	ship.escape_declared = on
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_surrender_ordered(ship_id: String, on: bool) -> bool:
+	"""SERVER ONLY: Order (or withdraw) the ship's voluntary surrender this g-t (14.B.2)."""
+	if not is_server:
+		push_error("ShipStateController: Cannot order a surrender on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.surrender_ordered = on
+	ship_state_changed.emit(ship_id)
+	return true
+
+func record_surrender(ship_id: String) -> int:
+	"""SERVER ONLY: One more voluntary surrender (14.B.2); only the first leaves a rally open
+	(14.B.4). Returns the new count, -1 for an unknown ship or on a client."""
+	if not is_server:
+		push_error("ShipStateController: Cannot record a surrender on client")
+		return -1
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return -1
+	ship.surrenders += 1
+	ship.surrendered = ship.surrenders == 1
+	ship_state_changed.emit(ship_id)
+	return ship.surrenders
+
+func end_surrender(ship_id: String) -> bool:
+	"""SERVER ONLY: The surrendered ship has struck for good: she can no longer rally (14.B.3-4)."""
+	if not is_server:
+		push_error("ShipStateController: Cannot end a surrender on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.surrendered = false
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_rally_turn(ship_id: String, turn: int) -> bool:
+	"""SERVER ONLY: The g-t of the ship's last rally attempt (one a g-t)."""
+	if not is_server:
+		push_error("ShipStateController: Cannot set the rally turn on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.rally_turn = turn
+	ship_state_changed.emit(ship_id)
+	return true
+
+func restore_from_surrender(ship_id: String) -> bool:
+	"""SERVER ONLY: The surrendered ship rallies (14.B.3): ACTIVE again (set_status clears
+	`surrendered`)."""
+	return set_status(ship_id, ShipState.Status.ACTIVE)
+
+func note_gunfire_turn(ship_id: String) -> bool:
+	"""SERVER ONLY: The ship fired this g-t: one more firing turn (14.D.2)."""
+	if not is_server:
+		push_error("ShipStateController: Cannot note a gunfire turn on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.gunfire_turns += 1
 	ship_state_changed.emit(ship_id)
 	return true
 

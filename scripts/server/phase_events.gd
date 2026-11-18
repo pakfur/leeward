@@ -57,6 +57,9 @@ enum Type {
 	VEER_IN,  # 13.E.2 a ship veers in one hex: {cable, refused}; target_id: the ship in the way. cable is the cable after veering in; refused (refused != "") she keeps her cable
 	TOW_BEGUN,  # 12.A.4 ship_id (the tower) rolls to take target_id in tow: {roll, modifier, modifiers, total, needed, success}; or her order lapses with no roll: {success: false, lapsed: reason}
 	TOW_CUT,  # 12.A.6, 12.A.9 the tow between ship_id (tower) and target_id (towed) is cut: {cause: tx/struck/destroyed/taken/aground/structural/dismasted, by}
+	SURRENDER,  # 14.B a ship hauls down her colours: {surrenders, permanent}
+	RALLY,  # 14.B.3 a surrendered ship tries to rally: {roll, rating, passed, quality | breaks}
+	AIM_FORCED,  # 14.E a low aim forced high: {roll, rules: ["crew"|"heel"], sides, quality}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -99,6 +102,7 @@ const MODIFIER_LABELS := {
 	"crew_quality": "crew",
 	"sections_firing": "sections firing",
 	"guns_dismounted": "guns dismounted",
+	"fatigue": "fatigue",
 	"rake": "rake",
 	"initial_broadside": "initial broadside",
 	"two_targets": "two targets",
@@ -160,6 +164,7 @@ const STRIKE_REASONS := {
 	"hull destroyed": "hull destroyed",
 	"no crew": "no crew left",
 	"morale": "the crew's morale broke",
+	"surrender": "she surrendered (14.B)",
 	"waterline": "not enough crew to man the pumps",
 }
 
@@ -554,6 +559,19 @@ class PhaseEvent extends RefCounted:
 				if target_id != "":
 					text += "; %s is no longer fouled with her" % other
 				return text
+			Type.SURRENDER:
+				var text := "%s hauls down her colours (voluntary surrender, 14.B)" % who
+				if data.get("permanent", false):
+					text += "; her second surrender: she cannot rally again"
+				return text
+			Type.RALLY:
+				var text := "%s tries to rally: rolled %d, needed %d" % [who, int(data.get("roll", 0)),
+					int(data.get("rating", 0))]
+				if data.get("passed", false):
+					return text + " — she rallies and fights on"
+				if data.get("breaks", false):
+					return text + " — fails; she has struck for good"
+				return text + " — fails; crew quality drops to %s" % str(data.get("quality", "?"))
 			Type.STRIKE:
 				return "%s strikes her colours (%s)" % [who,
 					PhaseEvents.STRIKE_REASONS.get(str(data.get("reason", "")), str(data.get("reason", "cause unknown")))]
@@ -600,6 +618,13 @@ class PhaseEvent extends RefCounted:
 			Type.END_OFFER:
 				var side_name := "Side %d" % (int(data.get("side", 0)) + 1)
 				return "%s offers to end the game" % side_name if data.get("offer", false) else "%s withdraws its offer to end the game" % side_name
+			Type.AIM_FORCED:
+				var parts := PackedStringArray()
+				for rule in data.get("rules", []):
+					parts.append("crew CQ %s" % str(data.get("quality", "")) if str(rule) == "crew"
+						else "firing to windward")
+				return "%s's gun crews cannot hold their aim low: rolled %d (4+ fires high; 14.E: %s)" % [
+					who, int(data.get("roll", 0)), ", ".join(parts)]
 		return "%s: event %d" % [who, type]
 
 	## "X's damaged steering fails the turn (7 > 5) — one hex ahead" (6.F.3), or "answers the helm".

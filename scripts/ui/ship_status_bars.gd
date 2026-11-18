@@ -107,6 +107,8 @@ static func motion_text(speed: int, p_point_of_sail: String) -> String:
 static func last_line(state: ShipState, p_point_of_sail: String) -> Array[String]:
 	if state.is_destroyed():
 		return ["Status", "Destroyed"]
+	if state.is_struck() and state.surrendered:
+		return ["Status", "Surrendered"]
 	if state.is_struck():
 		return ["Status", "Struck"]
 	return ["Speed", motion_text(state.speed, p_point_of_sail)]

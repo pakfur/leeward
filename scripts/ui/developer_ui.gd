@@ -281,6 +281,20 @@ func _on_ship_selected(index: int) -> void:
 	fire_btn.pressed.connect(func(): _on_start_fire_pressed(sid))
 	ship_fields_container.add_child(fire_btn)
 
+	var surrender_btn := Button.new()
+	surrender_btn.name = "SurrenderShipButton"
+	surrender_btn.text = "Surrender"
+	surrender_btn.tooltip_text = "Server request: the ship orders a voluntary surrender; she strikes at the morale check (14.B)"
+	surrender_btn.pressed.connect(func(): _on_surrender_pressed(sid))
+	ship_fields_container.add_child(surrender_btn)
+
+	var rally_btn := Button.new()
+	rally_btn.name = "RallyShipButton"
+	rally_btn.text = "Rally"
+	rally_btn.tooltip_text = "Server request: a surrendered ship tries to rally, one morale check (14.B)"
+	rally_btn.pressed.connect(func(): _on_rally_pressed(sid))
+	ship_fields_container.add_child(rally_btn)
+
 	var anchor_btn := Button.new()
 	anchor_btn.name = "AnchorShipButton"
 	anchor_btn.text = "Anchor"
@@ -593,6 +607,24 @@ func _on_damage_pressed(ship_id: String) -> void:
 		return
 	var reason: String = game_state.dev_commands.damage_ship(ship_id, 2, 2)
 	_log("Damage %s: %s" % [ship_id, "ok" if reason == "" else reason])
+	if reason == "":
+		ship_changed.emit(ship_id)
+
+
+func _on_surrender_pressed(ship_id: String) -> void:
+	if not game_state or not game_state.dev_commands:
+		return
+	var reason: String = game_state.dev_commands.surrender_ship(ship_id)
+	_log("Surrender %s: %s" % [ship_id, "ok" if reason == "" else reason])
+	if reason == "":
+		ship_changed.emit(ship_id)
+
+
+func _on_rally_pressed(ship_id: String) -> void:
+	if not game_state or not game_state.dev_commands:
+		return
+	var reason: String = game_state.dev_commands.rally_ship(ship_id)
+	_log("Rally %s: %s" % [ship_id, "ok" if reason == "" else reason])
 	if reason == "":
 		ship_changed.emit(ship_id)
 

@@ -206,18 +206,23 @@ func _store_default_courses() -> void:
 	planning_snapshot = {}
 	for ship in game_state.ships.values():
 		var s: ShipState = ship
-		if not human_player_ids.has(game_state.commander_of(s.ship_id)):
-			continue
-		var course: Array = []
-		if DefaultCourse.can_move(game_state, s):
-			course = DefaultCourse.as_dicts(DefaultCourse.for_ship(game_state, s))
-			game_state.ship_controller.set_plotted_movement(s.ship_id, course)
-		var orders = s.plotted_actions.get("crew_orders", {})
-		planning_snapshot[s.ship_id] = {
-			"course": course.duplicate(true),
-			"crew_auto": s.crew_auto,
-			"boarding": str(orders.get("boarding", "")) if orders is Dictionary else "",
-		}
+		if human_player_ids.has(game_state.commander_of(s.ship_id)):
+			_store_default_course(s)
+
+
+## One human ship's default course (when she can move) and planning_snapshot entry; also used for a
+## ship that rallies during PLANNING (14.B.3, `_after_rally`).
+func _store_default_course(ship: ShipState) -> void:
+	var course: Array = []
+	if DefaultCourse.can_move(game_state, ship):
+		course = DefaultCourse.as_dicts(DefaultCourse.for_ship(game_state, ship))
+		game_state.ship_controller.set_plotted_movement(ship.ship_id, course)
+	var orders = ship.plotted_actions.get("crew_orders", {})
+	planning_snapshot[ship.ship_id] = {
+		"course": course.duplicate(true),
+		"crew_auto": ship.crew_auto,
+		"boarding": str(orders.get("boarding", "")) if orders is Dictionary else "",
+	}
 
 
 ## Player id -> false for every player (GameState.player_ids).
@@ -230,12 +235,28 @@ func _fresh_readiness() -> Dictionary:
 
 ## Every AI player, and every player commanding no ship in play (spec 2: struck, destroyed or
 ## captured, or none left; a dismasted ship still counts), is set ready: players_ready in
-## PLANNING, ended_turn in POST_COMBAT. The turn loop never waits on them.
+## PLANNING, ended_turn in POST_COMBAT. The turn loop never waits on them. Exception, PLANNING
+## only: a human whose surrendered ship may still rally (`_has_rallyable_ship`, 14.B.3) is waited
+## on, since rallying is a planning request; End Turn never waits on that.
 func _auto_ready_players() -> void:
-	var target: Dictionary = ended_turn if current_phase == GamePhase.POST_COMBAT else players_ready
+	var post_combat := current_phase == GamePhase.POST_COMBAT
+	var target: Dictionary = ended_turn if post_combat else players_ready
 	for id in target:
-		if ai_player_ids.has(id) or game_state.in_play_ships_of_player(id).is_empty():
+		if ai_player_ids.has(id):
 			target[id] = true
+		elif game_state.in_play_ships_of_player(id).is_empty() and (post_combat or not _has_rallyable_ship(id)):
+			target[id] = true
+
+
+## Read-only: 14.B is in use and the player commands a surrendered ship that may still try to
+## rally (struck but not for good, fewer than two surrenders).
+func _has_rallyable_ship(player_id: int) -> bool:
+	if not OptionalRules.voluntary_surrender(game_state.active_scenario):
+		return false
+	for ship in game_state.ships_of_player(player_id):
+		if ship.can_rally() and ship.surrenders < SurrenderRules.MAX_SURRENDERS:
+			return true
+	return false
 
 
 ## Read-only: the player's plan is in (or counts as in). False for an unknown player.
@@ -275,6 +296,10 @@ func player_reset_planning(player_id: int) -> String:
 			continue
 		_restore_snapshot(ship_id, true)
 		game_state.ship_controller.set_cast_lead(ship_id, false)
+	# 14.B.2: a surrender ordered this planning is withdrawn too (a ship with no snapshot entry included).
+	for ship in game_state.ships_of_player(player_id):
+		if ship.surrender_ordered:
+			game_state.ship_controller.set_surrender_ordered(ship.ship_id, false)
 	Trace.trace_log("TurnPhase", "Player %d reset the planning" % player_id)
 	return ""
 
@@ -449,6 +474,70 @@ func player_declare_escape(player_id: int, ship_id: String, on: bool) -> String:
 		if why != "":
 			return why
 	game_state.ship_controller.set_escape_declared(ship_id, on)
+	return ""
+
+
+## SERVER ONLY: the player orders (or, with `on` false, withdraws) a ship's voluntary surrender
+## (14.B.2): she sails her plot, does not fire or send new boarders, and strikes at MORALE_CHECK
+## (MoraleController.resolve_surrenders). Returns "" or the reason it is refused.
+func player_surrender(player_id: int, ship_id: String, on: bool = true) -> String:
+	var why := _surrender_request_error(player_id, ship_id, "surrenders")
+	if why != "":
+		return why
+	if on:
+		why = SurrenderRules.surrender_error(game_state.get_ship(ship_id), current_turn)
+		if why != "":
+			return why
+	game_state.ship_controller.set_surrender_ordered(ship_id, on)
+	return ""
+
+
+## SERVER ONLY: the player's surrendered ship tries to rally (14.B.3): one morale check rolled at
+## once (MoraleController.rally: one d10, the only die), one attempt a g-t. On a pass she is back in
+## play with her links as they stand and plots this turn (`_after_rally`). Returns "" when the roll
+## was made, pass or fail, else the reason it is refused.
+func player_rally(player_id: int, ship_id: String) -> String:
+	var why := _surrender_request_error(player_id, ship_id, "rallies")
+	if why != "":
+		return why
+	var ship: ShipState = game_state.get_ship(ship_id)
+	why = SurrenderRules.rally_error(ship, current_turn)
+	if why != "":
+		return why
+	var result: Dictionary = game_state.morale_controller.rally(ship_id, current_phase)
+	if result.get("passed", false):
+		_after_rally(ship)
+	return ""
+
+
+## A rallied ship joins this turn's planning: a human-commanded one gets her default course and her
+## planning_snapshot entry, as at PLANNING start; she keeps her crew_auto setting. Nothing is stored
+## for an AI-commanded ship.
+func _after_rally(ship: ShipState) -> void:
+	if human_player_ids.has(game_state.commander_of(ship.ship_id)):
+		_store_default_course(ship)
+
+
+## The checks a 14.B request shares (`verb` "surrenders" or "rallies"): server, game not over, the
+## option on, PLANNING, a known player whose plan is not in, a known ship the player commands.
+func _surrender_request_error(player_id: int, ship_id: String, verb: String) -> String:
+	if not is_server:
+		push_error("TurnPhaseController: Cannot handle a surrender request on client")
+		return "a surrender is handled on the server only"
+	if not game_result.is_empty():
+		return "the game is over"
+	if not OptionalRules.voluntary_surrender(game_state.active_scenario):
+		return "voluntary surrender is not used in this scenario (14.B)"
+	if current_phase != GamePhase.PLANNING:
+		return "a ship %s in the planning phase (14.B)" % verb
+	if not players_ready.has(player_id):
+		return "invalid player %d" % player_id
+	if players_ready[player_id]:
+		return "this player's plan is already submitted"
+	if game_state.get_ship(ship_id) == null:
+		return "no ship %s" % ship_id
+	if not game_state.commands(player_id, ship_id):
+		return "%s is not this player's ship" % ship_id
 	return ""
 
 
@@ -1148,7 +1237,7 @@ func _enter_morale_check_phase() -> void:
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: MORALE_CHECK")
 	if game_state.morale_controller:
-		game_state.morale_controller.resolve_checks(current_phase)
+		game_state.morale_controller.resolve_phase(current_phase)  # 14.B surrenders, then the noted checks
 	advance_phase()
 
 ## Signals (11.A, 4.A.4). Sent in PLANNING, one per player per g-t (a new one replaces it),
@@ -1261,10 +1350,10 @@ func _is_ai_player(id: int) -> bool:
 	return ai_player_ids.has(id) or (p != null and p.is_ai)
 
 
-@warning_ignore("integer_division")
 static func _hex_dist(a: Vector2i, b: Vector2i) -> int:
 	var dq: int = a.x - b.x
 	var dr: int = a.y - b.y
+	@warning_ignore("integer_division")
 	return (absi(dq) + absi(dr) + absi(dq + dr)) / 2
 
 
