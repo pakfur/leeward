@@ -187,7 +187,8 @@ func _posed_events(impulse_events: Array) -> Array:
 	return _posed_in(impulse_events, _log, _swung_out)
 
 
-## The events of one impulse that move a ship view: every MOVE, and a rolled-back turn (6.B.4) shown
+## The events of one impulse that move a ship view: every MOVE and TOW_FOLLOW (the towed ship following
+## her tower's step, 12.A.5), and a rolled-back turn (6.B.4) shown
 ## as the stern swinging out (OVERLAP) and, on the next impulse, back (OVERLAP_ROLLBACK). The swing is
 ## shown only when the ship makes no step on the overlap impulse; a ship that moves ahead instead (to
 ## meet its deceleration) just plays its moves, which start from the pose before the turn.
@@ -196,12 +197,12 @@ func _posed_events(impulse_events: Array) -> Array:
 static func _posed_in(impulse_events: Array, log: MovementTypes.ResolutionLog, swung_out: Dictionary) -> Array:
 	var moving: Dictionary = {}
 	for ev in impulse_events:
-		if ev.event_type == MovementTypes.ResolutionEventType.MOVE:
+		if ev.event_type in [MovementTypes.ResolutionEventType.MOVE, MovementTypes.ResolutionEventType.TOW_FOLLOW]:
 			moving[ev.ship_id] = true
 	var posed: Array = []
 	for ev in impulse_events:
 		match ev.event_type:
-			MovementTypes.ResolutionEventType.MOVE:
+			MovementTypes.ResolutionEventType.MOVE, MovementTypes.ResolutionEventType.TOW_FOLLOW:
 				posed.append(ev)
 			MovementTypes.ResolutionEventType.OVERLAP:
 				if not moving.has(ev.ship_id) and _was_rolled_back(log, ev.ship_id):
@@ -215,14 +216,15 @@ static func _posed_in(impulse_events: Array, log: MovementTypes.ResolutionLog, s
 
 
 ## The events of one impulse played as special events (contests, collisions, ...): everything but
-## the MOVEs and OVERLAPs, less those already played before the first impulse (`pre_events`), so a
+## the MOVEs, TOW_FOLLOWs and OVERLAPs, less those already played before the first impulse (`pre_events`), so a
 ## tacking roll or a ship with no plot is not told (and paused for) twice. An OVERLAP is shown by the
 ## swing animation when it is posed (see _posed_events) and needs no pause otherwise; the rollback that
 ## may follow it is the special event.
 static func _special_events(impulse_events: Array, pre_events: Array) -> Array:
 	var special: Array = []
 	for ev in impulse_events:
-		if ev.event_type in [MovementTypes.ResolutionEventType.MOVE, MovementTypes.ResolutionEventType.OVERLAP]:
+		if ev.event_type in [MovementTypes.ResolutionEventType.MOVE, MovementTypes.ResolutionEventType.TOW_FOLLOW,
+				MovementTypes.ResolutionEventType.OVERLAP]:
 			continue
 		if not pre_events.has(ev):
 			special.append(ev)
@@ -293,10 +295,17 @@ func _tracks(clocks: Array, start_clock: float) -> Array:
 		var start_angle: float = view.model_node.rotation_degrees.y if view.model_node \
 			else _model_angle(steps[0].from_facing)
 		var track := track_for(steps, _hex_grid, start_angle, clocks, _log.longest_plot,
-			int(_log.plot_steps.get(ship_id, 0)), start_clock)
+			plot_steps_for(_log, ship_id), start_clock)
 		track.view = view
 		tracks.append(track)
 	return tracks
+
+
+## The steps `ship_id` plotted in `log`, which set her glide pace: a towed ship has no plot of her own
+## and follows on her tower's segments (12.A.5), so she takes her tower's count (`log.towed_by`).
+@warning_ignore("shadowed_global_identifier")
+static func plot_steps_for(log: MovementTypes.ResolutionLog, ship_id: String) -> int:
+	return int(log.plot_steps.get(log.towed_by.get(ship_id, ship_id), 0))
 
 
 ## Run the clock from `from_clock` to `to_clock`, `glide_seconds` a unit, posing every track; every
@@ -427,7 +436,7 @@ func _play_event_batch(events: Array) -> void:
 			MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL:
 				has_contest = true
 			MovementTypes.ResolutionEventType.BEARING_OFF_ROLL, MovementTypes.ResolutionEventType.STERN_BLOCKED, \
-					MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK:
+					MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK, MovementTypes.ResolutionEventType.TOW_HELD:
 				has_bearing_off = true
 			MovementTypes.ResolutionEventType.COLLISION:
 				has_collision = true

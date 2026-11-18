@@ -49,6 +49,7 @@ var indicator_overlay: Control = null  # IndicatorOverlay
 var status_overlay: ShipStatusOverlay = null  # graphic status by a clicked or hovered enemy ship
 var anchor_markers: AnchorMarkers = null  # anchors and cables of anchored ships (13), redrawn with the ships
 var grapple_lines: GrappleLines = null  # the grapples between ships (8.C), redrawn with the ships
+var tow_lines: TowLines = null  # the hawsers of the tows (12.A), redrawn with the ships
 var _mouse_pos: Vector2 = Vector2(-1, -1)  # last mouse position seen (viewport coordinates)
 const HUMAN_PLAYER_ID := 0
 
@@ -1706,6 +1707,10 @@ func _sync_all_views() -> void:
 			grapple_lines = GrappleLines.new()
 			add_child(grapple_lines)
 		grapple_lines.refresh(GameState.get_all_ships(), hex_map.get_hex_grid())
+		if tow_lines == null:
+			tow_lines = TowLines.new()
+			add_child(tow_lines)
+		tow_lines.refresh(GameState.get_all_ships(), hex_map.get_hex_grid())
 
 func _toggle_developer_ui() -> void:
 	if developer_ui:
