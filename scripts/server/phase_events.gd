@@ -711,7 +711,6 @@ class PhaseEvent extends RefCounted:
 			text += ", then %s" % parts[i]
 		return text
 
-	## "… stops short of its plotted course", with the cause the resolution recorded, if any.
 	func _aground_text(who: String) -> String:
 		var how := "drifts" if str(data.get("cause", "")) == "drift" else "runs"
 		var on := "land" if str(data.get("terrain", "")) == "land" else "the shoal"
@@ -724,21 +723,34 @@ class PhaseEvent extends RefCounted:
 		var text := "%s casts the lead: %s ft at %s, draws %s ft" % [who, _val("depth"), _hex_text("hex"), _val("draft")]
 		var outcome := str(data.get("outcome", ""))
 		var side := int(data.get("side", -1))
-		if outcome == "bears_off" and side >= 0 and side < PhaseEvents.SIDE_NAMES.size():
-			text += ", bears off to %s" % PhaseEvents.SIDE_NAMES[side]
-		elif outcome != "":
-			text += ", %s" % outcome.replace("_", " ")
+		match outcome:
+			"bore_off":
+				if side >= 0 and side < PhaseEvents.SIDE_NAMES.size():
+					text += ", bears off to %s" % PhaseEvents.SIDE_NAMES[side]
+				else:
+					text += ", bears off"
+			"entered":
+				text += ", and holds her course"
+			"held":
+				text += ", and holds back"
+			"pm_failed":
+				text += ", but cannot make the turn (poor maneuvering)"
+			"":
+				pass
+			_:
+				text += ", %s" % outcome.replace("_", " ")
 		return text
 
 	func _escaped_text(who: String) -> String:
 		var hexes := PhaseEvents.plural(int(data.get("range", 0)), "hex", "hexes")
 		match str(data.get("how", "")):
-			"range":
+			"distance":
 				return "%s escapes %s from the nearest enemy" % [who, hexes]
-			"pursuit":
+			"speed":
 				return "%s escapes %s off, and no enemy can catch her" % [who, hexes]
 		return "%s escapes off the %s edge" % [who, PhaseEvents.edge_label(str(data.get("edge", "")))]
 
+	## "… stops short of its plotted course", with the cause the resolution recorded, if any.
 	func _stopped_short_text(who: String, other: String) -> String:
 		var text := "%s stops short of its plotted course" % who
 		match str(data.get("cause", "")):

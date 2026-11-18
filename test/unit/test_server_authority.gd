@@ -38,11 +38,11 @@ const FORBIDDEN := [
 	# dev_commands.start_fire (Developer UI)
 	["\\bfire_controller\\.(?!skill\\()", "a FireController mutator called from view code (use dev_commands.start_fire)"],
 	["\\bFireController\\.new\\b", "a FireController made in view code"],
-	# leaving the map (8.G.1f): the view reads is_on_map() / GameState.ships_on_map(); only the
-	# server's END_TURN step removes a ship
 	# map events (map and scenario spec): the view may only ask the controller for arrival_speed / pursuers
 	["\\bmap_controller\\.(?!arrival_speed\\(|pursuers\\()", "a MapController call from view code"],
 	["\\bMapController\\.new\\b", "a MapController made in view code"],
+	# leaving the map (8.G.1f): the view reads is_on_map() / GameState.ships_on_map(); only the
+	# server's END_TURN step removes a ship
 	["\\bremove_from_map\\(", "a ship removed from the map by view code"],
 	["\\.removed_from_map\\s*(=|\\+=|-=)[^=]", "removed_from_map written from view code"],
 	# terrain, escape and arrival (map and scenario spec): the view reads is_aground() /

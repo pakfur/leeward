@@ -151,9 +151,9 @@ func test_new_event_texts() -> void:
 	_make_ship("b", 0)
 	var log := GameState.turn_log
 	log.add(PhaseEvents.Type.LEAD_CAST, PHASE, "a", {"hex": {"q": 3, "r": 10}, "depth": 16,
-		"draft": 18, "outcome": "bears_off", "side": 1})
+		"draft": 18, "outcome": "bore_off", "side": 1})
 	log.add(PhaseEvents.Type.ESCAPE_DECLARED, PHASE, "a")
-	log.add(PhaseEvents.Type.ESCAPED, PHASE, "a", {"how": "range", "range": 31})
+	log.add(PhaseEvents.Type.ESCAPED, PHASE, "a", {"how": "distance", "range": 31})
 	log.add(PhaseEvents.Type.ARRIVED, PHASE, "a", {"hex": {"q": -18, "r": 0}, "facing": 0,
 		"sail_state": "PS", "speed": 2})
 	log.add(PhaseEvents.Type.ARRIVAL_DELAYED, PHASE, "a", {}, "b")
@@ -166,6 +166,30 @@ func test_new_event_texts() -> void:
 	assert_string_contains(_text(4), "will try next turn")
 	assert_eq(PhaseEvents.edge_label("N"), "north")
 	assert_eq(PhaseEvents.edge_label("Reef"), "Reef")
+
+
+func test_escaped_by_speed_and_lead_outcomes() -> void:
+	_make_ship("a", 0)
+	var log := GameState.turn_log
+	log.add(PhaseEvents.Type.ESCAPED, PHASE, "a", {"how": "speed", "range": 24})
+	assert_string_contains(_text(0), "24 hexes off, and no enemy can catch her")
+	var i := 1
+	for outcome in ["entered", "held", "pm_failed"]:
+		log.add(PhaseEvents.Type.LEAD_CAST, PHASE, "a", {"hex": {"q": 3, "r": 10}, "depth": 30,
+			"draft": 18, "outcome": outcome, "side": -1})
+		var t := _text(i)
+		assert_string_contains(t, "casts the lead: 30 ft")
+		assert_false(t.ends_with("draws 18 ft"), "outcome %s has a reading" % outcome)
+		assert_false(t.contains("_"), "no raw id in: " + t)
+		i += 1
+
+
+func test_aground_land_text_has_no_depth_tail() -> void:
+	_make_ship("a", 0)
+	GameState.turn_log.add(PhaseEvents.Type.AGROUND, PHASE, "a", {"cause": "drift", "terrain": "land",
+		"hex": {"q": 2, "r": 0}, "depth": 0, "draft": 16})
+	assert_string_contains(_text(0), "drifts aground on land at (2, 0)")
+	assert_false(_text(0).contains(" ft"))
 
 
 func test_map_edge_stop_drift_aground_texts() -> void:
