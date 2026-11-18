@@ -64,20 +64,41 @@ func grapple_error(ship_id: String, target_id: String) -> String:
 		if ship.is_captured():
 			return "%s has no crew able to handle lines (10.H.2)" % ship.ship_name
 		return "%s has struck and cannot grapple (8.C.3)" % ship.ship_name
-	if ship.is_burning():
-		return "%s is on fire and cannot grapple (8.C.3)" % ship.ship_name
-	if NO_GRAPPLE_QUALITIES.has(ship.crew_quality):
-		return "a crew at CQ %s cannot grapple (8.C.3)" % ship.crew_quality
-	if target.is_destroyed():
-		return "%s has blown up" % target.ship_name
+	var crew_error := roller_error(ship)
+	if crew_error != "":
+		return crew_error
+	var target_error := destroyed_target_error(target)
+	if target_error != "":
+		return target_error
 	if ship.is_grappled_to(target_id):
 		return "already grappled to %s" % target.ship_name
 	if not adjacent(ship, target):
 		return "%s is not alongside" % target.ship_name
-	if ship.mp_used_this_turn > MAX_MPS:
-		return "%s used %d MPs this turn (at most %d, 8.C.1)" % [ship.ship_name, ship.mp_used_this_turn, MAX_MPS]
-	if target.mp_used_this_turn > MAX_MPS:
-		return "%s used %d MPs this turn (at most %d, 8.C.1)" % [target.ship_name, target.mp_used_this_turn, MAX_MPS]
+	return mps_error(ship, target)
+
+
+## Why `ship` may not throw a grapple at all (8.C.3: burning, or a crew at CQ F or G), or "".
+## Shared with TowRules.pair_error (12.A.4b: the tow grapple obeys every 8.C limit).
+static func roller_error(ship: ShipState) -> String:
+	if ship.is_burning():
+		return "%s is on fire and cannot grapple (8.C.3)" % ship.ship_name
+	if NO_GRAPPLE_QUALITIES.has(ship.crew_quality):
+		return "a crew at CQ %s cannot grapple (8.C.3)" % ship.crew_quality
+	return ""
+
+
+## "%s has blown up" when `target` is destroyed, else "". Shared with TowRules.take_target_error.
+static func destroyed_target_error(target: ShipState) -> String:
+	if target.is_destroyed():
+		return "%s has blown up" % target.ship_name
+	return ""
+
+
+## Why the pair may not grapple for the MPs used this g-t (8.C.1: at most MAX_MPS each), or "".
+static func mps_error(ship: ShipState, target: ShipState) -> String:
+	for s: ShipState in [ship, target]:
+		if s.mp_used_this_turn > MAX_MPS:
+			return "%s used %d MPs this turn (at most %d, 8.C.1)" % [s.ship_name, s.mp_used_this_turn, MAX_MPS]
 	return ""
 
 
