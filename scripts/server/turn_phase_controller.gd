@@ -894,20 +894,24 @@ func on_combat_playback_completed() -> void:
 	advance_phase()
 
 func _enter_drift_calculation_phase() -> void:
-	"""SERVER ONLY: Enter drift calculation phase: drift, then the anchoring step (SoP V.A-B:
-	ships ride to their anchors, anchors are dropped and cables cut)."""
+	"""SERVER ONLY: Enter drift calculation phase: drift, then SoP V.B: anchoring and towing
+	(ships ride to their anchors, anchors are dropped and cables cut; a TX begun this g-t cuts its
+	tow)."""
 	current_phase = GamePhase.DRIFT_CALCULATION
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: DRIFT_CALCULATION")
 	game_state.drift_resolver.resolve(GamePhase.DRIFT_CALCULATION)
 	if game_state.get("anchor_controller") != null:
 		game_state.anchor_controller.resolve_anchoring(GamePhase.DRIFT_CALCULATION)
+	if game_state.get("tow_controller") != null:
+		game_state.tow_controller.resolve_cuts(GamePhase.DRIFT_CALCULATION)
 	advance_phase()
 
 func _enter_status_adjustment_phase() -> void:
 	"""SERVER ONLY: Enter status adjustment phase (the Maintenance Phase after drift, SoP V.C-G).
-	Grappling, then ungrappling (8.C), each waiting for a prompted player's orders only when that
-	player has a choice; then unfouling, fixes, fire and the crew tasks."""
+	The tow attempts first (12.A.4, no prompt: ordered in PLANNING), then grappling, then
+	ungrappling (8.C), each waiting for a prompted player's orders only when that player has a
+	choice; then unfouling, fixes, fire and the crew tasks."""
 	current_phase = GamePhase.STATUS_ADJUSTMENT
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: STATUS_ADJUSTMENT")
@@ -915,6 +919,8 @@ func _enter_status_adjustment_phase() -> void:
 	if game_state.get("grappling_controller") == null:
 		_finish_status_adjustment()
 		return
+	if game_state.get("tow_controller") != null:
+		game_state.tow_controller.resolve_tow_attempts(current_phase)
 	_begin_maintenance_step(MaintenanceStep.GRAPPLE)
 
 

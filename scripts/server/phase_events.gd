@@ -124,6 +124,16 @@ const MODIFIER_LABELS := {
 	"target_did_not_move": "target did not move",
 	"friendly": "friendly ship",
 	"better_crew": "better crew",
+	"towing": "towing",
+}
+
+## Why a tow parted (TOW_CUT `cause`, towing spec §6); "tx" is worded with the ship that cut it.
+const TOW_CUT_REASONS := {
+	"struck": "a ship has struck",
+	"destroyed": "a ship has blown up",
+	"taken": "a ship has been taken",
+	"aground": "a ship is aground",
+	"structural": "structural damage",
 }
 
 const SIDE_NAMES := ["port", "starboard"]
@@ -522,6 +532,20 @@ class PhaseEvent extends RefCounted:
 					return "%s cannot veer in: %s" % [who, str(data["refused"])]
 				return "%s veers in to %s of cable" % [who,
 					PhaseEvents.plural(int(data.get("cable", 0)), "hex", "hexes")]
+			Type.TOW_BEGUN:
+				if data.has("lapsed"):
+					return "%s's order to take %s in tow lapses: %s" % [who, other, str(data["lapsed"])]
+				var success: bool = data.get("success", false)
+				return "%s — %s %s %s" % [
+					("%s takes %s in tow" if success else "%s fails to pass a tow to %s") % [who, other],
+					_calc_text(), "≤" if success else ">", _val("needed")]
+			Type.TOW_CUT:
+				var cause := str(data.get("cause", ""))
+				if cause == "tx":
+					return "The tow between %s and %s is cut by %s" % [who, other,
+						_name(ship_names, str(data.get("by", "")))]
+				return "The tow between %s and %s parts: %s" % [who, other,
+					PhaseEvents.TOW_CUT_REASONS.get(cause, cause)]
 			Type.DESTROYED:
 				if str(data.get("reason", "")) == "no_sea_room":
 					return "%s leaves the map where there is no sea room and is lost" % who

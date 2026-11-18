@@ -11,8 +11,8 @@ extends RefCounted
 ## ship it is not grappled to, when both used <= 2 MPs this g-t (turns count, 8.C.1 example 2). A
 ## burning or struck ship, or one at CQ F or G, cannot grapple (it can be grappled). d10 + DRMs <= 2
 ## succeeds. DRMs: ± SK, fouled to the target -1 (the chart's DRM, which the rule text denies; the
-## chart wins), towing -1 (no towing in Leeward), marines not available +1, wind speed 4 +1, the
-## target did not move (0 MPs this g-t; drift is not movement) -1.
+## chart wins), towing -1 (attempting to tow, TowController), marines not available +1, wind
+## speed 4 +1, the target did not move (0 MPs this g-t; drift is not movement) -1.
 ##
 ## Ungrappling (8.C.4-6, Unfouling table): either ship of a grappled pair may roll d10 on the
 ## Unfouling table, success <= 2 / 3 / 4 by that ship's attempt against that partner. DRMs (All
@@ -113,7 +113,8 @@ func grapple_options(ship_id: String) -> Array[String]:
 
 ## The roll `ship_id` needs to grapple `target_id`: {"needed" (highest d10 that succeeds, may be
 ## below 0), "modifier" (DRM total), "modifiers" ([{name, value}], non-zero only), "percent"}.
-func grapple_chance(ship_id: String, target_id: String) -> Dictionary:
+## With `towing`, the roll is a tow attempt (12.A.4b, TowController) and takes the towing -1.
+func grapple_chance(ship_id: String, target_id: String, towing: bool = false) -> Dictionary:
 	var ship: ShipState = game_state.get_ship(ship_id)
 	var target: ShipState = game_state.get_ship(target_id)
 	var tables: CombatTables = DataManager.combat_tables
@@ -121,6 +122,8 @@ func grapple_chance(ship_id: String, target_id: String) -> Dictionary:
 	_add(mods, "skill", tables.skill_modifier(ship.crew_quality))
 	if ship.fouled_with == target_id:
 		_add(mods, "fouled", tables.grapple_drm("fouled"))
+	if towing:
+		_add(mods, "towing", tables.grapple_drm("towing"))
 	if marines_unavailable(ship):
 		_add(mods, "marines_unavailable", tables.grapple_drm("marines_unavailable"))
 	if _wind_speed() == 4:

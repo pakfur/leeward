@@ -22,6 +22,8 @@ func ground(ship_id: String, data: Dictionary, phase: int) -> void:
 	game_state.ship_controller.set_aground(ship_id, game_state.current_turn)
 	game_state.turn_log.add(PhaseEvents.Type.AGROUND, phase, ship_id, data)
 	Trace.trace_log("Map", "Ship %s aground (%s)" % [ship_id, str(data.get("terrain", ""))])
+	if game_state.get("tow_controller") != null:
+		game_state.tow_controller.on_ship_changed(ship_id, phase)  # her tow parts (towing spec §6)
 
 
 ## Whether `ship_id` is held by a live boarding action, as attacker or defender, and so may not

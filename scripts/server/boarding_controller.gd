@@ -1048,6 +1048,8 @@ func capture(action: BoardingAction, struck_target: bool, phase: int, outcome: S
 	_set_order(att.ship_id, "")
 	_share_capture(action, phase)
 	Trace.trace_log("Boarding", "%s captured by %s (action %d, %s)" % [def.ship_id, att.ship_id, action.id, action.outcome])
+	if game_state.get("tow_controller") != null:
+		game_state.tow_controller.on_ship_changed(def.ship_id, phase)  # her tow parts (towing spec §6)
 
 
 ## 10.F: the defender of `action` has just been taken (or retaken). Every other live action in which
@@ -1380,6 +1382,8 @@ func retake(ship_id: String, cause: String, phase: int, action: BoardingAction =
 	game_state.turn_log.add(PhaseEvents.Type.RECAPTURED, phase, ship_id, data,
 		action.attacker_id if action != null else captor_id)
 	Trace.trace_log("Boarding", "%s retaken (%s)" % [ship_id, cause], data)
+	if game_state.get("tow_controller") != null:
+		game_state.tow_controller.on_ship_changed(ship_id, phase)  # her tow parts (towing spec §6)
 
 
 ## Spec 2 (Prizes): a retaken ship goes back to the player who commanded her before her capture;

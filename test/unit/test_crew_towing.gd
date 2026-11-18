@@ -203,7 +203,9 @@ func test_pt_cancelled_once_towing() -> void:
 func test_tx_cancelled_once_tow_gone() -> void:
 	var t := _ship("t")
 	assert_true(sc.begin_tow("t", "w"))
-	var seq := sc.add_task("t", {"code": "TX", "sections": [3], "params": {}})
+	# Begun last g-t: a TX begun this g-t made its own cut in V.B and is not cancelled (test_tow_controller).
+	var seq := sc.add_task("t", {"code": "TX", "sections": [3], "params": {},
+		"started_turn": GameState.current_turn - 1})
 	assert_eq(GameState.tow_controller.cancel_reason(t, t.task_by_seq(seq)), "")
 	assert_true(sc.cut_tow("t"))
 	assert_eq(GameState.tow_controller.cancel_reason(t, t.task_by_seq(seq)), "no tow")
