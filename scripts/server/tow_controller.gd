@@ -11,7 +11,7 @@ extends CrewTaskHandler
 ## - §4, the tow attempt (resolve_tow_attempts): at the start of STATUS_ADJUSTMENT, before the
 ##   grapple prompt (SoP V.C), every ship with a standing "take:<id>" order, by ship id. A target
 ##   that may no longer be taken in tow at all (TowRules.take_target_error: unknown, own, enemy,
-##   struck or destroyed) clears the order, logged as one TOW_BEGUN with `lapsed` and no roll; any
+##   struck, destroyed, escaped or off the map) clears the order, logged as one TOW_BEGUN with `lapsed` and no roll; any
 ##   other TowRules.pair_error is traced and the order stands. Else the tower rolls the grapple
 ##   roll with the towing -1 (12.A.4b, GrapplingController.grapple_chance) and logs TOW_BEGUN;
 ##   success begins the tow (begin), which clears the order.
