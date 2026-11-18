@@ -562,6 +562,8 @@ class PhaseEvent extends RefCounted:
 				# Collision fouling. A drift that fouls says so on its own DRIFT line.
 				return "%s and %s are fouled together" % [who, other]
 			Type.COLLISION:
+				if data.get("tow", false):
+					return "%s runs into her tower %s" % [who, other]
 				var at := _hex_text("hex")
 				return "%s collides with %s%s" % [who, other, " at " + at if at != "" else ""]
 			Type.STOPPED_SHORT:
@@ -849,6 +851,11 @@ class PhaseEvent extends RefCounted:
 		match str(data.get("cause", "")):
 			"map_edge":
 				return "%s stops at the edge of the map" % who
+			"tow":
+				text = "%s stops short: held back by her tow" % who
+				if target_id != "":
+					text += " (%s in the way)" % other
+				return text
 			"stern_contest", "stern_blocked", "overlap":
 				return _turn_cause_text(text, other)
 			"collision":
