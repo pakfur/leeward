@@ -6,12 +6,12 @@ var playback: MovementResolutionPlaybackController
 var hex_grid: HexGrid
 
 
-## Records every ship view's pose at the end of each glided stretch.
+## Records every ship view's pose at the end of each glide of the clock (up to a pause or the stop).
 class PoseSpy extends MovementResolutionPlaybackController:
-	var poses: Array = []  # [{ship_id: [base_position, model rotation y]}] per glided stretch
+	var poses: Array = []  # [{ship_id: [base_position, model rotation y]}] per glide of the clock
 
-	func _glide_stretch(first: int, last: int) -> void:
-		await super(first, last)
+	func _glide_clock(from_clock: float, to_clock: float, tracks: Array) -> void:
+		await super(from_clock, to_clock, tracks)
 		var snap := {}
 		for sid in _ship_views:
 			var view: ShipView = _ship_views[sid]
@@ -19,12 +19,12 @@ class PoseSpy extends MovementResolutionPlaybackController:
 		poses.append(snap)
 
 
-## Records which segment ranges are glided (no ship views needed).
-class StretchSpy extends MovementResolutionPlaybackController:
-	var glided: Array = []  # [first, last] per stretch
+## Records which clock spans are glided (no ship views needed).
+class ClockSpy extends MovementResolutionPlaybackController:
+	var glided: Array = []  # [from_clock, to_clock] per glide of the clock
 
-	func _glide_stretch(first: int, last: int) -> void:
-		glided.append([first, last])
+	func _glide_clock(from_clock: float, to_clock: float, _tracks: Array) -> void:
+		glided.append([from_clock, to_clock])
 
 
 func before_each() -> void:
@@ -42,6 +42,7 @@ func test_playback_completed_signal_emits_on_empty_log() -> void:
 	log.max_impulses = 0
 
 	watch_signals(playback)
+	_timed(log)
 	playback.play(log)
 	await wait_for_signal(playback.playback_completed, 2.0)
 	assert_signal_emitted(playback, "playback_completed", "playback_completed should emit for empty log")
@@ -51,6 +52,7 @@ func test_playback_completed_signal_emits_after_single_move() -> void:
 	var log = _make_single_move_log()
 
 	watch_signals(playback)
+	_timed(log)
 	playback.play(log)
 	await wait_for_signal(playback.playback_completed, 3.0)
 	assert_signal_emitted(playback, "playback_completed", "playback_completed should emit after single move")
@@ -60,6 +62,7 @@ func test_is_playing_during_playback() -> void:
 	var log = _make_single_move_log()
 	assert_false(playback.is_playing(), "should not be playing before play()")
 
+	_timed(log)
 	playback.play(log)
 	assert_true(playback.is_playing(), "should be playing immediately after play()")
 	await wait_for_signal(playback.playback_completed, 3.0)
@@ -69,6 +72,7 @@ func test_is_playing_during_playback() -> void:
 func test_cannot_play_while_already_playing() -> void:
 	var log = _make_multi_impulse_log(3)
 	watch_signals(playback)
+	_timed(log)
 	playback.play(log)
 	assert_true(playback.is_playing())
 
@@ -87,6 +91,7 @@ func test_multi_impulse_log_completes() -> void:
 	var log = _make_multi_impulse_log(3)
 
 	watch_signals(playback)
+	_timed(log)
 	playback.play(log)
 	await wait_for_signal(playback.playback_completed, 5.0)
 	assert_signal_emitted(playback, "playback_completed", "should complete multi-impulse log")
@@ -118,6 +123,7 @@ func test_log_with_tacking_roll_completes() -> void:
 	log.add_result(result)
 
 	watch_signals(playback)
+	_timed(log)
 	playback.play(log)
 	await wait_for_signal(playback.playback_completed, 5.0)
 	assert_signal_emitted(playback, "playback_completed")
@@ -159,6 +165,7 @@ func test_log_with_collision_completes() -> void:
 	log.add_result(result_b)
 
 	watch_signals(playback)
+	_timed(log)
 	playback.play(log)
 	await wait_for_signal(playback.playback_completed, 5.0)
 	assert_signal_emitted(playback, "playback_completed", "collision log should complete")
@@ -189,6 +196,7 @@ func test_log_with_contested_hex_completes() -> void:
 	log.add_result(result)
 
 	watch_signals(playback)
+	_timed(log)
 	playback.play(log)
 	await wait_for_signal(playback.playback_completed, 5.0)
 	assert_signal_emitted(playback, "playback_completed")
@@ -227,6 +235,7 @@ func test_log_with_bearing_off_completes() -> void:
 	log.add_result(result)
 
 	watch_signals(playback)
+	_timed(log)
 	playback.play(log)
 	await wait_for_signal(playback.playback_completed, 5.0)
 	assert_signal_emitted(playback, "playback_completed")
@@ -250,6 +259,7 @@ func test_log_with_immobilized_completes() -> void:
 	log.add_result(result)
 
 	watch_signals(playback)
+	_timed(log)
 	playback.play(log)
 	await wait_for_signal(playback.playback_completed, 3.0)
 	assert_signal_emitted(playback, "playback_completed")
@@ -276,6 +286,7 @@ func test_log_with_fouling_completes() -> void:
 	log.add_result(result_a)
 
 	watch_signals(playback)
+	_timed(log)
 	playback.play(log)
 	await wait_for_signal(playback.playback_completed, 5.0)
 	assert_signal_emitted(playback, "playback_completed")
@@ -335,6 +346,7 @@ func test_ship_view_position_updated_after_move() -> void:
 
 	log.add_result(result)
 
+	_timed(log)
 	pb.play(log)
 	await wait_for_signal(pb.playback_completed, 5.0)
 
@@ -394,6 +406,7 @@ func test_ship_view_facing_updated_after_turn() -> void:
 
 	log.add_result(result)
 
+	_timed(log)
 	pb.play(log)
 	await wait_for_signal(pb.playback_completed, 5.0)
 
@@ -424,6 +437,7 @@ func test_playback_turn_keeps_bow_hex() -> void:
 	result.events.append(turn_ev)
 	log.add_result(result)
 
+	_timed(log)
 	pb.play(log)
 	await wait_for_signal(pb.playback_completed, 5.0)
 
@@ -465,7 +479,7 @@ func _overlap_rollback_log(with_ahead_move: bool) -> MovementTypes.ResolutionLog
 	result.final_hex = Vector2i(6, 5) if with_ahead_move else Vector2i(5, 5)
 	result.final_facing = 0
 	log.add_result(result)
-	return log
+	return _timed(log)
 
 
 func test_rolled_back_turn_swings_out_and_back() -> void:
@@ -516,13 +530,15 @@ func test_playback_rolled_back_turn_ends_in_the_old_pose() -> void:
 	pb.play(_overlap_rollback_log(false))
 	await wait_for_signal(pb.playback_completed, 5.0)
 
-	assert_eq(pb.poses.size(), 1, "One stretch: the swing out and back, ending on the rollback")
-	# Mid-glide (the end of the OVERLAP segment) the stern is swung out.
+	assert_eq(pb.poses.size(), 1, "One glide: the swing out and back, ending on the rollback")
+	# Mid-glide (the clock of the OVERLAP segment) the stern is swung out.
 	var log := _overlap_rollback_log(false)
 	var steps: Array = []
 	for ev in log.get_result("swinging_ship").events:
 		steps.append(ev)
-	var track := MovementResolutionPlaybackController.track_for(steps, hex_grid, -90.0)
+	var clocks := MovementResolutionPlaybackController.segment_clocks(log.segment_times, log.longest_plot)
+	var track := MovementResolutionPlaybackController.track_for(steps, hex_grid, -90.0, clocks, log.longest_plot,
+		log.plot_steps["swinging_ship"])
 	var mid: Array = MovementResolutionPlaybackController.pose_at(track, 1.0)
 	assert_almost_eq(mid[0].distance_to(hex_grid.axial_to_world(5, 5)), 0.0, 0.01, "the bow stays put")
 	assert_almost_eq(mid[1], -1 * 60.0 - 90.0, 1.0, "facing SE while swung out")
@@ -549,10 +565,18 @@ func test_mid_swing_the_stern_orbits_a_fixed_bow() -> void:
 	var from_angle := MovementResolutionPlaybackController._model_angle(0)
 	var to_angle := MovementResolutionPlaybackController._model_angle(1)
 	var half_length := hex_grid.hex_size * HexGrid.SQRT3 / 2.0
+	var turn := MovementTypes.ResolutionEvent.new("turning", 0, MovementTypes.ResolutionEventType.MOVE)
+	turn.from_hex = Vector2i(5, 5)
+	turn.to_hex = Vector2i(5, 5)
+	turn.from_facing = 0
+	turn.facing = 1
+	var track := MovementResolutionPlaybackController.track_for([turn], hex_grid, from_angle, [1.0], 1, 1)
 
 	for t in [0.25, 0.5, 0.75]:
-		var angle := lerpf(from_angle, to_angle, t)
-		pb._place(view, bow, angle)
+		var pose: Array = MovementResolutionPlaybackController.pose_at(track, t)
+		var angle: float = pose[1]
+		assert_true(angle < from_angle and angle > to_angle, "t=%s: part-way through the turn" % t)
+		pb._place(view, pose[0], angle)
 		var expected := _centre_for(bow, angle)
 		assert_almost_eq(view.base_position.x, expected.x, 0.01, "t=%s: centre on the arc round the bow" % t)
 		assert_almost_eq(view.base_position.z, expected.z, 0.01)
@@ -570,8 +594,14 @@ func test_ahead_step_slides_along_the_keel() -> void:
 	var from_bow := hex_grid.axial_to_world(5, 5)
 	var to_bow := hex_grid.axial_to_world(6, 5)
 	var angle := MovementResolutionPlaybackController._model_angle(0)
+	var ahead := MovementTypes.ResolutionEvent.new("sailing", 0, MovementTypes.ResolutionEventType.MOVE)
+	ahead.from_hex = Vector2i(5, 5)
+	ahead.to_hex = Vector2i(6, 5)
+	ahead.facing = 0
+	var track := MovementResolutionPlaybackController.track_for([ahead], hex_grid, angle, [1.0], 1, 1)
 
-	pb._place(view, from_bow.lerp(to_bow, 0.5), angle)
+	var pose: Array = MovementResolutionPlaybackController.pose_at(track, 0.5)
+	pb._place(view, pose[0], pose[1])
 
 	var expected := _centre_for(from_bow.lerp(to_bow, 0.5), angle)
 	assert_almost_eq(view.base_position.x, expected.x, 0.01, "halfway: the bow is midway between the hexes")
@@ -676,6 +706,19 @@ func test_phase_controller_advances_after_on_playback_completed() -> void:
 ## Helpers
 ## ============================================================================
 
+## Gives a hand-built log the resolver's timing for equal plots of `max_impulses` steps: segment i at
+## time (i + 1) / n, every ship plotting n steps.
+@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
+func _timed(log: MovementTypes.ResolutionLog) -> MovementTypes.ResolutionLog:
+	var n: int = log.max_impulses
+	log.segment_times = []
+	for i in range(n):
+		log.segment_times.append(Vector2i(i + 1, n))
+	log.longest_plot = n
+	for ship_id in log.ship_results:
+		log.plot_steps[ship_id] = n
+	return log
+
 func _make_single_move_log() -> MovementTypes.ResolutionLog:
 	var log = MovementTypes.ResolutionLog.new(1)
 	log.max_impulses = 1
@@ -691,7 +734,7 @@ func _make_single_move_log() -> MovementTypes.ResolutionLog:
 	result.events.append(ev)
 
 	log.add_result(result)
-	return log
+	return _timed(log)
 
 
 func _make_multi_impulse_log(impulse_count: int) -> MovementTypes.ResolutionLog:
@@ -713,12 +756,13 @@ func _make_multi_impulse_log(impulse_count: int) -> MovementTypes.ResolutionLog:
 	result.final_hex = current_hex
 	result.final_facing = 0
 	log.add_result(result)
-	return log
+	return _timed(log)
 
 
 func test_aborted_playback_never_reports_completion() -> void:
 	var log = _make_single_move_log()
 	watch_signals(playback)
+	_timed(log)
 	playback.play(log)
 	playback.abort()
 	await wait_seconds(1.0)
@@ -735,23 +779,177 @@ func test_incomplete_log_plays_up_to_the_decision_and_pauses() -> void:
 	var log = _make_multi_impulse_log(4)
 	log.pending_bear_off = MovementTypes.BearOffSituation.new()
 	log.pending_bear_off.segment = 2
-	var spy := StretchSpy.new(hex_grid, {}, 0)
+	var spy := ClockSpy.new(hex_grid, {}, 0)
 	add_child_autofree(spy)
 	watch_signals(spy)
 	spy.play(log)
 	await wait_for_signal(spy.playback_paused, 3.0)
 	assert_signal_emitted(spy, "playback_paused")
 	assert_signal_not_emitted(spy, "playback_completed", "Not finished: a decision is pending")
-	assert_eq(spy.glided, [[0, 1]], "Segments before the potential collision only")
+	assert_eq(spy.glided, [[0.0, 2.0]], "Up to the clock of the segment before the potential collision")
 
 
 func test_resumed_log_plays_from_its_resume_impulse() -> void:
 	var log = _make_multi_impulse_log(4)
 	log.resume_impulse = 2
-	var spy := StretchSpy.new(hex_grid, {}, 0)
+	var spy := ClockSpy.new(hex_grid, {}, 0)
 	add_child_autofree(spy)
 	watch_signals(spy)
 	spy.play(log)
 	await wait_for_signal(spy.playback_completed, 3.0)
 	assert_signal_emitted(spy, "playback_completed")
-	assert_eq(spy.glided, [[2, 3]], "The segments already shown are not played again")
+	assert_eq(spy.glided, [[2.0, 4.0]], "The clock already shown is not played again")
+
+
+## An overlap pending across the decision segment: the swinging ship turns on segment 0 (its check
+## is at segment 2) and a prompted ship pauses at segment 1. The paused log shows the swing as a MOVE;
+## the re-run with the answer rolls it back (OVERLAP at 0, OVERLAP_ROLLBACK at 2).
+func _swing_pending_logs() -> Array:
+	var swing := MovementTypes.ResolutionEvent.new("swinging_ship", 0, MovementTypes.ResolutionEventType.MOVE)
+	swing.from_hex = Vector2i(5, 5)
+	swing.to_hex = Vector2i(5, 5)
+	swing.from_facing = 0
+	swing.facing = 1
+	var paused := MovementTypes.ResolutionLog.new(1)
+	paused.max_impulses = 3
+	paused.pending_bear_off = MovementTypes.BearOffSituation.new()
+	paused.pending_bear_off.segment = 1
+	var r1 := MovementTypes.ShipResolutionResult.new("swinging_ship")
+	r1.events.append(swing)
+	paused.add_result(r1)
+	_timed(paused)
+
+	var resumed := MovementTypes.ResolutionLog.new(1)
+	resumed.max_impulses = 3
+	resumed.resume_impulse = 1
+	var r2 := MovementTypes.ShipResolutionResult.new("swinging_ship")
+	var overlap := MovementTypes.ResolutionEvent.new("swinging_ship", 0, MovementTypes.ResolutionEventType.OVERLAP)
+	overlap.from_hex = Vector2i(5, 5)
+	overlap.to_hex = Vector2i(5, 5)
+	overlap.from_facing = 0
+	overlap.facing = 1
+	r2.events.append(overlap)
+	var rollback := MovementTypes.ResolutionEvent.new("swinging_ship", 2, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
+	rollback.from_hex = Vector2i(5, 5)
+	rollback.to_hex = Vector2i(5, 5)
+	rollback.from_facing = 1
+	rollback.facing = 0
+	rollback.success = false
+	r2.events.append(rollback)
+	r2.final_hex = Vector2i(5, 5)
+	r2.final_facing = 0
+	resumed.add_result(r2)
+	_timed(resumed)
+	return [paused, resumed]
+
+
+func test_resumed_log_swings_back_a_turn_swung_out_before_the_pause() -> void:
+	var view := ShipView.new()
+	add_child_autofree(view)
+	view.initialize(_two_hex_state("swinging_ship", Vector2i(5, 5), 0), hex_grid)
+	var logs := _swing_pending_logs()
+	var first := MovementResolutionPlaybackController.new(hex_grid, {"swinging_ship": view}, 0)
+	add_child_autofree(first)
+	first.play(logs[0])
+	await wait_for_signal(first.playback_paused, 5.0)
+	assert_almost_eq(view.model_node.rotation_degrees.y, -1 * 60.0 - 90.0, 1.0, "paused swung out, facing SE")
+
+	var second := ClockSpy.new(hex_grid, {"swinging_ship": view}, 0)
+	add_child_autofree(second)
+	second.play(logs[1])
+	await wait_for_signal(second.playback_completed, 5.0)
+	assert_eq(second.glided, [[1.0, 3.0]], "glides from the resume clock to the rollback")
+	assert_eq(second._posed_by_impulse.get(2, []).size(), 1, "the rollback is posed")
+
+	var third := MovementResolutionPlaybackController.new(hex_grid, {"swinging_ship": view}, 0)
+	add_child_autofree(third)
+	third.play(logs[1])
+	await wait_for_signal(third.playback_completed, 5.0)
+	var expected := hex_grid.ship_center_world(Vector2i(5, 5), 0)
+	assert_almost_eq(view.base_position.x, expected.x, 0.01, "swung back to the old pose")
+	assert_almost_eq(view.base_position.z, expected.z, 0.01)
+	assert_almost_eq(view.model_node.rotation_degrees.y, -90.0, 1.0, "facing E again")
+
+
+func test_end_clock_of_a_resumed_log_counts_from_the_resume_clock() -> void:
+	var logs := _swing_pending_logs()
+	assert_eq(MovementResolutionPlaybackController.end_clock(logs[1]), 3.0, "the rollback at segment 2")
+	var done := _timed(_make_multi_impulse_log(1))
+	done.max_impulses = 4
+	done.segment_times = [Vector2i(1, 4), Vector2i(1, 2), Vector2i(3, 4), Vector2i(1, 1)] as Array[Vector2i]
+	done.longest_plot = 4
+	done.resume_impulse = 3
+	assert_eq(MovementResolutionPlaybackController.end_clock(done), 3.0,
+		"its one move was before the pause: nothing left to play, so the resume clock")
+
+
+## ============================================================================
+## One clock for the turn: each ship at its own pace (proportional movement, spec §6)
+## ============================================================================
+
+func test_segment_clocks_scale_times_by_the_longest_plot() -> void:
+	assert_eq(MovementResolutionPlaybackController.segment_clocks(
+		[Vector2i(1, 4), Vector2i(1, 2), Vector2i(3, 4), Vector2i(1, 1)], 4), [1.0, 2.0, 3.0, 4.0])
+	assert_eq(MovementResolutionPlaybackController.segment_clocks(
+		[Vector2i(1, 2), Vector2i(1, 1), Vector2i(2, 1)], 2), [1.0, 2.0, 3.0], "a trailing step adds one unit")
+	assert_eq(MovementResolutionPlaybackController.segment_clocks(
+		[Vector2i(1, 1), MoveSchedule.END], 3), [3.0, 4.0], "the end check adds one unit")
+
+
+## A ship sailing east from (2, 5), ahead on every segment of `segments`.
+func _ahead_moves(ship_id: String, segments: Array) -> Array:
+	var events: Array = []
+	var hex := Vector2i(2, 5)
+	for seg in segments:
+		var ev := MovementTypes.ResolutionEvent.new(ship_id, seg, MovementTypes.ResolutionEventType.MOVE)
+		ev.from_hex = hex
+		hex = hex_grid.get_neighbor(hex.x, hex.y, 0)
+		ev.to_hex = hex
+		ev.facing = 0
+		events.append(ev)
+	return events
+
+
+func test_slow_ship_glides_at_its_own_pace() -> void:
+	var clocks := [1.0, 2.0, 3.0, 4.0]
+	var angle := MovementResolutionPlaybackController._model_angle(0)
+	var slow := MovementResolutionPlaybackController.track_for(_ahead_moves("a", [1, 3]), hex_grid, angle, clocks, 4, 2)
+	assert_eq(slow.spans, [[0.0, 2.0], [2.0, 4.0]], "2 MPs over 4 clock units: two units a step")
+	assert_eq(slow.keys.size(), slow.spans.size() + 1)
+	var fast := MovementResolutionPlaybackController.track_for(_ahead_moves("b", [0, 1, 2, 3]), hex_grid, angle, clocks, 4, 4)
+	assert_eq(fast.spans, [[0.0, 1.0], [1.0, 2.0], [2.0, 3.0], [3.0, 4.0]])
+
+
+func test_resumed_glide_starts_at_the_resume_clock() -> void:
+	var angle := MovementResolutionPlaybackController._model_angle(0)
+	var track := MovementResolutionPlaybackController.track_for(_ahead_moves("a", [3]), hex_grid, angle,
+		[1.0, 2.0, 3.0, 4.0], 4, 2, 3.0)
+	assert_eq(track.spans, [[3.0, 4.0]], "no earlier than the resume clock")
+	assert_eq(MovementResolutionPlaybackController.pose_at(track, 3.0), track.keys[0])
+
+
+func test_pose_mid_glide_is_interpolated() -> void:
+	var angle := MovementResolutionPlaybackController._model_angle(0)
+	var track := MovementResolutionPlaybackController.track_for(_ahead_moves("a", [0, 1, 2]), hex_grid, angle,
+		[1.0, 2.0, 3.0], 3, 3)
+	var mid: Array = MovementResolutionPlaybackController.pose_at(track, 1.5)
+	var expected: Vector3 = track.keys[1][0].lerp(track.keys[2][0], 0.5)
+	assert_almost_eq(mid[0].distance_to(expected), 0.0, 0.001, "linear in the middle span")
+	for i in track.spans.size():
+		var at_end: Array = MovementResolutionPlaybackController.pose_at(track, track.spans[i][1])
+		assert_almost_eq(at_end[0].distance_to(track.keys[i + 1][0]), 0.0, 0.001, "on key %d at its span end" % (i + 1))
+		assert_almost_eq(at_end[1], track.keys[i + 1][1], 0.001)
+
+
+func test_playback_total_clock_is_the_longest_plot() -> void:
+	var log := MovementTypes.ResolutionLog.new(1)
+	log.max_impulses = 4
+	log.segment_times = [Vector2i(1, 4), Vector2i(1, 2), Vector2i(3, 4), Vector2i(1, 1)] as Array[Vector2i]
+	log.plot_steps = {"a": 2, "b": 4}
+	log.longest_plot = 4
+	for pair in [["a", [1, 3]], ["b", [0, 1, 2, 3]]]:
+		var result := MovementTypes.ShipResolutionResult.new(pair[0])
+		for ev in _ahead_moves(pair[0], pair[1]):
+			result.events.append(ev)
+		log.add_result(result)
+	assert_eq(MovementResolutionPlaybackController.end_clock(log), 4.0)

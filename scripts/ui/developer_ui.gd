@@ -299,7 +299,7 @@ const SEA_ROWS := [
 	["chop_strength", "Chop strength", 0.0, 3.0, 0.05],
 	["inertia_mult", "Ship inertia x", 0.1, 4.0, 0.05],
 	["heel_mult", "Heel x", 0.0, 3.0, 0.05],
-	["glide_seconds", "Glide s / segment", 0.05, 2.0, 0.05],
+	["glide_seconds", "Glide s / MP of the fastest ship", 0.05, 2.0, 0.05],
 	["whitecap_threshold", "Whitecap threshold", 0.0, 1.0, 0.05],
 	["whitecap_strength", "Whitecap strength", 0.0, 3.0, 0.05],
 	["flat_distance", "Flat at distance >=", 4.0, 40.0, 0.5],

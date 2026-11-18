@@ -1,11 +1,13 @@
 class_name MovementResolutionPlaybackController
 extends Node
 ## Consumes a ResolutionLog and animates the ships' moves, from the log's resume_impulse.
-## Each ship's move is a continuous glide (sea-state spec D): the segments are split into stretches
-## at every segment that carries an event (collision, contested hex, overlap rollback, stern contest,
-## bear-off roll, ...); within a stretch each ship speeds up and slows down along its steps and
-## arrives exactly on its resolved pose for the stretch's last segment, the event pause plays, and the
-## next stretch starts from there. `glide_seconds` per segment comes from the sea state's preset.
+## One clock runs for the whole turn (proportional-movement spec §6): a segment's clock is its time ×
+## the longest plot (see `segment_clocks`), so one clock unit is one MP of the fastest ship. Each ship
+## glides at its own pace on that clock (an N-MP ship takes longest_plot / N units a step), so every
+## ship that completes its plot arrives at the same moment. The clock halts at every segment that
+## carries an event (collision, contested hex, overlap rollback, stern contest, bear-off roll, ...)
+## for its pause, every ship holding its pose, mid-glide if it is between steps, and then goes on.
+## `glide_seconds` per clock unit comes from the sea state's preset.
 ## A complete log ends with playback_completed. An incomplete one (a potential collision waiting for
 ## the player's bear-off decision, 6.D.3) is played up to that segment and ends with playback_paused;
 ## the re-run log that follows the answer is played from there, starting from the paused poses.
@@ -17,14 +19,13 @@ const EVENT_PAUSE_MS: float = 400.0
 const DEFAULT_GLIDE_SECONDS: float = 0.8  # without a sea model (headless tests)
 
 
-## One ship's glide through one stretch: its poses (bow world position, model angle in degrees,
-## unwrapped so each step turns the short way) before its first step and after each step, played
-## over the clock span [t0, t1] (in segments) with a trapezoidal speed profile.
+## One ship's glide through the log: its poses (bow world position, model angle in degrees, unwrapped
+## so each step turns the short way) before its first step and after each step, and the clock span
+## [start, end] of each glide from one key to the next (keys.size() == spans.size() + 1).
 class GlideTrack:
 	var view: ShipView = null
 	var keys: Array = []  # [[bow: Vector3, angle: float]]
-	var t0: float = 0.0
-	var t1: float = 0.0
+	var spans: Array = []  # [[start_clock: float, end_clock: float]], one per glide
 
 
 var _hex_grid: HexGrid = null
@@ -50,7 +51,7 @@ func play(log: MovementTypes.ResolutionLog) -> void:
 	_log = log
 	_swung_out = {}
 	_playing = true
-	Trace.trace_log("Playback", "start", {"turn": log.turn, "max_impulses": log.max_impulses, "ships": log.ship_results.size()})
+	Trace.trace_log("Playback", "start", {"turn": log.turn, "max_impulses": log.max_impulses, "longest_plot": log.longest_plot, "ships": log.ship_results.size()})
 	# Yield one frame so callers can set up signal listeners before we emit
 	await _yield_frame()
 	if not _aborted:
@@ -85,55 +86,114 @@ func is_aborted() -> bool:
 ## ============================================================================
 
 func _play_all_impulses() -> void:
-	var events_by_impulse: Dictionary = _group_events_by_impulse()
+	var events_by_impulse: Dictionary = _group_events_by_impulse(_log)
 
 	# Play pre-impulse events (impulse -1 equivalent: tacking rolls, in-irons, skip_no_plot at impulse 0),
 	# unless an earlier log of this turn already showed them.
 	var pre_events: Array = _collect_pre_movement_events()
 	if not pre_events.is_empty() and _log.resume_impulse == 0:
 		await _play_event_batch(pre_events)
+	if _aborted:
+		return
+
+	# One clock from the resume clock to the stop clock: the end of the last posed event for a complete
+	# log, the segment before the pending decision for a paused one (its tracks stop there too).
+	var clocks: Array[float] = segment_clocks(_log.segment_times, _log.longest_plot)
+	var last_impulse: int = _log.max_impulses if _log.is_complete() else _log.pending_bear_off.segment
+	var start_clock: float = _clock_before(clocks, _log.resume_impulse)
+	var stop_clock: float = end_clock(_log) if _log.is_complete() else _clock_before(clocks, last_impulse)
 
 	# Sort every segment's events, in order (_posed_events follows the swing outs from one to the next).
-	var last_impulse: int = _log.max_impulses if _log.is_complete() else _log.pending_bear_off.segment
+	# On a resumed log the segments before resume_impulse were shown by the paused log: they are not
+	# played again, but a turn swung out there that this log rolls back later must swing back, so their
+	# swing outs are noted first.
 	_posed_by_impulse = {}
-	var special_by_impulse: Dictionary = {}
-	var event_segments: Array[int] = []
+	for impulse in range(_log.resume_impulse):
+		_posed_events(events_by_impulse.get(impulse, []))
+	var halts: Array = []  # [clock, special events] per segment with special events, in order
 	for impulse in range(_log.resume_impulse, last_impulse):
 		var impulse_events: Array = events_by_impulse.get(impulse, [])
 		_posed_by_impulse[impulse] = _posed_events(impulse_events)
 		var special: Array = _special_events(impulse_events, pre_events)
 		if not special.is_empty():
-			special_by_impulse[impulse] = special
-			event_segments.append(impulse)
+			halts.append([_clock_at(clocks, impulse), special])
 
-	for stretch in glide_stretches(event_segments, _log.resume_impulse, last_impulse - 1):
+	var tracks: Array = _tracks(clocks, start_clock)
+	var clock := start_clock
+	for halt in halts:
+		if halt[0] > clock:
+			await _glide_clock(clock, halt[0], tracks)
+			clock = halt[0]
 		if _aborted:
 			return
-		await _glide_stretch(stretch[0], stretch[1])
+		# Play special events (contests, collisions, etc.) with pauses, every ship holding its pose
+		await _play_event_batch(halt[1])
 		if _aborted:
 			return
-		# Play special events (contests, collisions, etc.) with pauses, every ship on its pose
-		if special_by_impulse.has(stretch[1]):
-			await _play_event_batch(special_by_impulse[stretch[1]])
+	if stop_clock > clock:
+		await _glide_clock(clock, stop_clock, tracks)
 
 
-## The segment ranges [first, last] (inclusive) of the glide from `first_segment` to `last_segment`,
-## split after every segment in `event_segments`: each stretch ends on an event segment or on the last.
-static func glide_stretches(event_segments: Array[int], first_segment: int, last_segment: int) -> Array:
-	var stretches: Array = []
-	var start := first_segment
-	for seg in range(first_segment, last_segment + 1):
-		if seg == last_segment or event_segments.has(seg):
-			stretches.append([start, seg])
-			start = seg + 1
-	return stretches
+## The clock value of each segment of `segment_times` (MoveSchedule times): a time t <= 1 is
+## t × `longest_plot`, a trailing time k (step k - 1 past a plot) is longest_plot + (k - 1), and the end
+## check (MoveSchedule.END) is one unit after the segment before it.
+static func segment_clocks(segment_times: Array, longest_plot: int) -> Array[float]:
+	var clocks: Array[float] = []
+	for t in segment_times:
+		if t.y == 0:
+			clocks.append((clocks[-1] if not clocks.is_empty() else 0.0) + 1.0)
+		elif t.x <= t.y:
+			clocks.append(float(t.x) / t.y * longest_plot)
+		else:
+			clocks.append(float(longest_plot + t.x - 1))
+	return clocks
+
+
+## The clock of `segment`: `clocks[segment]`, or one unit a segment past the last listed one (a log
+## built without segment times plays one unit a segment).
+static func _clock_at(clocks: Array, segment: int) -> float:
+	if segment < 0:
+		return 0.0
+	if segment < clocks.size():
+		return clocks[segment]
+	return (clocks[-1] if not clocks.is_empty() else 0.0) + float(segment - clocks.size() + 1)
+
+
+## The clock at the start of `segment`: the clock of the segment before it, 0.0 for the first.
+static func _clock_before(clocks: Array, segment: int) -> float:
+	return _clock_at(clocks, segment - 1) if segment > 0 else 0.0
+
+
+## The clock at which the last posed event of `log` ends: where a complete log stops. Only events from
+## the log's resume_impulse on are played (the swing outs before it are followed, see
+## _play_all_impulses); with none, the resume clock (0.0 for a log played from the start).
+@warning_ignore("shadowed_global_identifier")
+static func end_clock(log: MovementTypes.ResolutionLog) -> float:
+	var clocks: Array[float] = segment_clocks(log.segment_times, log.longest_plot)
+	var grouped: Dictionary = _group_events_by_impulse(log)
+	var impulses: Array = grouped.keys()
+	impulses.sort()
+	var swung_out: Dictionary = {}
+	var last := _clock_before(clocks, log.resume_impulse)
+	for impulse in impulses:
+		if _posed_in(grouped[impulse], log, swung_out).size() > 0 and impulse >= log.resume_impulse:
+			last = maxf(last, _clock_at(clocks, impulse))
+	return last
+
+
+## The events of one impulse that move a ship view (see _posed_in), following this playback's swing
+## outs from one impulse to the next.
+func _posed_events(impulse_events: Array) -> Array:
+	return _posed_in(impulse_events, _log, _swung_out)
 
 
 ## The events of one impulse that move a ship view: every MOVE, and a rolled-back turn (6.B.4) shown
 ## as the stern swinging out (OVERLAP) and, on the next impulse, back (OVERLAP_ROLLBACK). The swing is
 ## shown only when the ship makes no step on the overlap impulse; a ship that moves ahead instead (to
 ## meet its deceleration) just plays its moves, which start from the pose before the turn.
-func _posed_events(impulse_events: Array) -> Array:
+## `swung_out` (ship_id -> true) carries the ships shown swung out from one impulse to the next.
+@warning_ignore("shadowed_global_identifier")
+static func _posed_in(impulse_events: Array, log: MovementTypes.ResolutionLog, swung_out: Dictionary) -> Array:
 	var moving: Dictionary = {}
 	for ev in impulse_events:
 		if ev.event_type == MovementTypes.ResolutionEventType.MOVE:
@@ -144,12 +204,12 @@ func _posed_events(impulse_events: Array) -> Array:
 			MovementTypes.ResolutionEventType.MOVE:
 				posed.append(ev)
 			MovementTypes.ResolutionEventType.OVERLAP:
-				if not moving.has(ev.ship_id) and _was_rolled_back(ev.ship_id):
-					_swung_out[ev.ship_id] = true
+				if not moving.has(ev.ship_id) and _was_rolled_back(log, ev.ship_id):
+					swung_out[ev.ship_id] = true
 					posed.append(ev)
 			MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK:
-				if _swung_out.has(ev.ship_id):
-					_swung_out.erase(ev.ship_id)
+				if swung_out.has(ev.ship_id):
+					swung_out.erase(ev.ship_id)
 					posed.append(ev)
 	return posed
 
@@ -169,8 +229,9 @@ static func _special_events(impulse_events: Array, pre_events: Array) -> Array:
 	return special
 
 
-func _was_rolled_back(ship_id: String) -> bool:
-	var result: MovementTypes.ShipResolutionResult = _log.get_result(ship_id) if _log else null
+@warning_ignore("shadowed_global_identifier")
+static func _was_rolled_back(log: MovementTypes.ResolutionLog, ship_id: String) -> bool:
+	var result: MovementTypes.ShipResolutionResult = log.get_result(ship_id) if log else null
 	if result == null:
 		return false
 	for ev in result.events:
@@ -183,10 +244,11 @@ func _was_rolled_back(ship_id: String) -> bool:
 ## Event grouping
 ## ============================================================================
 
-func _group_events_by_impulse() -> Dictionary:
+@warning_ignore("shadowed_global_identifier")
+static func _group_events_by_impulse(log: MovementTypes.ResolutionLog) -> Dictionary:
 	var grouped: Dictionary = {}
-	for ship_id in _log.ship_results:
-		var result: MovementTypes.ShipResolutionResult = _log.ship_results[ship_id]
+	for ship_id in log.ship_results:
+		var result: MovementTypes.ShipResolutionResult = log.ship_results[ship_id]
 		for ev in result.events:
 			if not grouped.has(ev.impulse):
 				grouped[ev.impulse] = []
@@ -211,108 +273,110 @@ func _collect_pre_movement_events() -> Array:
 ## Animation
 ## ============================================================================
 
-## Glide every ship through the segments [first, last]: one clock for all of them, `glide_seconds`
-## per segment in which some ship moves (segments where nobody moves take no time, see
-## `moving_clock`). Every ship ends on its resolved pose.
-func _glide_stretch(first: int, last: int) -> void:
-	var steps_by_ship: Dictionary = {}
-	var moving: Dictionary = {}
+## One track per ship view with posed events in this log (in segment order), each glide starting no
+## earlier than `start_clock`.
+func _tracks(clocks: Array, start_clock: float) -> Array:
+	var tracks: Array = []
+	if not _hex_grid:
+		return tracks
 	for ship_id in _ship_views:
+		var view: ShipView = _ship_views[ship_id]
+		if not is_instance_valid(view):
+			continue
 		var steps: Array = []
-		for impulse in range(first, last + 1):
-			for ev in _posed_by_impulse.get(impulse, []):
+		for impulse in _posed_by_impulse:
+			for ev in _posed_by_impulse[impulse]:
 				if ev.ship_id == ship_id:
 					steps.append(ev)
-		var view: ShipView = _ship_views[ship_id]
-		if steps.is_empty() or not is_instance_valid(view) or not _hex_grid:
+		if steps.is_empty():
 			continue
-		steps_by_ship[ship_id] = steps
-		for ev in steps:
-			moving[ev.impulse] = true
-	var clock := moving_clock(moving.keys())
-	var tracks: Array = []
-	for ship_id in steps_by_ship:
-		var steps: Array = steps_by_ship[ship_id]
-		var view: ShipView = _ship_views[ship_id]
 		var start_angle: float = view.model_node.rotation_degrees.y if view.model_node \
 			else _model_angle(steps[0].from_facing)
-		var track := track_for(steps, _hex_grid, start_angle, clock)
+		var track := track_for(steps, _hex_grid, start_angle, clocks, _log.longest_plot,
+			int(_log.plot_steps.get(ship_id, 0)), start_clock)
 		track.view = view
 		tracks.append(track)
+	return tracks
+
+
+## Run the clock from `from_clock` to `to_clock`, `glide_seconds` a unit, posing every track; every
+## ship ends on its pose at `to_clock`.
+func _glide_clock(from_clock: float, to_clock: float, tracks: Array) -> void:
 	if tracks.is_empty() or _aborted:
 		return
-	var t0: float = tracks[0].t0
-	var t1: float = tracks[0].t1
-	for track in tracks:
-		t0 = minf(t0, track.t0)
-		t1 = maxf(t1, track.t1)
 	if not is_inside_tree():
-		_pose_tracks(t1, tracks)
+		_pose_tracks(to_clock, tracks)
 		return
 	var tween := create_tween()
-	tween.tween_method(_pose_tracks.bind(tracks), t0, t1, (t1 - t0) * glide_seconds())
+	tween.tween_method(_pose_tracks.bind(tracks), from_clock, to_clock, (to_clock - from_clock) * glide_seconds())
 	await tween.finished
-	_pose_tracks(t1, tracks)  # exactly on the resolved poses, whatever the last frame's time
+	_pose_tracks(to_clock, tracks)  # exactly on the poses, whatever the last frame's time
 
 
-## Seconds per segment of the glide: the current sea state's preset, or the default without a model.
+## Seconds per clock unit (one MP of the longest plot): the current sea state's preset, or the default
+## without a model.
 static func glide_seconds() -> float:
 	var sea := SeaModel.instance
 	return sea.glide_seconds if is_instance_valid(sea) else DEFAULT_GLIDE_SECONDS
 
 
-## The glide clock of a stretch: each segment in `moving_segments` (those in which some ship moves)
-## maps to its place, 0, 1, 2, ... in order, so segments where nobody moves add no idle time.
-static func moving_clock(moving_segments: Array) -> Dictionary:
-	var sorted := moving_segments.duplicate()
-	sorted.sort()
-	var clock: Dictionary = {}
-	for i in sorted.size():
-		clock[sorted[i]] = i
-	return clock
-
-
-## The glide track for one ship's posed events `steps` (in order, all in one stretch), starting at
-## model angle `start_angle` (the view's current heading, so the angle stays continuous). `clock` maps
-## segments to clock time (`moving_clock`); without it a segment is its own number.
-static func track_for(steps: Array, hex_grid: HexGrid, start_angle: float, clock: Dictionary = {}) -> GlideTrack:
+## The glide track for one ship's posed events `events` (in order), starting at model angle
+## `start_angle` (the view's current heading, so the angle stays continuous). Glide i ends at the clock
+## of its event's segment (`clocks`, from `segment_clocks`) and lasts one step at the ship's pace: `unit`
+## = longest_plot / plot_steps for a step within the g-t, 1 for a trailing step or the end check. It
+## starts no earlier than the previous glide's end (or `start_clock`, the resume clock, for the first).
+static func track_for(events: Array, hex_grid: HexGrid, start_angle: float, clocks: Array, longest_plot: int,
+		plot_steps: int, start_clock: float = 0.0) -> GlideTrack:
 	var track := GlideTrack.new()
-	track.t0 = float(clock.get(steps[0].impulse, steps[0].impulse))
-	track.t1 = float(clock.get(steps[-1].impulse, steps[-1].impulse)) + 1.0
-	track.keys.append([hex_grid.axial_to_world(steps[0].from_hex.x, steps[0].from_hex.y), start_angle])
-	for ev in steps:
+	track.keys.append([hex_grid.axial_to_world(events[0].from_hex.x, events[0].from_hex.y), start_angle])
+	var previous_end := start_clock
+	for ev in events:
 		var prev_angle: float = track.keys[-1][1]
 		var to_angle: float = prev_angle + _shortest_angle(prev_angle, _model_angle(ev.facing))
 		track.keys.append([hex_grid.axial_to_world(ev.to_hex.x, ev.to_hex.y), to_angle])
+		var end := _clock_at(clocks, ev.impulse)
+		var unit := float(longest_plot) / plot_steps if plot_steps > 0 and end <= float(longest_plot) else 1.0
+		var start := maxf(maxf(previous_end, end - unit), start_clock)
+		track.spans.append([start, end])
+		previous_end = end
 	return track
 
 
-## The pose [bow world position, model angle] of `track` at clock time `t` (segments): before t0 the
-## pose before the first step, after t1 the pose after the last, in between the steps spread over the
-## span with a gentle start and stop.
+## The pose [bow world position, model angle] of `track` at clock `t`: before the first glide the pose
+## before the first step, after the last the pose after the last step, inside a glide between its two
+## keys, and between glides the pose the last finished glide ended on. Each glide is linear, but the
+## track eases in on its first glide and out on its last (smoothstep when there is only one), so the
+## ship starts and stops gently without a hitch between steps.
 static func pose_at(track: GlideTrack, t: float) -> Array:
-	var steps: int = track.keys.size() - 1
-	if steps <= 0:
+	var count: int = track.spans.size()
+	if count == 0 or t <= track.spans[0][0]:
 		return track.keys[0]
-	var s := clampf((t - track.t0) / maxf(track.t1 - track.t0, 0.001), 0.0, 1.0)
-	var accel := clampf(0.6 / float(steps), 0.15, 0.5)
-	var u := _trapezoid(s, accel) * float(steps)
-	var k := mini(floori(u), steps - 1)
-	var a: Array = track.keys[k]
-	var b: Array = track.keys[k + 1]
-	var f := u - float(k)
-	return [a[0].lerp(b[0], f), lerpf(a[1], b[1], f)]
+	for i in count:
+		var span: Array = track.spans[i]
+		if t < span[0]:
+			return track.keys[i]
+		if t <= span[1]:
+			var length: float = span[1] - span[0]
+			if length <= 0.0:
+				return track.keys[i + 1]
+			var f := _ease((t - span[0]) / length, i == 0, i == count - 1)
+			var a: Array = track.keys[i]
+			var b: Array = track.keys[i + 1]
+			return [a[0].lerp(b[0], f), lerpf(a[1], b[1], f)]
+	return track.keys[-1]
 
 
-## Distance (0..1) at time s (0..1) for a speed that ramps up over `a`, holds, and ramps down over `a`.
-static func _trapezoid(s: float, a: float) -> float:
-	var vmax := 1.0 / (1.0 - a)
-	if s < a:
-		return vmax * s * s / (2.0 * a)
-	if s > 1.0 - a:
-		var r := 1.0 - s
-		return 1.0 - vmax * r * r / (2.0 * a)
-	return vmax * (s - a * 0.5)
+## Distance (0..1) along a glide at time f (0..1): linear, easing in from rest (leaving at full speed,
+## so the next glide carries on smoothly), out to rest, or both (smoothstep).
+static func _ease(f: float, ease_in: bool, ease_out: bool) -> float:
+	if ease_in and ease_out:
+		return smoothstep(0.0, 1.0, f)
+	if ease_in:
+		return f * f * (2.0 - f)
+	if ease_out:
+		var u := 1.0 - f
+		return 1.0 - u * u * (2.0 - u)
+	return f
 
 
 func _pose_tracks(t: float, tracks: Array) -> void:

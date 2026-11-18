@@ -420,6 +420,25 @@ func test_rudder_destroyed_keeps_rolling_each_hex() -> void:
 	assert_eq(rolls.map(func(ev): return ev.impulse), [0, 1, 2])
 
 
+func test_poor_maneuvering_rolls_land_on_the_slower_ships_segments() -> void:
+	# Unequal paces: the steering ship plots 3 (steps at 1/3, 2/3, 1), the other 6 (1/6 ... 1), so the
+	# segments are 1/6, 1/3, 1/2, 2/3, 5/6, 1. Its rolls at steps 0 and 1 fall on segments 1 and 3.
+	var state := _ship("B", "E", 3, 4)
+	state.rudder_destroyed = true
+	_plot(state, "SFF")
+	var other := _ship("B", "E", 3, 6, "other", Vector2i(14, 12))
+	_plot(other, "FFFFFF")
+	var log := _run([state, other] as Array[ShipState], [7, 2])
+	var result := log.get_result(state.ship_id)
+	assert_eq(_moves(result), "FSF")
+	var rolls := _steering_rolls(result)
+	assert_eq(rolls.map(func(ev): return ev.impulse), [1, 3], "each roll on the segment of its step")
+	assert_eq(rolls.map(func(ev): return ev.time), [Vector2i(1, 3), Vector2i(2, 3)])
+	var moves: Array = result.events.filter(func(ev): return ev.event_type == MovementTypes.ResolutionEventType.MOVE)
+	assert_eq(moves.map(func(ev): return ev.impulse), [1, 3, 5], "the moves on the same segments")
+	assert_true(_steering_rolls(log.get_result("other")).is_empty())
+
+
 func test_wheel_shot_away_turns_after_one_hex() -> void:
 	# Hull #3: the wheel turns after the one extra hex, without another roll.
 	var state := _ship("B", "E", 3, 4)
@@ -477,6 +496,17 @@ func test_ma_zero_turn_needs_both_rolls() -> void:
 	var next := _run(ships, [3]).get_result(state.ship_id)
 	assert_eq(_moves(next), "S")
 	assert_true(_steering_rolls(next).is_empty())
+
+
+func test_ma_zero_poor_maneuvering_roll_is_at_start() -> void:
+	var state := _ship("D", "E", 0, 2)
+	state.wheel_shot_away = true
+	_plot(state, "S")
+	var log := _run([state] as Array[ShipState], [9, 3])
+	var rolls := _steering_rolls(log.get_result(state.ship_id))
+	assert_eq(rolls.size(), 1)
+	if rolls.size() == 1:
+		assert_eq(rolls[0].time, MoveSchedule.START)
 
 
 func test_ma_zero_left_over_turn_failing_its_tack_resets() -> void:
