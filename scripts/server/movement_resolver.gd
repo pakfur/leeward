@@ -101,6 +101,13 @@ class ResolutionPass:
 	## The first potential collision of a prompted ship with no decision yet; the pass stops at the
 	## end of its segment.
 	var decision_needed: MovementTypes.BearOffSituation = null
+	## tower_id -> towed_id for every tow whose two ships are in the run (12.A.5, see _follow_tows).
+	## Built from the ship states for every pass, so a replay starts clean.
+	var tows: Dictionary = {}
+	## towed_id -> reason, once the towed ship can no longer follow this pass.
+	var tow_hold: Dictionary = {}
+	## Tower steps undone this pass because the tow could not follow (rollbacks of kind "tow").
+	var tow_amendments: Array = []
 
 
 ## One segment of a pass: the steps the ships make on it and the hexes held while they make them.
@@ -279,6 +286,9 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 	for sid in results:
 		log.add_result(results[sid])
 	log.plot_steps = plot_sizes
+	var tows: Dictionary = _tows_in_run(ship_map)
+	for tower_id in tows:
+		log.towed_by[tows[tower_id]] = tower_id
 	for n in plot_sizes.values():
 		log.longest_plot = maxi(log.longest_plot, n)
 	_final_segment_count = outcome.max_impulses
@@ -334,6 +344,7 @@ func _resolve_pass(
 	p.prompt_ids = prompt_ids
 	p.settled_bear_offs = settled_bear_offs
 	p.settled_leads = settled_leads
+	p.tows = _tows_in_run(ship_map)
 	for sid in amended:
 		if _find_tacking_impulse(ship_map[sid], plotted[sid]) == 0 \
 				and _find_tacking_impulse(ship_map[sid], amended[sid]) != 0:
@@ -521,10 +532,58 @@ func _resolve_impulse(p: ResolutionPass, impulse: int, ships: Array[ShipState]) 
 		for sid in group.ids:
 			_settle(p, seg, sid)
 	_resolve_pending_bear_offs(p, seg)
+	_follow_tows(p, seg)
 	if not seg.speculations.is_empty():
 		p.failed_cycles = _failed_speculations(p, seg)
 	_note_left_map(p, seg)
 	return seg
+
+
+## ============================================================================
+## Towing (12.A.5; towing spec §5)
+## ============================================================================
+
+## tower_id -> towed_id for every tow whose two ships are both in `ship_map`.
+static func _tows_in_run(ship_map: Dictionary) -> Dictionary:
+	var tows: Dictionary = {}
+	for sid in ship_map:
+		var towed_id: String = (ship_map[sid] as ShipState).towing_id
+		if towed_id != "" and ship_map.has(towed_id):
+			tows[sid] = towed_id
+	return tows
+
+
+## The towed ships follow in their towers' wake, once the segment's moves and bear-off decisions are
+## made: for each tower (ship-id order) whose step was made this segment, the towed bow takes the hex
+## the tower's stern just left, pointing at the tower's new stern (TowRules.follow_pose). The follow is
+## on the tower's segment and is a pure function of the tower's step: no die is drawn.
+func _follow_tows(p: ResolutionPass, seg: Segment) -> void:
+	var towers: Array = p.tows.keys()
+	towers.sort()
+	for tower_id in towers:
+		if not seg.moves.has(tower_id):
+			continue
+		var pose: Dictionary = TowRules.follow_pose(seg.start_bows[tower_id], seg.start_facings[tower_id],
+			p.current_hexes[tower_id], p.current_facings[tower_id])
+		if pose.is_empty():
+			continue
+		_apply_follow(p, seg, p.tows[tower_id], pose)
+
+
+## Puts the towed ship in her follow pose and logs TOW_FOLLOW on the tower's segment.
+func _apply_follow(p: ResolutionPass, seg: Segment, towed_id: String, pose: Dictionary) -> void:
+	var result: MovementTypes.ShipResolutionResult = p.results[towed_id]
+	var ev = MovementTypes.ResolutionEvent.new(towed_id, seg.impulse, MovementTypes.ResolutionEventType.TOW_FOLLOW)
+	ev.from_hex = p.current_hexes[towed_id]
+	ev.from_facing = p.current_facings[towed_id]
+	ev.to_hex = pose["bow"]
+	ev.facing = pose["facing"]
+	ev.success = true
+	result.events.append(ev)
+	p.current_hexes[towed_id] = pose["bow"]
+	p.current_facings[towed_id] = pose["facing"]
+	result.final_hex = pose["bow"]
+	result.final_facing = pose["facing"]
 
 
 ## ============================================================================
@@ -2272,24 +2331,37 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 	var sc = game_state.ship_controller if game_state else null
 	if game_state and game_state.get("turn_log") != null:
 		log_outcomes(log, ships, game_state.turn_log)  # before the plots are cleared
+	# A towed ship takes her tower's speed (the unit's, spec §5), read before any facing is updated.
+	var speeds: Dictionary = {}  # ship_id -> resulting speed
+	for ship_state in ships:
+		var result = log.get_result(ship_state.ship_id)
+		if result != null:
+			speeds[ship_state.ship_id] = _resolved_speed(ship_state, result)
 	for ship_state in ships:
 		var result = log.get_result(ship_state.ship_id)
 		if result == null:
 			continue
 		var sid = ship_state.ship_id
 		if sc:
-			# 5.E.2: speed is the MPs used (turns included) once the ship has moved ahead; a ship that
-			# only turns, or does not move, is stopped.
-			var moved_ahead: bool = _count_hexes_moved(result) > 0
-			var rudder_irons: bool = _rudder_irons(ship_state, result)
+			var speed: int = speeds[sid]
 			var last_step: int = _last_step_direction(result)
 			if last_step != NO_STEP:
 				sc.set_last_step_direction(sid, last_step)
 			if ship_state.pending_turn != result.pending_turn:
 				sc.set_pending_turn(sid, result.pending_turn)
-			sc.set_moved_this_turn(sid, moved_ahead)
-			# 8.F.3b / 8.C.1: MPs used this g-t, turns included, whether or not the ship moved ahead.
-			sc.set_mp_used(sid, _count_steps_executed(result))
+			if log.towed_by.has(sid):
+				# 12.A.5: a towed ship moves by following her tower and has the unit's speed; a collision or
+				# grounding stops her all the same (5.E.3b).
+				var follows: Array = result.events.filter(func(ev) -> bool:
+					return ev.event_type == MovementTypes.ResolutionEventType.TOW_FOLLOW)
+				sc.set_moved_this_turn(sid, follows.any(func(ev) -> bool: return ev.from_hex != ev.to_hex))
+				sc.set_mp_used(sid, follows.size())
+				speed = 0 if result.collided_with != "" or result.aground \
+						else int(speeds.get(log.towed_by[sid], 0))
+			else:
+				sc.set_moved_this_turn(sid, _count_hexes_moved(result) > 0)
+				# 8.F.3b / 8.C.1: MPs used this g-t, turns included, whether or not the ship moved ahead.
+				sc.set_mp_used(sid, _count_steps_executed(result))
 			sc.set_ship_position(sid, result.final_hex)
 			sc.set_ship_facing(sid, result.final_facing)
 			# 5.D.3b: remember the way a ship turned into WF=L; leaving WF=L forgets it.
@@ -2299,11 +2371,7 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 				sc.set_irons_entry_turn(sid, last_step)
 			if result.immobilized:
 				sc.set_immobilized(sid, true)
-			# A ship with its rudder destroyed that enters WF=L is in irons at once (hull #2): stopped.
-			# So is any ship in a collision (5.E.3b; at WF=L that is in irons, 5.D.5): next g-t it
-			# has no deceleration minimum and accelerates from 0 (5.E.7).
-			sc.set_ship_speed(sid, _count_steps_executed(result) if moved_ahead and not rudder_irons \
-					and result.collided_with == "" and not result.aground else 0)
+			sc.set_ship_speed(sid, speed)  # see _resolved_speed
 			if result.collided_with != "":
 				sc.set_collision_this_turn(sid, true)
 			if result.fouled_with != "":
@@ -2319,6 +2387,19 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			sc.clear_plotted_actions(sid)
 		else:
 			push_error("MovementResolver: No ship_controller available")
+
+## 5.E.2: speed is the MPs used (turns included) once the ship has moved ahead; a ship that only turns,
+## or does not move, is stopped. A ship whose rudder is destroyed that enters WF=L is in irons at once
+## (hull #2): stopped. So is any ship in a collision (5.E.3b; at WF=L that is in irons, 5.D.5) or run
+## aground: next g-t it has no deceleration minimum and accelerates from 0 (5.E.7). Call before the
+## ship's facing is updated (see _rudder_irons).
+func _resolved_speed(ship_state: ShipState, result: MovementTypes.ShipResolutionResult) -> int:
+	var moved_ahead: bool = _count_hexes_moved(result) > 0
+	if moved_ahead and not _rudder_irons(ship_state, result) and result.collided_with == "" \
+			and not result.aground:
+		return _count_steps_executed(result)
+	return 0
+
 
 ## The ship left the map this g-t (spec §3): lost by a `none` edge, escaped by an escape edge.
 func _leave_map(map_controller: MapController, sid: String, result: MovementTypes.ShipResolutionResult) -> void:

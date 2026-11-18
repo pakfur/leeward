@@ -553,6 +553,9 @@ class ResolutionLog extends RefCounted:
 	## Playback starts here: segments before it were shown from an earlier log of the same turn,
 	## which this one repeats exactly.
 	var resume_impulse: int = 0
+	## towed_id -> tower_id for every tow in the run (12.A.5): the towed ship has no schedule of her
+	## own and follows on her tower's segments, so the view glides her at the tower's pace.
+	var towed_by: Dictionary = {}
 
 	func is_complete() -> bool:
 		return pending_bear_off == null
@@ -579,6 +582,7 @@ class ResolutionLog extends RefCounted:
 			"segment_times": times,
 			"plot_steps": plot_steps,
 			"longest_plot": longest_plot,
+			"towed_by": towed_by,
 			"ship_results": results_dict,
 		}
 
