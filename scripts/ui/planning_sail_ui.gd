@@ -41,6 +41,8 @@ static func status_badge(ship: ShipState) -> String:
 		return "PRIZE"
 	if ship.is_aground():
 		return "AGROUND"
+	if ship.is_anchored():
+		return "ANCHORED"
 	if ship.is_dismasted():
 		return "DISMASTED"
 	if ship.fouled_with != "":
@@ -84,6 +86,7 @@ static func movement_block_reason(ship: ShipState) -> String:
 		"STRUCK": return "Ship has struck its colours and cannot move."
 		"PRIZE": return "Prize: cannot sail (10.H.2)."
 		"AGROUND": return "Ship is aground and cannot move (13.G.3)."
+		"ANCHORED": return "Ship is anchored: cut the cable (AX) to get under way (13.C.3)."
 		"DISMASTED": return "Ship is dismasted and cannot move."
 		"FOULED": return "Ship is fouled with %s and cannot move until it breaks free." % ship.fouled_with
 		"GRAPPLED": return "Ship is grappled to %s and cannot move until the grapples are cut (8.C.7)." % ", ".join(ship.grappled_with)

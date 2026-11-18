@@ -47,6 +47,7 @@ var selected_ship_id: String = ""
 var ship_indicators: Node3D = null     # ShipIndicators
 var indicator_overlay: Control = null  # IndicatorOverlay
 var status_overlay: ShipStatusOverlay = null  # graphic status by a clicked or hovered enemy ship
+var anchor_markers: AnchorMarkers = null  # anchors and cables of anchored ships (13), redrawn with the ships
 var grapple_lines: GrappleLines = null  # the grapples between ships (8.C), redrawn with the ships
 var _mouse_pos: Vector2 = Vector2(-1, -1)  # last mouse position seen (viewport coordinates)
 const HUMAN_PLAYER_ID := 0
@@ -1697,6 +1698,10 @@ func _sync_all_views() -> void:
 			if selected_ship_id == ship_id:
 				_deselect_ship()
 	if hex_map:
+		if anchor_markers == null:
+			anchor_markers = AnchorMarkers.new()
+			add_child(anchor_markers)
+		anchor_markers.refresh(GameState.get_all_ships(), hex_map.get_hex_grid())
 		if grapple_lines == null:
 			grapple_lines = GrappleLines.new()
 			add_child(grapple_lines)
