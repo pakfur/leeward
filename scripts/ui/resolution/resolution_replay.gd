@@ -66,7 +66,8 @@ func start(replay_kind: String, replay_phases: Array[int]) -> void:
 	_waiting = true
 	_running = true
 	resolving = true
-	_resolving_all = false
+	# _resolving_all is left as it is: a replay started from the drain of one being resolved all
+	# (combat -> post-combat) is the rest of the turn's replay and runs on in Resolve-all mode.
 	_finish_callback = Callable()
 	_finish_requested = false
 
@@ -160,7 +161,9 @@ func next() -> void:
 
 
 ## Shows every queued step at once up to a prompt, and stops on it; past the last step the replay
-## waits (or drains when finishing was asked for).
+## waits (or drains when finishing was asked for). Resolve all is the rest of the turn's replay: a
+## replay the drain starts on this node (combat -> post-combat) is shown the same way, up to its
+## first prompt. After the prompt is answered, stepping is normal again.
 func resolve_all() -> void:
 	if not _running or _showing_prompt():
 		return
@@ -203,7 +206,6 @@ func _drain() -> void:
 	_running = false
 	resolving = false
 	_waiting = false
-	_resolving_all = false
 	_finish_callback = Callable()
 	_finish_requested = false
 	drained.emit()

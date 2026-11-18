@@ -191,6 +191,46 @@ func test_drain_callback_may_start_the_next_replay() -> void:
 	assert_eq(replay.current_index(), 0)
 
 
+## Resolve all is the rest of the turn's replay: pressed in combat, the post-combat replay the drain
+## starts runs in Resolve-all mode too, stopping at its prompt; after the answer, stepping is normal.
+func test_resolve_all_carries_into_the_replay_the_drain_starts() -> void:
+	var post_answer := Control.new()
+	var restart := func() -> void:
+		replay.start("post_combat", [DRIFT, STATUS] as Array[int])
+		replay.append(_steps(2, DRIFT))
+		replay.push_prompt(_prompt(), post_answer)
+		replay.append(_steps(1, STATUS))
+		replay.finish_when_drained(_finish)
+	replay.start("combat", [COMBAT] as Array[int])
+	replay.append(_steps(2))
+	replay.finish_when_drained(restart)
+	replay.resolve_all()
+	assert_eq(replay.kind, "post_combat")
+	assert_eq(replay.current_index(), 2, "stopped on the post-combat prompt")
+	assert_eq(panel.answer, post_answer)
+	for i in range(1, panel.shown.size()):
+		assert_true(panel.shown[i][3], "step %d of the turn lands instantly" % i)
+	assert_false(replay.is_resolving_all(), "the prompt ends Resolve all")
+	var shown_before := panel.shown.size()
+	replay.prompt_answered()
+	assert_eq(panel.shown.size(), shown_before + 1)
+	assert_false(panel.shown.back()[3], "after the answer the next step is shown normally")
+	assert_eq(_finished, 0, "and waits for Next")
+	replay.next()
+	assert_eq(_finished, 1)
+
+
+func test_next_through_combat_starts_the_next_replay_normally() -> void:
+	var restart := func() -> void:
+		replay.start("post_combat", [DRIFT] as Array[int])
+		replay.append(_steps(1, DRIFT))
+	replay.start("combat", [COMBAT] as Array[int])
+	replay.append(_steps(1))
+	replay.finish_when_drained(restart)
+	replay.next()
+	assert_false(panel.shown.back()[3], "no Resolve all pressed: not instant")
+
+
 # --- GameController helpers ------------------------------------------------------------------
 
 func _ev(type: PhaseEvents.Type, phase: int, ship: String, target: String = "") -> PhaseEvents.PhaseEvent:
