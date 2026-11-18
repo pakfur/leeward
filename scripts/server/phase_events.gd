@@ -47,7 +47,7 @@ enum Type {
 	AGROUND,  # a ship runs or drifts aground: {cause: movement/drift, terrain: land/shallow, hex, depth, draft}
 	LEAD_CAST,  # a ship casts the lead: {hex, depth, draft, outcome, side}
 	ESCAPE_DECLARED,  # a ship declares it is trying to escape
-	ESCAPED,  # a ship escapes: {how: edge/range/pursuit, edge | range}
+	ESCAPED,  # a ship escapes: {how: edge|distance|speed, edge | range (-1: no enemy on the map)}
 	ARRIVED,  # a reinforcement enters: {hex, facing, sail_state, speed}
 	ARRIVAL_DELAYED,  # a reinforcement cannot enter this turn; target_id: the ship in the way
 }
@@ -720,7 +720,9 @@ class PhaseEvent extends RefCounted:
 		return text
 
 	func _lead_text(who: String) -> String:
-		var text := "%s casts the lead: %s ft at %s, draws %s ft" % [who, _val("depth"), _hex_text("hex"), _val("draft")]
+		var depth := int(data.get("depth", -1))
+		var reading := "land" if depth < 0 else "%d ft" % depth
+		var text := "%s casts the lead: %s at %s, draws %s ft" % [who, reading, _hex_text("hex"), _val("draft")]
 		var outcome := str(data.get("outcome", ""))
 		var side := int(data.get("side", -1))
 		match outcome:
@@ -745,6 +747,8 @@ class PhaseEvent extends RefCounted:
 		var hexes := PhaseEvents.plural(int(data.get("range", 0)), "hex", "hexes")
 		match str(data.get("how", "")):
 			"distance":
+				if int(data.get("range", -1)) < 0:
+					return "%s escapes with no enemy in sight" % who
 				return "%s escapes %s from the nearest enemy" % [who, hexes]
 			"speed":
 				return "%s escapes %s off, and no enemy can catch her" % [who, hexes]

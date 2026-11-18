@@ -39,6 +39,7 @@ func escape(ship_id: String, data: Dictionary, phase: int) -> void:
 	sc.set_status(ship_id, ShipState.Status.ESCAPED)
 	if game_state.get("crew_task_controller") != null:
 		game_state.crew_task_controller.drop_all(ship_id, "escaped")
+	sc.clear_fires(ship_id)  # she burns no more where we can see her (as a wreck, spec Q10)
 	sc.clear_pending_morale_checks(ship_id)
 	sc.remove_from_map(ship_id)
 	game_state.turn_log.add(PhaseEvents.Type.ESCAPED, phase, ship_id, data)

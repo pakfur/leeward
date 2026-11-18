@@ -199,3 +199,38 @@ func test_map_edge_stop_drift_aground_texts() -> void:
 	log.add(PhaseEvents.Type.DRIFT, PHASE, "a", {"blocked": "aground"})
 	assert_string_contains(_text(0), "stops at the edge of the map")
 	assert_string_contains(_text(1), "drifts aground")
+
+
+func test_lead_on_land_and_escape_with_no_enemy_texts() -> void:
+	_make_ship("a", 0)
+	var log := GameState.turn_log
+	log.add(PhaseEvents.Type.LEAD_CAST, PHASE, "a", {"hex": {"q": 3, "r": 10}, "depth": -1,
+		"draft": 18, "outcome": "held", "side": -1})
+	log.add(PhaseEvents.Type.ESCAPED, PHASE, "a", {"how": "distance", "range": -1})
+	assert_string_contains(_text(0), "casts the lead: land at")
+	assert_false(_text(0).contains("-1"), _text(0))
+	assert_string_contains(_text(1), "with no enemy in sight")
+	assert_false(_text(1).contains("-1"), _text(1))
+
+
+func test_escape_puts_out_the_ships_fires() -> void:
+	var a := _make_ship("a", 1)
+	GameState.ship_controller.add_fire("a", "test", false)
+	assert_true(a.is_burning())
+	GameState.map_controller.escape("a", {"how": "edge", "edge": "W"}, PHASE)
+	assert_false(a.is_burning())
+
+
+func test_an_escaped_ship_takes_no_fire_damage_and_never_explodes() -> void:
+	var a := _make_ship("a", 1)
+	GameState.map_controller.escape("a", {"how": "edge", "edge": "W"}, PHASE)
+	# A fire still listed on a ship off the map (a safety net): the fire sub-phase skips her.
+	GameState.ship_controller.add_fire("a", "test", false)
+	var hull: Array[int] = [0, 0, 0, 0]
+	a.hull_current_hp = hull
+	var rigging := a.rigging_current_hp.duplicate()
+	GameState.turn_log = PhaseEvents.PhaseLog.new()
+	GameState.fire_controller.resolve(PHASE)
+	assert_eq(a.status, ShipState.Status.ESCAPED)
+	assert_eq(a.rigging_current_hp, rigging)
+	assert_eq(GameState.turn_log.events.size(), 0)
