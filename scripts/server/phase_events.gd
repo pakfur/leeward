@@ -55,6 +55,8 @@ enum Type {
 	CABLE_CUT,  # 13.F.2 a ship cuts her cable: {hex: the anchor}
 	SPRING_TURN,  # 13.D.2-3 a ship anchored with springs turns 60 degrees: {direction: port/starboard, pivot: bow/stern, from_facing, to_facing, refused}; target_id: the ship holding the hex. Refused (refused != "") she keeps from_facing; to_facing is the facing she would have taken
 	VEER_IN,  # 13.E.2 a ship veers in one hex: {cable, refused}; target_id: the ship in the way. cable is the cable after veering in; refused (refused != "") she keeps her cable
+	TOW_BEGUN,  # 12.A.4 ship_id (the tower) rolls to take target_id in tow: {roll, modifier, modifiers, total, needed, success}
+	TOW_CUT,  # 12.A.6, 12.A.9 the tow between ship_id (tower) and target_id (towed) is cut: {cause: tx/struck/destroyed/taken/aground/structural, by}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -65,6 +67,7 @@ const CREW_TASK_NAMES := {
 	"PBA": "prepare the bow anchor", "PSA": "prepare the stern anchor", "PBS": "prepare bow springs",
 	"PSS": "prepare stern springs", "A": "anchor", "AX": "cut the cable", "VO": "veer out",
 	"VI": "veer in", "HS": "handle the springs",
+	"PT": "prepare to tow", "TX": "cut the tow",
 }
 
 ## The same tasks as gerunds, for "finishes …" / "stops …" lines.
@@ -75,6 +78,7 @@ const CREW_TASK_GERUNDS := {
 	"PBA": "preparing the bow anchor", "PSA": "preparing the stern anchor", "PBS": "preparing bow springs",
 	"PSS": "preparing stern springs", "A": "anchoring", "AX": "cutting the cable", "VO": "veering out",
 	"VI": "veering in", "HS": "handling the springs",
+	"PT": "preparing to tow", "TX": "cutting the tow",
 }
 
 ## Why a crew task ended early, in plain words (reasons not listed are shown as given).

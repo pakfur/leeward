@@ -393,6 +393,8 @@ enum ResolutionEventType {
 	LEFT_MAP,  # the step left the map by a `none` or crossable escape edge; detail "<edge> <outcome>"
 	AGROUND,  # the step entered land or shallows too shallow for the draft (13.G.2): the ship stops where it was
 	LEAD_SOUNDING,  # casting the lead (13.G.4)
+	TOW_FOLLOW,  # 12.A.5 the towed ship follows her tower's step: from_hex/from_facing -> to_hex/facing
+	TOW_HELD,  # the tower's step is undone: her tow could not follow; detail = reason [" by <id>"]
 }
 
 ## Choices for a potential collision (6.D): bear off to port or starboard, or hold course and collide.
