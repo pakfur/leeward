@@ -86,7 +86,7 @@ func _guns(ship: ShipState, plan: Dictionary) -> Control:
 	for row in CrewOverlayText.gun_rows(ship, GameState.environment):
 		var h := _hbox(8)
 		var side := Style.label(str(row["side"]).to_upper(), 11, Style.MUTED, false, false, Style.COUNTER)
-		side.custom_minimum_size.x = Style.px(62)
+		side.custom_minimum_size.x = Style.px(78)
 		h.add_child(side)
 		var segs := _hbox(2)
 		segs.add_theme_constant_override("separation", 2)
@@ -101,7 +101,8 @@ func _guns(ship: ShipState, plan: Dictionary) -> Control:
 		var off := mini(int(row["dismounted"]), kinds.size())
 		for k in kinds.size():
 			segs.add_child(_seg(kinds[k], k >= kinds.size() - off, Style.px(9)))
-		segs.tooltip_text = "%s broadside: %d long gun, %d medium gun and %d carronade factors%s" % [
+		var is_chase: bool = bool(row.get("chase", false))
+		segs.tooltip_text = ("%s: 1 long gun factor (house rule: never dismounted, lower deck immaterial)" % row["side"]) if is_chase else "%s broadside: %d long gun, %d medium gun and %d carronade factors%s" % [
 			row["side"], row["lg"], row["mg"], row["cr"],
 			"" if off == 0 else ", %d guns dismounted (−1 each to this side's fire)" % off]
 		if int(row["lower_deck"]) != 0:

@@ -16,6 +16,13 @@ extends Control
 ## order set, so the numbers and the breakdown are those the resolver will roll (two targets, half
 ## broadside, initial broadside once per broadside). No popups. The panel never mutates game
 ## state: pressing the main button only emits the assembled order dictionaries.
+## Chasers (house rule, register §5): after Port and Starboard, a "Bow chaser" and a "Stern chaser"
+## block for each chaser that has a target (GunneryCalculator.eligible_shots sides
+## GunneryTypes.CHASE_BOW / CHASE_STERN, battery "chase"): rows labelled "Chaser", the aim toggle,
+## the reduction stepper and the ammunition toggle locked (round shot only). A chase side keeps its
+## target under "bow" (the "stern" key stays ""), so FireRules.limit_targets / battery_targets keep
+## the ship within two targets. The default choice is the best broadside row; a ship with no
+## broadside row starts on its best chaser row.
 ## Marine fire (7.G, boarding spec §4.4): each own ship whose marines may fire gets a "Marines" block
 ## with one row per adjacent enemy (MarineFireResolver.eligible_marine_shots, a pure query) showing
 ## the Marine Fire column and the chance of a hit, plus "Hold musket fire"; one choice at most (7.G.2).
@@ -29,7 +36,16 @@ signal ship_focused(ship_id: String)
 ## A broadside's target (or toggles) changed for this ship.
 signal selection_changed(ship_id: String)
 
-const SIDE_NAMES := ["Port", "Starboard"]
+## Every side a ship may fire from, in panel order: the two broadsides, then the bow and stern chasers.
+const ALL_SIDES: Array[int] = [ShipState.PORT, ShipState.STARBOARD, GunneryTypes.CHASE_BOW,
+	GunneryTypes.CHASE_STERN]
+const SIDE_NAMES := {
+	ShipState.PORT: "Port",
+	ShipState.STARBOARD: "Starboard",
+	GunneryTypes.CHASE_BOW: "Bow chaser",
+	GunneryTypes.CHASE_STERN: "Stern chaser",
+}
+const CHASE_AMMO_NOTE := "Chasers fire round shot only"
 const SEPARATOR := " — "
 const HIGH_ONLY_NOTE := "Range %d+: must fire high"
 const DISMANTLING_NOTE := "Dismantling shot reaches %d hexes"
@@ -38,6 +54,7 @@ const BATTERY_LABELS := {
 	GunneryTypes.BATTERY_FULL: "Full broadside",
 	GunneryTypes.BATTERY_BOW: "Bow battery",
 	GunneryTypes.BATTERY_STERN: "Stern battery",
+	GunneryTypes.BATTERY_CHASE: "Chaser",
 }
 
 ## Calculator refusal reasons (GunneryCalculator.preview) -> plain words for the "Combat" panel.
@@ -196,14 +213,26 @@ static func half_broadside_text(value: int) -> String:
 	return "Half broadside %s%d" % ["−" if value < 0 else "+", absi(value)]
 
 
-## "Full broadside", "Bow battery" or "Stern battery".
+## "Full broadside", "Bow battery", "Stern battery" or "Chaser".
 static func battery_label(battery: String) -> String:
 	return str(BATTERY_LABELS.get(battery, battery))
 
 
+## A side block's title: "Port broadside", "Starboard broadside", "Bow chaser", "Stern chaser".
+static func side_title(side: int) -> String:
+	var side_name := str(SIDE_NAMES.get(side, side))
+	return side_name if GunneryTypes.is_chase_side(side) else "%s broadside" % side_name
+
+
+## The breakdown line of a side that holds fire.
+static func holds_fire_text(side: int) -> String:
+	return "This chaser holds fire." if GunneryTypes.is_chase_side(side) else "This broadside holds fire."
+
+
 ## The batteries a target can be fired at with from one side, from its eligible previews, in
 ## GunneryTypes.BATTERIES order: "full" only when both batteries bear, and each single battery
-## that bears (each gets its own row, so a side can split or fire a half broadside).
+## that bears (each gets its own row, so a side can split or fire a half broadside); then "chase"
+## (a chase side's only battery).
 static func battery_options(previews: Array) -> Array[String]:
 	var can := {}
 	for p: GunneryTypes.ShotPreview in previews:
@@ -213,6 +242,8 @@ static func battery_options(previews: Array) -> Array[String]:
 	for battery in GunneryTypes.BATTERIES:
 		if can.has(battery):
 			options.append(battery)
+	if can.has(GunneryTypes.BATTERY_CHASE):
+		options.append(GunneryTypes.BATTERY_CHASE)
 	return options
 
 
@@ -234,9 +265,12 @@ static func row_key(target_id: String, battery: String) -> String:
 	return "" if target_id == "" else "%s|%s" % [target_id, battery]
 
 
-## Whether the row (target_id, battery) is what the side currently fires.
+## Whether the row (target_id, battery) is what the side currently fires. A chaser's target is
+## kept under "bow".
 static func row_chosen(bow: String, stern: String, target_id: String, battery: String) -> bool:
 	match battery:
+		GunneryTypes.BATTERY_CHASE:
+			return bow == target_id
 		GunneryTypes.BATTERY_FULL:
 			return bow == target_id and stern == target_id
 		GunneryTypes.BATTERY_BOW:
@@ -249,7 +283,8 @@ static func row_chosen(bow: String, stern: String, target_id: String, battery: S
 ## Row-click state transition for one side (widget state only; FireRules.side_shots turns it
 ## into shots). `state` has "bow" and "stern" (target per battery). target_id "" holds fire;
 ## picking the chosen row again holds what it fires; "full" aims both batteries at the target;
-## a single battery aims only that battery, and a full broadside at that target becomes the half.
+## a single battery aims only that battery, and a full broadside at that target becomes the half;
+## "chase" toggles "bow" between the target and "" ("stern" stays "").
 static func choose_battery(state: Dictionary, target_id: String, battery: String) -> Dictionary:
 	var bow: String = str(state.get("bow", ""))
 	var stern: String = str(state.get("stern", ""))
@@ -257,6 +292,9 @@ static func choose_battery(state: Dictionary, target_id: String, battery: String
 		return {"bow": "", "stern": ""}
 	var chosen := row_chosen(bow, stern, target_id, battery)
 	match battery:
+		GunneryTypes.BATTERY_CHASE:
+			bow = "" if chosen else target_id
+			stern = ""
 		GunneryTypes.BATTERY_FULL:
 			bow = "" if chosen else target_id
 			stern = bow
@@ -290,30 +328,36 @@ static func reduction_of(state: Dictionary, target_id: String, battery: String) 
 ## A ship's FireOrders for its sides (side -> {"bow", "stern", "want_high", "want_dismantling",
 ## "reductions"})
 ## through FireRules (bow+stern at one target = full broadside, forced aim, ammunition range).
-## `ranges` is target_id -> range in hexes.
+## A chase side's shot (its target under "bow") is a GunneryTypes.BATTERY_CHASE order (round shot,
+## FireRules.make_order). `ranges` is target_id -> range in hexes.
 static func panel_orders(ship_id: String, sides: Dictionary, ranges: Dictionary) -> Array[GunneryTypes.FireOrder]:
 	var orders: Array[GunneryTypes.FireOrder] = []
 	var keys := sides.keys()
 	keys.sort()
 	for side in keys:
 		var state: Dictionary = sides[side]
-		for shot: Dictionary in FireRules.side_shots(state["bow"], state["stern"]):
-			orders.append(FireRules.make_order(ship_id, int(side), shot["target_id"], shot["battery"],
+		var chase := GunneryTypes.is_chase_side(int(side))
+		for shot: Dictionary in FireRules.side_shots(state["bow"], "" if chase else state["stern"]):
+			var battery: String = GunneryTypes.BATTERY_CHASE if chase else str(shot["battery"])
+			orders.append(FireRules.make_order(ship_id, int(side), shot["target_id"], battery,
 				bool(state.get("want_high", false)), bool(state.get("want_dismantling", false)),
 				int(ranges.get(shot["target_id"], 0)),
-				reduction_of(state, shot["target_id"], shot["battery"])))
+				reduction_of(state, shot["target_id"], battery)))
 	return orders
 
 
 ## What the main button does: "Fire 1 broadside", "Fire 2 half broadsides", "Fire 1 broadside and
-## 1 half broadside" or "Hold all fire". A full-broadside order counts as a broadside, a bow or stern
-## battery order as a half broadside (a side split between two targets is two half broadsides).
-static func fire_button_text(full_count: int, half_count: int = 0) -> String:
+## 1 half broadside", "Fire 1 broadside and 1 chaser" or "Hold all fire". A full-broadside order
+## counts as a broadside, a bow or stern battery order as a half broadside (a side split between
+## two targets is two half broadsides), a "chase" order as a chaser.
+static func fire_button_text(full_count: int, half_count: int = 0, chase_count: int = 0) -> String:
 	var parts := PackedStringArray()
 	if full_count > 0:
 		parts.append("%d broadside%s" % [full_count, "" if full_count == 1 else "s"])
 	if half_count > 0:
 		parts.append("%d half broadside%s" % [half_count, "" if half_count == 1 else "s"])
+	if chase_count > 0:
+		parts.append("%d chaser%s" % [chase_count, "" if chase_count == 1 else "s"])
 	if parts.is_empty():
 		return "Hold all fire"
 	return "Fire " + " and ".join(parts)
@@ -322,10 +366,13 @@ static func fire_button_text(full_count: int, half_count: int = 0) -> String:
 ## fire_button_text() for a set of orders.
 static func fire_button_text_for(orders: Array) -> String:
 	var full := 0
+	var chase := 0
 	for order in orders:
 		if order.battery == GunneryTypes.BATTERY_FULL:
 			full += 1
-	return fire_button_text(full, orders.size() - full)
+		elif order.battery == GunneryTypes.BATTERY_CHASE:
+			chase += 1
+	return fire_button_text(full, orders.size() - full - chase, chase)
 
 
 ## Radio-style marker so the chosen row is obvious at a glance.
@@ -372,8 +419,21 @@ static func display_order(entries: Array) -> Array:
 ## Which broadside starts with a target: the one whose best row is the best one-target shot
 ## (highest modified number, then nearest, then name; port before starboard on a full tie).
 ## `ranked_by_side` is side -> rank_targets() output. The other broadside starts on hold fire,
-## because firing both costs the two-target modifier on each shot. -1 when no side has a row.
+## because firing both costs the two-target modifier on each shot. A chase side only when no
+## broadside has a row (then the best chaser row, by the same order). -1 when no side has a row.
 static func default_side(ranked_by_side: Dictionary) -> int:
+	var broadsides := {}
+	var chasers := {}
+	for side in ranked_by_side:
+		if GunneryTypes.is_chase_side(int(side)):
+			chasers[side] = ranked_by_side[side]
+		else:
+			broadsides[side] = ranked_by_side[side]
+	var best_side := _best_side(broadsides)
+	return best_side if best_side >= 0 else _best_side(chasers)
+
+
+static func _best_side(ranked_by_side: Dictionary) -> int:
 	var best_side := -1
 	var best: Dictionary = {}
 	var sides := ranked_by_side.keys()
@@ -399,8 +459,10 @@ static func _better_row(x: Dictionary, y: Dictionary) -> bool:
 
 ## Shown next to the main button while some ship fires both broadsides, e.g.
 ## "Two targets: −12 on each broadside". `modifier` is the (negative) two-target modifier.
-static func two_target_note(modifier: int) -> String:
-	return "Two targets: %s%d on each broadside" % ["−" if modifier < 0 else "+", absi(modifier)]
+## `with_chaser` (a chaser is one of the two targets) says "shot" instead of "broadside".
+static func two_target_note(modifier: int, with_chaser: bool = false) -> String:
+	return "Two targets: %s%d on each %s" % ["−" if modifier < 0 else "+", absi(modifier),
+		"shot" if with_chaser else "broadside"]
 
 
 ## The main reason a ship cannot fire at its nearest enemy, in plain words, from the calculator's
@@ -458,7 +520,7 @@ static func nearest_enemy(ship: ShipState, all_ships: Array, grid: HexGrid) -> S
 
 
 ## Why `ship` has no shot, in plain words: its calculator previews (a pure query) of both
-## broadsides against its nearest enemy, mapped by no_shot_reason(). `calculator` is a
+## broadsides and chasers against its nearest enemy, mapped by no_shot_reason(). `calculator` is a
 ## GunneryCalculator (anything with preview(order)).
 static func ship_no_shot_reason(ship: ShipState, all_ships: Array, calculator, grid: HexGrid) -> String:
 	if ship.is_destroyed():
@@ -479,6 +541,13 @@ static func ship_no_shot_reason(ship: ShipState, all_ships: Array, calculator, g
 						reason = single
 						break
 			reasons.append(reason)
+		# A chaser may be the only thing that bears (or the only refusal worth naming): an empty
+		# reason means it could fire, so it says nothing.
+		for side in GunneryTypes.CHASE_SIDES:
+			var chase_reason := _no_shot_preview(calculator, ship.ship_id, side, target.ship_id,
+				GunneryTypes.BATTERY_CHASE)
+			if chase_reason != "":
+				reasons.append(chase_reason)
 	return no_shot_reason(reasons)
 
 
@@ -753,7 +822,7 @@ func _add_ship(ship_state: ShipState, options: Dictionary, marine_shots: Array =
 
 	var names := target_names(GameState.get_all_ships())
 	var ranked_by_side := {}
-	for side in [ShipState.PORT, ShipState.STARBOARD]:
+	for side in ALL_SIDES:
 		if not options.has(side):
 			continue
 		# Rank by each target's preferred battery (full broadside when both bear), one target.
@@ -765,7 +834,7 @@ func _add_ship(ship_state: ShipState, options: Dictionary, marine_shots: Array =
 				"range": shot.range_hexes, "name": str(names.get(target_id, target_id))})
 		ranked_by_side[side] = rank_targets(ranked_entries)
 	var firing_side := default_side(ranked_by_side)
-	for side in [ShipState.PORT, ShipState.STARBOARD]:
+	for side in ALL_SIDES:
 		if not ranked_by_side.has(side):
 			continue
 		var ranked: Array = ranked_by_side[side]
@@ -865,7 +934,7 @@ func _build_side(parent: VBoxContainer, ship_id: String, side: int, rows_in_orde
 	swatch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	title.add_child(swatch)
 	var label := Label.new()
-	label.text = "%s broadside" % SIDE_NAMES[side]
+	label.text = side_title(side)
 	title.add_child(label)
 	parent.add_child(title)
 
@@ -891,6 +960,10 @@ func _build_side(parent: VBoxContainer, ship_id: String, side: int, rows_in_orde
 	var dismantling := _toggle_row(parent, "Dismantling")
 	high["button"].toggled.connect(func(on: bool): set_want_high(ship_id, side, on))
 	dismantling["button"].toggled.connect(func(on: bool): set_want_dismantling(ship_id, side, on))
+	if GunneryTypes.is_chase_side(side):
+		# A chaser fires round shot only (house rule, register §5): no ammunition choice.
+		dismantling["button"].disabled = true
+		dismantling["note"].text = CHASE_AMMO_NOTE
 	return {"targets": targets, "steppers": steppers, "rows": rows_in_order, "high": high["button"], "high_note": high["note"],
 		"dismantling": dismantling["button"], "dismantling_note": dismantling["note"],
 		"breakdown": breakdown}
@@ -1038,7 +1111,8 @@ func _update_fire_button() -> void:
 		fire_button.text = fire_button_text_with_marines(orders, marine_orders.size())
 		instructions_label.text = footer_text(orders.size() + marine_orders.size(), targets_changed())
 	if two_target_label:
-		two_target_label.text = two_target_note(DataManager.combat_tables.flat_modifier("two_targets")) \
+		two_target_label.text = two_target_note(DataManager.combat_tables.flat_modifier("two_targets"),
+			any_two_target_chaser()) \
 			if DataManager.combat_tables else ""
 		two_target_label.visible = any_ship_fires_both()
 
@@ -1066,6 +1140,17 @@ func any_ship_fires_both() -> bool:
 	return false
 
 
+## True while a ship naming two targets fires a chaser at one of them.
+func any_two_target_chaser() -> bool:
+	for ship_id in _ship_order:
+		if get_target_ids(ship_id).size() < 2:
+			continue
+		for order in _orders(ship_id, _ships[ship_id]["sides"]):
+			if order.battery == GunneryTypes.BATTERY_CHASE:
+				return true
+	return false
+
+
 ## Re-query previews for the ship's order set and refresh rows, toggles, notes and breakdowns.
 ## Chosen rows show the preview of the current order set; any other row shows the order set
 ## that picking it would give. The player's wishes (want_high, want_dismantling) are kept apart
@@ -1078,6 +1163,7 @@ func _refresh_ship(ship_id: String) -> void:
 	for side in sides:
 		var state: Dictionary = sides[side]
 		var widgets: Dictionary = entry["widgets"][side]
+		var chase := GunneryTypes.is_chase_side(int(side))
 		for key: String in widgets["targets"]:
 			var button: Button = widgets["targets"][key]
 			if key == "":
@@ -1114,8 +1200,8 @@ func _refresh_ship(ship_id: String) -> void:
 			dismantling.disabled = true
 			dismantling.set_pressed_no_signal(state["want_dismantling"])
 			widgets["high_note"].text = ""
-			widgets["dismantling_note"].text = ""
-			breakdown.text = "This broadside holds fire."
+			widgets["dismantling_note"].text = CHASE_AMMO_NOTE if chase else ""
+			breakdown.text = holds_fire_text(side)
 			continue
 
 		var all_high_only := true
@@ -1137,9 +1223,10 @@ func _refresh_ship(ship_id: String) -> void:
 		high.disabled = all_high_only
 		high.set_pressed_no_signal(all_high)
 		widgets["high_note"].text = aim_note(any_high_only)
-		dismantling.disabled = not any_dismantling_allowed
+		dismantling.disabled = chase or not any_dismantling_allowed
 		dismantling.set_pressed_no_signal(any_dismantling)
-		widgets["dismantling_note"].text = dismantling_note(max_range, state["want_dismantling"])
+		widgets["dismantling_note"].text = CHASE_AMMO_NOTE if chase \
+			else dismantling_note(max_range, state["want_dismantling"])
 		breakdown.text = "\n".join(lines)
 
 

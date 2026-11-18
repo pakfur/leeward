@@ -94,9 +94,20 @@ Each ship entry:
 }
 ```
 
+## Ship types
+
+`ship_type` is one of the 45 ids in `data/rules/ships.json` (`<nation>_<rating>[suffix]`: `l` large, `c` carronades, `rz` razee):
+
+- British: `br_100`, `br_98l`, `br_98`, `br_80`, `br_74l`, `br_74c`, `br_74`, `br_64c`, `br_64`, `br_50`, `br_44rz` (44-gun razee), `br_40`, `br_38`, `br_36`, `br_32l`, `br_32`, `br_44_diomede` (HMS Diomede, a 44-gun two-decker with medium guns)
+- French: `fr_120`, `fr_110`, `fr_80c`, `fr_80`, `fr_74l`, `fr_74c`, `fr_74`, `fr_50rz` (50-gun razee), `fr_44`, `fr_40c`, `fr_40`, `fr_38`, `fr_36`, `fr_20_babet` (corvette), `fr_20_rosalie` (corvette), `fr_14_coureur` (brig)
+- Spanish: `sp_130`, `sp_112`, `sp_80l`, `sp_80`, `sp_74`, `sp_64`, `sp_40`, `sp_34`
+- American: `am_44`, `am_38`, `am_36`, `am_32`
+
+The old ids `frigate_38`, `frigate_32` and `ship_of_line_74` are aliases of `br_38`, `br_32` and `br_74` (kept as written in a scenario; `DataManager.canonical_ship_type` resolves them). A type's nationality is its builder; the navy using her is `navy` / `navies` (French BGNs at ranges 11-15 follow the user, 1.G.8, not the builder). A scenario ship's own `id` (e.g. `br_74` in `test_towing.json`) is a ship id, not a type: it only has to be unique. Victory-point costs come from the type's chart row; a CQ/MR the row does not fill scores at the nearest MR for that CQ, else the lowest cost. Class 4 ships (the corvettes and the brig) and Diomede come from the scenario orders of battle, not the Ship Data Chart; see `data/scenarios/test_ships_and_guns.json` for a mixed fleet.
+
 ## Validation Rules
 
-- `ship_type` must exist in `data/rules/ships.json`
+- `ship_type` must exist in `data/rules/ships.json` (or be an alias)
 - `facing`: 0-5 (0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE)
 - `wind_direction`: 0-5 (same as facing)
 - `wind_speed`: 1-4

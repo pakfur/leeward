@@ -16,12 +16,62 @@ func test_ship_definitions_load_successfully() -> void:
 	assert_gt(dm.ship_definitions.size(), 0, "Ship definitions should not be empty")
 
 func test_expected_ship_ids_present() -> void:
-	assert_true(dm.ship_definitions.has("frigate_38"), "Should have frigate_38")
-	assert_true(dm.ship_definitions.has("frigate_32"), "Should have frigate_32")
-	assert_true(dm.ship_definitions.has("ship_of_line_74"), "Should have ship_of_line_74")
+	assert_true(dm.ship_definitions.has("br_38"), "Should have br_38")
+	assert_true(dm.ship_definitions.has("br_32"), "Should have br_32")
+	assert_true(dm.ship_definitions.has("br_74"), "Should have br_74")
+	assert_false(dm.ship_definitions.has("frigate_38"), "Aliases are not keys")
 
 func test_ship_definition_count() -> void:
-	assert_eq(dm.ship_definitions.size(), 3, "Should have 3 ship definitions from ships.json")
+	assert_eq(dm.ship_definitions.size(), 45, "41 Ship Data Chart rows and 4 order-of-battle ships")
+
+func test_aliases_resolve_to_one_definition() -> void:
+	assert_same(dm.get_ship_definition("frigate_38"), dm.get_ship_definition("br_38"))
+	assert_same(dm.get_ship_definition("frigate_32"), dm.get_ship_definition("br_32"))
+	assert_same(dm.get_ship_definition("ship_of_line_74"), dm.get_ship_definition("br_74"))
+	assert_eq(dm.canonical_ship_type("ship_of_line_74"), "br_74")
+	assert_eq(dm.canonical_ship_type("br_74"), "br_74")
+
+func test_spot_rows() -> void:
+	var fr120 = dm.get_ship_definition("fr_120")
+	assert_eq(fr120.crew_count, [10, 10, 11, 11] as Array[int])
+	assert_eq(fr120.marine_count, 11)
+	assert_eq(fr120.gun_factors, {"lg": 29, "mg": 0, "cr": 1})
+	assert_false(fr120.point_costs.has("A3"))
+	assert_eq(fr120.point_costs["B3"], 154)
+	assert_eq(fr120.point_costs["E5"], 89)
+	var sp34 = dm.get_ship_definition("sp_34")
+	assert_eq(sp34.lower_deck_modifier, -8)
+	assert_eq(sp34.freeboard, 5)
+	assert_eq(sp34.speed_type, "F/S")
+	assert_eq(dm.get_ship_definition("am_32").gun_factors, {"lg": 1, "mg": 0, "cr": 8})
+	var dio = dm.get_ship_definition("br_44_diomede")
+	assert_eq(dio.gun_factors["mg"], 3)
+	assert_eq(dio.freeboard, 3)
+	assert_eq(dio.point_costs, {"D4": 27})
+	assert_eq(dio.ship_class, 2)
+	var cou = dm.get_ship_definition("fr_14_coureur")
+	assert_eq(cou.ship_class, 4)
+	assert_eq(cou.maneuverability, "D")
+	assert_eq(cou.speed_type, "C/S")
+	assert_eq(cou.crew_count, [1, 1, 1, 2] as Array[int])
+	assert_eq(cou.ch_modifier, -4)
+	var ros = dm.get_ship_definition("fr_20_rosalie")
+	assert_eq(ros.point_costs, {"D6": 10})
+	assert_eq(ros.speed_type, "C/F")
+	assert_eq(ros.maneuverability, "C")
+	assert_eq(dm.get_ship_definition("br_40").year, 1813)
+	assert_eq(dm.get_ship_definition("br_100").year, 1793)
+	assert_eq(dm.get_ship_definition("br_100").ch_modifier, 1)
+
+func test_nationality_matches_prefix() -> void:
+	var names := {"br": "British", "fr": "French", "sp": "Spanish", "am": "American"}
+	for id in dm.ship_definitions:
+		assert_eq(dm.ship_definitions[id].nationality, names[id.left(2)], id)
+
+func test_point_value_of_one_cell_row() -> void:
+	var ros = dm.get_ship_definition("fr_20_rosalie")
+	assert_eq(ros.point_value("D", 6), 10.0)
+	assert_eq(ros.point_value("C", 3), 10.0)
 
 # --- get_ship_definition() ---
 
@@ -59,10 +109,6 @@ func test_frigate_38_maneuverability() -> void:
 func test_frigate_38_speed_type() -> void:
 	var def = dm.get_ship_definition("frigate_38")
 	assert_eq(def.speed_type, "F/F")
-
-func test_frigate_38_type() -> void:
-	var def = dm.get_ship_definition("frigate_38")
-	assert_eq(def.type, "Frigate")
 
 func test_frigate_38_draft() -> void:
 	var def = dm.get_ship_definition("frigate_38")
@@ -149,11 +195,6 @@ func test_point_value_nearest_morale() -> void:
 func test_point_value_unknown_quality_uses_row_minimum() -> void:
 	assert_eq(dm.get_ship_definition("frigate_38").point_value("G", 4), 36.0)
 
-func test_is_french_gunned() -> void:
-	assert_false(dm.get_ship_definition("frigate_38").is_french_gunned())
-	var fr = Ship.from_dict({"nationality": "French"})
-	assert_true(fr.is_french_gunned())
-
 func test_to_dict_roundtrip_new_fields() -> void:
 	var original = dm.get_ship_definition("frigate_38")
 	var restored = Ship.from_dict(original.to_dict())
@@ -167,10 +208,6 @@ func test_to_dict_roundtrip_new_fields() -> void:
 func test_sol_74_speed_type() -> void:
 	var def = dm.get_ship_definition("ship_of_line_74")
 	assert_eq(def.speed_type, "L/F")
-
-func test_sol_74_type() -> void:
-	var def = dm.get_ship_definition("ship_of_line_74")
-	assert_eq(def.type, "SOL")
 
 func test_sol_74_rating() -> void:
 	var def = dm.get_ship_definition("ship_of_line_74")

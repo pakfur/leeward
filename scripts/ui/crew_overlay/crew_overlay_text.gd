@@ -137,9 +137,9 @@ static func guns_readout(ship: ShipState, plan: Dictionary) -> Dictionary:
 		big = "%d of 4 sections · %s" % [n, "±0" if mod == 0 else ("%d" % mod).replace("-", "−")]
 		bad = mod <= -6
 	# What the sections away from the guns are doing is shown under the Crew line, not here.
-	var why_text := "Gunfire modifier for sections firing, on both broadsides."
+	var why_text := "Gunfire modifier for sections firing, on both broadsides and the chasers."
 	if preview["modifier"] == null:
-		why_text = "No sailor section is left at the guns: neither broadside can fire."
+		why_text = "No sailor section is left at the guns: no gun can fire."
 	var assignments: Dictionary = plan.get("assignments", {})
 	var marines := "Marines: lost."
 	if ship.section_alive(ShipState.MARINES):
@@ -188,7 +188,7 @@ static func marines_caption(ship: ShipState, plan: Dictionary) -> String:
 	return "%d/%d · %s" % [ship.marine_count, full, doing]
 
 
-## One row per broadside for the Guns line: the gun factors by kind (`Ship.gun_factors`, the same
+## One row per broadside, then one per chaser, for the Guns line: the gun factors by kind (`Ship.gun_factors`, the same
 ## on both sides), the guns dismounted on that side and its status ("ready", "2 dismounted · −2").
 ## With `env`, a broadside whose lower deck the sea has shut (7.F.2, FireRules.lower_deck_modifier)
 ## says so ("lower deck closed · sea 4", `lower_deck` = the modifier), so it shows before firing.
@@ -209,6 +209,11 @@ static func gun_rows(ship: ShipState, env: EnvironmentState = null) -> Array[Dic
 			"lg": int(gf.get("lg", 0)), "mg": int(gf.get("mg", 0)), "cr": int(gf.get("cr", 0)),
 			"dismounted": off, "lower_deck": ldgm,
 			"status": "ready" if parts.is_empty() else " · ".join(parts)})
+	# The chasers (house rule): one long-gun factor each, never dismounted, lower deck immaterial.
+	for name in ["Bow chase", "Stern chase"]:
+		rows.append({"side": name, "lg": int(FireRules.CHASE_GUN_FACTORS["lg"]),
+			"mg": int(FireRules.CHASE_GUN_FACTORS["mg"]), "cr": int(FireRules.CHASE_GUN_FACTORS["cr"]),
+			"dismounted": 0, "lower_deck": 0, "status": "ready", "chase": true})
 	return rows
 
 

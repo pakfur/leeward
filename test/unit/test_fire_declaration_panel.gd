@@ -2,6 +2,7 @@ extends GutTest
 ## Tests for the pure presentation helpers of the fire declaration panel.
 
 const FirePanel = preload("res://scripts/ui/fire_declaration_panel.gd")
+const GameControllerScript = preload("res://scripts/core/game_controller.gd")
 
 
 func _preview(range_hexes: int, mgn: int, rake: String = "", initial: bool = false,
@@ -588,6 +589,10 @@ func test_panel_lists_a_ship_with_only_a_marine_shot() -> void:
 	var firer := _armed("firer", 0, Vector2i.ZERO, 0)
 	firer.marine_count = 7
 	_armed("foe", 1, Vector2i(2, 0), 0)  # stern (1,0) alongside the firer's bow
+	# The bow chaser bears on the foe (every adjacent ship lies in some arc), so every sailor section
+	# is put on a task: no gun bears.
+	firer.plotted_sections = [0, 1, 2, 3] as Array[int]
+	assert_true(GameState.gunnery_calculator.eligible_shots("firer").is_empty(), "no gun bears (every section busy)")
 	var panel: Control = load("res://scenes/ui/fire_declaration_panel.tscn").instantiate()
 	add_child_autofree(panel)
 	assert_eq(panel.setup(["firer"]), 1, "listed for its marines")
@@ -641,3 +646,115 @@ func test_reduction_clamped_at_zero() -> void:
 	state = FirePanel.set_reduction(state, "t1", "bow", 2)
 	state = FirePanel.set_reduction(state, "t1", "bow", FirePanel.reduction_of(state, "t1", "bow") - 5)
 	assert_eq(FirePanel.reduction_of(state, "t1", "bow"), 0)
+
+
+# --- chasers (house rule, register §5) ---
+
+func test_options_group_chasers_by_side() -> void:
+	var shots: Array[GunneryTypes.ShotPreview] = [
+		_shot(GunneryTypes.CHASE_BOW, "a", GunneryTypes.BATTERY_CHASE),
+		_shot(GunneryTypes.CHASE_STERN, "b", GunneryTypes.BATTERY_CHASE)]
+	var by_side := FirePanel.options_by_target(shots)
+	assert_true(by_side.has(GunneryTypes.CHASE_BOW))
+	assert_true(by_side.has(GunneryTypes.CHASE_STERN))
+	var previews := [_shot(1, "a", "chase"), _shot(1, "a", "bow"), _shot(1, "a", "full")]
+	assert_eq(FirePanel.battery_options(previews), ["full", "bow", "chase"] as Array[String])
+
+
+func test_choose_and_row_chosen_for_chaser() -> void:
+	var state := FirePanel.choose_battery({"bow": "", "stern": ""}, "a", "chase")
+	assert_eq(state, {"bow": "a", "stern": ""})
+	assert_eq(FirePanel.choose_battery(state, "a", "chase"), {"bow": "", "stern": ""})
+	assert_true(FirePanel.row_chosen("a", "", "a", "chase"))
+	assert_false(FirePanel.row_chosen("", "", "a", "chase"))
+
+
+func test_panel_orders_for_chasers() -> void:
+	var sides := {
+		ShipState.STARBOARD: {"bow": "x", "stern": "x", "want_high": false, "want_dismantling": false, "reductions": {}},
+		GunneryTypes.CHASE_BOW: {"bow": "y", "stern": "", "want_high": false, "want_dismantling": true, "reductions": {}},
+	}
+	var orders := FirePanel.panel_orders("own", sides, {"x": 3, "y": 2})
+	assert_eq(orders.size(), 2)
+	assert_eq(orders[0].side, ShipState.STARBOARD)
+	assert_eq(orders[0].battery, "full")
+	assert_eq(orders[1].side, GunneryTypes.CHASE_BOW)
+	assert_eq(orders[1].battery, "chase")
+	assert_eq(orders[1].target_id, "y")
+	assert_eq(orders[1].ammo, "round", "a chaser fires round shot only")
+
+
+func test_default_side_prefers_broadside() -> void:
+	var chase := [{"target_id": "a", "mgn": 9, "range": 2, "name": "A"}]
+	var broadside := [{"target_id": "b", "mgn": 3, "range": 6, "name": "B"}]
+	assert_eq(FirePanel.default_side({GunneryTypes.CHASE_BOW: chase, ShipState.STARBOARD: broadside}),
+		ShipState.STARBOARD)
+	assert_eq(FirePanel.default_side({GunneryTypes.CHASE_STERN: [{"target_id": "a", "mgn": 2, "range": 4, "name": "A"}]}),
+		GunneryTypes.CHASE_STERN)
+
+
+func test_fire_button_counts_chasers() -> void:
+	assert_eq(FirePanel.fire_button_text(1, 0, 1), "Fire 1 broadside and 1 chaser")
+	assert_eq(FirePanel.fire_button_text(0, 0, 2), "Fire 2 chasers")
+	assert_eq(FirePanel.fire_button_text(0), "Hold all fire")
+	var orders := FirePanel.panel_orders("own", {
+		GunneryTypes.CHASE_BOW: {"bow": "y", "stern": "", "want_high": false, "want_dismantling": false},
+		ShipState.PORT: {"bow": "y", "stern": "", "want_high": false, "want_dismantling": false}}, {"y": 2})
+	assert_eq(FirePanel.fire_button_text_for(orders), "Fire 1 half broadside and 1 chaser")
+
+
+func test_side_names_cover_chasers() -> void:
+	assert_eq(FirePanel.SIDE_NAMES[GunneryTypes.CHASE_BOW], "Bow chaser")
+	assert_eq(FirePanel.SIDE_NAMES[GunneryTypes.CHASE_STERN], "Stern chaser")
+	assert_eq(FirePanel.battery_label("chase"), "Chaser")
+	assert_eq(FirePanel.ALL_SIDES, [0, 1, 2, 3] as Array[int])
+
+
+func test_chase_arc_drawn_from_its_end() -> void:
+	var geo := FireGeometry.new(HexGrid.new())
+	var ship := ShipState.new()
+	ship.hex_position = Vector2i(0, 0)
+	ship.facing = 0
+	var own := ship.occupied_hexes()
+	var astern: Array[Vector2i] = GameControllerScript.battery_arc(geo, ship, GunneryTypes.CHASE_STERN,
+		["bow"] as Array[String])
+	assert_true(astern.has(Vector2i(-2, 0)), "the stern chaser covers the hex astern of the stern")
+	assert_false(astern.has(Vector2i(1, 0)))
+	var ahead: Array[Vector2i] = GameControllerScript.battery_arc(geo, ship, GunneryTypes.CHASE_BOW,
+		["stern"] as Array[String])
+	assert_true(ahead.has(Vector2i(2, 0)))
+	assert_false(ahead.has(Vector2i(-2, 0)))
+	for h in own:
+		assert_false(astern.has(h))
+		assert_false(ahead.has(h))
+
+
+func test_chase_colour() -> void:
+	assert_eq(BroadsideColors.color(GunneryTypes.CHASE_BOW), BroadsideColors.CHASE)
+	assert_eq(BroadsideColors.color(GunneryTypes.CHASE_STERN), BroadsideColors.CHASE)
+	assert_eq(BroadsideColors.color(ShipState.STARBOARD), BroadsideColors.STARBOARD)
+
+
+func test_ship_no_shot_reason_also_previews_the_chasers() -> void:
+	var own := _state("o", "HMS Phoebe", 0, Vector2i(0, 0))
+	var foe := _state("f", "Foe", 1, Vector2i(3, 0))
+	var arc := "target is not in that broadside's arc"
+	var calc := FakeCalculator.new()
+	calc.reasons = {ShipState.PORT: arc, ShipState.STARBOARD: arc,
+		"2:chase": "target is out of range (8 hexes, maximum 7)",
+		"3:chase": "target is not in the stern chaser's arc"}
+	assert_eq(FirePanel.ship_no_shot_reason(own, [own, foe], calc, HexGrid.new(1.0)), "out of range")
+	calc.reasons["2:chase"] = "target is not in the bow chaser's arc"
+	assert_eq(FirePanel.ship_no_shot_reason(own, [own, foe], calc, HexGrid.new(1.0)), "out of both broadside arcs")
+
+
+func test_two_target_note_says_shot_when_a_chaser_is_involved() -> void:
+	assert_eq(FirePanel.two_target_note(-12, true), "Two targets: −12 on each shot")
+	assert_eq(FirePanel.two_target_note(-12), "Two targets: −12 on each broadside")
+
+
+func test_gun_rows_flag_the_chasers() -> void:
+	var rows := CrewOverlayText.gun_rows(_state("o", "HMS Phoebe", 0, Vector2i.ZERO))
+	var flagged := rows.filter(func(r): return r.get("chase", false))
+	assert_eq(flagged.size(), 2)
+	assert_eq(rows.size() - flagged.size(), 2, "the broadside rows carry no flag")

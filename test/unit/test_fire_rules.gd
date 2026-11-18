@@ -97,3 +97,43 @@ func test_lower_deck_modifier_reads_the_ship() -> void:
 	assert_eq(FireRules.lower_deck_modifier(s, ShipState.PORT, 4, 0), 0)
 	assert_eq(FireRules.lower_deck_modifier(s, ShipState.PORT, 5, 0), -5)
 	assert_eq(FireRules.lower_deck_modifier(s, ShipState.PORT, 3, 0), 0)
+
+
+# --- chasers (house rule, register §5) ---
+
+func _chase_order(side: int, target_id: String, battery: String) -> GunneryTypes.FireOrder:
+	return FireRules.make_order("me", side, target_id, battery, false, false, 3)
+
+
+func test_chase_mismatch_is_a_declaration_error() -> void:
+	assert_string_contains(FireRules.declaration_error([_chase_order(2, "a", "bow")]), "own end")
+	assert_string_contains(FireRules.declaration_error([_chase_order(0, "a", "chase")]), "own end")
+	assert_eq(FireRules.declaration_error([_chase_order(2, "a", "chase")]), "")
+	assert_string_contains(FireRules.declaration_error([_chase_order(2, "a", "bogus")]), "unknown battery")
+	assert_true(FireRules.chase_mismatch(3, "full"))
+	assert_false(FireRules.chase_mismatch(1, "full"))
+	assert_false(FireRules.chase_mismatch(3, "chase"))
+
+
+func test_each_chaser_fires_once() -> void:
+	assert_eq(FireRules.declaration_error([_chase_order(2, "a", "chase"), _chase_order(2, "b", "chase")]),
+		"battery fired twice")
+	assert_eq(FireRules.declaration_error([_chase_order(2, "a", "chase"), _chase_order(3, "a", "chase")]), "")
+
+
+func test_declaration_counts_chasers_as_targets() -> void:
+	assert_eq(FireRules.declaration_error([_chase_order(1, "a", "full"), _chase_order(0, "b", "full"),
+		_chase_order(2, "c", "chase")]), "more than two targets")
+	assert_eq(FireRules.declaration_error([_chase_order(1, "a", "full"), _chase_order(0, "b", "full"),
+		_chase_order(2, "a", "chase")]), "")
+
+
+func test_make_order_chaser_fires_round_shot() -> void:
+	assert_eq(FireRules.make_order("s", 2, "t", "chase", false, true, 3).ammo, "round")
+	assert_eq(FireRules.make_order("s", 2, "t", "chase", false, false, 10).aim, "high")
+
+
+func test_battery_rank_of_chaser() -> void:
+	assert_eq(FireRules.battery_rank("chase"), 2)
+	assert_eq(FireRules.battery_rank("full"), 0)
+	assert_eq(FireRules.battery_rank("bow"), 1)

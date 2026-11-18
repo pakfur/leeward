@@ -10,7 +10,6 @@ var side: int = 0
 var flag: String = ""
 var ship_name: String = ""
 var ship_type: String = ""
-var crew_quality: String = "B" # A=Elite, B=Veteran, C-D=Trained, E=Green, F-G=Demoralized
 
 # Basic ship information (from type definition)
 var name: String = ""
@@ -19,8 +18,7 @@ var rating: int = 0
 var ship_class: int = 0  # "class" is a reserved keyword, using "ship_class"
 var maneuverability: String = ""
 var speed_type: String = ""
-var type: String = ""
-var speed: String = ""  # Optional: "Fast", "Slow", etc.
+var year: int = 0  # Ship Data Chart "Year Avail."
 
 # Physical characteristics
 var draft: int = 0
@@ -52,7 +50,6 @@ static func from_dict(data: Dictionary) -> Ship:
 	ship.side = data.get("side", data.get("player_id", 0))
 	ship.ship_name = data.get("ship_name", "")
 	ship.ship_type = data.get("ship_type", "")
-	ship.crew_quality = data.get("crew_quality", "Trained")
 	ship.flag = str(data.get("flag", ""))
 
 	# Basic information
@@ -62,8 +59,7 @@ static func from_dict(data: Dictionary) -> Ship:
 	ship.ship_class = data.get("class", 0)
 	ship.maneuverability = data.get("maneuverability", "")
 	ship.speed_type = data.get("speed_type", "F/F")
-	ship.type = data.get("type", "")
-	ship.speed = data.get("speed", "")
+	ship.year = int(data.get("year", 0))
 
 	# Physical characteristics
 	ship.draft = data.get("draft", 0)
@@ -108,7 +104,6 @@ static func initialize_from_scenario(data: Dictionary, type_def: Dictionary) -> 
 	ship.side = data.get("side", data.get("player_id", 0))
 	ship.ship_type = data.get("ship_type", "")
 	ship.ship_name = data.get("ship_name", ship.name)
-	ship.crew_quality = data.get("crew_quality", "Trained")
 	ship.flag = str(data.get("flag", ""))
 
 	return ship
@@ -121,15 +116,13 @@ func to_dict() -> Dictionary:
 		"flag": flag,
 		"ship_name": ship_name,
 		"ship_type": ship_type,
-		"crew_quality": crew_quality,
 		"name": name,
 		"nationality": nationality,
 		"rating": rating,
 		"class": ship_class,
 		"maneuverability": maneuverability,
 		"speed_type": speed_type,
-		"type": type,
-		"speed": speed,
+		"year": year,
 		"draft": draft,
 		"freeboard": freeboard,
 		"rigging_hp": rigging_hp,
@@ -180,9 +173,6 @@ func get_gun_count() -> int:
 						total += gun_group.get("count", 0)
 
 	return total
-
-func is_french_gunned() -> bool:
-	return nationality == "French"
 
 func point_value(crew_quality_letter: String, morale_rating: int) -> float:
 	"""Purchase cost for a crew quality / morale rating. Exact "<CQ><MR>" key, else the

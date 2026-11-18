@@ -6,6 +6,8 @@ extends RefCounted
 ## - 7.A.4: a ship names at most MAX_TARGETS targets.
 ## - 7.B.1: each battery fires at most once; bow and stern of one side at one target is a full
 ##   broadside and must be declared as one; a full broadside is preferred over a half.
+## - Chasers (house rule, register §5): an order on side GunneryTypes.CHASE_BOW/CHASE_STERN uses
+##   battery "chase" and no other; each chaser fires once, counts towards MAX_TARGETS, round shot only.
 ## - 7.C.5 / 9.x: roundshot reaches MAX_RANGE, dismantling MAX_DISMANTLING_RANGE; from
 ##   HIGH_ONLY_RANGE on only high fire is allowed.
 
@@ -15,6 +17,8 @@ const HIGH_ONLY_RANGE := 10
 const MAX_TARGETS := 2
 ## 7.G.1: marines fire only at adjacent ships (the optional range-2 rule is not offered).
 const MARINE_RANGE := 1
+## House rule, register §5: each chaser (bow and stern) is one long-gun factor.
+const CHASE_GUN_FACTORS := {"lg": 1, "mg": 0, "cr": 0}
 
 
 ## Ranges from HIGH_ONLY_RANGE on allow only high fire.
@@ -48,9 +52,19 @@ static func single_batteries(battery: String) -> Array[String]:
 	return [battery] as Array[String]
 
 
-## Lower is preferred: a full broadside before a half broadside (7.B.1, 7.C.12f).
+## Lower is preferred: a full broadside before a half broadside (7.B.1, 7.C.12f), a chaser last.
 static func battery_rank(battery: String) -> int:
-	return 0 if battery == GunneryTypes.BATTERY_FULL else 1
+	if battery == GunneryTypes.BATTERY_FULL:
+		return 0
+	if battery == GunneryTypes.BATTERY_CHASE:
+		return 2
+	return 1
+
+
+## True when an order's side and battery disagree: a chase side with a broadside battery, or a
+## broadside with the "chase" battery.
+static func chase_mismatch(side: int, battery: String) -> bool:
+	return GunneryTypes.is_chase_side(side) != (battery == GunneryTypes.BATTERY_CHASE)
 
 
 ## One side's shots from the target of each battery ("" = that battery holds): bow and stern at
@@ -76,7 +90,8 @@ static func make_order(ship_id: String, side: int, target_id: String, battery: S
 	order.target_id = target_id
 	order.battery = battery
 	order.aim = effective_aim(GunneryTypes.AIM_HIGH if want_high else GunneryTypes.AIM_LOW, high_only(range_hexes))
-	order.ammo = effective_ammo(want_dismantling, range_hexes)
+	# A chaser fires round shot only (house rule, register §5).
+	order.ammo = effective_ammo(want_dismantling and battery != GunneryTypes.BATTERY_CHASE, range_hexes)
 	order.mgn_reduction = mgn_reduction
 	return order
 
@@ -91,18 +106,21 @@ static func target_count(ship_id: String, orders: Array) -> int:
 
 
 ## "" when the set obeys the declaration rules (independent of geometry), else the problem:
-## "unknown battery", "battery fired twice", "declare a full broadside", "more than two targets".
+## "unknown battery", "a chaser fires only from its own end", "battery fired twice",
+## "declare a full broadside", "more than two targets".
 static func declaration_error(orders: Array) -> String:
-	var used: Dictionary = {}       # "ship:side:bow|stern" -> target_id
+	var used: Dictionary = {}       # "ship:side:bow|stern|chase" -> target_id
 	for order: GunneryTypes.FireOrder in orders:
-		if not GunneryTypes.BATTERIES.has(order.battery):
+		if not GunneryTypes.is_known_battery(order.battery):
 			return "unknown battery '%s'" % order.battery
+		if chase_mismatch(order.side, order.battery):
+			return "a chaser fires only from its own end (side %d, battery %s)" % [order.side, order.battery]
 		for battery in single_batteries(order.battery):
 			var key := "%s:%d:%s" % [order.ship_id, order.side, battery]
 			if used.has(key):
 				return "battery fired twice"
 			used[key] = order.target_id
-		if order.battery != GunneryTypes.BATTERY_FULL:
+		if order.battery == GunneryTypes.BATTERY_BOW or order.battery == GunneryTypes.BATTERY_STERN:
 			var other := GunneryTypes.BATTERY_STERN if order.battery == GunneryTypes.BATTERY_BOW \
 					else GunneryTypes.BATTERY_BOW
 			if used.get("%s:%d:%s" % [order.ship_id, order.side, other], "") == order.target_id:

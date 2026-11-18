@@ -353,7 +353,7 @@ func test_guns_readout_text() -> void:
 	var g := CrewOverlayText.guns_readout(ship, plan)
 	assert_eq(g["big"], "3 of 4 sections · −3", "4.B.4: -3 per sailor section off the guns")
 	assert_false(g["bad"])
-	assert_eq(g["why"], "Gunfire modifier for sections firing, on both broadsides.",
+	assert_eq(g["why"], "Gunfire modifier for sections firing, on both broadsides and the chasers.",
 		"what S4 is doing shows under the Crew line, not here")
 	assert_eq(g["marines"], "Marines: muskets at the rail.")
 	ship.crew_count = [0, 3, 3, 3] as Array[int]
@@ -391,12 +391,35 @@ func test_marines_caption_carries_their_task() -> void:
 func test_gun_rows_per_side_with_dismounted_guns() -> void:
 	ship.guns_dismounted = [0, 2] as Array[int]
 	var rows := CrewOverlayText.gun_rows(ship)
-	assert_eq(rows.size(), 2)
+	assert_eq(rows.size(), 4)
 	assert_eq(rows[0], {"side": "Port", "lg": 6, "mg": 0, "cr": 4, "dismounted": 0, "lower_deck": 0,
 		"status": "ready"})
 	assert_eq(rows[1]["side"], "Starboard")
 	assert_eq(rows[1]["dismounted"], 2)
 	assert_eq(rows[1]["status"], "2 dismounted · −2", "a dismounted gun is -1 on that side's fire")
+
+
+func test_gun_rows_list_the_chasers() -> void:
+	ship.ship.freeboard = 4
+	ship.ship.lower_deck_modifier = -5
+	ship.guns_dismounted = [9, 9] as Array[int]
+	var env := EnvironmentState.new()
+	env.wind_direction = 0
+	env.sea_state = 5
+	var rows := CrewOverlayText.gun_rows(ship, env)
+	assert_eq(rows[2], {"side": "Bow chase", "lg": 1, "mg": 0, "cr": 0, "dismounted": 0, "lower_deck": 0,
+		"status": "ready", "chase": true})
+	assert_eq(rows[3], {"side": "Stern chase", "lg": 1, "mg": 0, "cr": 0, "dismounted": 0, "lower_deck": 0,
+		"status": "ready", "chase": true})
+
+
+func test_deck_layouts_by_class() -> void:
+	var sol := CrewDeckLayouts.layout_for("ship_of_line_74")
+	assert_eq(CrewDeckLayouts.layout_for("br_64", 2), sol, "a new id falls back to its class")
+	assert_eq(CrewDeckLayouts.layout_for("br_100", 1), sol)
+	assert_eq(CrewDeckLayouts.layout_for("fr_38", 3), CrewDeckLayouts.layout_for("frigate_38"))
+	assert_eq(CrewDeckLayouts.layout_for("frigate_38", 0), CrewDeckLayouts.layout_for("frigate_32"))
+	assert_eq(CrewDeckLayouts.layout_for("xx_brig", 4), CrewDeckLayouts.layout_for("frigate_38"), "default layout")
 
 
 func test_gun_rows_note_a_shut_lower_deck() -> void:

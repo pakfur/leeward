@@ -340,7 +340,7 @@ func sync_cache() -> bool:
 		return false
 	_plan = client.plan()
 	_stations = client.stations()
-	_layout = CrewDeckLayouts.layout_for(_ship.ship_type)
+	_layout = CrewDeckLayouts.layout_for(_ship.ship_type, _ship.ship.ship_class if _ship.ship else 0)
 	return true
 
 

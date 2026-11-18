@@ -249,6 +249,17 @@ func test_fire_event_hides_target_hits_from_the_firer_side() -> void:
 	assert_eq([target["rigging"], target["hull"], target["crew"]], [2, 1, 1])
 
 
+func test_chase_fire_hides_target_hits() -> void:
+	assert_true(_view().limited())
+	GameState.turn_log.add(TYPES.FIRE, 0, "brit_a1", {"side": 2, "battery": "chase", "bgn": 2,
+		"modifiers": [], "mgn": 2, "d6": 3, "fgn": 5, "rigging": 1, "hull": 0, "crew": 1, "rake": "",
+		"ch_number": 1}, "fr_a1")
+	var firer: Dictionary = _events(0, TYPES.FIRE)[0]["data"]
+	for key in ["rigging", "hull", "crew"]:
+		assert_false(firer.has(key), "%s hidden" % key)
+	assert_eq(firer["side"], 2)
+
+
 func test_recaptured_hides_boxes_by_owner() -> void:
 	GameState.turn_log.add(TYPES.RECAPTURED, 0, "brit_a1", {"cause": "rose", "original_boxes": 9,
 		"prize_boxes": 3, "cq": "G", "mr": 6, "prisoners": 3, "captor_id": "fr_a1"}, "fr_a1")

@@ -602,17 +602,17 @@ func ordered_sail_target() -> String:
 func has_critical(id: String) -> bool:
 	return critical_count(id) > 0
 
-## Entries with this id; side -1 counts every side.
-func critical_count(id: String, side: int = -1) -> int:
+## Entries with this id; on_side -1 counts every side.
+func critical_count(id: String, on_side: int = -1) -> int:
 	var count := 0
 	for effect in critical_effects:
-		if effect.get("id") == id and (side == -1 or int(effect.get("side", -1)) == side):
+		if effect.get("id") == id and (on_side == -1 or int(effect.get("side", -1)) == on_side):
 			count += 1
 	return count
 
 ## 7.C.11: -2 per broadside_obscured entry on that side (yard shot away adds one per side).
-func obscured_penalty(side: int) -> int:
-	return OBSCURED_PENALTY * critical_count("broadside_obscured", side)
+func obscured_penalty(on_side: int) -> int:
+	return OBSCURED_PENALTY * critical_count("broadside_obscured", on_side)
 
 ## Sheets cut (rigging #7) acts on the g-t after the one it was inflicted on (`turn` is the
 ## current g-t; -1 counts every entry).

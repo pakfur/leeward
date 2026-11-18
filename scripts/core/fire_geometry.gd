@@ -15,6 +15,12 @@ const LOS_NUDGE := 1e-6
 ## 7.B.10: a friendly ship in a battery's arc at these ranges makes blocking hexes this far out.
 const BLOCKING_MEDIUM_RANGE := 5
 const BLOCKING_LONG_RANGE := 10
+## Chase arcs (house rule, register §5): the `side` values of a battery arc past the two broadsides
+## (ShipState.PORT 0, ShipState.STARBOARD 1). The bow chaser covers ARC_AHEAD from the bow hex, the
+## stern chaser ARC_ASTERN from the stern hex; each is 60° wide, centred on the keel line.
+const ARC_AHEAD := 2
+const ARC_ASTERN := 3
+const CHASE_HALF_ARC_DEG := 30.0
 
 var hex_grid: HexGrid
 
@@ -49,6 +55,27 @@ func bearing_side(from_hex: Vector2i, facing: int, to_hex: Vector2i) -> int:
 	return ShipState.STARBOARD if cross > 0.0 else ShipState.PORT
 
 
+## Which chase arc of a battery hex `from_hex` facing `facing` covers `to_hex`: ARC_AHEAD within
+## CHASE_HALF_ARC_DEG of the heading, ARC_ASTERN within it of the reverse heading (boundaries
+## included, EPSILON_DEG), else -1 (also for `from_hex == to_hex`). The angle is bearing_side's.
+func chase_arc(from_hex: Vector2i, facing: int, to_hex: Vector2i) -> int:
+	if from_hex == to_hex:
+		return -1
+	var theta := _angle_deg(_heading_vector(from_hex, facing), _world_xz(to_hex) - _world_xz(from_hex))
+	if theta <= CHASE_HALF_ARC_DEG + EPSILON_DEG:
+		return ARC_AHEAD
+	if theta >= 180.0 - CHASE_HALF_ARC_DEG - EPSILON_DEG:
+		return ARC_ASTERN
+	return -1
+
+
+## The hex a chaser fires from: the bow hex for the bow chaser (ARC_AHEAD), the stern hex for the
+## stern chaser (ARC_ASTERN). Only meaningful for those two sides.
+static func chase_battery_hex(ship: ShipState, side: int) -> Vector2i:
+	assert(side == ARC_AHEAD or side == ARC_ASTERN, "chase_battery_hex: side must be a chaser side")
+	return ship.stern_hex() if side == ARC_ASTERN else ship.hex_position
+
+
 ## Shortest hex distance between any hex of `a` and any hex of `b` (7.C.4: firer to the closest
 ## hex of the target). Returns -1 when either list is empty.
 func range_between(a: Array[Vector2i], b: Array[Vector2i]) -> int:
@@ -61,8 +88,8 @@ func range_between(a: Array[Vector2i], b: Array[Vector2i]) -> int:
 	return best
 
 
-## Whether one battery (the bow or stern hex of a ship facing `facing`) bears on a target on
-## broadside `side` (7.B.2-7.B.6): at least one target hex lies in the battery's arc within
+## Whether one battery (the bow or stern hex of a ship facing `facing`) bears on a target in arc
+## `side` (a broadside, or ARC_AHEAD/ARC_ASTERN for a chaser) (7.B.2-7.B.6): at least one target hex lies in the battery's arc within
 ## MAX_RANGE, and every target hex in that arc has a clear line of sight. Target hexes outside the
 ## arc are ignored (7.B.6). `occupied` must already exclude the firer's and the target's hexes.
 ## `blocking` is this battery's friendly blocking hexes (blocking_hexes(), 7.B.10).
@@ -79,6 +106,7 @@ func battery_bears(battery_hex: Vector2i, facing: int, side: int, target_hexes: 
 
 
 ## Friendly blocking hexes for the `side` battery at `battery_hex` (7.B.10-12) as {hex: true}.
+## `side`: a broadside, or ARC_AHEAD/ARC_ASTERN.
 ## `firer_hexes` is the firing ship's footprint; `friendly` holds each friendly ship's footprint
 ## (an Array of Array[Vector2i], the firer left out). Only a friend with a hex in this battery's
 ## arc counts (7.B.11). Its range r is from the firing ship to its nearest hex (7.B.12): at 5-9
@@ -117,9 +145,17 @@ static func blocking_radius(friend_range: int) -> int:
 
 
 ## Whether `hex` lies in the `side` arc of the battery at `battery_hex`, within MAX_RANGE.
+## `side`: a broadside, or ARC_AHEAD/ARC_ASTERN.
 func in_battery_arc(battery_hex: Vector2i, facing: int, side: int, hex: Vector2i) -> bool:
-	return bearing_side(battery_hex, facing, hex) == side \
+	return _in_arc(battery_hex, facing, side, hex) \
 		and hex_grid.hex_distance(battery_hex.x, battery_hex.y, hex.x, hex.y) <= MAX_RANGE
+
+
+## Whether `hex` lies in arc `side` (a broadside or a chase arc) of `battery_hex`, at any range.
+func _in_arc(battery_hex: Vector2i, facing: int, side: int, hex: Vector2i) -> bool:
+	if side == ARC_AHEAD or side == ARC_ASTERN:
+		return chase_arc(battery_hex, facing, hex) == side
+	return bearing_side(battery_hex, facing, hex) == side
 
 
 ## Rake by two-hex ships (7.E.2). The target's bow is `target_bow`, its stern is behind it.
@@ -210,11 +246,12 @@ func has_line_of_sight(from_hex: Vector2i, to_hex: Vector2i, occupied: Dictionar
 
 
 ## All hexes within `max_range` of `battery_hex` (a ship's bow or stern hex) that lie in that
-## battery's `side` arc. A ship's whole broadside arc is the union for its bow and stern.
+## battery's `side` arc (a broadside, or ARC_AHEAD/ARC_ASTERN). A ship's whole broadside arc is
+## the union for its bow and stern.
 func broadside_hexes(battery_hex: Vector2i, facing: int, side: int, max_range: int = MAX_RANGE) -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
 	for h in hex_grid.hex_range(battery_hex.x, battery_hex.y, max_range):
-		if h != battery_hex and bearing_side(battery_hex, facing, h) == side:
+		if h != battery_hex and _in_arc(battery_hex, facing, side, h):
 			result.append(h)
 	return result
 

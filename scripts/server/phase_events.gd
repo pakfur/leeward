@@ -895,6 +895,8 @@ class PhaseEvent extends RefCounted:
 		var side := ""
 		if side_idx >= 0 and side_idx < PhaseEvents.SIDE_NAMES.size():
 			side = " " + PhaseEvents.SIDE_NAMES[side_idx]
+		elif GunneryTypes.CHASE_NAMES.has(side_idx):
+			side = " " + GunneryTypes.CHASE_NAMES[side_idx]
 		# A half broadside names its battery ("starboard bow battery"); a full broadside reads as before.
 		var battery := str(data.get("battery", GunneryTypes.BATTERY_FULL))
 		if battery == GunneryTypes.BATTERY_BOW or battery == GunneryTypes.BATTERY_STERN:

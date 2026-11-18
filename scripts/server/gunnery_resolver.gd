@@ -8,7 +8,7 @@ const SAIL_NS := "NS"
 const SAIL_MS := "MS"
 const SAIL_PS := "PS"
 const RAKE_RANK := {"stern": 0, "bow": 1, "": 2}
-const BATTERY_RANK := {"full": 0, "bow": 1, "stern": 2}
+const BATTERY_RANK := {"full": 0, "bow": 1, "stern": 2, "chase": 3}
 
 var is_server: bool = true
 var game_state: Node = null
@@ -22,7 +22,7 @@ func _init(p_game_state: Node) -> void:
 ##
 ## Dice order is part of the contract (tests script dice by position). For each shot, in
 ## resolution order (by target_id, stern rakes, bow rakes, others, then firer ship_id, then side,
-## then battery full, bow, stern):
+## then battery full, bow, stern, chase; the chase sides 2 and 3 sort after the broadsides):
 ##   1. the gunnery d6 (fgn = mgn + d6)
 ##   2. one d6 per slashed token, columns in order fs, ms, ps, tokens left to right
 ##   3. the half-box d6, only when a furled target's rigging is odd
@@ -83,7 +83,9 @@ func _resolve_shot(shot: Dictionary, phase: int) -> void:
 	var sail_state: String = shot["sail_state"]
 	var target_dismasted: bool = shot["target_dismasted"]
 
-	game_state.ship_controller.set_initial_broadside_fired(order.ship_id, order.side)
+	# A chaser never spends a broadside's initial-broadside bonus (house rule, register §5).
+	if not GunneryTypes.is_chase_side(order.side):
+		game_state.ship_controller.set_initial_broadside_fired(order.ship_id, order.side)
 
 	var d6: int = game_state.dice.d6()
 	var fgn := preview.mgn + d6

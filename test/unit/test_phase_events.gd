@@ -85,6 +85,18 @@ func test_fire_text_names_the_battery_of_a_half_broadside() -> void:
 	assert_string_contains(text, "Surprise fires port at Renard", "a full broadside reads as before")
 
 
+func test_fire_text_names_the_chaser() -> void:
+	var data := {"side": 2, "battery": "chase", "range": 2, "aim": "low", "ammo": "round", "bgn": 2,
+		"modifiers": [], "mgn": 2, "d6": 3, "fgn": 5}
+	var text := PhaseEvents.PhaseLog.new().add(PhaseEvents.Type.FIRE, 4, "s1", data, "s2").to_text(NAMES)
+	assert_string_contains(text, "Surprise fires bow chaser at Renard, range 2, low, roundshot")
+	assert_false(text.contains("battery"), text)
+	data["side"] = 3
+	text = PhaseEvents.PhaseLog.new().add(PhaseEvents.Type.FIRE, 4, "s1", data, "s2").to_text(NAMES)
+	assert_string_contains(text, "Surprise fires stern chaser at Renard")
+	assert_false(text.contains("battery"), text)
+
+
 func test_fire_without_modifiers_or_damage_says_no_damage() -> void:
 	var data := {"side": 0, "range": 9, "aim": "low", "ammo": "round", "bgn": 2,
 		"modifiers": [], "mgn": 2, "d6": 1, "fgn": 3, "rigging": 0, "hull": 0, "crew": 0, "rake": ""}

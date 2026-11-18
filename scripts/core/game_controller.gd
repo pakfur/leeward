@@ -1376,12 +1376,14 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 		return
 	hex_overlay.clear_arcs()
 	var geometry: FireGeometry = GameState.fire_geometry
-	for side in [ShipState.PORT, ShipState.STARBOARD]:
+	for side in FirePanelScript.ALL_SIDES:
 		# The chosen batteries' arc is highlighted (rim); the rest of the broadside's arc is faint.
+		# A chaser's arc (sides 2 and 3) is drawn from its own end, rimmed while it fires.
 		var whole := broadside_arc(geometry, ship_state, side)
 		var batteries: Array[String] = fire_panel.get_batteries(ship_id, side)
 		if batteries.is_empty():
-			hex_overlay.show_arc(whole, side)
+			# A chaser holding fire keeps its arc on the map, faint (fill only); a broadside as before.
+			hex_overlay.show_arc(whole, side, not GunneryTypes.is_chase_side(side))
 			continue
 		var chosen := battery_arc(geometry, ship_state, side, batteries)
 		var rest: Array[Vector2i] = []
@@ -1412,13 +1414,20 @@ static func broadside_arc(geometry: FireGeometry, ship_state: ShipState, side: i
 
 
 ## The arc of the given batteries ("bow" fires from the bow hex, "stern" from the stern hex;
-## both = the full broadside) on one side, without the ship's own hexes.
+## both = the full broadside) on one side, without the ship's own hexes. A chase side
+## (GunneryTypes.CHASE_BOW / CHASE_STERN) is drawn from its own end, the bow or the stern hex,
+## whatever `batteries` holds.
 static func battery_arc(geometry: FireGeometry, ship_state: ShipState, side: int,
 		batteries: Array[String]) -> Array[Vector2i]:
 	var own := ship_state.occupied_hexes()
 	var result: Array[Vector2i] = []
-	for battery in batteries:
-		var battery_hex: Vector2i = own[0] if battery == GunneryTypes.BATTERY_BOW else own[1]
+	var hexes: Array[Vector2i] = []
+	if GunneryTypes.is_chase_side(side):
+		hexes.append(own[1] if side == GunneryTypes.CHASE_STERN else own[0])
+	else:
+		for battery in batteries:
+			hexes.append(own[0] if battery == GunneryTypes.BATTERY_BOW else own[1])
+	for battery_hex in hexes:
 		for h in geometry.broadside_hexes(battery_hex, ship_state.facing, side, FireGeometry.MAX_RANGE):
 			if not result.has(h) and not own.has(h):
 				result.append(h)

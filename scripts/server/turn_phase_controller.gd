@@ -1261,6 +1261,7 @@ func _is_ai_player(id: int) -> bool:
 	return ai_player_ids.has(id) or (p != null and p.is_ai)
 
 
+@warning_ignore("integer_division")
 static func _hex_dist(a: Vector2i, b: Vector2i) -> int:
 	var dq: int = a.x - b.x
 	var dr: int = a.y - b.y

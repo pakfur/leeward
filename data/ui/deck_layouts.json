@@ -1,6 +1,7 @@
 {
-  "_doc": "Crew overlay deck drawings (presentation only; the rules engine never reads this file). Coordinates are landscape deck units, 1000 x 360, stern at x = 0 (the overlay draws the enlarged deck bow up). guns = gun ports drawn a side (decoration). armament = the ships.json armament key prefix whose long guns the deck card's note names (e.g. main_deck -> main_deck_port); omitted or absent in ships.json = no gun note. A station's decks is a list of deck ids or \"gun_decks\" (every deck in the layout's gun_decks).",
+  "_doc": "Crew overlay deck drawings (presentation only; the rules engine never reads this file). Coordinates are landscape deck units, 1000 x 360, stern at x = 0 (the overlay draws the enlarged deck bow up). guns = gun ports drawn a side (decoration). armament = the ships.json armament key prefix whose long guns the deck card's note names (e.g. main_deck -> main_deck_port); omitted or absent in ships.json = no gun note. classes = ship class (as a string) -> layout key, used when a ship type has no ship_types entry (classes 1 and 2 draw the sol74 decks; others the default). A station's decks is a list of deck ids or \"gun_decks\" (every deck in the layout's gun_decks).",
   "ship_types": {"frigate_38": "frigate", "frigate_32": "frigate", "ship_of_line_74": "sol74"},
+  "classes": {"1": "sol74", "2": "sol74"},
   "default_layout": "frigate",
   "layouts": {
     "frigate": {

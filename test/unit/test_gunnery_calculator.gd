@@ -786,3 +786,168 @@ func test_one_battery_blocked_by_a_friend_names_it() -> void:
 	assert_eq(calc.preview(_order()).reason,
 		"only the stern battery bears: a full broadside needs both (bow blocked by friendly ship %s)" % friend.ship_name)
 	assert_true(calc.preview(_battery("stern")).can_fire)
+
+
+# --- chasers (house rule, register §5; spec §4.3) ---
+# Firer bow (0,0) facing E, stern (-1,0). Dead ahead at range 1: bow (2,0), hexes (2,0),(1,0).
+
+const AHEAD := GunneryTypes.CHASE_BOW
+const ASTERN := GunneryTypes.CHASE_STERN
+
+
+func _chase(side: int = AHEAD, target_id: String = "target", ammo: String = "round") -> GunneryTypes.FireOrder:
+	return _order(side, ammo, "low", GunneryTypes.BATTERY_CHASE, target_id)
+
+
+func test_bow_chaser_dead_ahead() -> void:
+	# The same geometry with a broadside would be a stern rake (7.E.2b).
+	target.hex_position = Vector2i(2, 0)
+	var p := calc.preview(_chase())
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.range_hexes, 1)
+	assert_eq(p.tgf, 1)
+	assert_eq(p.bgn, 3)
+	assert_eq(p.mgn, 3)
+	assert_eq(p.batteries, 1)
+	assert_eq(p.rake, "")
+	assert_false(p.initial_broadside)
+	for name in ["rake", "initial_broadside", "half_broadside"]:
+		assert_false(_names(p).has(name), "%s not applied to a chaser" % name)
+
+
+func test_stern_chaser_dead_astern() -> void:
+	target.hex_position = Vector2i(-3, 0)
+	var p := calc.preview(_chase(ASTERN))
+	assert_true(p.can_fire, p.reason)
+	assert_eq(p.range_hexes, 2)
+	assert_eq(p.bgn, 2)
+	var wrong := calc.preview(_chase(AHEAD))
+	assert_false(wrong.can_fire)
+	assert_string_contains(wrong.reason, "bow chaser's arc")
+
+
+func test_chaser_reach_ends_at_seven() -> void:
+	target.hex_position = Vector2i(9, 0)
+	var far := calc.preview(_chase())
+	assert_false(far.can_fire)
+	assert_string_contains(far.reason, "cannot fire at this range")
+	target.hex_position = Vector2i(3, 0)
+	var near := calc.preview(_chase())
+	assert_true(near.can_fire, near.reason)
+	assert_eq(near.bgn, 2)
+
+
+func test_chaser_refuses_dismantling_and_mismatch() -> void:
+	target.hex_position = Vector2i(2, 0)
+	var dismantling := calc.preview(_chase(AHEAD, "target", "dismantling"))
+	assert_false(dismantling.can_fire)
+	assert_string_contains(dismantling.reason, "round shot only")
+	var mismatch := calc.preview(_order(AHEAD, "round", "low", "bow"))
+	assert_false(mismatch.can_fire)
+	assert_string_contains(mismatch.reason, "own end")
+	var bad_side := calc.preview(_order(5, "round", "low", GunneryTypes.BATTERY_CHASE))
+	assert_false(bad_side.can_fire)
+	assert_string_contains(bad_side.reason, "invalid broadside")
+
+
+func test_chaser_ignores_dismounted_obscured_and_lower_deck() -> void:
+	target.hex_position = Vector2i(2, 0)
+	firer.guns_dismounted = [9, 9] as Array[int]
+	GameState.ship_controller.add_critical_effect("firer", {"id": "broadside_obscured", "side": PORT})
+	GameState.ship_controller.add_critical_effect("firer", {"id": "broadside_obscured", "side": STARBOARD})
+	firer.ship.freeboard = 3
+	firer.ship.lower_deck_modifier = -5
+	GameState.environment.sea_state = 5
+	var p := calc.preview(_chase())
+	assert_true(p.can_fire, p.reason)
+	for name in ["guns_dismounted", "broadside_obscured", "lower_deck_closed"]:
+		assert_false(_names(p).has(name), "%s not applied to a chaser" % name)
+	assert_eq(p.mgn, 3)
+
+
+func test_chaser_takes_ship_wide_modifiers() -> void:
+	target.hex_position = Vector2i(2, 0)
+	firer.crew_quality = "B"
+	assert_eq(_mod(calc.preview(_chase()), "crew_quality"), 4)
+	firer.crew_quality = "D"
+	firer.plotted_sections = [0] as Array[int]
+	assert_eq(_mod(calc.preview(_chase()), "sections_firing"), -3)
+	firer.plotted_sections = [0, 1, 2, 3] as Array[int]
+	var busy := calc.preview(_chase())
+	assert_false(busy.can_fire)
+	assert_eq(busy.reason, "no sailor sections able to fire")
+	firer.plotted_sections = [] as Array[int]
+	firer.sail_state = "PS"
+	assert_true(_names(calc.preview(_chase())).has("plain_sail"))
+
+
+func test_chaser_blocked_by_ship_between() -> void:
+	target.hex_position = Vector2i(3, 0)
+	_make_ship("between", 1, Vector2i(1, 0), 2)
+	assert_false(calc.preview(_chase()).can_fire)
+
+
+func test_eligible_shots_include_chasers() -> void:
+	target.hex_position = Vector2i(3, 0)
+	var shots := calc.eligible_shots("firer")
+	assert_eq(shots.size(), 1)
+	assert_eq(shots[0].order.side, AHEAD)
+	assert_eq(shots[0].order.battery, GunneryTypes.BATTERY_CHASE)
+	assert_eq(shots[0].order.target_id, "target")
+	# With an enemy abeam to starboard as well, the broadside shots come first; the chaser stays listed.
+	target.hex_position = _n(1)
+	_make_ship("ahead", 1, Vector2i(3, 0), 0)
+	shots = calc.eligible_shots("firer")
+	assert_eq(shots.map(func(s): return s.order.battery), ["full", "bow", "stern", "chase"])
+	assert_eq(shots[3].order.target_id, "ahead")
+	assert_eq(shots[3].order.side, AHEAD)
+
+
+func test_chaser_at_second_target_takes_two_target_penalty() -> void:
+	_make_ship("ahead", 1, Vector2i(3, 0), 0)
+	var both := calc.preview_orders(_orders([_battery("full"), _chase(AHEAD, "ahead")]))
+	for p in both:
+		assert_true(p.can_fire, p.reason)
+		assert_eq(_mod(p, "two_targets"), -12)
+	var alone := calc.preview_orders(_orders([_chase(AHEAD, "ahead")]))
+	assert_true(alone[0].can_fire, alone[0].reason)
+	assert_eq(_mod(alone[0], "two_targets"), 0)
+
+
+func test_chaser_refused_for_an_aground_firer() -> void:
+	target.hex_position = Vector2i(2, 0)
+	assert_true(calc.preview(_chase()).can_fire)
+	firer.aground = true
+	assert_true(firer.is_aground())
+	var p := calc.preview(_chase())
+	assert_false(p.can_fire)
+	assert_string_contains(p.reason, "aground")
+
+
+func test_chaser_refused_for_a_prize_firer() -> void:
+	target.hex_position = Vector2i(2, 0)
+	firer.status = ShipState.Status.CAPTURED
+	var p := calc.preview(_chase())
+	assert_false(p.can_fire)
+	assert_string_contains(p.reason, "prize")
+
+
+func test_tow_astern_blocks_the_stern_chaser() -> void:
+	# A friendly ship in tow astern (bow (-3,0), stern (-4,0)) stands in the stern chaser's line.
+	target.hex_position = Vector2i(-7, 0)
+	assert_true(calc.preview(_chase(ASTERN)).can_fire, "clear without the tow")
+	var tow := _make_ship("tow", 0, Vector2i(-3, 0), 0)
+	firer.towing_id = "tow"
+	tow.towed_by = "firer"
+	var p := calc.preview(_chase(ASTERN))
+	assert_false(p.can_fire)
+	assert_string_contains(p.reason, "line of sight")
+
+
+func test_a_chaser_as_a_third_target_is_refused() -> void:
+	_make_ship("ahead", 1, Vector2i(3, 0), 0)
+	_make_ship("astern", 1, Vector2i(-4, 0), 0)
+	var orders := _orders([_battery("full"), _chase(AHEAD, "ahead"), _chase(ASTERN, "astern")])
+	assert_ne(calc.validate_orders(0, orders), "", "a broadside and two chasers at three targets")
+	assert_eq(calc.validate_orders(0, _orders([_chase(AHEAD, "ahead"), _chase(ASTERN, "astern")])), "",
+		"two chasers at two targets is fine")

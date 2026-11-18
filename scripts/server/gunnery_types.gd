@@ -11,6 +11,24 @@ const BATTERY_FULL := "full"
 const BATTERY_BOW := "bow"
 const BATTERY_STERN := "stern"
 const BATTERIES: Array[String] = [BATTERY_FULL, BATTERY_BOW, BATTERY_STERN]
+## A chaser (house rule, register §5): the battery of an order on side CHASE_BOW (the bow chaser,
+## FireGeometry.ARC_AHEAD) or CHASE_STERN (the stern chaser, FireGeometry.ARC_ASTERN).
+const BATTERY_CHASE := "chase"
+const CHASE_BOW := 2
+const CHASE_STERN := 3
+const CHASE_SIDES: Array[int] = [CHASE_BOW, CHASE_STERN]
+## The chaser's name by side, as the combat log and the calculator's refusals say it.
+const CHASE_NAMES := {CHASE_BOW: "bow chaser", CHASE_STERN: "stern chaser"}
+
+
+## Whether an order's `side` is a chaser's end rather than a broadside.
+static func is_chase_side(side: int) -> bool:
+	return CHASE_SIDES.has(side)
+
+
+## A broadside battery (BATTERIES) or BATTERY_CHASE.
+static func is_known_battery(battery: String) -> bool:
+	return BATTERIES.has(battery) or battery == BATTERY_CHASE
 
 
 ## One side's bow battery, stern battery or both (full broadside) fired by one ship at one target.
@@ -20,7 +38,7 @@ class FireOrder extends RefCounted:
 	var target_id: String = ""
 	var aim: String = "low"      # "low" | "high"
 	var ammo: String = "round"   # "round" | "dismantling"
-	var battery: String = "full" # "full" | "bow" | "stern"
+	var battery: String = "full" # "full" | "bow" | "stern" | "chase"
 	## Voluntary reduction of the MGN (7.C.14), 0 or more; applied as a modifier by the calculator.
 	var mgn_reduction: int = 0
 

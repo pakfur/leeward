@@ -477,6 +477,65 @@ func test_ai_with_no_targets_fires_nothing() -> void:
 	assert_eq(stub_ai.choose_fire_orders().size(), 0)
 
 
+func test_ai_fires_bow_chaser_when_no_broadside_bears() -> void:
+	_add_ship(_make_ship("ai1", 1, Vector2i(0, 0), 0, 0))
+	_add_ship(_make_ship("ahead", 0, Vector2i(3, 0), 0, 0))
+
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+
+	assert_eq(orders.size(), 1, "One chaser order")
+	assert_eq(orders[0]["side"], GunneryTypes.CHASE_BOW)
+	assert_eq(orders[0]["battery"], "chase")
+	assert_eq(orders[0]["target_id"], "ahead")
+	assert_eq(orders[0]["aim"], "low")
+	assert_eq(orders[0]["ammo"], "round")
+
+
+func test_ai_prefers_broadside_to_chaser() -> void:
+	_add_ship(_make_ship("ai1", 1, Vector2i(0, 0), 0, 0))
+	_add_ship(_make_ship("ahead", 0, Vector2i(3, 0), 0, 0))
+	_add_ship(_make_ship("beam", 0, _starboard_hex(Vector2i.ZERO, 0, 2), 0, 0))
+
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+
+	assert_eq(orders.size(), 1, "One order")
+	assert_eq(orders[0]["side"], ShipState.STARBOARD)
+	for order in orders:
+		assert_ne(order["battery"], "chase", "No chaser fires while a broadside does")
+
+
+func test_ai_picks_one_chaser_between_two_targets() -> void:
+	_add_ship(_make_ship("ai1", 1, Vector2i(0, 0), 0, 0))
+	_add_ship(_make_ship("ahead", 0, Vector2i(3, 0), 0, 0))
+	_add_ship(_make_ship("astern", 0, Vector2i(-3, 0), 0, 0))
+
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+
+	assert_eq(orders.size(), 1, "Two targets at -12 leave mgn below 1: one chaser")
+	assert_eq(orders[0]["side"], GunneryTypes.CHASE_BOW)
+	assert_eq(orders[0]["target_id"], "ahead")
+
+
+func test_ai_fires_stern_chaser() -> void:
+	_add_ship(_make_ship("ai1", 1, Vector2i(0, 0), 0, 0))
+	_add_ship(_make_ship("astern", 0, Vector2i(-3, 0), 0, 0))
+
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+
+	assert_eq(orders.size(), 1)
+	assert_eq(orders[0]["side"], GunneryTypes.CHASE_STERN)
+
+
+func test_submitted_chase_orders_validate() -> void:
+	_add_ship(_make_ship("ai1", 1, Vector2i(0, 0), 0, 0))
+	_add_ship(_make_ship("ahead", 0, Vector2i(3, 0), 0, 0))
+
+	var orders: Array[Dictionary] = stub_ai.choose_fire_orders()
+
+	assert_gt(orders.size(), 0, "Precondition: AI has orders")
+	assert_eq(GameState.gunnery_calculator.validate_orders(1, _typed(orders)), "")
+
+
 func test_ai_with_no_movable_ships_does_not_error() -> void:
 	GameState.rng = RandomNumberGenerator.new()
 	GameState.rng.seed = 11
