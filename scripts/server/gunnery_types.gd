@@ -75,6 +75,8 @@ class ShotPreview extends RefCounted:
 	var rake: String = ""              # "", "bow" or "stern"
 	var initial_broadside: bool = false
 	var high_only: bool = false
+	## 14.E rules that may force this low shot high on a d6 of 4+; empty when none.
+	var aim_limits: Array[String] = []
 	var tgf: int = 0
 	var bgn: int = 0
 	var modifiers: Array[Dictionary] = []   # [{"name": String, "value": int}], zero values omitted

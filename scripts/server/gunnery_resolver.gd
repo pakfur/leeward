@@ -20,8 +20,10 @@ func _init(p_game_state: Node) -> void:
 
 ## Resolve `orders` for `phase`. Orders that cannot fire are skipped (no event, broadside not spent).
 ##
-## Dice order is part of the contract (tests script dice by position). For each shot, in
-## resolution order (by target_id, stern rakes, bow rakes, others, then firer ship_id, then side,
+## Dice order is part of the contract (tests script dice by position). First:
+##   0. (14.E, only with gunfire_limits on) one d6 per firing ship that has a qualifying low shot,
+##      ascending firer ship_id, before any shot's dice; 4+ fires every such shot of that ship high
+## Then for each shot, in resolution order (by target_id, stern rakes, bow rakes, others, then firer ship_id, then side,
 ## then battery full, bow, stern, chase; the chase sides 2 and 3 sort after the broadsides):
 ##   1. the gunnery d6 (fgn = mgn + d6)
 ##   2. one d6 per slashed token, columns in order fs, ms, ps, tokens left to right
@@ -54,6 +56,9 @@ func resolve(orders: Array[GunneryTypes.FireOrder], phase: int) -> void:
 			"target_dismasted": dismasted,
 		})
 
+	# 14.E: the gunfire-limit rolls come before any shot's dice.
+	_roll_aim_limits(shots, phase)
+
 	# Step 2: deterministic order.
 	shots.sort_custom(_shot_before)
 
@@ -69,6 +74,53 @@ func resolve(orders: Array[GunneryTypes.FireOrder], phase: int) -> void:
 	firers.sort()
 	for firer_id in firers:
 		game_state.ship_controller.note_gunfire_turn(firer_id)
+
+
+## 14.E: one d6 per ship with a shot that has aim limits, ascending ship_id; on AIM_FORCED_MIN or
+## more each such shot fires high (a copy of its order, so the caller's order is untouched; the
+## MGN stays as previewed) and one AIM_FORCED event is logged. No die without such a shot.
+func _roll_aim_limits(shots: Array[Dictionary], phase: int) -> void:
+	var by_firer: Dictionary = {}  # ship_id -> Array of shot dictionaries
+	for shot in shots:
+		var preview: GunneryTypes.ShotPreview = shot["preview"]
+		if preview.aim_limits.is_empty():
+			continue
+		var firer_id := preview.order.ship_id
+		if not by_firer.has(firer_id):
+			by_firer[firer_id] = []
+		by_firer[firer_id].append(shot)
+	var firers: Array = by_firer.keys()
+	firers.sort()
+	for firer_id: String in firers:
+		var roll: int = game_state.dice.d6()
+		var rules: Array[String] = []
+		var sides: Array[int] = []
+		for shot: Dictionary in by_firer[firer_id]:
+			shot["aim_roll"] = roll
+			var preview: GunneryTypes.ShotPreview = shot["preview"]
+			for rule in preview.aim_limits:
+				if not rules.has(rule):
+					rules.append(rule)
+			if not sides.has(preview.order.side):
+				sides.append(preview.order.side)
+			if roll >= FireRules.AIM_FORCED_MIN:
+				var forced := GunneryTypes.FireOrder.from_dict(preview.order.to_dict())
+				forced.aim = GunneryTypes.AIM_HIGH
+				preview.order = forced
+		if roll < FireRules.AIM_FORCED_MIN:
+			continue
+		var ordered: Array[String] = []  # "crew" before "heel"
+		for rule in ["crew", "heel"]:
+			if rules.has(rule):
+				ordered.append(rule)
+		sides.sort()
+		var firer: ShipState = game_state.get_ship(firer_id)
+		game_state.turn_log.add(PhaseEvents.Type.AIM_FORCED, phase, firer_id, {
+			"roll": roll,
+			"rules": ordered,
+			"sides": sides,
+			"quality": firer.crew_quality,
+		})
 
 
 func _shot_before(x: Dictionary, y: Dictionary) -> bool:
@@ -136,7 +188,7 @@ func _resolve_shot(shot: Dictionary, phase: int) -> void:
 		if preview.rake == "stern":
 			crew *= 2
 
-	game_state.turn_log.add(PhaseEvents.Type.FIRE, phase, order.ship_id, {
+	var fire_data := {
 		"side": order.side,
 		"battery": order.battery,
 		"range": preview.range_hexes,
@@ -152,7 +204,11 @@ func _resolve_shot(shot: Dictionary, phase: int) -> void:
 		"hull": hull,
 		"crew": crew,
 		"ch_number": DataManager.combat_tables.critical_hit_number(fgn),
-	}, order.target_id)
+	}
+	if shot.has("aim_roll"):
+		fire_data["aim_ordered"] = GunneryTypes.AIM_LOW
+		fire_data["aim_roll"] = shot["aim_roll"]
+	game_state.turn_log.add(PhaseEvents.Type.FIRE, phase, order.ship_id, fire_data, order.target_id)
 	if fgn < 1:
 		return
 

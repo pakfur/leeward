@@ -380,9 +380,17 @@ static func row_marker(chosen: bool) -> String:
 	return "● " if chosen else "○ "
 
 
-## Why "High fire" is locked on, "" when the player may choose.
-static func aim_note(high_only: bool) -> String:
-	return HIGH_ONLY_NOTE % FireRules.HIGH_ONLY_RANGE if high_only else ""
+## Why "High fire" is locked on; else the 14.E chance that a low aim holds (`limits` from the
+## previews' aim_limits); "" when the player may choose freely.
+static func aim_note(high_only: bool, limits: Array = [], crew_quality: String = "") -> String:
+	if high_only:
+		return HIGH_ONLY_NOTE % FireRules.HIGH_ONLY_RANGE
+	if limits.is_empty():
+		return ""
+	var parts := PackedStringArray()
+	for rule in limits:
+		parts.append("crew CQ %s" % crew_quality if str(rule) == "crew" else "firing to windward")
+	return "Low aim holds only on a d6 of 1–3 (14.E: %s)" % ", ".join(parts)
 
 
 ## Why "Dismantling" is unavailable, "" when it may be chosen. Says so when the player's choice
@@ -1160,6 +1168,8 @@ func _refresh_ship(ship_id: String) -> void:
 	var sides: Dictionary = entry["sides"]
 	var names := target_names(GameState.get_all_ships())
 	var current := _preview_sides(ship_id, sides)
+	var firer: ShipState = GameState.get_ship(ship_id)
+	var crew_quality := firer.crew_quality if firer else ""
 	for side in sides:
 		var state: Dictionary = sides[side]
 		var widgets: Dictionary = entry["widgets"][side]
@@ -1210,8 +1220,12 @@ func _refresh_ship(ship_id: String) -> void:
 		var any_dismantling := false
 		var any_dismantling_allowed := false
 		var max_range := 0
+		var aim_limits: Array[String] = []  # 14.E, the union over the side's shots
 		var lines: Array[String] = []
 		for p in side_previews:
+			for rule in p.aim_limits:
+				if not aim_limits.has(rule):
+					aim_limits.append(rule)
 			all_high_only = all_high_only and p.high_only
 			any_high_only = any_high_only or p.high_only
 			all_high = all_high and p.order.aim == GunneryTypes.AIM_HIGH
@@ -1222,7 +1236,7 @@ func _refresh_ship(ship_id: String) -> void:
 			lines.append(prefix + breakdown_text(p))
 		high.disabled = all_high_only
 		high.set_pressed_no_signal(all_high)
-		widgets["high_note"].text = aim_note(any_high_only)
+		widgets["high_note"].text = aim_note(any_high_only, aim_limits, crew_quality)
 		dismantling.disabled = chase or not any_dismantling_allowed
 		dismantling.set_pressed_no_signal(any_dismantling)
 		widgets["dismantling_note"].text = CHASE_AMMO_NOTE if chase \

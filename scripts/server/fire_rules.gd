@@ -23,6 +23,33 @@ const CHASE_GUN_FACTORS := {"lg": 1, "mg": 0, "cr": 0}
 ## for each 10 more. The register reads "g-t 15" as -2 from the 16th firing turn; no recovery.
 const FATIGUE_FREE_TURNS := 5
 const FATIGUE_STEP_TURNS := 10
+## 14.E (optional gunfire limits): a low shot that a limit applies to is fired high on a d6 of
+## AIM_FORCED_MIN or more; the crew limit covers crews of LIMITED_QUALITIES.
+const AIM_FORCED_MIN := 4
+const LIMITED_QUALITIES: Array[String] = ["E", "F", "G"]
+
+
+## 14.E.4: the broadside `side` (PORT/STARBOARD) is the windward one, the ship heeling away from
+## it at WF C or B (a leeward side exists). False for a chaser's side or at WF R/L.
+static func fires_to_windward(facing: int, wind_direction: int, side: int) -> bool:
+	if side != ShipState.PORT and side != ShipState.STARBOARD:
+		return false
+	var leeward := FireGeometry.leeward_side(facing, wind_direction)
+	return leeward != -1 and side != leeward
+
+
+## The 14.E rules that may force a low shot high: "crew" (CQ E-G, `crew_on`), then "heel"
+## (firing to windward, `heel_on`). Empty for a high aim or a high-only range.
+static func aim_limits(aim: String, is_high_only: bool, crew_quality: String, side: int,
+		facing: int, wind_direction: int, crew_on: bool, heel_on: bool) -> Array[String]:
+	var out: Array[String] = []
+	if aim != GunneryTypes.AIM_LOW or is_high_only:
+		return out
+	if crew_on and LIMITED_QUALITIES.has(crew_quality):
+		out.append("crew")
+	if heel_on and fires_to_windward(facing, wind_direction, side):
+		out.append("heel")
+	return out
 
 
 ## The fatigue penalty (a positive number to subtract) of a ship that has fired in `prior` earlier

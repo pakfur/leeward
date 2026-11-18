@@ -155,6 +155,11 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 	p.mgn = p.bgn
 	for m in p.modifiers:
 		p.mgn += int(m["value"])
+	# 14.E (optional): rolled at resolution, so the number is unchanged; the panel shows the chance.
+	var sc: Dictionary = game_state.active_scenario
+	p.aim_limits = FireRules.aim_limits(order.aim, p.high_only, firer.crew_quality, order.side,
+			firer.facing, game_state.environment.wind_direction, OptionalRules.crew_limit(sc),
+			OptionalRules.heel_limit(sc))
 	p.can_fire = true
 	return p
 

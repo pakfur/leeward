@@ -74,6 +74,14 @@ func test_locked_toggles_explain_why() -> void:
 	assert_string_contains(FirePanel.dismantling_note(8, true), "roundshot")
 
 
+func test_aim_note_shows_the_gunfire_limit() -> void:
+	assert_eq(FirePanel.aim_note(false, ["crew"], "E"), "Low aim holds only on a d6 of 1–3 (14.E: crew CQ E)")
+	assert_true(FirePanel.aim_note(false, ["crew", "heel"], "F").ends_with(
+			"(14.E: crew CQ F, firing to windward)"))
+	assert_eq(FirePanel.aim_note(false, [], "E"), "")
+	assert_eq(FirePanel.aim_note(true, ["crew"], "E"), FirePanel.aim_note(true))
+
+
 func test_rank_targets_best_number_then_nearest_then_name() -> void:
 	var ranked: Array = FirePanel.rank_targets([
 		{"target_id": "far", "mgn": 10, "range": 8, "name": "B"},

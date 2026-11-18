@@ -57,6 +57,9 @@ enum Type {
 	VEER_IN,  # 13.E.2 a ship veers in one hex: {cable, refused}; target_id: the ship in the way. cable is the cable after veering in; refused (refused != "") she keeps her cable
 	TOW_BEGUN,  # 12.A.4 ship_id (the tower) rolls to take target_id in tow: {roll, modifier, modifiers, total, needed, success}; or her order lapses with no roll: {success: false, lapsed: reason}
 	TOW_CUT,  # 12.A.6, 12.A.9 the tow between ship_id (tower) and target_id (towed) is cut: {cause: tx/struck/destroyed/taken/aground/structural/dismasted, by}
+	SURRENDER,  # 14.B voluntary surrender (sub-project 7 Task 4; its data and text are added there)
+	RALLY,  # 14.B a struck crew rallies (sub-project 7 Task 5; its data and text are added there)
+	AIM_FORCED,  # 14.E a low aim forced high: {roll, rules: ["crew"|"heel"], sides, quality}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -601,6 +604,13 @@ class PhaseEvent extends RefCounted:
 			Type.END_OFFER:
 				var side_name := "Side %d" % (int(data.get("side", 0)) + 1)
 				return "%s offers to end the game" % side_name if data.get("offer", false) else "%s withdraws its offer to end the game" % side_name
+			Type.AIM_FORCED:
+				var parts := PackedStringArray()
+				for rule in data.get("rules", []):
+					parts.append("crew CQ %s" % str(data.get("quality", "")) if str(rule) == "crew"
+						else "firing to windward")
+				return "%s's gun crews cannot hold their aim low: rolled %d (4+ fires high; 14.E: %s)" % [
+					who, int(data.get("roll", 0)), ", ".join(parts)]
 		return "%s: event %d" % [who, type]
 
 	## "X's damaged steering fails the turn (7 > 5) — one hex ahead" (6.F.3), or "answers the helm".
