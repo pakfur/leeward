@@ -13,6 +13,10 @@ extends RefCounted
 ## there (the log comes back incomplete, see ResolutionLog.pending_bear_off), any other ship decides
 ## by StubAI.bear_off_choice. A ship that bears off turns, then moves ahead to its deceleration
 ## minimum: its plot is amended and the resolution run again, like an overlap rollback.
+## The board (map and scenario spec §3-§4): each segment, before the hexes held are built, a step
+## across an open edge is not made (EDGE_BLOCKED), a step into land, or ahead into shallows rolled
+## too shallow for the draft, runs the ship aground where it stands (AGROUND, 13.G.2), and a step off
+## the map by a `none` or crossable escape edge is made and then ends the ship's movement (LEFT_MAP).
 
 var game_state: Node = null
 var hex_grid: HexGrid = null
@@ -25,6 +29,7 @@ var _steering_failed_tacks: Dictionary = {}
 ## rewritten them (see run()). Amended plots never change it.
 var _schedule: MoveSchedule = null
 var _final_segment_count: int = 0  # the last pass's segment count (see _stamp_times)
+var _terrain: TerrainMap = null  # this run's board (see run())
 
 
 ## One resolution pass (see run()): every ship's steps, pose and progress, and the overlap bookkeeping
@@ -133,6 +138,7 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 		prompt_ids: Array = []) -> MovementTypes.ResolutionLog:
 	@warning_ignore("shadowed_global_identifier")  # "log" is the project's convention for ResolutionLog
 	var log = MovementTypes.ResolutionLog.new(game_state.current_turn if game_state else 0)
+	_terrain = TerrainMap.of(_scenario())
 
 	# An overlap that is not cleared by the end of the next segment on which either ship moves amends the
 	# turning ship's plot (6.B.4: "change all ship logs to reflect the actual moves"), and the whole
@@ -412,6 +418,7 @@ func _resolve_impulse(p: ResolutionPass, impulse: int, ships: Array[ShipState]) 
 
 		seg.intended_moves[sid] = {"hex": step_hex, "facing": step_facing}
 
+	_settle_terrain(p, seg, ships)
 	if seg.intended_moves.is_empty():
 		return seg
 
@@ -480,7 +487,128 @@ func _resolve_impulse(p: ResolutionPass, impulse: int, ships: Array[ShipState]) 
 	_resolve_pending_bear_offs(p, seg)
 	if not seg.speculations.is_empty():
 		p.failed_cycles = _failed_speculations(p, seg)
+	_note_left_map(p, seg)
 	return seg
+
+
+## ============================================================================
+## The board: edges and running aground (map and scenario spec §3-§4, 13.G.2)
+## ============================================================================
+
+func _scenario() -> Dictionary:
+	var scenario = game_state.get("active_scenario") if game_state else null
+	return scenario if scenario is Dictionary else {}
+
+
+func _turn() -> int:
+	var t = game_state.get("current_turn") if game_state else null
+	return int(t) if t != null else 1
+
+
+## The terrain checks of every intended move this segment, in ship order (so the depth dice come in a
+## fixed order): a step across a blocking edge is dropped and the ship stops (EDGE_BLOCKED); a step
+## into land, or ahead into shallows whose rolled depth is at most the draft, runs aground. A turn
+## never rolls the depth: it does not move the bow.
+func _settle_terrain(p: ResolutionPass, seg: Segment, ships: Array[ShipState]) -> void:
+	for ship_state in ships:
+		var sid: String = ship_state.ship_id
+		if not seg.intended_moves.has(sid):
+			continue
+		var move: Dictionary = seg.intended_moves[sid]
+		var bow: Vector2i = p.current_hexes[sid]
+		var facing: int = p.current_facings[sid]
+		var entered: Vector2i = _entered_hex(bow, facing, move.hex, move.facing)
+		var stern_entry: bool = _is_stern_entry(bow, facing, move.hex, move.facing)
+		var from: Vector2i = HexGrid.stern_of(bow, facing) if stern_entry else bow
+		var crossing: Dictionary = MapRules.crossing_outcome(_scenario(), ship_state, from, entered, _turn())
+		if crossing["outcome"] == MapRules.BLOCKED:
+			seg.intended_moves.erase(sid)
+			_stop(p, sid, seg.impulse)
+			var ev = MovementTypes.ResolutionEvent.new(sid, seg.impulse, MovementTypes.ResolutionEventType.EDGE_BLOCKED)
+			ev.from_hex = bow
+			ev.to_hex = move.hex
+			ev.facing = facing
+			ev.success = false
+			ev.detail = str(crossing["edge"])
+			p.results[sid].events.append(ev)
+			continue
+		var at := {"q": entered.x, "r": entered.y}
+		if _terrain.is_land(entered):
+			_run_aground(p, seg, sid, {"terrain": "land", "hex": at, "depth": -1})
+			continue
+		var area: TerrainMap.ShallowArea = _terrain.area_at(entered)
+		if area != null and not stern_entry:
+			var depth := _roll_depth(area)
+			if depth <= _draft(ship_state):
+				_run_aground(p, seg, sid, {"terrain": "shallow", "hex": at, "depth": depth})
+
+
+## Depth of a shallow hex as the ship enters it (13.G.1): base + d6, from the resolver's rng so that
+## re-runs of the resolution repeat it.
+func _roll_depth(area: TerrainMap.ShallowArea) -> int:
+	return area.base + rng.randi_range(1, TerrainMap.DEPTH_DIE)
+
+
+func _draft(ship_state: ShipState) -> int:
+	return ship_state.ship.draft if ship_state.ship else 0
+
+
+## 13.G.2: the ship stops in the hexes it held before the step and loses rigging as in a collision
+## (6.E.3; its rigging dice follow its depth die).
+func _run_aground(p: ResolutionPass, seg: Segment, sid: String, data: Dictionary) -> void:
+	var ship_state: ShipState = p.ship_map[sid]
+	var result: MovementTypes.ShipResolutionResult = p.results[sid]
+	var move: Dictionary = seg.intended_moves[sid]
+	seg.intended_moves.erase(sid)
+	_stop(p, sid, seg.impulse)
+	result.aground = true
+	result.aground_data = data.merged({"draft": _draft(ship_state)})
+	var loss: int = _roll_collision_rigging_loss(ship_state)
+	result.rigging_damage += loss
+	var ev = MovementTypes.ResolutionEvent.new(sid, seg.impulse, MovementTypes.ResolutionEventType.AGROUND)
+	ev.from_hex = p.current_hexes[sid]
+	ev.to_hex = move.hex
+	ev.facing = p.current_facings[sid]
+	ev.success = false
+	ev.detail = "%s at (%d,%d), depth=%d, draft=%d, rigging_loss=%d" % [data["terrain"], data["hex"]["q"],
+		data["hex"]["r"], int(data["depth"]), _draft(ship_state), loss]
+	result.events.append(ev)
+
+
+func _stop(p: ResolutionPass, sid: String, impulse: int) -> void:
+	p.stopped[sid] = true
+	p.results[sid].stopped_at_impulse = impulse
+
+
+## Every ship whose step this segment took its bow or stern off the map (by a `none` edge, or an
+## escape edge it may cross) stops there: LEFT_MAP, and `left_map` is the crossing's outcome.
+func _note_left_map(p: ResolutionPass, seg: Segment) -> void:
+	if not _terrain.bounded:
+		return
+	for sid in seg.moves:
+		var bow: Vector2i = p.current_hexes[sid]
+		var facing: int = p.current_facings[sid]
+		if _terrain.in_bounds(bow) and _terrain.in_bounds(HexGrid.stern_of(bow, facing)):
+			continue
+		var start_bow: Vector2i = seg.start_bows[sid]
+		var start_facing: int = seg.start_facings[sid]
+		var stern_entry: bool = _is_stern_entry(start_bow, start_facing, bow, facing)
+		var from: Vector2i = HexGrid.stern_of(start_bow, start_facing) if stern_entry else start_bow
+		var entered: Vector2i = _entered_hex(start_bow, start_facing, bow, facing)
+		var crossing: Dictionary = MapRules.crossing_outcome(_scenario(), p.ship_map[sid], from, entered, _turn())
+		var outcome: String = crossing["outcome"]
+		if outcome != MapRules.LOST and outcome != MapRules.ESCAPE:
+			continue
+		var result: MovementTypes.ShipResolutionResult = p.results[sid]
+		result.left_map = outcome
+		result.left_edge = str(crossing["edge"])
+		_stop(p, sid, seg.impulse)
+		var ev = MovementTypes.ResolutionEvent.new(sid, seg.impulse, MovementTypes.ResolutionEventType.LEFT_MAP)
+		ev.from_hex = bow
+		ev.to_hex = bow
+		ev.facing = facing
+		ev.detail = "%s %s" % [result.left_edge, outcome]
+		result.events.append(ev)
 
 
 ## The ship's step this segment is settled: a ship that did not move keeps its old stern hex.
@@ -1973,16 +2101,32 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			# So is any ship in a collision (5.E.3b; at WF=L that is in irons, 5.D.5): next g-t it
 			# has no deceleration minimum and accelerates from 0 (5.E.7).
 			sc.set_ship_speed(sid, _count_steps_executed(result) if moved_ahead and not rudder_irons \
-					and result.collided_with == "" else 0)
+					and result.collided_with == "" and not result.aground else 0)
 			if result.collided_with != "":
 				sc.set_collision_this_turn(sid, true)
 			if result.fouled_with != "":
 				sc.set_fouled_with(sid, result.fouled_with)
+			var map_controller = game_state.get("map_controller")
+			if result.aground and map_controller != null:
+				map_controller.ground(sid, {"cause": "movement"}.merged(result.aground_data),
+						TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION)
 			if result.rigging_damage > 0:
 				_apply_rigging_damage(sid, result.rigging_damage, sc)
+			if result.left_map != "" and map_controller != null:
+				_leave_map(map_controller, sid, result)
 			sc.clear_plotted_actions(sid)
 		else:
 			push_error("MovementResolver: No ship_controller available")
+
+## The ship left the map this g-t (spec §3): lost by a `none` edge, escaped by an escape edge.
+func _leave_map(map_controller: MapController, sid: String, result: MovementTypes.ShipResolutionResult) -> void:
+	var phase := TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
+	match result.left_map:
+		MapRules.LOST:
+			map_controller.lose_off_map(sid, result.left_edge, phase)
+		MapRules.ESCAPE:
+			map_controller.escape(sid, {"how": "edge", "edge": result.left_edge}, phase)
+
 
 ## _last_step_direction when the ship executed no step.
 const NO_STEP := -2
@@ -2088,11 +2232,14 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 				turn_log.add(PhaseEvents.Type.COLLISION, phase, sid, {"hex": {"q": at.x, "r": at.y}},
 					result.collided_with)
 		var planned: int = _get_plotted_steps(ship_state).size()
-		if not result.tacking_failed and planned > 0 and _count_steps_executed(result) < planned:
+		var off_course: bool = result.aground or result.left_map != ""  # MapController logs these
+		if not result.tacking_failed and not off_course and planned > 0 and _count_steps_executed(result) < planned:
 			var data := {"moved": _count_steps_executed(result), "planned": planned}
 			var cause := stop_cause(result)
 			if not cause.is_empty():
 				data["cause"] = cause["cause"]
+			if cause.has("edge"):
+				data["edge"] = cause["edge"]
 			_add_contest_rolls(data, result, log.get_result(str(cause.get("other", ""))))
 			turn_log.add(PhaseEvents.Type.STOPPED_SHORT, phase, sid, data, str(cause.get("other", "")))
 		elif not result.tacking_failed and planned > 0:
@@ -2154,10 +2301,14 @@ static func _last_contest_roll(result: MovementTypes.ShipResolutionResult) -> Mo
 ## "other": id} when it bore off to avoid the ship in its way, {"cause": "stern_contest", "other": id}
 ## when it lost a stern contest to that ship (6.C.5), {"cause": "stern_blocked", "other": id} when its
 ## turn was otherwise cancelled because its stern would swing into that ship, {"cause": "overlap",
-## "other": id} when its stern swung into that ship and the turn was rolled back (6.B.4), {} when the
+## "other": id} when its stern swung into that ship and the turn was rolled back (6.B.4), {"cause":
+## "map_edge", "edge": name} when a step was refused at that map edge (spec §3), {} when the
 ## result names no cause. A cancelled or rolled-back turn after which the ship made no step comes first,
 ## so a ship run into later is not said to have stopped for that.
 static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary:
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.EDGE_BLOCKED:
+			return {"cause": "map_edge", "edge": ev.detail}  # it ends the ship's movement
 	if _undone_turn_ended_movement(result, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK):
 		return {"cause": "overlap", "other": result.blocked_by}
 	if _undone_turn_ended_movement(result, MovementTypes.ResolutionEventType.STERN_BLOCKED):

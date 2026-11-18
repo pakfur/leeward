@@ -389,6 +389,10 @@ enum ResolutionEventType {
 	## 6.D.3c: two or more potential collisions on one segment, ordered by d10 (highest first, ties
 	## re-rolled). On the ship resolved first; detail "<id>=<d10>[,<re-roll>…] …" in resolution order.
 	BEAR_OFF_ORDER,
+	EDGE_BLOCKED,  # a step across an open edge (or an escape edge the ship may not cross) is not made; detail = edge name
+	LEFT_MAP,  # the step left the map by a `none` or crossable escape edge; detail "<edge> <outcome>"
+	AGROUND,  # the step entered land or shallows too shallow for the draft (13.G.2): the ship stops where it was
+	LEAD_SOUNDING,  # casting the lead (13.G.4)
 }
 
 ## Choices for a potential collision (6.D): bear off to port or starboard, or hold course and collide.
@@ -483,6 +487,12 @@ class ShipResolutionResult extends RefCounted:
 	var stopped_at_impulse: int = -1
 	## 6.F.4-5: the turn carried over to the next g-t's first MP (-1 none, PORT, STARBOARD).
 	var pending_turn: int = -1
+	## 13.G.2: ran aground; aground_data is {terrain: "land"|"shallow", hex: {q, r}, depth (-1 for land), draft}.
+	var aground: bool = false
+	var aground_data: Dictionary = {}
+	## Left the map this g-t: "" (no), MapRules.LOST (a `none` edge) or MapRules.ESCAPE; left_edge names the edge.
+	var left_map: String = ""
+	var left_edge: String = ""
 
 	func _init(p_ship_id: String = "") -> void:
 		ship_id = p_ship_id
@@ -512,6 +522,12 @@ class ShipResolutionResult extends RefCounted:
 			d["stopped_at_impulse"] = stopped_at_impulse
 		if pending_turn >= 0:
 			d["pending_turn"] = pending_turn
+		if aground:
+			d["aground"] = aground
+			d["aground_data"] = aground_data
+		if left_map != "":
+			d["left_map"] = left_map
+			d["left_edge"] = left_edge
 		return d
 
 
