@@ -50,6 +50,10 @@ const FORBIDDEN := [
 	["\\.(aground|aground_turn|escape_declared|awaiting_arrival|arrives_turn)\\s*(=|\\+=|-=)[^=]", "a terrain, escape or arrival field written from view code"],
 	["\\.gunfire_turns\\s*(=|\\+=|-=)[^=]", "the fatigue count written from view code"],
 	["\\bnote_gunfire_turn\\(", "the fatigue count changed from view code"],
+	# 14.B surrender: the view reads can_rally() / surrendered; orders go through player_surrender
+	["\\.(surrender_ordered|surrenders|surrendered|rally_turn)\\s*(=|\\+=|-=)[^=]", "a surrender field written from view code"],
+	["\\b(set_surrender_ordered|record_surrender|end_surrender|restore_from_surrender|set_rally_turn)\\(", "a surrender mutator called from view code"],
+	["\\bmorale_controller\\.", "MoraleController used from view code"],
 	["(?<!player_)\\b(set_aground|set_escape_declared|set_cast_lead|place_arrival|delay_arrival)\\(", "a terrain, escape or arrival mutator called from view code"],
 	# anchoring (anchoring spec): the view reads is_anchored() / has_springs() / anchored_end_hex()
 	["\\.(anchor|anchor_ready|springs_ready|anchorings_used|cable_cut_turn)\\s*(=|\\+=|-=)[^=]", "an anchor field written from view code"],
@@ -268,6 +272,37 @@ func test_fatigue_patterns_catch_mutations() -> void:
 	var good := [
 		"var n := ship.gunfire_turns",
 		"if ship.gunfire_turns >= 5:",
+	]
+	var checks: Array = []
+	for f in FORBIDDEN:
+		var re := RegEx.new()
+		re.compile(f[0])
+		checks.append(re)
+	for line in bad:
+		var hit := false
+		for re in checks:
+			if re.search(line) != null:
+				hit = true
+		assert_true(hit, "caught: %s" % line)
+	for line in good:
+		for re in checks:
+			assert_null(re.search(line), "allowed: %s" % line)
+
+
+## The surrender patterns catch field writes, the mutators and the morale controller, and let reads
+## and the player requests through.
+func test_surrender_patterns_catch_mutations() -> void:
+	var bad := [
+		"ship.surrendered = true",
+		"s.surrenders += 1",
+		"GameState.ship_controller.record_surrender(\"a\")",
+		"GameState.morale_controller.rally(\"a\", 2)",
+	]
+	var good := [
+		"if ship.can_rally():",
+		"if ship.surrendered:",
+		"GameState.phase_controller.player_surrender(0, \"a\", true)",
+		"GameState.dev_commands.surrender_ship(\"a\")",
 	]
 	var checks: Array = []
 	for f in FORBIDDEN:

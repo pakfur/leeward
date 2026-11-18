@@ -38,6 +38,8 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 		return _refuse(p, "a prize does not fight (10.H.2)")
 	if firer.is_aground():
 		return _refuse(p, "an aground ship cannot fire its guns (13.G.3)")
+	if firer.surrender_ordered:
+		return _refuse(p, "a ship that is surrendering does not fire (14.B)")
 	if firer.is_out_of_play() or not target.is_targetable():
 		return _refuse(p, "a struck ship cannot fire or be fired on")
 	if firer.side == target.side:

@@ -452,6 +452,44 @@ func player_declare_escape(player_id: int, ship_id: String, on: bool) -> String:
 	return ""
 
 
+## SERVER ONLY: the player orders (or, with `on` false, withdraws) a ship's voluntary surrender
+## (14.B.2): she sails her plot, does not fire or send new boarders, and strikes at MORALE_CHECK
+## (MoraleController.resolve_surrenders). Returns "" or the reason it is refused.
+func player_surrender(player_id: int, ship_id: String, on: bool = true) -> String:
+	var why := _surrender_request_error(player_id, ship_id, "surrenders")
+	if why != "":
+		return why
+	if on:
+		why = SurrenderRules.surrender_error(game_state.get_ship(ship_id))
+		if why != "":
+			return why
+	game_state.ship_controller.set_surrender_ordered(ship_id, on)
+	return ""
+
+
+## The checks a 14.B request shares (`verb` "surrenders" or "rallies"): server, game not over, the
+## option on, PLANNING, a known player whose plan is not in, a known ship the player commands.
+func _surrender_request_error(player_id: int, ship_id: String, verb: String) -> String:
+	if not is_server:
+		push_error("TurnPhaseController: Cannot handle a surrender request on client")
+		return "a surrender is handled on the server only"
+	if not game_result.is_empty():
+		return "the game is over"
+	if not OptionalRules.voluntary_surrender(game_state.active_scenario):
+		return "voluntary surrender is not used in this scenario (14.B)"
+	if current_phase != GamePhase.PLANNING:
+		return "a ship %s in the planning phase (14.B)" % verb
+	if not players_ready.has(player_id):
+		return "invalid player %d" % player_id
+	if players_ready[player_id]:
+		return "this player's plan is already submitted"
+	if game_state.get_ship(ship_id) == null:
+		return "no ship %s" % ship_id
+	if not game_state.commands(player_id, ship_id):
+		return "%s is not this player's ship" % ship_id
+	return ""
+
+
 ## SERVER ONLY: the player's order for a ship to cast the lead this turn (13.G). Same checks as
 ## course plotting. Returns "" or the reason it is refused.
 func player_set_cast_lead(player_id: int, ship_id: String, on: bool) -> String:
@@ -1148,7 +1186,7 @@ func _enter_morale_check_phase() -> void:
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: MORALE_CHECK")
 	if game_state.morale_controller:
-		game_state.morale_controller.resolve_checks(current_phase)
+		game_state.morale_controller.resolve_phase(current_phase)  # 14.B surrenders, then the noted checks
 	advance_phase()
 
 ## Signals (11.A, 4.A.4). Sent in PLANNING, one per player per g-t (a new one replaces it),

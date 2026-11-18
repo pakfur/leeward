@@ -137,6 +137,14 @@ var ship_type: String:
 @export var escape_declared: bool = false
 ## 14.D.2: g-t's in which the ship fired any battery or chaser (the log's gunfire column).
 @export var gunfire_turns: int = 0
+## 14.B voluntary surrender (mutated only through ShipStateController). `surrender_ordered`: ordered
+## this g-t, she strikes at MORALE_CHECK; `surrenders`: voluntary surrenders made so far (0-2);
+## `surrendered`: struck by a voluntary surrender and may still rally (implies STRUCK);
+## `rally_turn`: the g-t of her last rally attempt (-1 = none).
+@export var surrender_ordered: bool = false
+@export var surrenders: int = 0
+@export var surrendered: bool = false
+@export var rally_turn: int = -1
 ## A reinforcement not yet on the map: off the map and out of play until it arrives on `arrives_turn`.
 @export var awaiting_arrival: bool = false
 @export var arrives_turn: int = 1
@@ -231,6 +239,10 @@ func get_ship_size() -> int:
 
 func is_struck() -> bool:
 	return status == Status.STRUCK
+
+## 14.B.3: struck by a voluntary surrender and not yet struck for good: she may try to rally.
+func can_rally() -> bool:
+	return is_struck() and surrendered
 
 func is_destroyed() -> bool:
 	return status == Status.DESTROYED
@@ -733,6 +745,10 @@ func serialize() -> Dictionary:
 		"cable_cut_turn": cable_cut_turn,
 		"escape_declared": escape_declared,
 		"gunfire_turns": gunfire_turns,
+		"surrender_ordered": surrender_ordered,
+		"surrenders": surrenders,
+		"surrendered": surrendered,
+		"rally_turn": rally_turn,
 		"awaiting_arrival": awaiting_arrival,
 		"arrives_turn": arrives_turn,
 		"critical_effects": critical_effects.duplicate(true),
@@ -851,6 +867,10 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.cable_cut_turn = int(data.get("cable_cut_turn", -1))
 	state.escape_declared = bool(data.get("escape_declared", false))
 	state.gunfire_turns = int(data.get("gunfire_turns", 0))
+	state.surrender_ordered = bool(data.get("surrender_ordered", false))
+	state.surrenders = int(data.get("surrenders", 0))
+	state.surrendered = bool(data.get("surrendered", false))
+	state.rally_turn = int(data.get("rally_turn", -1))
 	state.awaiting_arrival = bool(data.get("awaiting_arrival", false))
 	state.arrives_turn = int(data.get("arrives_turn", 1))
 	state.critical_effects.clear()

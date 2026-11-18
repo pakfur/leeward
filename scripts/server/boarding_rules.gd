@@ -115,6 +115,8 @@ static func _ba_error(ship: ShipState, assignments: Dictionary, ctx: Dictionary,
 		return "%s must form boarders first (10.B.2)." % name
 	if NO_BOARD_QUALITIES.has(ship.crew_quality):
 		return "A crew at CQ %s may not board (10.A.2)." % ship.crew_quality
+	if ship.surrender_ordered:
+		return "a ship that is surrendering does not board (14.B)"
 	if ship.is_burning():
 		return FIRE_REFUSAL
 	var why := target_error(ship, ctx, target)

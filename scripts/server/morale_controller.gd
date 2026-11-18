@@ -1,9 +1,12 @@
 class_name MoraleController
 extends RefCounted
-## MoraleController - Resolves pending morale checks in MORALE_CHECK (Close Action 1997).
-## A check rolls d10 and passes at or above the ship's morale rating. A failure lowers crew
-## quality one letter; failing while already at G strikes the ship. All mutations go through
-## ShipStateController / DamageController.
+## MoraleController - The MORALE_CHECK phase (Close Action 1997): first the voluntary surrenders
+## ordered this g-t (14.B.2, `resolve_surrenders`), then the pending morale checks
+## (`resolve_checks`); `resolve_phase` runs both in that order. Surrenders come first because a ship
+## may surrender "before it is forced to strike": a ship that surrenders is out of play and her noted
+## checks are never rolled. A check rolls d10 and passes at or above the ship's morale rating. A
+## failure lowers crew quality one letter; failing while already at G strikes the ship. All
+## mutations go through ShipStateController / DamageController.
 
 const QUALITY_ORDER: Array[String] = ["A", "B", "C", "D", "E", "F", "G"]
 
@@ -13,6 +16,38 @@ var game_state: Node = null
 
 func _init(p_game_state: Node) -> void:
 	game_state = p_game_state
+
+
+## The MORALE_CHECK phase: the 14.B surrenders, then the noted morale checks.
+func resolve_phase(phase: int) -> void:
+	resolve_surrenders(phase)
+	resolve_checks(phase)
+
+
+func resolve_surrenders(phase: int) -> void:
+	## 14.B.2: every ship ordered to surrender this g-t, in ascending ship_id order: the order is
+	## cleared; a ship already out of play (struck, destroyed or captured during the g-t) does not
+	## surrender; any other logs SURRENDER and strikes (reason "surrender"); a second surrender is
+	## for good (14.B.4). No dice.
+	if not is_server:
+		push_error("MoraleController: Cannot resolve surrenders on client")
+		return
+	var ids: Array = game_state.ships.keys()
+	ids.sort()
+	for ship_id: String in ids:
+		var ship: ShipState = game_state.get_ship(ship_id)
+		if ship == null or not ship.surrender_ordered:
+			continue
+		game_state.ship_controller.set_surrender_ordered(ship_id, false)
+		if ship.is_out_of_play():
+			continue
+		var n: int = game_state.ship_controller.record_surrender(ship_id)
+		var permanent: bool = n >= SurrenderRules.MAX_SURRENDERS
+		game_state.turn_log.add(PhaseEvents.Type.SURRENDER, phase, ship_id,
+			{"surrenders": n, "permanent": permanent})
+		game_state.damage_controller.strike(ship_id, "surrender", phase)
+		if permanent:
+			game_state.ship_controller.end_surrender(ship_id)
 
 
 func resolve_checks(phase: int) -> void:

@@ -57,7 +57,7 @@ enum Type {
 	VEER_IN,  # 13.E.2 a ship veers in one hex: {cable, refused}; target_id: the ship in the way. cable is the cable after veering in; refused (refused != "") she keeps her cable
 	TOW_BEGUN,  # 12.A.4 ship_id (the tower) rolls to take target_id in tow: {roll, modifier, modifiers, total, needed, success}; or her order lapses with no roll: {success: false, lapsed: reason}
 	TOW_CUT,  # 12.A.6, 12.A.9 the tow between ship_id (tower) and target_id (towed) is cut: {cause: tx/struck/destroyed/taken/aground/structural/dismasted, by}
-	SURRENDER,  # 14.B voluntary surrender (sub-project 7 Task 4; its data and text are added there)
+	SURRENDER,  # 14.B a ship hauls down her colours: {surrenders, permanent}
 	RALLY,  # 14.B a struck crew rallies (sub-project 7 Task 5; its data and text are added there)
 	AIM_FORCED,  # 14.E a low aim forced high: {roll, rules: ["crew"|"heel"], sides, quality}
 }
@@ -164,6 +164,7 @@ const STRIKE_REASONS := {
 	"hull destroyed": "hull destroyed",
 	"no crew": "no crew left",
 	"morale": "the crew's morale broke",
+	"surrender": "she surrendered (14.B)",
 	"waterline": "not enough crew to man the pumps",
 }
 
@@ -557,6 +558,11 @@ class PhaseEvent extends RefCounted:
 				var text := "%s explodes and is destroyed" % who
 				if target_id != "":
 					text += "; %s is no longer fouled with her" % other
+				return text
+			Type.SURRENDER:
+				var text := "%s hauls down her colours (voluntary surrender, 14.B)" % who
+				if data.get("permanent", false):
+					text += "; her second surrender: she cannot rally again"
 				return text
 			Type.STRIKE:
 				return "%s strikes her colours (%s)" % [who,
