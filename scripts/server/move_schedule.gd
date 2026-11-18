@@ -7,23 +7,16 @@ extends RefCounted
 ## always compared by cross-multiplication, never as floats. `times` holds the
 ## distinct step times <= 1 over all ships; a "segment" is an index into it.
 ## Steps beyond a ship's plot (N + k) fall on trailing segments at times 2, 3, ...
-##
-## The front-loaded mode (one step per segment) is a temporary refactoring aid
-## and is removed once the movement resolver is proportional.
 
 const START := Vector2i(0, 1)  ## pre-movement events
 const END := Vector2i(1, 0)  ## the end check after the last segment; greater than every time
 
 var plot_steps: Dictionary = {}  ## ship_id -> N (plot size this run)
 var times: Array[Vector2i] = []  ## distinct step times <= 1 over all ships, ascending
-var front_loaded: bool = false  ## TEMPORARY (Task 2 only; Task 3 deletes it)
 
 
-func _init(p_plot_steps: Dictionary, p_front_loaded: bool = false) -> void:
+func _init(p_plot_steps: Dictionary) -> void:
 	plot_steps = p_plot_steps
-	front_loaded = p_front_loaded
-	if front_loaded:
-		return
 	for id in plot_steps:
 		var n: int = plot_steps[id]
 		for j in range(n):
@@ -77,8 +70,6 @@ func _n(ship_id: String) -> int:
 
 
 func segment_of(ship_id: String, step: int) -> int:
-	if front_loaded:
-		return step
 	var n := _n(ship_id)
 	if step >= n:
 		return times.size() + (step - n)
@@ -90,8 +81,6 @@ func step_at(ship_id: String, segment: int) -> int:
 	var n := _n(ship_id)
 	if n == 0:
 		return -1
-	if front_loaded:
-		return segment
 	if segment >= times.size():
 		return n + (segment - times.size())
 	var t := times[segment]
@@ -102,8 +91,6 @@ func step_at(ship_id: String, segment: int) -> int:
 
 ## The ship's scheduled steps on segments before `segment`.
 func steps_before(ship_id: String, segment: int) -> int:
-	if front_loaded:
-		return segment
 	var n := _n(ship_id)
 	var count := 0
 	for j in range(n):
@@ -114,11 +101,6 @@ func steps_before(ship_id: String, segment: int) -> int:
 
 ## ship_id -> Array of steps; the scheduled times plus the most extra steps.
 func segment_count(steps_by_ship: Dictionary) -> int:
-	if front_loaded:
-		var most := 0
-		for id in steps_by_ship:
-			most = maxi(most, (steps_by_ship[id] as Array).size())
-		return most
 	var extra := 0
 	for id in steps_by_ship:
 		extra = maxi(extra, (steps_by_ship[id] as Array).size() - _n(id))
@@ -126,8 +108,6 @@ func segment_count(steps_by_ship: Dictionary) -> int:
 
 
 func time_of(segment: int) -> Vector2i:
-	if front_loaded:
-		return Vector2i(segment + 1, 1)
 	if segment < times.size():
 		return times[segment]
 	return Vector2i(2 + segment - times.size(), 1)

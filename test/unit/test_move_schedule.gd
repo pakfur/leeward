@@ -69,11 +69,3 @@ func test_empty_plot_has_no_times() -> void:
 
 func test_ma0_turn_is_at_the_end() -> void:
 	assert_eq(MoveSchedule.new({"t": 1, "a": 4}).segment_of("t", 0), 3)
-
-func test_front_loaded_mode_is_step_per_segment() -> void:
-	var s := MoveSchedule.new({"a": 8, "b": 3}, true)
-	assert_eq(s.segment_of("b", 2), 2)
-	assert_eq(s.step_at("b", 2), 2)
-	assert_eq(s.step_at("b", 5), 5)
-	assert_eq(s.steps_before("a", 4), 4)
-	assert_eq(s.segment_count(_steps(8, 3)), 8)
