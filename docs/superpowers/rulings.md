@@ -68,3 +68,14 @@ Parked minors: a tow rollback that undid a bear-off can name the wrong ship in i
 5. **Process:** ship rows checked against the scan three times (pre-flight, implementer, final review); SCV audit clean.
 
 Parked: a tow astern blocking a stern chaser is refused as "no line of sight" rather than "blocked by friendly ship"; the full-game test asserts a FIRE event but not specifically a chase shot.
+
+## Sub-project 7 — optional rules (merged 2026-11-18)
+
+1. **Switches:** a scenario `optional_rules` block (`voluntary_surrender`, `fatigue`, `gunfire_limits`: crew / heel / both), all off by default, with an override passed to `start_scenario`; a malformed block refuses the start.
+2. **Surrender (14.B)** takes effect at the end of the turn it is ordered (user decision): she moves per plot, can be fired on, fires no guns or muskets and sends no new boarders, and strikes at MORALE_CHECK before the noted morale checks. The order is hidden from the other side until she strikes; Cancel withdraws it. Eligibility: CQ F/G or ≥ 5 sections lost, prize-crew detached sections not counted. In 1v1 surrendering the last ship concedes (user decision).
+3. **Rally:** one MC in planning; a pass returns her to play this turn with her default course (crew_auto kept); a fail lowers CQ, at G she is struck for good; a second surrender is permanent; no surrender in the g-t she rallied; a ship with no hull or no crew left cannot rally (9.C). *If wrong:* rallying is a little more restrictive than the book.
+4. **Fatigue (14.D):** counted per firing turn (any battery, chasers included), −1 from the 6th, −2 from the 16th ("g-t 15" read as the 16th), no recovery; public.
+5. **Gunfire limits (14.E):** one d6 per firing ship covers both rules when both are on; a low shot forced high on 4+ keeps its previewed number and reads the High column; every navy; not marine fire; the fire panel shows the 50 % chance in its aim note.
+6. **AI:** surrenders when eligible and a linked enemy has boarders ready or it faces ≥ 2:1 gun-factor odds within range 3; rallies (before plotting) when no enemy is within 5.
+7. **Roadmap closed:** feature_diff §2 is empty; the Scenario Book's scattering, variable reinforcement entry and special victory conditions are recorded as not offered (§4).
+8. **Process:** several small task reviews were folded into the whole-branch review; SCV audit clean; the last parser warning in the project was fixed (an annotation must sit on the line, not the function).
