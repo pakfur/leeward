@@ -1480,6 +1480,8 @@ func _enter_end_turn_phase() -> void:
 	for ship: ShipState in game_state.get_all_ships():
 		if ship.is_destroyed() and ship.is_on_map():
 			game_state.ship_controller.remove_from_map(ship.ship_id)
+	# V.D.1-4: declared escapes are reported, and ships that got clear leave the map.
+	game_state.map_controller.resolve_escapes(current_turn, current_phase)
 
 	var result: Dictionary = game_state.victory_controller.check(current_turn)
 	if result.is_empty():

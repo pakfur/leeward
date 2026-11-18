@@ -10,6 +10,12 @@ const BLOCKED := "blocked"
 const LOST := "lost"
 const ESCAPE := "escape"
 
+## V.D.1b: a ship this far from every pursuer escapes.
+const ESCAPE_DISTANCE := 31
+## V.D.1c: the band in which a ship escapes by being at least as fast as every pursuer in it.
+const SPEED_RANGE_MIN := 20
+const SPEED_RANGE_MAX := 30
+
 
 ## {} when the side may not escape, else {from_turn: int, edges: Array[String], share: float}.
 static func permission(scenario: Dictionary, side: int) -> Dictionary:
@@ -109,3 +115,69 @@ static func forced_move(scenario: Dictionary, ship: ShipState, old_hexes: Array[
 			return {"result": "ship", "edge": "", "blocker": others[hex], "shallow_bow": false}
 	return {"result": "clear", "edge": "", "blocker": "",
 		"shallow_bow": not new_hexes.is_empty() and terrain.area_at(new_hexes[0]) != null}
+
+
+## Range between two footprints: the axial distance between their closest hexes (7.C.4).
+static func footprint_range(a: Array[Vector2i], b: Array[Vector2i]) -> int:
+	var best := -1
+	for x in a:
+		for y in b:
+			var dq := x.x - y.x
+			var dr := x.y - y.y
+			var d := (absi(dq) + absi(dr) + absi(dq + dr)) / 2
+			if best < 0 or d < best:
+				best = d
+	return best
+
+
+## The table movement allowance, 0 where the table has no entry: luffing, dismasted (level 0) or
+## calm (wind speed 0). `sail_state` in either case.
+static func table_ma(speed_type: String, wind_speed: int, wind_facing: String, sail_state: String,
+		rigging_level: int) -> int:
+	if wind_facing == "L" or rigging_level <= 0 or wind_speed <= 0:
+		return 0
+	return DataManager.get_movement_allowance(speed_type, wind_speed, wind_facing,
+			sail_state.to_lower(), rigging_level)
+
+
+## The ship's best movement allowance at `wind_facing` and `wind_speed`: the heaviest sail her
+## rigging can carry (max_sail_state) at her rigging level, whatever sail she carries now. Used by
+## the escape speed test (V.D.1c) and for arrival speed.
+static func max_ma(ship: ShipState, wind_facing: String, wind_speed: int) -> int:
+	return table_ma(ship.ship.speed_type, wind_speed, wind_facing, ship.max_sail_state(),
+			ship.rigging_level())
+
+
+## max_ma for a ship heading `facing` with the wind from `wind_direction`.
+static func max_ma_heading(ship: ShipState, facing: int, wind_direction: int, wind_speed: int) -> int:
+	return max_ma(ship, HexGrid.new().get_wind_facing(facing, wind_direction), wind_speed)
+
+
+## Whether `ship` escapes now (V.D.1b-c), against `pursuers` (enemy ships that could chase her):
+## {} or {"how": "distance", "range": r} (r >= ESCAPE_DISTANCE, or -1 with no pursuer) or
+## {"how": "speed", "range": r} (the nearest pursuer SPEED_RANGE_MIN..MAX off, her max_ma above 0
+## and at least that of every pursuer in that band of her class or larger (class number no
+## higher)). Every max_ma is taken at the escaping ship's wind facing.
+static func condition(ship: ShipState, pursuers: Array[ShipState], wind_direction: int,
+		wind_speed: int) -> Dictionary:
+	var own_hexes := ship.occupied_hexes()
+	var nearest := -1
+	for p in pursuers:
+		var r := footprint_range(own_hexes, p.occupied_hexes())
+		if nearest < 0 or r < nearest:
+			nearest = r
+	if nearest < 0 or nearest >= ESCAPE_DISTANCE:
+		return {"how": "distance", "range": nearest}
+	if nearest < SPEED_RANGE_MIN or nearest > SPEED_RANGE_MAX:
+		return {}
+	var wind_facing := HexGrid.new().get_wind_facing(ship.facing, wind_direction)
+	var own := max_ma(ship, wind_facing, wind_speed)
+	if own <= 0:
+		return {}
+	for p in pursuers:
+		var r := footprint_range(own_hexes, p.occupied_hexes())
+		if r < SPEED_RANGE_MIN or r > SPEED_RANGE_MAX or p.ship.ship_class > ship.ship.ship_class:
+			continue
+		if max_ma(p, wind_facing, wind_speed) > own:
+			return {}
+	return {"how": "speed", "range": nearest}

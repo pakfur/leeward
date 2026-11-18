@@ -75,7 +75,8 @@ func limited() -> bool:
 ## with limited information off), else the same with the box counts replaced by
 ## rigging_sections_lost, hull_sections_lost, crew_sections_lost (sailor sections) and
 ## marine_section_lost, a prize's crew below (prize.original_crew) given the same way, and
-## detached_boxes, plotted_actions and pending_turn dropped (and standing_order, for a reader of another side). {} for an unknown ship.
+## detached_boxes, plotted_actions and pending_turn dropped (and standing_order and
+## escape_declared, for a reader of another side). {} for an unknown ship.
 func ship_for(player_id: int, ship_id: String) -> Dictionary:
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
@@ -86,9 +87,11 @@ func ship_for(player_id: int, ship_id: String) -> Dictionary:
 	for key in SHIP_BOX_KEYS + SHIP_HIDDEN_KEYS:
 		data.erase(key)
 	# A signalled order is the side's secret (11.A.4): only players of the ship's side may see it.
+	# So is a declared escape: the enemy learns of it at the end of the turn (V.D.2, ESCAPE_DECLARED).
 	var reader_side: int = game_state.side_of_player(player_id)
 	if reader_side < 0 or reader_side != ship.side:
 		data.erase("standing_order")
+		data.erase("escape_declared")
 	var type: Ship = ship.ship
 	data["rigging_sections_lost"] = _lost(ship.rigging_current_hp, type.rigging_hp if type else [])
 	data["hull_sections_lost"] = _lost(ship.hull_current_hp, type.hull_hp if type else [])
