@@ -281,6 +281,20 @@ func _on_ship_selected(index: int) -> void:
 	fire_btn.pressed.connect(func(): _on_start_fire_pressed(sid))
 	ship_fields_container.add_child(fire_btn)
 
+	var anchor_btn := Button.new()
+	anchor_btn.name = "AnchorShipButton"
+	anchor_btn.text = "Anchor"
+	anchor_btn.tooltip_text = "Server request: the ship drops her anchor by the bow at once (13.C.2)"
+	anchor_btn.pressed.connect(func(): _on_anchor_pressed(sid))
+	ship_fields_container.add_child(anchor_btn)
+
+	var cut_btn := Button.new()
+	cut_btn.name = "CutCableButton"
+	cut_btn.text = "Cut cable"
+	cut_btn.tooltip_text = "Server request: the ship cuts her anchor cable at once (13.F.2)"
+	cut_btn.pressed.connect(func(): _on_cut_cable_pressed(sid))
+	ship_fields_container.add_child(cut_btn)
+
 	var damage_btn := Button.new()
 	damage_btn.name = "DamageShipButton"
 	damage_btn.text = "Mark out 2 rigging, 2 hull"
@@ -574,6 +588,24 @@ func _on_start_fire_pressed(ship_id: String) -> void:
 		return
 	var reason: String = game_state.dev_commands.start_fire(ship_id)
 	_log("Start fire aboard %s: %s" % [ship_id, "ok" if reason == "" else reason])
+	if reason == "":
+		ship_changed.emit(ship_id)
+
+
+func _on_anchor_pressed(ship_id: String) -> void:
+	if not game_state or not game_state.dev_commands:
+		return
+	var reason: String = game_state.dev_commands.anchor_ship(ship_id)
+	_log("Anchor %s: %s" % [ship_id, "ok" if reason == "" else reason])
+	if reason == "":
+		ship_changed.emit(ship_id)
+
+
+func _on_cut_cable_pressed(ship_id: String) -> void:
+	if not game_state or not game_state.dev_commands:
+		return
+	var reason: String = game_state.dev_commands.cut_anchor_cable(ship_id)
+	_log("Cut cable of %s: %s" % [ship_id, "ok" if reason == "" else reason])
 	if reason == "":
 		ship_changed.emit(ship_id)
 

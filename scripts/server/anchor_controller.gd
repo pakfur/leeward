@@ -197,6 +197,83 @@ func cut(ship_id: String, phase: int) -> bool:
 	return true
 
 
+## SERVER ONLY: the scenario's starting anchors (spec §7), set when a game starts, before any
+## turn: each ship entry with an "anchor" ({end, springs, cable, hex}) is anchored at once, with
+## no event. The hex defaults to `cable` hexes upwind of the anchored end. An entry that
+## AnchorRules.scenario_errors rejects is skipped (placement_errors reports it). It counts as one
+## of the ship's two anchorings.
+func place_scenario_anchors() -> void:
+	if not is_server:
+		push_error("AnchorController: Cannot place anchors on client")
+		return
+	var scenario: Dictionary = game_state.active_scenario
+	var wind := int(game_state.environment.wind_direction)
+	for entry in scenario.get("ships", []):
+		if not (entry is Dictionary) or not (entry.get("anchor", null) is Dictionary):
+			continue
+		var check := scenario.duplicate()
+		check.erase("anchoring")
+		check["ships"] = [entry]
+		if not AnchorRules.scenario_errors(check).is_empty():
+			continue
+		var ship: ShipState = game_state.get_ship(str(entry.get("id", "")))
+		if ship == null:
+			continue
+		var a: Dictionary = entry["anchor"]
+		var end := str(a["end"])
+		var cable := int(a.get("cable", 1))
+		var end_hex := ship.hex_position if end == "bow" else HexGrid.stern_of(ship.hex_position, ship.facing)
+		var hex: Vector2i = end_hex + cable * HexGrid.DIRECTIONS[wind]
+		if a.has("hex"):
+			hex = Vector2i(int(a["hex"][0]), int(a["hex"][1]))
+		game_state.ship_controller.drop_anchor(ship.ship_id, {"hex": hex, "end": end,
+			"springs": bool(a.get("springs", false)), "cable": cable, "veered": cable - 1,
+			"swing_dir": 0, "wind_dir": wind, "turn": 0})
+
+
+## SERVER ONLY (Developer UI): the ship drops an anchor at once, by `end` ("bow"/"stern"), as in
+## V.B: the anchor is made ready first, then drop(). "" or a reason.
+func drop_now(ship_id: String, end: String, springs: bool, phase: int) -> String:
+	if not is_server:
+		push_error("AnchorController: Cannot drop anchor on client")
+		return "not the server"
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null:
+		return "no ship %s" % ship_id
+	if ship.is_out_of_play():
+		return "%s is out of play" % ship_id
+	if not ship.is_on_map():
+		return "%s is not on the map" % ship_id
+	if ship.is_anchored():
+		return "%s is already anchored" % ship_id
+	if end != "bow" and end != "stern":
+		return "the anchor end must be bow or stern"
+	game_state.ship_controller.set_anchor_ready(ship_id, end)
+	game_state.ship_controller.set_springs_ready(ship_id, springs)
+	if not drop(ship_id, phase):
+		return "the server refused to anchor %s" % ship_id
+	return ""
+
+
+## SERVER ONLY (Developer UI): the ship cuts her cable at once (13.F.2). "" or a reason.
+func cut_now(ship_id: String, phase: int) -> String:
+	if not is_server:
+		push_error("AnchorController: Cannot cut cable on client")
+		return "not the server"
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if ship == null:
+		return "no ship %s" % ship_id
+	if ship.is_out_of_play():
+		return "%s is out of play" % ship_id
+	if not ship.is_on_map():
+		return "%s is not on the map" % ship_id
+	if not ship.is_anchored():
+		return "%s is not anchored" % ship_id
+	if not cut(ship_id, phase):
+		return "the server refused to cut the cable of %s" % ship_id
+	return ""
+
+
 ## V.A for one ship: swing, settle and veer out, then the forced move (or the hold).
 func _ride(ship: ShipState, phase: int) -> void:
 	var id := ship.ship_id

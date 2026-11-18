@@ -450,6 +450,8 @@ func start_new_game(scenario_data: Dictionary) -> void:
 		environment.wind_speed
 	])
 
+	anchor_controller.place_scenario_anchors()
+
 	for message in placement_errors():
 		push_error(message)
 
@@ -481,6 +483,7 @@ func placement_errors() -> Array[String]:
 			var pair: Array[ShipState] = [all_ships[i], all_ships[j]]
 			if Occupancy.overlapping_ids(pair).size() > 0:
 				errors.append("GameState: ships '%s' and '%s' overlap" % [pair[0].ship_id, pair[1].ship_id])
+	errors.append_array(AnchorRules.scenario_errors(active_scenario))
 	return errors
 
 

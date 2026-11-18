@@ -91,6 +91,29 @@ func start_fire(ship_id: String) -> String:
 	return ""
 
 
+## Drops an anchor at once by `end` ("bow"/"stern"), with springs rigged if asked (13.C.2).
+func anchor_ship(ship_id: String, end: String = "bow", springs: bool = false) -> String:
+	var reason := _refusal()
+	if reason != "":
+		return reason
+	reason = game_state.anchor_controller.drop_now(ship_id, end, springs,
+		game_state.phase_controller.current_phase)
+	if reason == "":
+		Trace.trace_log("DevCommands", "%s anchored by the %s" % [ship_id, end])
+	return reason
+
+
+## Cuts the ship's anchor cable at once (13.F.2).
+func cut_anchor_cable(ship_id: String) -> String:
+	var reason := _refusal()
+	if reason != "":
+		return reason
+	reason = game_state.anchor_controller.cut_now(ship_id, game_state.phase_controller.current_phase)
+	if reason == "":
+		Trace.trace_log("DevCommands", "%s cut her cable" % ship_id)
+	return reason
+
+
 ## Marks out `rigging` rigging and `hull` hull boxes on the ship (DamageController.apply_hits,
 ## lowest section first, with the usual checks), for trying out repairs in a running game.
 func damage_ship(ship_id: String, rigging: int, hull: int) -> String:
