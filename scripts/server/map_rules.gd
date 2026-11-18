@@ -9,6 +9,9 @@ const CLEAR := "clear"
 const BLOCKED := "blocked"
 const LOST := "lost"
 const ESCAPE := "escape"
+## The `ship` of a crossing test made for no ship that may escape (AnchorRules.forced_check: an
+## anchored ship): may_cross is false, so every escape boundary holds (BLOCKED, forced_move "edge").
+const NO_SHIP = null
 
 ## V.D.1b: a ship this far from every pursuer escapes.
 const ESCAPE_DISTANCE := 31
@@ -51,10 +54,10 @@ static func may_declare(scenario: Dictionary, side: int, turn: int) -> bool:
 
 ## Whether `ship` may cross `boundary` now: an escape boundary open to its side this turn, which it
 ## has declared escape for. `in_boarding`: the ship is in a live boarding action (MapController.
-## escape_locked) and may not leave it.
+## escape_locked) and may not leave it. `ship` may be NO_SHIP: never.
 static func may_cross(scenario: Dictionary, ship: ShipState, boundary: TerrainMap.Boundary, turn: int,
 		in_boarding: bool = false) -> bool:
-	if boundary == null or boundary.kind != TerrainMap.ESCAPE or in_boarding:
+	if ship == NO_SHIP or boundary == null or boundary.kind != TerrainMap.ESCAPE or in_boarding:
 		return false
 	var p := permission(scenario, ship.side)
 	if p.is_empty() or turn < int(p["from_turn"]):
@@ -91,7 +94,7 @@ static func crossing_outcome(scenario: Dictionary, ship: ShipState, from: Vector
 ## may not enter. Priority: a blocking crossing (edge), then a crossing off the map where there is
 ## no sea room (lost), then an escape crossing, then a new hex of land, then a ship in a new hex
 ## (bow first), else clear. `shallow_bow` (clear only) says the new bow hex is in a shallow area,
-## so the caller rolls the depth.
+## so the caller rolls the depth. `ship` may be NO_SHIP (no escape crossing is ever made).
 static func forced_move(scenario: Dictionary, ship: ShipState, old_hexes: Array[Vector2i],
 		new_hexes: Array[Vector2i], others: Dictionary, turn: int, in_boarding: bool = false) -> Dictionary:
 	var lost := ""

@@ -365,6 +365,9 @@ func _partial_drift(ship: ShipState, free_end: String, downwind_dir: int) -> Dic
 ## partner), and a dismasted ship never fouls. Also the fouling roll of an anchored ship's blocked
 ## forced move (AnchorController).
 func try_foul(drifter: ShipState, other: ShipState) -> Variant:
+	if not is_server:
+		push_error("DriftResolver: Cannot roll fouling on client")
+		return null
 	if drifter.fouled_with != "" or other.fouled_with != "":
 		return null
 	if drifter.is_dismasted() or other.is_dismasted():

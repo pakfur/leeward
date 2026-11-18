@@ -484,6 +484,8 @@ func placement_errors() -> Array[String]:
 			if Occupancy.overlapping_ids(pair).size() > 0:
 				errors.append("GameState: ships '%s' and '%s' overlap" % [pair[0].ship_id, pair[1].ship_id])
 	errors.append_array(AnchorRules.scenario_errors(active_scenario))
+	for s in all_ships:
+		errors.append_array(AnchorRules.footprint_errors(active_scenario, s))
 	return errors
 
 

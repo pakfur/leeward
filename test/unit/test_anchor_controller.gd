@@ -183,12 +183,15 @@ func test_anchor_with_default_course_is_erased() -> void:
 	sc.clear_plotted_movement(ship.ship_id)
 	_plot(ship, "A")
 	assert_eq(GameState.anchor_controller.actual_steps(ship), 2)
+	# The planning context counts the default course too (CrewRules.context plotted_mps), so End
+	# Planning drops the anchoring with the 13.C.1 warning, as for a stored course; prepare() is the
+	# backstop.
+	var final_plan: Dictionary = ctrl.current_plan(ship.ship_id, true)
+	assert_true(ShipState.MARINES in final_plan["dropped"])
+	assert_string_contains("\n".join(PackedStringArray(final_plan["warnings"])), "13.C.1")
 	ctrl.begin_turn_tasks(MOVE)
 	assert_true(ship.tasks_with("A").is_empty())
-	var refused := _crew_events("A", "refused")
-	assert_eq(refused.size(), 1)
-	if refused.size() == 1:
-		assert_string_contains(str(refused[0].data.get("reason", "")), "13.C.1")
+	assert_eq(_crew_events("A", "started").size(), 0)
 
 
 func test_anchor_with_no_mps_starts_this_turn() -> void:

@@ -67,6 +67,17 @@ const HOLD_ENEMY := "enemy alongside"
 const ANCHOR_REFUSAL := "Anchoring is ordered with the crew orders (anchor), not by placing sections here."
 
 
+## The MPs the ship will sail this g-t, as far as planning knows: the stored course, or, when none
+## is stored, her default course (6.G.2; AnchorController.actual_steps reads it the same way at End
+## Planning), so the 13.C.1 and 8.F.3b warnings fire for a ship nobody plotted.
+static func _plotted_mps(game_state: Node, ship: ShipState, steps: Array) -> int:
+	if not steps.is_empty() or bool(ship.plotted_actions.get("movement_plotted", false)):
+		return steps.size()
+	if game_state == null or game_state.get("ship_controller") == null:
+		return 0
+	return DefaultCourse.for_ship(game_state, ship).size()
+
+
 ## Facts about the ship's situation the rules read (spec §3.2). Pure read of game_state.
 ## ma0_turn_plotted: the stored movement plot begins with a turn at MA 0 (5.D.1), so the Braces (T)
 ## station is open (MovementResolver.plots_ma0_turn, the test the Tacking roll uses).
@@ -103,7 +114,7 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 		# final: End Planning (finalize_plots, begin_turn_tasks). While planning, braces placed
 		# before the MA-0 turn is plotted are kept (with a warning) rather than dropped.
 		"final": false,
-		"plotted_mps": (ship.plotted_actions.get("movement", []) as Array).size(),
+		"plotted_mps": _plotted_mps(game_state, ship, steps),
 		"nearest_enemy": nearest,
 		"enemy_in_gun_range": nearest >= 0 and nearest <= FireRules.MAX_RANGE,
 		"enemy_adjacent": nearest == 1,

@@ -44,7 +44,7 @@ const R_VO_TURN := "Not on a g-t it turns (13.E.1d)."
 const R_VEER_BOTH := "Veer out or veer in, not both."
 const R_VI_NONE := "Nothing to veer in (13.E.2)."
 const R_VI_LINKED := "Fouled or grappled: cannot veer in."
-const R_VI_TURN :="Not on a g-t it turns (13.E.2)."
+const R_VI_TURN := "Not on a g-t it turns (13.E.2)."
 const R_HS_NO_SPRINGS := "Springs are not rigged (13.D)."
 const R_HS_CALM := "No wind: springs cannot be used (13.E.3)."
 const R_HS_LINKED := "Fouled or grappled ships cannot turn (13.D.2)."
@@ -111,6 +111,9 @@ static func scenario_errors(scenario: Dictionary) -> Array[String]:
 			continue
 		if not ["bow", "stern"].has(str(a.get("end", ""))):
 			errors.append("Anchoring: ship '%s' anchor end must be bow or stern" % id)
+		# Ruling 2026-11-18: a reinforcement enters under way, never at anchor.
+		if _integral(entry.get("arrives", 1)) and int(entry.get("arrives", 1)) > 1:
+			errors.append("Anchoring: ship '%s' is a reinforcement and cannot start at anchor" % id)
 		if a.has("cable"):
 			var cable = a["cable"]
 			if not _integral(cable) or int(cable) < 1 or int(cable) > 4:
@@ -120,6 +123,24 @@ static func scenario_errors(scenario: Dictionary) -> Array[String]:
 			if not (h is Array) or h.size() != 2 or not _integral(h[0]) or not _integral(h[1]) \
 					or not terrain.in_bounds(Vector2i(int(h[0]), int(h[1]))):
 				errors.append("Anchoring: ship '%s' anchor is off the map" % id)
+	return errors
+
+
+## Problems with where an anchored ship rides (placement_errors, spec §7): every hex of her footprint
+## (`footprint` from her anchor, cable, facing and the wind the anchor was laid in) must be on the map
+## and not land. Every message starts "Anchoring: ". Read-only.
+static func footprint_errors(scenario: Dictionary, ship: ShipState) -> Array[String]:
+	var errors: Array[String] = []
+	if not ship.is_anchored():
+		return errors
+	var terrain := TerrainMap.of(scenario)
+	var a := ship.anchor
+	for hex in footprint(a.get("hex", ship.hex_position), str(a.get("end", "bow")), int(a.get("cable", 1)),
+			ship.facing, int(a.get("wind_dir", 0))):
+		if not terrain.in_bounds(hex):
+			errors.append("Anchoring: ship '%s' rides to %s, outside map_bounds" % [ship.ship_id, hex])
+		elif terrain.is_land(hex):
+			errors.append("Anchoring: ship '%s' rides to %s, which is land" % [ship.ship_id, hex])
 	return errors
 
 
@@ -137,7 +158,7 @@ static func proper_facing(end: String, wind_dir: int) -> int:
 
 ## The direction the wind blows toward.
 static func downwind(wind_dir: int) -> int:
-	return (wind_dir + 3) % 6
+	return posmod(wind_dir + 3, 6)
 
 
 ## The ship's hexes [bow, stern] riding to an anchor at `anchor_hex` (spec §1; Diagram 25, 13.C.6):
@@ -201,8 +222,9 @@ static func forced_check(scenario: Dictionary, old_hexes: Array[Vector2i], new_h
 			return _forced("edge")
 	# MapRules.forced_move checks each old -> new pair for a boundary side; pairs that are not
 	# adjacent (a swing and a drift together) cross none, and the in_bounds test above covers the edge.
-	# The ship only matters there for escape, which is collapsed to "edge" anyway.
-	var r := MapRules.forced_move(scenario, ShipState.new(), old_hexes, new_hexes, others, 0)
+	# No ship is passed (MapRules.NO_SHIP): an anchored ship never escapes, so an escape boundary
+	# holds her like any other ("edge"); the turn then does not matter.
+	var r := MapRules.forced_move(scenario, MapRules.NO_SHIP, old_hexes, new_hexes, others, 0)
 	match str(r["result"]):
 		"edge", "lost", "escape":
 			return _forced("edge")
@@ -237,7 +259,7 @@ static func order_task(ship: ShipState, order: String) -> Dictionary:
 ## resolution, when an A with MPs plotted is erased). `plan_codes`: the other anchoring codes
 ## already accepted in the plan.
 static func refusal(ship: ShipState, code: String, params: Dictionary, ctx: Dictionary, plan_codes: Array) -> String:
-	if not ship.crew_can_act():
+	if not ship.crew_can_act() or ship.is_captured():  # a prize plots only boarding and repairs (10.H.2)
 		return R_CREW
 	if code == "HS" and not ["port", "starboard"].has(str(params.get("turn", ""))):
 		return R_HS_PARAMS
@@ -259,11 +281,13 @@ static func refusal(ship: ShipState, code: String, params: Dictionary, ctx: Dict
 			var end := "bow" if code == "PBS" else "stern"
 			if ship.springs_ready or ship.has_springs():
 				return R_SPRINGS_READY
+			# Checked before the end, so a plan with both PBS and PSS is told why.
+			var other_springs := "PSS" if code == "PBS" else "PBS"
+			if not ship.tasks_with(other_springs).is_empty() or plan_codes.has(other_springs):
+				return R_ONE_ANCHOR
 			var anchored_here := ship.is_anchored() and str(ship.anchor.get("end", "bow")) == end
 			if ship.anchor_ready != end and not anchored_here:
 				return "Prepare the %s anchor first (13.B.3)." % end
-			if not ship.tasks_with("PSS" if code == "PBS" else "PBS").is_empty():
-				return R_ONE_ANCHOR
 		"A":
 			if ship.is_anchored():
 				return R_ANCHORED

@@ -107,7 +107,8 @@ func assign_crew() -> void:
 
 
 ## The AI's anchor order (anchoring spec §11), one of AnchorRules.ORDERS, placed by rule A2c.
-## Anchored: "cut" on CUT CABLES, or when a signalled move order finds no enemy in play within
+## Anchored: "cut" on CUT CABLES, under an escape posture (_escape_posture, ruling 2026-11-18: an
+## anchored ship cannot escape), or when a signalled move order finds no enemy in play within
 ## FireRules.MAX_RANGE, but never while she cannot make way at any heading or her lee is dangerous
 ## (downwind_danger: cutting would only put her back in drift danger); else "prepare_springs" while
 ## springs may be prepared; else, with springs, the haul (haul_choice). Not anchored and wanting to
@@ -118,8 +119,9 @@ func anchor_order(ship_state: ShipState) -> String:
 		return ""
 	if ship_state.is_anchored():
 		var signalled := str(ship_state.standing_order.get("order", ""))
-		if (signalled == "cut" or (MOVE_ORDERS.has(signalled) and not _enemy_within(ship_state, FireRules.MAX_RANGE))) \
-				and _can_make_way(ship_state) and not downwind_danger(ship_state):
+		var wants_cut := signalled == "cut" or _escape_posture(ship_state) \
+			or (MOVE_ORDERS.has(signalled) and not _enemy_within(ship_state, FireRules.MAX_RANGE))
+		if wants_cut and _can_make_way(ship_state) and not downwind_danger(ship_state):
 			return "cut"
 		var springs_code := str(AnchorRules.order_task(ship_state, "prepare_springs")["code"])
 		if ship_state.tasks_with("PBS").is_empty() and ship_state.tasks_with("PSS").is_empty() \
@@ -213,9 +215,7 @@ func haul_choice(ship_state: ShipState) -> String:
 		return ""
 	var occupied := _occupied_except(ship_state, target)
 	var friendly := _friendly_footprints(ship_state)
-	var ships: Array[ShipState] = []
-	ships.assign(game_state.get_all_ships())
-	var others := Occupancy.build(ships, [ship_state.ship_id])
+	var others := Occupancy.build(game_state.ships_on_map(), [ship_state.ship_id])
 	var ctx := CrewRules.context(game_state, ship_state)
 	var best := ""
 	var best_score := _bearing_batteries(here, ship_state.facing, target.occupied_hexes(), occupied, friendly)

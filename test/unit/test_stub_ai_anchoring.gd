@@ -305,3 +305,39 @@ func test_assign_crew_sets_anchor_order() -> void:
 	var orders: Dictionary = ai.plotted_actions.get("crew_orders", {})
 	assert_eq(str(orders.get("anchor", "?")), stub_ai.anchor_order(ai))
 	assert_eq(str(orders["anchor"]), "prepare_springs")
+
+
+# --- fix wave -----------------------------------------------------------------------
+
+## Ruling 2026-11-18: under an escape posture an anchored AI ship cuts her cable (an anchored ship
+## cannot escape), unless her lee is dangerous or she cannot make way.
+func test_escape_posture_cuts_the_cable() -> void:
+	var escape := {"escape": {"1": {}}, "ai": {"1": "escape"}}
+	GameState.active_scenario = _scenario().merged(escape)
+	var ai := _anchored(true)
+	_make_ship("enemy", 0, Vector2i(4, 0), 0)  # range 3: no move-order cut
+	assert_eq(stub_ai.anchor_order(ai), "cut")
+	GameState.active_scenario = _scenario(true, {"land": [[-4, 0]]}).merged(escape)
+	assert_ne(stub_ai.anchor_order(ai), "cut", "not with land to leeward")
+	GameState.active_scenario = _scenario().merged(escape)
+	ai.rigging_current_hp = [0, 0, 0, 0] as Array[int]
+	assert_ne(stub_ai.anchor_order(ai), "cut", "not when she cannot make way")
+
+
+func test_escape_posture_cuts_on_a_disengage_order() -> void:
+	GameState.active_scenario = _scenario().merged({"escape": {"1": {}}})
+	var ai := _anchored(true)
+	_make_ship("enemy", 0, Vector2i(4, 0), 0)
+	assert_ne(stub_ai.anchor_order(ai), "cut", "control: no posture, enemy near")
+	sc.set_standing_order("ai", {"order": "disengage"})
+	assert_eq(stub_ai.anchor_order(ai), "cut")
+
+
+## The haul's occupancy is the ships on the map: a wreck taken off the map does not block a turn.
+func test_haul_ignores_ships_off_the_map() -> void:
+	var ai := _anchored(true)
+	_make_ship("enemy", 0, Vector2i(4, 0), 1)
+	var wreck := _make_ship("friend", 1, Vector2i(0, -1), 0)
+	wreck.status = ShipState.Status.DESTROYED
+	wreck.removed_from_map = true
+	assert_eq(stub_ai.haul_choice(ai), "turn_starboard")

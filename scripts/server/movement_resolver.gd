@@ -2187,9 +2187,8 @@ func _record_steering(ship_state: ShipState, result: MovementTypes.ShipResolutio
 ## In irons: stopped at WF=L, except as IronsRules.excused (anchored, the g-t after a cut cable,
 ## the g-t after a calm; 5.D.4a-c).
 func _is_in_irons(ship_state: ShipState, environment: EnvironmentState) -> bool:
-	if ship_state.is_anchored():
-		return false
-	if game_state and IronsRules.excused(ship_state, environment, game_state.current_turn):
+	var turn: int = game_state.current_turn if game_state else 0
+	if IronsRules.excused(ship_state, environment, turn):
 		return false
 	var wind_facing: String = _get_ship_wind_facing(ship_state)
 	return ship_state.speed == 0 and wind_facing == "L"
@@ -2214,9 +2213,10 @@ func _mps_plotted(ship_state: ShipState, steps_by_ship: Dictionary) -> int:
 
 
 func _get_plotted_steps(ship_state: ShipState) -> Array:
-	## Fouled, grappled (8.C.7), struck and destroyed ships cannot move: any plot is ignored
-	## (defence behind the plotting check).
-	if ship_state.is_linked() or ship_state.is_out_of_play():
+	## Fouled, grappled (8.C.7), struck, destroyed, anchored (13.C.3) and aground (13.G) ships
+	## cannot move: any plot is ignored (defence behind the plotting check).
+	if ship_state.is_linked() or ship_state.is_out_of_play() or ship_state.is_anchored() \
+			or ship_state.is_aground():
 		return []
 	var plot: Array = ship_state.plotted_actions.get("movement", [])
 	if plot.is_empty() and not ship_state.plotted_actions.get("movement_plotted", false):

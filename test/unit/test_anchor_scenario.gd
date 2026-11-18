@@ -88,6 +88,31 @@ func test_placement_errors_report_anchor_mistakes() -> void:
 	assert_eq(found, 2)
 
 
+## Ruling 2026-11-18: a reinforcement enters under way; her starting anchor is reported and skipped.
+func test_reinforcement_starts_with_no_anchor() -> void:
+	var s := _scenario({"end": "bow", "cable": 1})
+	s["ships"][0]["arrives"] = 3
+	var ship := _start(s)
+	assert_push_error("is a reinforcement and cannot start at anchor")
+	assert_false(ship.is_anchored())
+	assert_eq(ship.anchorings_used, 0)
+	assert_true(GameState.placement_errors().has(
+		"Anchoring: ship 'a' is a reinforcement and cannot start at anchor"))
+
+
+## placement_errors: an explicit anchor hex whose footprint lies on land or off the map.
+func test_placement_errors_report_anchor_footprint() -> void:
+	# Wind from the east: the bow rides 1 hex west of the anchor at (3, 0), on (2, 0) and (1, 0).
+	var ship := _start(_scenario({"end": "bow", "hex": [3, 0]}, 0, 0, {"terrain": {"land": [[1, 0]]}}))
+	assert_push_error("which is land")
+	assert_true(ship.is_anchored())
+	var found: Array[String] = []
+	for message in GameState.placement_errors():
+		if message.begins_with("Anchoring: ") and message.contains("rides to"):
+			found.append(message)
+	assert_eq(found.size(), 1, str(found))
+
+
 func test_dev_anchor_and_cut() -> void:
 	var ship := _start(_scenario(null))
 	var dev: DevCommands = GameState.dev_commands

@@ -282,6 +282,65 @@ func test_forced_check() -> void:
 	assert_eq(lost["result"], "edge")
 
 
+# --- fix wave ------------------------------------------------------------------------
+
+## forced_check tests crossings for no ship (MapRules.NO_SHIP): an escape boundary holds her, even
+## one open to every side from turn 1.
+func test_forced_check_escape_boundary_holds() -> void:
+	var sc := TEN.duplicate(true)
+	sc["terrain"] = {"boundaries": [{"name": "gap", "kind": "escape", "sides": [[[-1, 0], [-2, 0]]]}]}
+	sc["escape"] = {"0": {}, "1": {}}
+	var r := AnchorRules.forced_check(sc, [Vector2i(-1, 0), Vector2i(0, 0)] as Array[Vector2i],
+		[Vector2i(-2, 0), Vector2i(-1, 0)] as Array[Vector2i], {})
+	assert_eq(r["result"], "edge")
+	assert_eq(MapRules.crossing_outcome(sc, MapRules.NO_SHIP, Vector2i(-1, 0), Vector2i(-2, 0), 1)["outcome"],
+		MapRules.BLOCKED)
+
+
+func test_downwind_wraps() -> void:
+	assert_eq(AnchorRules.downwind(-1), 2)
+	assert_eq(AnchorRules.downwind(5), 2)
+	assert_eq(AnchorRules.downwind(3), 0)
+
+
+## Item 8: a plan with both springs tasks is told why, whichever end is ready.
+func test_refusal_both_springs_in_one_plan() -> void:
+	var s := _ship()
+	s.anchor_ready = "bow"
+	assert_eq(_refusal(s, "PSS", {}, {}, ["PBS"]), AnchorRules.R_ONE_ANCHOR)
+	assert_eq(_refusal(_anchored("stern"), "PBS", {}, {}, ["PSS"]), AnchorRules.R_ONE_ANCHOR)
+	var t := _ship()
+	t.anchor_ready = "stern"
+	t.crew_tasks.append({"seq": 1, "code": "PSS", "params": {}, "sections": [0], "ended": ""})
+	assert_eq(_refusal(t, "PBS"), AnchorRules.R_ONE_ANCHOR)
+
+
+## Ruling 2026-11-18: a reinforcement may not start at anchor.
+func test_scenario_errors_reinforcement_anchor() -> void:
+	var sc := {"map_bounds": {"width": 10, "height": 10},
+		"ships": [{"id": "a", "arrives": 3, "anchor": {"end": "bow"}}]}
+	var errors := AnchorRules.scenario_errors(sc)
+	assert_eq(errors, ["Anchoring: ship 'a' is a reinforcement and cannot start at anchor"] as Array[String])
+	sc["ships"][0]["arrives"] = 1
+	assert_eq(AnchorRules.scenario_errors(sc), [] as Array[String], "on the map from the start")
+
+
+## placement_errors: an anchored ship's footprint must be on the map and in the water.
+func test_footprint_errors() -> void:
+	var sc := TEN.duplicate(true)
+	sc["terrain"] = {"land": [[-2, 0]]}
+	var on_land := _anchored("bow")  # anchor (0, 0), cable 1: rides to (-1, 0), (-2, 0)
+	assert_eq(AnchorRules.footprint_errors(sc, on_land).size(), 1)
+	assert_string_contains(AnchorRules.footprint_errors(sc, on_land)[0], "which is land")
+	var off := _anchored("bow")
+	off.anchor["hex"] = Vector2i(-4, 0)  # rides to (-5, 0), (-6, 0): the map ends at column -5
+	var errors := AnchorRules.footprint_errors(TEN, off)
+	assert_eq(errors.size(), 1)
+	assert_true(errors[0].begins_with("Anchoring: ") and errors[0].contains("outside map_bounds"), errors[0])
+	assert_eq(AnchorRules.footprint_errors(TEN, _anchored("bow")), [] as Array[String])
+	assert_eq(AnchorRules.footprint_errors(TEN, _ship()), [] as Array[String], "not anchored")
+
+
 func test_status_text() -> void:
 	assert_eq(AnchorRules.status_text(_ship()), "")
 	var r := _ship()

@@ -472,3 +472,119 @@ func test_irons_excused() -> void:
 	plain.cable_cut_turn = -1
 	assert_eq(CourseView.course_note({}, "C", "L", IronsRules.excused(plain, null, turn)),
 		PlanningText.IRONS_NOTE)
+
+
+# --- fix wave ------------------------------------------------------------------------
+
+## I1: a stored course is never executed by an anchored ship: the Developer UI drop clears it, and
+## the resolver ignores any plot of an anchored ship.
+func test_anchored_ship_does_not_sail_a_stored_course() -> void:
+	var a := _make_ship("a", Vector2i(5, 5), 0, 0, 2)
+	sc.set_plotted_movement(a.ship_id, [{"hex": {"q": 6, "r": 5}, "facing": 0},
+		{"hex": {"q": 7, "r": 5}, "facing": 0}])
+	assert_eq(anchors.drop_now("a", "bow", false, PLANNING), "")
+	assert_eq(a.plotted_actions.get("movement", []), [], "the drop clears her course")
+	var before: Array[Vector2i] = a.occupied_hexes()
+	var resolver := _resolver()
+	var ships: Array[ShipState] = [a]
+	resolver.apply_results(resolver.run(ships, GameState.environment), ships)
+	assert_eq(a.occupied_hexes(), before, "she rides to her anchor")
+
+
+func test_resolver_ignores_the_plot_of_an_anchored_ship() -> void:
+	var a := _anchored("a", Vector2i(5, 5), 0, Vector2i(6, 5), 1, "bow", false)
+	sc.set_plotted_movement(a.ship_id, [{"hex": {"q": 6, "r": 5}, "facing": 0}])
+	var before: Array[Vector2i] = a.occupied_hexes()
+	var resolver := _resolver()
+	var ships: Array[ShipState] = [a]
+	resolver.apply_results(resolver.run(ships, GameState.environment), ships)
+	assert_eq(a.occupied_hexes(), before)
+
+
+## A veer in after a wind shift (the anchor laid in a wind from 0, the wind now from 1): the springs
+## step lays the footprint in the new wind on her old facing (oblique), and V.A then swings her and
+## lays it again.
+func test_veer_in_after_a_wind_shift() -> void:
+	var a := _anchored("a", Vector2i(-2, 0), 0, Vector2i(0, 0), 2, "bow", false, 1)
+	GameState.environment.wind_direction = 1  # downwind is now 4 (NW, (0, -1))
+	_task(a, "VI")
+	anchors.resolve_spring_step(MOVE)
+	assert_eq(a.facing, 0, "no swing in the springs step")
+	assert_eq(a.occupied_hexes(), [Vector2i(0, -1), Vector2i(-1, -1)] as Array[Vector2i],
+		"the bow 1 hex downwind of the anchor in the new wind, the hull on her old facing")
+	assert_eq(int(a.anchor["cable"]), 1)
+	anchors.resolve_anchoring(TurnPhaseController.GamePhase.DRIFT_CALCULATION)
+	assert_eq(a.facing, 1, "V.A swings her to the new wind")
+	assert_eq(a.occupied_hexes(), [Vector2i(0, -1), Vector2i(0, -2)] as Array[Vector2i])
+
+
+## Spec §8, 7.C.12c, through the real turn order: on the g-t she lets go (V.B, after combat) her guns
+## get no "anchored" +1; on the g-t she cuts (V.B again) they still do.
+func test_anchored_bonus_timing_through_the_turn() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 777
+	GameState.dice = Dice.new(rng)  # drift rolls: real dice (_dice stays empty)
+	var f := _make_ship("f", Vector2i(5, 5), 0, 0)
+	var t := _make_ship("t", Vector2i(5, 5) + HexGrid.DIRECTIONS[1] * 3, 0, 1)
+	for s in [f, t]:
+		s.ship.gun_factors = {"lg": 6, "mg": 0, "cr": 4}
+	f.anchor_ready = "bow"
+
+	assert_eq(_turn_bonus(f, "A"), 0, "the drop g-t: not yet anchored at the combat step")
+	assert_true(f.is_anchored(), "anchored in V.B")
+
+	GameState.current_turn += 1
+	assert_eq(_turn_bonus(f, "AX"), 1, "the cut g-t: still anchored at the combat step")
+	assert_false(f.is_anchored(), "the cable cut in V.B")
+	assert_eq(f.cable_cut_turn, GameState.current_turn)
+
+
+## Plots `code` on f's marines, runs the g-t from movement to the combat declaration, returns f's
+## "anchored" modifier on her starboard broadside at t, then fires nothing and plays the g-t on to
+## POST_COMBAT (drift and the anchoring step included).
+func _turn_bonus(f: ShipState, code: String) -> int:
+	# Fixture: put the target back on f's starboard beam, 3 hexes off (drift moved them last g-t).
+	var t: ShipState = GameState.get_ship("t")
+	t.hex_position = f.hex_position + HexGrid.DIRECTIONS[1] * 3
+	t.facing = 0
+	_plot(f, code)
+	sc.set_plotted_movement("f", [])
+	sc.set_plotted_movement("t", [])
+	pc.players_ready = {0: true, 1: true}
+	GameState.crew_task_controller.finalize_plots()
+	pc._enter_movement_resolution_phase()
+	pc.on_playback_completed()
+	assert_eq(pc.current_phase, TurnPhaseController.GamePhase.COMBAT_RESOLUTION)
+	assert_eq(pc.combat_step, TurnPhaseController.CombatStep.DECLARE)
+	var order := GunneryTypes.FireOrder.new()
+	order.ship_id = "f"
+	order.side = ShipState.STARBOARD
+	order.target_id = "t"
+	order.ammo = "round"
+	order.aim = "low"
+	order.battery = "full"
+	var p: GunneryTypes.ShotPreview = GameState.gunnery_calculator.preview(order)
+	assert_true(p.can_fire, p.reason)
+	var bonus := 0
+	for m in p.modifiers:
+		if m["name"] == "anchored":
+			bonus = int(m["value"])
+	assert_eq(pc.player_submit_fire_orders(0, []), "")
+	if pc.combat_step == TurnPhaseController.CombatStep.DECLARE:  # unless the stub AI played side 1
+		assert_eq(pc.player_submit_fire_orders(1, []), "")
+	pc.on_combat_playback_completed()
+	assert_eq(pc.current_phase, TurnPhaseController.GamePhase.POST_COMBAT)
+	return bonus
+
+
+func test_aground_ship_does_not_sail_a_stored_course() -> void:
+	var a := _make_ship("a", Vector2i(5, 5), 0, 0, 2)
+	a.aground = true
+	a.aground_turn = GameState.current_turn - 1
+	sc.set_plotted_movement(a.ship_id, [{"hex": {"q": 6, "r": 5}, "facing": 0},
+		{"hex": {"q": 7, "r": 5}, "facing": 0}])
+	var before: Array[Vector2i] = a.occupied_hexes()
+	var resolver := _resolver()
+	var ships: Array[ShipState] = [a]
+	resolver.apply_results(resolver.run(ships, GameState.environment), ships)
+	assert_eq(a.occupied_hexes(), before, "an aground ship stays put")

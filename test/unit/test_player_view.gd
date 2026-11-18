@@ -76,6 +76,26 @@ func test_teammate_ship_also_limited() -> void:
 	assert_true(_view().ship_for(1, "brit_b1").has("rigging_current_hp"))
 
 
+## Anchoring spec §10: a teammate does not see a friendly ship's anchor preparations either (as a
+## crew plot); the ship's own commander does.
+func test_anchor_preparation_hidden_from_teammate() -> void:
+	var s: ShipState = GameState.get_ship("brit_b1")
+	s.anchor_ready = "bow"
+	s.springs_ready = true
+	s.crew_tasks.append(ShipState.crew_task_from({"seq": 1, "code": "PBS", "sections": [0],
+		"started_turn": GameState.current_turn}))
+	var mate: Dictionary = _view().ship_for(0, "brit_b1")
+	assert_false(mate.has("anchor_ready"))
+	assert_false(mate.has("springs_ready"))
+	assert_false((mate["crew_tasks"] as Array).any(func(t): return t["code"] == "PBS"))
+	var own: Dictionary = _view().ship_for(1, "brit_b1")
+	assert_eq(own["anchor_ready"], "bow")
+	assert_true((own["crew_tasks"] as Array).any(func(t): return t["code"] == "PBS"))
+	GameState.turn_log.add(TYPES.CREW_TASK, 0, "brit_b1", {"code": "PBS", "state": "started"})
+	assert_eq(_events(0, TYPES.CREW_TASK).size(), 0, "the teammate is not told")
+	assert_eq(_events(1, TYPES.CREW_TASK).size(), 1)
+
+
 func test_guns_and_crits_visible() -> void:
 	var s: ShipState = GameState.get_ship("fr_a1")
 	s.guns_dismounted = [2, 1] as Array[int]

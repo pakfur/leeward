@@ -265,6 +265,37 @@ func test_client_anchor_station_refusal() -> void:
 	GameState.phase_controller.players_ready = old_ready
 
 
+## A ship with no course stored sails her default course (6.G.2): the planning context counts it, so
+## the 13.C.1 warning fires before End Planning erases the anchoring.
+func test_anchor_warning_counts_the_default_course() -> void:
+	var a := _make_ship("a", false)
+	a.anchor_ready = "bow"
+	a.speed = 2
+	a.sail_state = "FS"
+	a.plotted_actions["movement"] = []
+	a.plotted_actions["movement_plotted"] = false
+	var ctx := _ctx(a)
+	assert_gt(DefaultCourse.for_ship(GameState, a).size(), 0, "control: she has a default course")
+	assert_eq(ctx["plotted_mps"], DefaultCourse.for_ship(GameState, a).size())
+	assert_eq(ctx["plotted_mps"], GameState.anchor_controller.actual_steps(a), "as End Planning reads it")
+	var plan := {"assignments": {ShipState.MARINES: {"code": "A", "params": {}}}, "orders": {}}
+	assert_string_contains("\n".join(PackedStringArray(CrewRules.normalize(a, plan, ctx)["warnings"])),
+		"13.C.1")
+	GameState.ship_controller.set_plotted_movement("a", [])
+	assert_eq(_ctx(a)["plotted_mps"], 0, "an empty stored course is no MPs")
+
+
+## I2: a prize, even with her prize crew aboard, handles no anchors (10.H.2), manual or Automatic.
+func test_prize_orders_no_anchoring() -> void:
+	var a := _make_ship("a", true)
+	a.status = ShipState.Status.CAPTURED
+	a.prize = {"captor_id": "x", "prize_crew_aboard": true, "original_crew": {}}
+	assert_true(a.crew_can_act(), "her prize crew can act")
+	assert_eq(AnchorRules.refusal(a, "PBA", {}, _ctx(a), []), AnchorRules.R_CREW)
+	var out := CrewAuto.allocate(a, {"anchor": "prepare_bow"}, _ctx(a))
+	assert_true(_anchoring_codes(out["assignments"]).is_empty())
+
+
 func test_section_job_word_for_anchor_tasks() -> void:
 	var a := _make_ship("a", false)
 	assert_eq(CrewOverlayText.section_job(a, 2, {"code": "HS", "params": {"turn": "port"}})["text"], "anchor")

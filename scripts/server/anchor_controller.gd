@@ -82,6 +82,9 @@ func prepare(ship: ShipState, candidate: Dictionary) -> String:
 
 
 func on_complete(ship: ShipState, task: Dictionary, phase: int) -> void:
+	if not is_server:
+		push_error("AnchorController: Cannot complete an anchoring task on client")
+		return
 	super(ship, task, phase)
 	var sc: ShipStateController = game_state.ship_controller
 	var id := ship.ship_id
@@ -252,6 +255,9 @@ func drop_now(ship_id: String, end: String, springs: bool, phase: int) -> String
 	game_state.ship_controller.set_springs_ready(ship_id, springs)
 	if not drop(ship_id, phase):
 		return "the server refused to anchor %s" % ship_id
+	# 13.C.3: an anchored ship plots no movement; a course stored before the drop is dropped too
+	# (an empty stored course, so no default course is rebuilt either).
+	game_state.ship_controller.set_plotted_movement(ship_id, [])
 	return ""
 
 
@@ -459,6 +465,10 @@ func _veer_in(ship: ShipState, phase: int) -> void:
 	var anchor := ship.anchor
 	var old_cable := int(anchor.get("cable", 0))
 	var cable := old_cable - 1
+	# The footprint is laid with the wind as it blows now but the facing she has now. After a wind
+	# shift this g-t (ENVIRONMENT) she has not yet swung: that comes in V.A, after drift. So for the
+	# rest of the g-t she lies obliquely (the anchored end downwind of the anchor, the hull on her old
+	# facing, as 13.C.6 has her while she turns), and V.A then swings her and lays her footprint again.
 	var new_hexes := AnchorRules.footprint(anchor.get("hex", ship.hex_position),
 		str(anchor.get("end", "bow")), cable, ship.facing, int(game_state.environment.wind_direction))
 	var check := {"refused": "", "blocker": ""}
