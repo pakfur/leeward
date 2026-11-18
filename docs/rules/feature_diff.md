@@ -56,7 +56,7 @@ These are the gaps and differences that most change how a game plays out, in rou
 
 | Feature | Rules | Notes |
 |---|---|---|
-| Reinforcements | 2.B.1, 3.A | Every ship is placed at the start. |
+| Reinforcements | 2.B.1, 3.A | A ship with `"arrives": n` waits off the map and enters at the start of turn n (before that turn's wind change) at its entry hex and facing under plain sail unless the scenario says otherwise, at the speed of its movement allowance there (as if it had sailed straight at it last turn, so the deceleration limit applies). A held entry hex puts the arrival back a turn. |
 | Escape and exit from the map, removal of escaped ships | 2.B.5g, 8.G.1f | Plotted movement is not even limited to the map (Known limitation). The 8.G.1f removal step exists for exploded ships (`ShipStateController.remove_from_map`, §2.1 fire row); escaped ships do not reach it yet. |
 | Shallow water, land, running aground, casting the lead | 13.G | No depth map. `draft` is loaded and never read. Land blocks LOS like a ship (7.B.7–9; shallows do not; `gunnery_calculator.gd` `_occupied_hexes`, `stub_ai.gd` `_occupied_except`), and an aground ship cannot fire its guns (13.G.3; it can be fired on and its marines may fire). |
 | Towing | 12.A | A `towing` flag on the ship state feeds the Tacking DRM and the 5.E.5 acceleration reduction, but nothing sets it. |

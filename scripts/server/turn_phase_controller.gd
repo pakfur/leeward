@@ -155,6 +155,10 @@ func _enter_environment_phase() -> void:
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: ENVIRONMENT")
 
+	# Reinforcements enter before this turn's wind change is applied (2.B.1, 3.A)
+	if game_state.map_controller:
+		game_state.map_controller.place_arrivals(current_turn, current_phase)
+
 	# Update environment (using controller for RNG management and shader updates)
 	if game_state.environment:
 		if game_state.environment_controller:

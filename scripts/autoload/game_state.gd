@@ -191,6 +191,12 @@ func start_scenario(scenario_data: Dictionary, human_player_ids: Array[int]) -> 
 	if not is_server:
 		push_error("GameState: Cannot start a scenario on client")
 		return false
+	var terrain_errors := TerrainMap.of(scenario_data).errors
+	if not terrain_errors.is_empty():
+		for message in terrain_errors:
+			push_error(message)
+		push_error("GameState: scenario not started: bad terrain")
+		return false
 	clear_ships()
 	var navies: Variant = scenario_data.get("navies", {})
 	for ship_data in scenario_data.get("ships", []):

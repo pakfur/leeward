@@ -142,15 +142,23 @@ static func table_ma(speed_type: String, wind_speed: int, wind_facing: String, s
 
 ## The ship's best movement allowance at `wind_facing` and `wind_speed`: the heaviest sail her
 ## rigging can carry (max_sail_state) at her rigging level, whatever sail she carries now. Used by
-## the escape speed test (V.D.1c) and for arrival speed.
-static func max_ma(ship: ShipState, wind_facing: String, wind_speed: int) -> int:
-	return table_ma(ship.ship.speed_type, wind_speed, wind_facing, ship.max_sail_state(),
-			ship.rigging_level())
+## the escape speed test (V.D.1c). With `sail_state` given, the lower of that and the heaviest
+## sail the rigging can carry (arrival speed: the ship's entry sail, 2.B.1).
+static func max_ma(ship: ShipState, wind_facing: String, wind_speed: int,
+		sail_state: String = "") -> int:
+	var sail := ship.max_sail_state()
+	if sail_state != "":
+		var order: Array = ShipState.SAIL_ORDER
+		var wanted := order.find(sail_state.to_upper())
+		sail = order[mini(wanted, order.find(sail))] if wanted >= 0 else "NS"
+	return table_ma(ship.ship.speed_type, wind_speed, wind_facing, sail, ship.rigging_level())
 
 
 ## max_ma for a ship heading `facing` with the wind from `wind_direction`.
-static func max_ma_heading(ship: ShipState, facing: int, wind_direction: int, wind_speed: int) -> int:
-	return max_ma(ship, HexGrid.new().get_wind_facing(facing, wind_direction), wind_speed)
+static func max_ma_heading(ship: ShipState, facing: int, wind_direction: int, wind_speed: int,
+		sail_state: String = "") -> int:
+	return max_ma(ship, HexGrid.new().get_wind_facing(facing, wind_direction), wind_speed,
+			sail_state)
 
 
 ## Whether `ship` escapes now (V.D.1b-c), against `pursuers` (enemy ships that could chase her):

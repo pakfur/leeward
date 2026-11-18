@@ -93,3 +93,50 @@ func lose_off_map(ship_id: String, edge: String, phase: int) -> void:
 		return
 	game_state.damage_controller.destroy(ship_id, "no_sea_room", phase, {"edge": edge})
 	game_state.ship_controller.remove_from_map(ship_id)
+
+
+## The speed a reinforcement enters at (2.B.1, 3.A.1): its movement allowance at its entry sail
+## (PS unless the scenario says otherwise, capped by the rigging) and heading in the present wind,
+## as if it had moved straight at that speed last turn. 0 in a calm, luffing or dismasted.
+func arrival_speed(ship: ShipState) -> int:
+	var env: EnvironmentState = game_state.environment
+	return MapRules.max_ma_heading(ship, ship.facing, env.wind_direction, env.wind_speed,
+			ship.sail_state)
+
+
+## Start of `turn` (ENVIRONMENT, before the wind changes): every waiting reinforcement due by
+## `turn`, by ship id, enters if neither of its hexes is held by a ship on the map, else its
+## arrival is put back a turn (ARRIVAL_DELAYED, naming the holder).
+func place_arrivals(turn: int, phase: int) -> void:
+	if not is_server:
+		push_error("MapController: Cannot place arrivals on client")
+		return
+	var ids: Array = game_state.ships.keys()
+	ids.sort()
+	for id in ids:
+		var ship: ShipState = game_state.get_ship(str(id))
+		if not ship.is_awaiting_arrival() or ship.arrives_turn > turn:
+			continue
+		var holder := _holder_of_entry(ship)
+		if holder != "":
+			game_state.ship_controller.delay_arrival(ship.ship_id, turn + 1)
+			game_state.turn_log.add(PhaseEvents.Type.ARRIVAL_DELAYED, phase, ship.ship_id, {}, holder)
+			continue
+		var speed := arrival_speed(ship)
+		game_state.ship_controller.place_arrival(ship.ship_id, speed)
+		game_state.turn_log.add(PhaseEvents.Type.ARRIVED, phase, ship.ship_id, {
+			"hex": {"q": ship.hex_position.x, "r": ship.hex_position.y},
+			"facing": ship.facing, "sail_state": ship.sail_state, "speed": speed})
+		Trace.trace_log("Map", "Ship %s arrives at %s, speed %d" % [ship.ship_id, str(ship.hex_position), speed])
+
+
+## The id of a ship on the map holding the bow or stern hex of `ship`'s entry footprint, or "".
+func _holder_of_entry(ship: ShipState) -> String:
+	var mine := ship.occupied_hexes()
+	for other: ShipState in game_state.ships_on_map():
+		if other == ship:
+			continue
+		for h in other.occupied_hexes():
+			if mine.has(h):
+				return other.ship_id
+	return ""
