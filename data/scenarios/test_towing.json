@@ -1,0 +1,120 @@
+{
+  "name": "Test Scenario - Towing",
+  "description": "HMS Hazard has HMS Bellerophon in tow and runs for the western edge while a French frigate looks for a cripple to take in tow far to the north-east. Exercises towing, tow following, the AI's tow policy and escape with a tow.",
+  "region": "oceanic",
+  "seed": 42,
+  "wind_direction": 0,
+  "wind_speed": 2,
+  "wind_speed_change": "steady",
+  "wind_direction_change": "none",
+  "sea_state": 1,
+  "turn_limit": 20,
+  "map": {
+    "map_texture": "res://assets/textures/water_default.png",
+    "show_hex": true
+  },
+  "minimap_texture": "",
+  "map_bounds": {
+    "width": 40,
+    "height": 30
+  },
+  "terrain": {
+    "edges": {
+      "N": "open",
+      "E": "open",
+      "S": "open",
+      "W": "escape"
+    }
+  },
+  "escape": {
+    "0": {
+      "from_turn": 1,
+      "edges": [
+        "W"
+      ],
+      "share": 0.5
+    }
+  },
+  "navies": {
+    "0": "British",
+    "1": "French"
+  },
+  "ships": [
+    {
+      "id": "br_frigate_32",
+      "ship_name": "HMS Hazard",
+      "side": 0,
+      "ship_type": "frigate_32",
+      "position": {
+        "q": -2,
+        "r": 5
+      },
+      "facing": 3,
+      "speed": 1,
+      "sail_state": "MS",
+      "crew_quality": "Trained",
+      "crew_morale": 4,
+      "tow": "br_74"
+    },
+    {
+      "id": "br_74",
+      "ship_name": "HMS Bellerophon",
+      "side": 0,
+      "ship_type": "ship_of_line_74",
+      "position": {
+        "q": 0,
+        "r": 5
+      },
+      "facing": 3,
+      "speed": 0,
+      "sail_state": "NS",
+      "crew_quality": "Trained",
+      "crew_morale": 4
+    },
+    {
+      "id": "fr_frigate_38",
+      "ship_name": "Sirène",
+      "side": 1,
+      "ship_type": "frigate_38",
+      "position": {
+        "q": 17,
+        "r": -13
+      },
+      "facing": 3,
+      "speed": 2,
+      "sail_state": "MS",
+      "crew_quality": "Trained",
+      "crew_morale": 4
+    },
+    {
+      "id": "fr_frigate_32",
+      "ship_name": "Cybèle",
+      "side": 1,
+      "ship_type": "frigate_32",
+      "position": {
+        "q": 18,
+        "r": -10
+      },
+      "facing": 2,
+      "speed": 0,
+      "sail_state": "NS",
+      "crew_quality": "Trained",
+      "crew_morale": 4
+    },
+    {
+      "id": "fr_74",
+      "ship_name": "Pluton",
+      "side": 1,
+      "ship_type": "ship_of_line_74",
+      "position": {
+        "q": 11,
+        "r": 11
+      },
+      "facing": 3,
+      "speed": 2,
+      "sail_state": "MS",
+      "crew_quality": "Trained",
+      "crew_morale": 4
+    }
+  ]
+}

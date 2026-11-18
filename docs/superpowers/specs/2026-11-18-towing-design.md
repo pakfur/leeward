@@ -191,8 +191,8 @@ for PT and TX:
 2. Either ship not on the map: "%s is not on the map".
 3. The tower is not active (struck, destroyed, captured, escaped or waiting): "%s cannot tow (12.A.2, 10.H.2)".
    A prize cannot tow, because it cannot sail.
-4. The towed ship is struck or destroyed: "%s has struck: a ship that has surrendered is not towed (ruling)". A
-   prize is allowed.
+4. The towed ship is struck: "%s has struck: a ship that has surrendered is not towed (ruling)"; destroyed: "%s has
+   blown up" (`GrapplingController.destroyed_target_error`, as built). A prize is allowed.
 5. `towed.side != tower.side`: "only friendly ships may be towed (12.A.2)". A prize's `side` is her captor's.
 6. Either ship already towing or in tow: "%s already tows %s" / "%s is already in tow" / "a towed ship cannot tow
    (12.A.2)".
@@ -207,8 +207,8 @@ for PT and TX:
 When `setup` is false (a real attempt), these also apply:
 
 12. The tower has not prepared: "%s has not prepared to tow (PT, 12.A.3)".
-13. The tower is burning: "%s is on fire (8.C.3)".
-14. The tower's crew is CQ F or G: "a crew at CQ %s cannot grapple (8.C.3)".
+13. The tower is burning: "%s is on fire and cannot grapple (8.C.3)" (as built, `GrapplingController.roller_error`).
+14. The tower's crew is CQ F or G: "a crew at CQ %s cannot grapple (8.C.3)" (the same function).
 15. The tower has used more than 2 MPs: "%s used %d MPs this turn (at most 2, 8.C.1)".
 16. The towed ship has used more than 2 MPs: the same message for her.
 
@@ -484,10 +484,10 @@ The `"tow"` strategy steers for the station pose:
     positions.
   - `TowController.place_scenario_tows()` runs in `GameState.start_new_game` after `place_scenario_anchors`.
 - **Dev commands** (server and debug builds only):
-  - `DevCommands.tow_ships(tower_id, towed_id := "") -> String`. An empty `towed_id` means the ship whose tow
+  - `DevCommands.take_in_tow(tower_id, towed_id := "") -> String`. An empty `towed_id` means the ship whose tow
     station is the tower's stern hex. It checks `pair_error(setup = true)` and needs no PT and no roll.
-  - `DevCommands.cut_tow(ship_id) -> String`.
-  - The Developer UI's per-ship controls gain "Take in tow" and "Cut tow".
+  - `DevCommands.cast_off_tow(ship_id) -> String` (cause `tx`, `by` the ship).
+  - The Developer UI's per-ship controls gain "Take in tow" and "Cut tow" (as built; they call `take_in_tow` and `cast_off_tow`).
 - **`test_server_authority.gd`** forbids, in view code:
   - writes to `towing_id`, `towed_by` and `tow_prepared`;
   - calls to `begin_tow`, `cut_tow` and `set_tow_prepared`;
