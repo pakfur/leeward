@@ -1170,20 +1170,30 @@ func _on_playback_paused() -> void:
 		GameState.phase_controller.on_playback_paused()
 
 
-## 6.D.3: show the decision in the context panel, with the rest of every other ship's plotted move
-## (situation.other_plots, chosen by the server) on the map.
+## 6.D.3: the decision is a step of its own short replay (kind "bear_off") in the resolution panel:
+## the two ships and the odds above, the choices as its answer section, the camera on the ship, and
+## the rest of every other ship's plotted move (situation.other_plots, chosen by the server) on the
+## map. Movement playback owns the ship views meanwhile (no display copies, no sync). Without the side
+## panel the old floating panel is used.
 func _on_bear_off_decision_requested(player_id: int, situation: MovementTypes.BearOffSituation) -> void:
 	if player_id != HUMAN_PLAYER_ID or _leaving:
 		return  # another player's decision
 	var ship: ShipState = GameState.get_ship(situation.ship_id)
 	var blocker: ShipState = GameState.get_ship(situation.blocker_id)
 	var panel := BearOffPanel.new()
-	panel.setup(situation, ship.ship_name if ship else situation.ship_id,
-		blocker.ship_name if blocker else situation.blocker_id)
-	panel.choice_made.connect(_on_bear_off_chosen.bind(panel))
+	var prompt: ResolutionStep = null
 	if context_panel:
-		context_panel.set_context_title("Collision Ahead")
-		context_panel.set_context_content(panel)
+		prompt = ResolutionSteps.bear_off_prompt(situation, CombatLogPanel.log_ships(GameState.get_all_ships()))
+	panel.setup(situation, ship.ship_name if ship else situation.ship_id,
+		blocker.ship_name if blocker else situation.blocker_id, prompt != null)
+	panel.choice_made.connect(_on_bear_off_chosen.bind(panel, prompt))
+	if prompt != null:
+		if _replay_running():
+			_cancel_resolution_replay()  # an earlier decision's step the server has moved past
+		var movement: Array[int] = [TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION]
+		_start_resolution_replay("bear_off", movement)
+		resolution_replay.push_prompt(prompt, panel)
+		resolution_replay.finish_when_drained(_on_bear_off_replay_drained)
 	else:
 		add_child(panel)
 	current_planning_ui = null
@@ -1195,50 +1205,93 @@ func _on_bear_off_decision_requested(player_id: int, situation: MovementTypes.Be
 			hex_overlay.show_course(other_id, hexes, none, none, hex_map.get_hex_grid(), false)
 
 
-func _on_bear_off_chosen(ship_id: String, choice: String, panel: BearOffPanel) -> void:
+## A refusal stays on the step with its reason; an accepted choice (the server has re-run the
+## resolution and playback resumes) ends the bear-off replay.
+func _on_bear_off_chosen(ship_id: String, choice: String, panel: BearOffPanel, prompt: ResolutionStep) -> void:
 	var reason := "bear-off decisions can only be submitted on the server"
 	# Single-player: submit player 0's decision under the server guard  SCV:ALLOW
 	if GameState.is_server and GameState.phase_controller:
 		reason = GameState.phase_controller.player_submit_bear_off(HUMAN_PLAYER_ID, ship_id, choice)
 	else:
 		push_warning("Client bear-off submission not yet implemented - needs network layer")
-	if reason != "" and is_instance_valid(panel):
-		panel.show_error(reason)
+	if reason != "":
+		if is_instance_valid(panel):
+			panel.show_error(reason)
+		return
+	_prompt_answered(prompt)
 
 
-## Maintenance Phase (8.C): the server asks for the player's grapple or ungrapple orders. Drift has
-## moved ships since the last sync, so the map is brought up to date first.
+## The bear-off step was answered: the camera goes back and the side panel shows movement again.
+## The ship views are movement playback's: nothing is synced here.
+func _on_bear_off_replay_drained() -> void:
+	if camera and not _replay_saved_view.is_empty() and camera.has_method("restore_view"):
+		camera.restore_view(_replay_saved_view)
+	_replay_saved_view = {}
+	if GameState.phase_controller \
+			and GameState.phase_controller.current_phase == TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION:
+		_show_movement_panel()
+
+
+## Maintenance Phase (8.C, 10.G.6): the server asks for the player's grapple, ungrapple or prize-crew
+## orders. The request is a prompt step of the post-combat replay, started here when it is not
+## running, before any sync: the steps already resolved this turn after combat (drift, tow attempts)
+## come first, each ship drawn as she was, and a ship lost in drift keeps her view until her drift
+## step. A second request in the phase is another prompt step in the same replay. Tests and AI-only
+## runs (skip_post_combat_delay), and a scene without the side panel, use the old panel.
 func _on_maintenance_orders_requested(player_id: int, step: String, options: Array) -> void:
 	if player_id != HUMAN_PLAYER_ID or _leaving:
 		return
-	_sync_all_views()
 	var names := {}
 	for ship: ShipState in GameState.get_all_ships():
 		names[ship.ship_id] = ship.ship_name
 	var panel := MaintenanceOrdersPanel.new()
-	panel.setup(step, options, names)
-	panel.orders_submitted.connect(_on_maintenance_orders_submitted.bind(panel))
-	if context_panel:
-		context_panel.set_context_title(MaintenanceOrdersPanel.title(step))
-		context_panel.set_context_content(panel)
-	else:
-		add_child(panel)
-	current_planning_ui = null
-	if combat_log_panel:
-		combat_log_panel.auto_expand(false)  # keep the ships alongside visible
+	if skip_post_combat_delay or context_panel == null:
+		_sync_all_views()  # drift has moved ships since the last sync
+		panel.setup(step, options, names)
+		panel.orders_submitted.connect(_on_maintenance_orders_submitted.bind(panel, null))
+		if context_panel:
+			context_panel.set_context_title(MaintenanceOrdersPanel.title(step))
+			context_panel.set_context_content(panel)
+		else:
+			add_child(panel)
+		current_planning_ui = null
+		if combat_log_panel:
+			combat_log_panel.auto_expand(false)  # keep the ships alongside visible
+		return
+	panel.setup(step, options, names, true)
+	var prompt := ResolutionSteps.maintenance_prompt(step, options,
+		CombatLogPanel.log_ships(GameState.get_all_ships()))
+	panel.orders_submitted.connect(_on_maintenance_orders_submitted.bind(panel, prompt))
+	_feed_post_combat_replay(true)  # starts the replay (and syncs from its copies) when not running
+	resolution_replay.push_prompt(prompt, panel)
 
 
-func _on_maintenance_orders_submitted(step: String, pairs: Variant, panel: MaintenanceOrdersPanel) -> void:
+## A refusal stays on the step with its reason. Accepted, the server rolls the step and goes on
+## (perhaps to the next prompt, or on to POST_COMBAT, feeding the replay as it goes); the replay
+## then moves past the prompt.
+func _on_maintenance_orders_submitted(step: String, pairs: Variant, panel: MaintenanceOrdersPanel,
+		prompt: ResolutionStep) -> void:
 	var reason := "maintenance orders can only be submitted on the server"
 	# Single-player: submit player 0's orders under the server guard  SCV:ALLOW
 	if GameState.is_server and GameState.phase_controller:
 		reason = GameState.phase_controller.player_submit_maintenance_orders(HUMAN_PLAYER_ID, {step: pairs})
 	else:
 		push_warning("Client maintenance orders not yet implemented - needs network layer")
-	if reason != "" and is_instance_valid(panel):
-		panel.show_error(reason)
-	else:
-		_sync_all_views()  # new grapples drawn at once
+	if reason != "":
+		if is_instance_valid(panel):
+			panel.show_error(reason)
+		return
+	if prompt == null:
+		_sync_all_views()  # the old panel: new grapples drawn at once
+		return
+	_prompt_answered(prompt)
+
+
+## Moves the replay past `prompt` when it is the step on screen (an answer that came after the
+## replay moved on, or was dropped, does nothing).
+func _prompt_answered(prompt: ResolutionStep) -> void:
+	if prompt != null and _replay_running() and resolution_replay.current_step() == prompt:
+		resolution_replay.prompt_answered()
 
 
 func _on_playback_completed() -> void:
@@ -1667,6 +1720,8 @@ func _start_resolution_replay(kind: String, phases: Array[int]) -> void:
 	if _replay_saved_view.is_empty() and camera and camera.has_method("save_view"):
 		_replay_saved_view = camera.save_view()
 	_replay().start(kind, phases)
+	if kind == "bear_off":
+		return  # movement playback owns the ship views: no display copies, no sync
 	display_states.begin(phases)
 	_replay_display_phase = phases[0] if not phases.is_empty() else -1
 	if combat_log_panel:
@@ -1693,10 +1748,16 @@ func _ensure_resolution_panel() -> void:
 ## event, a boarding round brings up the boarding card, and (not during Resolve all) the camera
 ## frames the ship and her target.
 func _on_replay_step_shown(step: ResolutionStep, index: int) -> void:
+	if resolution_replay.kind == "bear_off":
+		_frame_step(step)  # the views stay where movement playback paused them
+		return
 	if step.phase != _replay_display_phase:
 		display_states.phase_reached(step.phase)
 		_replay_display_phase = step.phase
-	display_states.step_shown(step, resolution_replay.steps(), index)
+	var live := {}  # a ship with no later copy yet shows her state now, not what follows a prompt
+	for s: ShipState in GameState.get_all_ships():
+		live[s.ship_id] = s
+	display_states.step_shown(step, resolution_replay.steps(), index, live)
 	var turn_log: PhaseEvents.PhaseLog = GameState.turn_log
 	if not step.events.is_empty() and turn_log != null:
 		if combat_log_panel and step.last_index < _replay_raw_index.size():
@@ -1718,7 +1779,15 @@ func _frame_step(step: ResolutionStep) -> void:
 	var grid: HexGrid = hex_map.get_hex_grid()
 	var points: Array[Vector3] = []
 	for id in [step.ship_id, step.target_id]:
-		var s: ShipState = _drawn_state(id) if id != "" else null
+		if id == "":
+			continue
+		if resolution_replay.kind == "bear_off":
+			# Mid-movement: the ships are where playback paused them, not where their states say.
+			var view := ship_views.get(id) as Node3D
+			if view != null and view.is_inside_tree():
+				points.append(Vector3(view.global_position.x, 0.0, view.global_position.z))
+			continue
+		var s: ShipState = _drawn_state(id)
 		if s != null and s.is_on_map():
 			points.append(grid.ship_center_world(s.hex_position, s.facing))
 	if points.is_empty():

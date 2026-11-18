@@ -357,3 +357,49 @@ static func _hidden_marine_text(ev: PhaseEvents.PhaseEvent, names: Dictionary) -
 		var crew := int(d["crew"])
 		text += ": " + ("no effect" if crew <= 0 else PhaseEvents.plural(crew, "crew box", "crew boxes"))
 	return text
+
+
+# --- Prompt steps -------------------------------------------------------------
+
+## The bearing-off decision (6.D.3) as a step: the two ships, the chance as text (no die: nothing
+## has been rolled yet) and the question. Its answer controls are a compact `BearOffPanel`.
+static func bear_off_prompt(situation: MovementTypes.BearOffSituation, ship_info: Dictionary) -> ResolutionStep:
+	var step := ResolutionStep.new()
+	step.kind = "prompt_bear_off"
+	step.phase = TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
+	step.ship_id = situation.ship_id
+	step.target_id = situation.blocker_id
+	var ship := _plain_name(ship_info, situation.ship_id)
+	var blocker := _plain_name(ship_info, situation.blocker_id)
+	step.title = "Collision ahead: %s and %s" % [ship, blocker]
+	step.outcome_lines.append("%s is about to run into %s." % [ship, blocker])
+	step.outcome_lines.append(BearOffPanel.odds_text(situation))
+	step.outcome_lines.append("Bear off, or hold course and collide?")
+	step.prompt = {"type": "bear_off", "ship_id": situation.ship_id, "blocker_id": situation.blocker_id,
+		"segment": situation.segment}
+	return step
+
+
+## The maintenance orders (grapple, ungrapple, prize-crew size; 8.C, 10.G.6) as a step: the title
+## and the question; its answer controls are a compact `MaintenanceOrdersPanel`. The step is about
+## the first option's ship and her target (a prize: the captor and her prize), and the title names
+## the ship when every option is hers.
+static func maintenance_prompt(step_name: String, options: Array, ship_info: Dictionary) -> ResolutionStep:
+	var step := ResolutionStep.new()
+	step.kind = "prompt_maintenance"
+	step.phase = TurnPhaseController.GamePhase.STATUS_ADJUSTMENT
+	var own_key := "captor_id" if step_name == "prize_size" else "ship_id"
+	var other_key := "prize_id" if step_name == "prize_size" else "target_id"
+	var owners := {}
+	for option in options:
+		if option is Dictionary:
+			owners[str(option.get(own_key, ""))] = true
+	if not options.is_empty() and options[0] is Dictionary:
+		step.ship_id = str(options[0].get(own_key, ""))
+		step.target_id = str(options[0].get(other_key, ""))
+	step.title = MaintenanceOrdersPanel.title(step_name)
+	if owners.size() == 1 and step.ship_id != "":
+		step.title += ": " + _plain_name(ship_info, step.ship_id)
+	step.outcome_lines.append(MaintenanceOrdersPanel.intro_text(step_name))
+	step.prompt = {"type": "maintenance", "step": step_name, "options": options.duplicate(true)}
+	return step

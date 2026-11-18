@@ -278,3 +278,46 @@ func test_a_drift_group_is_one_step() -> void:
 	assert_eq(steps[0].last_index, 1)
 	assert_eq(steps[0].dice, [{"sides": 10, "values": [3]}])
 	assert_eq(steps[1].first_index, 2)
+
+
+# --- prompt steps -------------------------------------------------------------
+
+func test_bear_off_prompt_step() -> void:
+	var situation := MovementTypes.BearOffSituation.new()
+	situation.ship_id = "a"
+	situation.blocker_id = "b"
+	situation.segment = 2
+	situation.eligible.assign(["port"])
+	situation.number = 5
+	situation.drm = 1
+	situation.chance = 0.6
+	var step := ResolutionSteps.bear_off_prompt(situation, SHIPS)
+	assert_eq(step.kind, "prompt_bear_off")
+	assert_eq(step.phase, TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION)
+	assert_true(step.title.contains("Alpha") and step.title.contains("Bravo"), step.title)
+	assert_eq(step.prompt.get("ship_id"), "a")
+	assert_eq(step.ship_id, "a")
+	assert_eq(step.target_id, "b")
+	assert_eq(step.dice, [], "no roll has been made yet")
+	assert_true(Array(step.outcome_lines).has(BearOffPanel.odds_text(situation)), "the chance as text")
+
+
+func test_maintenance_prompt_step() -> void:
+	var grapple := [{"ship_id": "a", "target_id": "b", "needed": 2, "percent": 30}]
+	for step_name in ["grapple", "ungrapple"]:
+		var step := ResolutionSteps.maintenance_prompt(step_name, grapple, SHIPS)
+		assert_eq(step.kind, "prompt_maintenance")
+		assert_eq(step.phase, TurnPhaseController.GamePhase.STATUS_ADJUSTMENT)
+		assert_true(step.title.begins_with(MaintenanceOrdersPanel.title(step_name)), step.title)
+		assert_eq(step.ship_id, "a")
+		assert_eq(step.target_id, "b")
+		assert_eq(step.prompt.get("step"), step_name)
+		assert_eq(Array(step.outcome_lines), [MaintenanceOrdersPanel.intro_text(step_name)])
+	var prize := [{"action_id": 3, "prize_id": "b", "captor_id": "a", "minimum": 2, "maximum": 4}]
+	var p := ResolutionSteps.maintenance_prompt("prize_size", prize, SHIPS)
+	assert_eq(p.title, "%s: Alpha" % MaintenanceOrdersPanel.title("prize_size"))
+	assert_eq(p.ship_id, "a", "the captor")
+	assert_eq(p.target_id, "b", "her prize")
+	var two := grapple + [{"ship_id": "c", "target_id": "d", "needed": 2, "percent": 30}]
+	assert_eq(ResolutionSteps.maintenance_prompt("grapple", two, SHIPS).title,
+		MaintenanceOrdersPanel.title("grapple"), "several ships: the title names none")

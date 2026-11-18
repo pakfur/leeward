@@ -97,6 +97,18 @@ func test_last_phase_switches_to_live() -> void:
 	assert_null(_ds.state_for("a"))
 
 
+## A prompt step: the server waits on the answer, so the ship's later steps (appended after it) must
+## not show what it does next: she keeps a copy of her state when the step came up.
+func test_no_later_copy_with_live_given_keeps_the_state_of_now() -> void:
+	_ds.record_phase(6, 1, [_a])
+	_ds.begin([6] as Array[int])
+	var steps := _steps([_step(6, "a")])
+	_ds.step_shown(steps[0], steps, 0, {"a": _a})
+	_damage(_a)  # the answer is given; the server goes on
+	assert_not_null(_ds.state_for("a"))
+	assert_eq(_ds.state_for("a").rigging_current_hp[0], 5, "still the state at the prompt")
+
+
 func test_phase_reached_and_new_turn() -> void:
 	_ds.record_phase(4, 1, [_a])
 	_damage(_a)

@@ -429,3 +429,132 @@ func test_ship_lost_in_drift_keeps_her_view_until_her_drift_step() -> void:
 	GameState.turn_log = old_log
 	GameState.ships = old_ships
 	GameState.ships_by_side = old_by_side
+
+
+# --- GameController: prompts as steps (Task 6) ---------------------------------------------
+
+const GRAPPLE_OPTIONS := [{"ship_id": "a", "target_id": "b", "needed": 2, "percent": 30}]
+
+
+func _answer_panel(gc: Node, panel_name: String) -> Node:
+	return gc.resolution_panel.find_child(panel_name, true, false)
+
+
+func test_refusal_keeps_prompt() -> void:
+	var old_log := GameState.turn_log
+	GameState.turn_log = _with_combat_log([])
+	var ctx := StubContextPanel.new()
+	add_child_autofree(ctx)
+	var gc := _combat_controller(ctx)
+	gc._on_maintenance_orders_requested(0, "grapple", GRAPPLE_OPTIONS)
+	assert_true(gc._replay_running(), "the prompt opens the post-combat replay")
+	assert_eq(gc.resolution_replay.kind, "post_combat")
+	var prompt: ResolutionStep = gc.resolution_replay.current_step()
+	assert_eq(prompt.kind, "prompt_maintenance")
+	var panel: MaintenanceOrdersPanel = _answer_panel(gc, "MaintenanceOrdersPanel")
+	assert_not_null(panel, "the orders are the step's answer section")
+	# Not in STATUS_ADJUSTMENT: the server refuses.
+	panel.get_node("DoneButton").emit_signal("pressed")
+	assert_ne(panel.error_text(), "", "the reason shows on the step")
+	assert_eq(gc.resolution_replay.current_step(), prompt, "the replay stays on the prompt")
+	assert_true(gc._replay_running())
+	gc._cancel_resolution_replay()
+	GameState.turn_log = old_log
+
+
+func test_bear_off_prompt_is_a_replay_of_its_own() -> void:
+	var pc := GameState.phase_controller
+	var old_phase := pc.current_phase
+	var ctx := StubContextPanel.new()
+	add_child_autofree(ctx)
+	var gc := _combat_controller(ctx)
+	var situation := MovementTypes.BearOffSituation.new()
+	situation.ship_id = "a"
+	situation.blocker_id = "b"
+	situation.eligible.assign(["port"])
+	situation.number = 5
+	situation.chance = 0.5
+	gc._on_bear_off_decision_requested(0, situation)
+	assert_true(gc._replay_running())
+	assert_eq(gc.resolution_replay.kind, "bear_off")
+	var prompt: ResolutionStep = gc.resolution_replay.current_step()
+	assert_eq(prompt.kind, "prompt_bear_off")
+	assert_false(gc.display_states.active(), "movement playback keeps the ship views")
+	var panel: BearOffPanel = _answer_panel(gc, "BearOffPanel")
+	assert_not_null(panel)
+	panel.get_node("Choice_collide").emit_signal("pressed")
+	assert_ne(panel.error_text(), "", "no decision pending: refused, shown on the step")
+	assert_eq(gc.resolution_replay.current_step(), prompt)
+	pc.current_phase = TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
+	gc._prompt_answered(prompt)  # as after an accepted choice
+	assert_false(gc._replay_running(), "answered: the bear-off replay is over")
+	assert_eq((ctx.contents.back() as Node).name, "MovementPanel", "the side panel shows movement again")
+	pc.current_phase = old_phase
+
+
+func test_maintenance_prompts_join_the_post_combat_replay() -> void:
+	var P := TurnPhaseController.GamePhase
+	var pc := GameState.phase_controller
+	var old_ships := GameState.ships.duplicate()
+	var old_by_side := GameState.ships_by_side.duplicate(true)
+	var old_log := GameState.turn_log
+	var old_phase := pc.current_phase
+	GameState.ships.clear()
+	GameState.ships_by_side = {0: [], 1: []}
+	var a := _map_ship("a", 0, Vector2i(0, 0))
+	_map_ship("b", 1, Vector2i(1, 0))
+	var ctx := StubContextPanel.new()
+	add_child_autofree(ctx)
+	var gc := _combat_controller(ctx)
+	for id in ["a", "b"]:
+		var view := Node3D.new()  # a stand-in: no new ShipView is made off the scene
+		autofree(view)
+		gc.ship_views[id] = view
+	var turn_log := _with_combat_log([_drift("a", 3, a.hex_position)])
+	GameState.turn_log = turn_log
+	gc._on_phase_changed(P.DRIFT_CALCULATION)
+	gc._on_phase_changed(P.STATUS_ADJUSTMENT)
+
+	gc._on_maintenance_orders_requested(0, "grapple", GRAPPLE_OPTIONS)
+	var replay: ResolutionReplay = gc.resolution_replay
+	assert_eq(replay.current_step().kind, "drift", "the drift already resolved comes first")
+	assert_eq(replay.steps().size(), 2)
+	replay.next()
+	var first: ResolutionStep = replay.current_step()
+	assert_eq(first.kind, "prompt_maintenance")
+	replay.next()
+	assert_eq(replay.current_step(), first, "Next does not pass a prompt")
+
+	# Accepted: the server rolls the grapple and asks for the ungrapple orders, before the answer
+	# is taken off the step.
+	turn_log.events.append(PhaseEvents.PhaseEvent.new(PhaseEvents.Type.GRAPPLE, STATUS, "a",
+		{"roll": 1, "needed": 2, "total": 1, "success": true}, "b"))
+	gc._on_maintenance_orders_requested(0, "ungrapple", GRAPPLE_OPTIONS)
+	assert_eq(replay.current_step(), first, "still on the first prompt")
+	gc._prompt_answered(first)
+	assert_eq(replay.current_step().kind, "grapple", "the roll, then")
+	replay.next()
+	var second: ResolutionStep = replay.current_step()
+	assert_eq(second.kind, "prompt_maintenance")
+	assert_eq(second.prompt.get("step"), "ungrapple", "the second prompt, in the same replay")
+
+	turn_log.events.append(PhaseEvents.PhaseEvent.new(PhaseEvents.Type.MORALE_CHECK, P.MORALE_CHECK, "b",
+		{"roll": 7, "rating": 4, "passed": true}))
+	gc._prompt_answered(second)
+	gc._on_phase_changed(P.MORALE_CHECK)
+	gc._on_phase_changed(P.MESSAGE_DELIVERY)
+	pc.current_phase = P.POST_COMBAT
+	gc._on_phase_changed(P.POST_COMBAT)
+	assert_true(gc._replay_running(), "POST_COMBAT continues the running replay")
+	assert_eq(replay.current_index(), 4, "not restarted")
+	assert_eq(replay.current_step().kind, "morale")
+	assert_null(gc.end_turn_panel, "End Turn waits for the replay")
+	replay.next()
+	assert_false(gc._replay_running())
+	assert_not_null(gc.end_turn_panel, "End Turn after the last step")
+
+	gc._clear_end_turn_ui()
+	pc.current_phase = old_phase
+	GameState.turn_log = old_log
+	GameState.ships = old_ships
+	GameState.ships_by_side = old_by_side

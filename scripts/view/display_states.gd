@@ -39,8 +39,10 @@ func begin(phases: Array[int]) -> void:
 
 
 ## After showing `steps[index]`: each ship whose last step in `step.phase` is at or before `index`
-## switches to her copy from before the next captured phase (live when there is none).
-func step_shown(step: ResolutionStep, steps: Array[ResolutionStep], index: int) -> void:
+## switches to her copy from before the next captured phase. When there is none yet, she shows live,
+## or, given `live` (ship_id -> ShipState), a copy of her live state now: the server may be waiting
+## on a prompt further on, and her later steps must not show what it does after the answer.
+func step_shown(step: ResolutionStep, steps: Array[ResolutionStep], index: int, live: Dictionary = {}) -> void:
 	if not _active or step == null:
 		return
 	var phase := step.phase
@@ -54,7 +56,10 @@ func step_shown(step: ResolutionStep, steps: Array[ResolutionStep], index: int) 
 	var next_phase := _next_captured_phase(phase)
 	for id in last:
 		if int(last[id]) <= index:
-			_shown[id] = _copy(next_phase, id)
+			var copy := _copy(next_phase, id)
+			if copy == null and live.get(id) is ShipState:
+				copy = ShipState.deserialize((live[id] as ShipState).serialize())
+			_shown[id] = copy
 
 
 ## The replay moved into `phase`: every ship shows her copy from before it.

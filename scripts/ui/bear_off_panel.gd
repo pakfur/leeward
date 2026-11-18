@@ -11,13 +11,16 @@ var _buttons: Array[Button] = []
 var _error_label: Label = null
 
 
-## `ship_name` / `blocker_name` are display names.
-func setup(situation: MovementTypes.BearOffSituation, ship_name: String, blocker_name: String) -> void:
+## `ship_name` / `blocker_name` are display names. `compact`: the answer section of a resolution
+## step, which shows the situation and the odds itself: only the choices, the note and the error line.
+func setup(situation: MovementTypes.BearOffSituation, ship_name: String, blocker_name: String,
+		compact: bool = false) -> void:
 	_ship_id = situation.ship_id
 	name = "BearOffPanel"
 	add_theme_constant_override("separation", 8)
-	_add_label("%s is about to run into %s." % [ship_name, blocker_name])
-	_add_label(odds_text(situation), &"SecondaryLabel")
+	if not compact:
+		_add_label("%s is about to run into %s." % [ship_name, blocker_name])
+		_add_label(odds_text(situation), &"SecondaryLabel")
 	for choice in situation.eligible:
 		_add_button(choice_label(choice, situation.chance), choice)
 	if situation.eligible.is_empty():
@@ -25,6 +28,7 @@ func setup(situation: MovementTypes.BearOffSituation, ship_name: String, blocker
 	_add_button(choice_label(MovementTypes.BEAR_OFF_COLLIDE, 0.0), MovementTypes.BEAR_OFF_COLLIDE)
 	_add_label("The other ships' plotted moves are shown on the map.", &"SecondaryLabel")
 	_error_label = _add_label("", &"SecondaryLabel")
+	_error_label.name = "ErrorLabel"
 	_error_label.visible = false
 
 
@@ -49,6 +53,11 @@ func show_error(reason: String) -> void:
 		button.disabled = false
 	_error_label.text = reason
 	_error_label.visible = true
+
+
+## The refusal shown, "" when none.
+func error_text() -> String:
+	return _error_label.text if _error_label != null and _error_label.visible else ""
 
 
 func _add_label(text: String, variation: StringName = &"") -> Label:
