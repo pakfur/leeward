@@ -93,15 +93,15 @@ static func offset_to_axial(col: int, row: int) -> Vector2i:
 	return Vector2i(col - (row - (row & 1)) / 2, row)
 
 
-## Every hex of a width x height rectangle centred on the origin, row by row.
-static func rect_hexes(width: int, height: int) -> Array[Vector2i]:
+## Every hex of a `cols` x `rows` rectangle centred on the origin, row by row.
+static func rect_hexes(cols: int, rows: int) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
 	@warning_ignore("integer_division")
-	var c0 := -width / 2
+	var c0 := -cols / 2
 	@warning_ignore("integer_division")
-	var r0 := -height / 2
-	for row in range(r0, r0 + height):
-		for col in range(c0, c0 + width):
+	var r0 := -rows / 2
+	for row in range(r0, r0 + rows):
+		for col in range(c0, c0 + cols):
 			out.append(offset_to_axial(col, row))
 	return out
 
@@ -242,7 +242,11 @@ func _read_shallow(list: Array) -> void:
 	for entry in list:
 		var a := ShallowArea.new()
 		a.name = str(entry.get("name", ""))
-		a.base = int(entry.get("base", 0))
+		var raw_base = entry.get("base", 0)
+		var integral: bool = raw_base is int or (raw_base is float and raw_base == floorf(raw_base))
+		if not integral:
+			errors.append("Terrain: shallow area '%s' has a non-integer base %s" % [a.name, str(raw_base)])
+		a.base = int(raw_base) if integral else 0
 		if a.base < 0:
 			errors.append("Terrain: shallow area '%s' has a negative base %d" % [a.name, a.base])
 		for pair in entry.get("hexes", []):
@@ -266,6 +270,11 @@ func _read_boundaries(list: Array) -> void:
 		b.kind = str(entry.get("kind", OPEN))
 		if not KINDS.has(b.kind):
 			errors.append("Terrain: unknown kind %s on boundary '%s'" % [b.kind, b.name])
+			b.kind = OPEN
+		elif b.kind != OPEN:
+			# Map and scenario spec: lines inside the map are walls only, for now.
+			errors.append("Terrain: boundary '%s' of kind %s is not supported yet (inner boundaries are open only)"
+				% [b.name, b.kind])
 			b.kind = OPEN
 		for side in entry.get("sides", []):
 			var a := _hex(side[0])

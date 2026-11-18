@@ -109,6 +109,25 @@ func test_validation_errors() -> void:
 		assert_true(e.begins_with("Terrain: "), e)
 
 
+func test_inner_none_or_escape_boundary_is_not_supported_yet() -> void:
+	for kind in ["none", "escape"]:
+		var t := _ten({"boundaries": [{"name": "line", "kind": kind, "sides": [[[0, 0], [1, 0]]]}]})
+		assert_eq(t.errors.size(), 1, str(t.errors))
+		assert_string_contains("\n".join(t.errors), "not supported yet")
+		assert_eq(t.crossing(Vector2i(0, 0), Vector2i(1, 0)).kind, TerrainMap.OPEN, "read as a wall")
+	var ok := _ten({"boundaries": [{"name": "line", "kind": "open", "sides": [[[0, 0], [1, 0]]]}]})
+	assert_eq(ok.errors.size(), 0, str(ok.errors))
+
+
+func test_non_integer_base_is_an_error() -> void:
+	for base in [5.5, "5"]:
+		var t := _ten({"shallow": [{"name": "A", "base": base, "hexes": [[1, 0]]}]})
+		assert_eq(t.errors.size(), 1, str(t.errors))
+		assert_string_contains("\n".join(t.errors), "non-integer base")
+	var ok := _ten({"shallow": [{"name": "A", "base": 5.0, "hexes": [[1, 0]]}]})
+	assert_eq(ok.errors.size(), 0, "JSON numbers are floats: 5.0 is an integer")
+
+
 func test_hex_in_two_shallow_areas_is_an_error() -> void:
 	var t := _ten({"shallow": [
 		{"name": "A", "base": 5, "hexes": [[1, 0]]},

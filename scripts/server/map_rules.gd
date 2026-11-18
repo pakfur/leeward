@@ -129,6 +129,7 @@ static func footprint_range(a: Array[Vector2i], b: Array[Vector2i]) -> int:
 		for y in b:
 			var dq := x.x - y.x
 			var dr := x.y - y.y
+			@warning_ignore("integer_division")
 			var d := (absi(dq) + absi(dr) + absi(dq + dr)) / 2
 			if best < 0 or d < best:
 				best = d
