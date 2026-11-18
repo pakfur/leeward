@@ -374,6 +374,7 @@ func _on_hex_labels_toggled(enabled: bool) -> void:
 func _process(_delta: float) -> void:
 	_update_status_hover()
 	_fit_crew_overlay()
+	_follow_tow_lines()
 	if not hex_coords_enabled or not hex_coord_label or not camera or not hex_map:
 		return
 
@@ -1711,6 +1712,16 @@ func _sync_all_views() -> void:
 			tow_lines = TowLines.new()
 			add_child(tow_lines)
 		tow_lines.refresh(GameState.get_all_ships(), hex_map.get_hex_grid())
+
+## The hawsers ride on the drawn ships every frame (view only): movement playback glides the views
+## between hexes, and a hawser drawn from the hexes alone would hang still until the next sync.
+func _follow_tow_lines() -> void:
+	if tow_lines == null or hex_map == null:
+		return
+	var ships: Array = GameState.get_all_ships()
+	if TowLines.any_tow(ships):
+		tow_lines.follow_views(ships, ship_views, hex_map.get_hex_grid())
+
 
 func _toggle_developer_ui() -> void:
 	if developer_ui:

@@ -141,6 +141,50 @@ func test_tow_line_segments() -> void:
 	assert_almost_eq(segs[0][1].y, GrappleLines.ROPE_HEIGHT, 0.0001)
 
 
+## The view pose of a ship at whole hexes, as ShipView and the playback set it: [centre, model angle].
+func _pose_of(ship: ShipState) -> Array:
+	return [grid.ship_center_world(ship.hex_position, ship.facing), -ship.facing * 60.0 - 90.0]
+
+
+func _assert_same_point(a: Vector3, b: Vector3, what: String) -> void:
+	assert_almost_eq(a.x, b.x, 0.0001, what + " x")
+	assert_almost_eq(a.y, b.y, 0.0001, what + " y")
+	assert_almost_eq(a.z, b.z, 0.0001, what + " z")
+
+
+func test_tow_line_from_poses_matches_hexes() -> void:
+	var pair := _pair()
+	var tp := _pose_of(pair[0])
+	var wp := _pose_of(pair[1])
+	var from_poses := TowLines.segment_from_poses(tp[0], tp[1], wp[0], wp[1], grid)
+	var from_hexes: Array = TowLines.segments(pair, grid)[0]
+	_assert_same_point(from_poses[0], from_hexes[0], "tower stern")
+	_assert_same_point(from_poses[1], from_hexes[1], "tow bow")
+
+
+func test_tow_line_follows_gliding_poses() -> void:
+	# Halfway through a step ahead (both ships half a hex west of their hexes) the hawser has moved
+	# half a hex west with them; after a starboard turn it runs to the new stern.
+	var pair := _pair()
+	var tp := _pose_of(pair[0])
+	var wp := _pose_of(pair[1])
+	var half := (grid.axial_to_world(4, 5) - grid.axial_to_world(5, 5)) / 2.0
+	var mid := TowLines.segment_from_poses(tp[0] + half, tp[1], wp[0] + half, wp[1], grid)
+	var still: Array = TowLines.segments(pair, grid)[0]
+	_assert_same_point(mid[0], still[0] + half, "tower stern mid-glide")
+	_assert_same_point(mid[1], still[1] + half, "tow bow mid-glide")
+	var t: ShipState = pair[0]
+	t.facing = 4  # turned to starboard at (5, 5): the stern is (5, 6)
+	var turned := _pose_of(t)
+	var seg := TowLines.segment_from_poses(turned[0], turned[1], wp[0], wp[1], grid)
+	_assert_same_point(seg[0], grid.axial_to_world(5, 6) + Vector3(0, GrappleLines.ROPE_HEIGHT, 0), "new stern")
+
+
+func test_any_tow() -> void:
+	assert_true(TowLines.any_tow(_pair()))
+	assert_false(TowLines.any_tow([_ship("a", Vector2i(0, 0))]))
+
+
 func test_no_tow_no_line() -> void:
 	var a := _ship("t", Vector2i(5, 5))
 	var b := _ship("w", Vector2i(7, 5))
