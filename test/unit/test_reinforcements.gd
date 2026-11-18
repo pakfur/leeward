@@ -150,10 +150,6 @@ func test_held_entry_waits_a_turn() -> void:
 	assert_eq(delayed.size(), 1)
 	assert_eq(delayed[0].ship_id, "reinf")
 	assert_eq(delayed[0].target_id, "blocker")
-	# the blocker sails off: back to where it was, its plot (made from the entry hex) dropped
-	blocker.hex_position = Vector2i(-20, 20)
-	blocker.facing = 0
-	blocker.plotted_actions = {}
 	_play_turn()
 	assert_eq(pc.current_turn, 4)
 	assert_true(ship.is_on_map())
@@ -179,6 +175,7 @@ func test_default_course_and_deceleration_after_arrival() -> void:
 	_play_turn()
 	GameState.environment.pending_wind_speed = -1
 	GameState.environment.pending_wind_direction = -1
+	GameState.environment.wind_speed = 4
 	_play_turn()
 	var ship: ShipState = GameState.ships["reinf"]
 	assert_true(ship.is_on_map())
@@ -186,9 +183,9 @@ func test_default_course_and_deceleration_after_arrival() -> void:
 	var course := pc.stored_course(ship)
 	assert_eq(course.size(), mini(ship.speed, ma))
 	var decel: int = GameState.ship_controller.speed_change_limits(ship).decel
-	if ship.speed - decel > 0:
-		assert_eq(pc.player_cut_course(2, "reinf", 0), "")
-		assert_true(pc.plan_errors(2).has("reinf"), "a course below speed - deceleration is refused")
+	assert_gt(ship.speed - decel, 0, "the test wind must leave a deceleration minimum")
+	assert_eq(pc.player_cut_course(2, "reinf", 0), "")
+	assert_true(pc.plan_errors(2).has("reinf"), "a course below speed - deceleration is refused")
 
 
 func test_entry_sail_is_capped_by_the_rigging() -> void:
@@ -210,3 +207,36 @@ func test_a_scenario_with_terrain_errors_is_not_started() -> void:
 	assert_false(GameState.start_scenario(scenario, humans))
 	assert_push_error("off the map")
 	assert_push_error("bad terrain")
+
+
+## An enemy alongside the entry hex while the reinforcement waits (its footprint is not a berth).
+func _enemy_alongside_entry() -> ShipState:
+	var blocker: ShipState = GameState.ships["blocker"]
+	blocker.hex_position = ENTRY + HexGrid.DIRECTIONS[1]
+	blocker.facing = 0
+	return blocker
+
+
+func test_waiting_ship_cannot_be_grappled_and_prompts_no_maintenance() -> void:
+	_start(true)
+	var blocker := _enemy_alongside_entry()
+	var gc: GrapplingController = GameState.grappling_controller
+	assert_true(gc.adjacent(blocker, GameState.ships["reinf"]), "the entry footprint is alongside")
+	assert_ne(gc.grapple_error("blocker", "reinf"), "")
+	assert_ne(gc.grapple_error("reinf", "blocker"), "")
+	assert_true(gc.grapple_options("blocker").is_empty())
+	assert_true(pc.maintenance_options(2, TurnPhaseController.MaintenanceStep.GRAPPLE).is_empty())
+	assert_true(pc.maintenance_options(1, TurnPhaseController.MaintenanceStep.GRAPPLE).is_empty())
+
+
+func test_explosion_near_the_entry_hex_spares_the_waiting_ship() -> void:
+	_start(true)
+	var blocker := _enemy_alongside_entry()
+	var ship: ShipState = GameState.ships["reinf"]
+	var hull_before := ship.hull_current_hp.duplicate()
+	GameState.fire_controller.explode("blocker", PHASES.STATUS_ADJUSTMENT)
+	assert_true(blocker.is_destroyed())
+	assert_eq(ship.hull_current_hp, hull_before)
+	assert_eq(ship.fire_count(), 0)
+	for ev: PhaseEvents.PhaseEvent in GameState.turn_log.events:
+		assert_ne(ev.target_id, "reinf")

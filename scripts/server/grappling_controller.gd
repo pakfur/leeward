@@ -58,6 +58,8 @@ func grapple_error(ship_id: String, target_id: String) -> String:
 		return "no such ship"
 	if ship_id == target_id:
 		return "a ship cannot grapple itself"
+	if not ship.is_on_map() or not target.is_on_map():
+		return "a ship off the map cannot be grappled"
 	if not ship.can_handle_lines():  # 10.H.2: a prize with her prize crew aboard may
 		if ship.is_captured():
 			return "%s has no crew able to handle lines (10.H.2)" % ship.ship_name

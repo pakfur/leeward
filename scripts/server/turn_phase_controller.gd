@@ -942,7 +942,8 @@ func maintenance_options(player_id: int, step: MaintenanceStep) -> Array:
 		return out
 	var own: Array = []
 	for ship: ShipState in game_state.ships_of_player(player_id):
-		own.append(ship.ship_id)
+		if ship.is_on_map():
+			own.append(ship.ship_id)
 	own.sort()
 	for ship_id in own:
 		var others: Array[String] = grappling.grapple_options(ship_id) if step == MaintenanceStep.GRAPPLE \

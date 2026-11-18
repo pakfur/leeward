@@ -320,7 +320,7 @@ func explode(ship_id: String, phase: int) -> void:
 	var ids := _sorted_ids()
 	for other_id: String in ids:
 		var other: ShipState = game_state.get_ship(other_id)
-		if other_id == ship_id or other == null or other.is_destroyed():
+		if other_id == ship_id or other == null or other.is_destroyed() or not other.is_on_map():
 			continue
 		var r: int = game_state.fire_geometry.range_between(hexes, other.occupied_hexes())
 		var mgn: int = tables.blast_mgn(ship_class, r)
@@ -330,7 +330,7 @@ func explode(ship_id: String, phase: int) -> void:
 	var never: int = tables.fire_rule("debris_never")
 	for other_id: String in ids:
 		var other: ShipState = game_state.get_ship(other_id)
-		if other_id == ship_id or other == null or other.is_destroyed():
+		if other_id == ship_id or other == null or other.is_destroyed() or not other.is_on_map():
 			continue
 		var r: int = game_state.fire_geometry.range_between(hexes, other.occupied_hexes())
 		if r < 0 or r > radius:
