@@ -267,6 +267,32 @@ func test_veer_in_blocked() -> void:
 	_no_collision_or_fouling()
 
 
+func test_veer_in_refused_when_linked() -> void:
+	# A fouled or grappled anchored ship holds, as in V.A.
+	var a := _anchored("a", Vector2i(-2, 0), 0, Vector2i(0, 0), 2, "bow", false, 1)
+	_make_ship("b", Vector2i(-2, 1), 0, 1)
+	sc.add_grapple("a", "b")
+	_task(a, "VI")
+	anchors.resolve_spring_step(MOVE)
+	assert_eq(a.hex_position, Vector2i(-2, 0))
+	assert_eq(int(a.anchor["cable"]), 2)
+	assert_eq(int(a.anchor["veered"]), 1)
+	assert_eq(str(_veers()[0].data["refused"]), "fouled or grappled")
+
+
+func test_spring_step_skips_aground_ships() -> void:
+	var a := _anchored("a", Vector2i(-1, 0), 0, Vector2i(0, 0), 1)
+	sc.set_aground(a.ship_id, GameState.current_turn - 1)
+	_task(a, "HS", {"turn": "starboard"})
+	var b := _anchored("b", Vector2i(-2, 5), 0, Vector2i(0, 5), 2, "bow", false, 1)
+	sc.set_aground(b.ship_id, GameState.current_turn - 1)
+	_task(b, "VI")
+	anchors.resolve_spring_step(MOVE)
+	assert_eq(a.facing, 0)
+	assert_eq(b.hex_position, Vector2i(-2, 5))
+	assert_eq(_springs().size() + _veers().size(), 0, "nothing logged")
+
+
 func test_veer_in_at_wind_zero() -> void:
 	# 13.E.3: ships can veer in at WS 0.
 	GameState.environment.wind_speed = 0

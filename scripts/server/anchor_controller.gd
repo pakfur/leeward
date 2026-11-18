@@ -316,12 +316,12 @@ static func _hex_dict(hex: Vector2i) -> Dictionary:
 
 
 ## SERVER ONLY: the springs step at the start of MOVEMENT_RESOLUTION (spec §5), before any ship
-## moves, by ship id: a live HS begun this g-t turns a ship anchored with springs 60 degrees
+## moves, by ship id (aground ships skipped, as in V.A): a live HS begun this g-t turns a ship anchored with springs 60 degrees
 ## (13.D.2-3: AB on her bow, AS on her stern), then a live VI begun this g-t brings her anchored end
 ## one hex upwind (13.E.2). Each ship is checked against the hexes as they stand when her turn
 ## comes. A hex held by a ship, land or off the map refuses it: no collision, no fouling, no
-## grounding, no die. A spring turn is also refused at wind speed 0 (13.E.3), without springs, or
-## fouled or grappled. Logs SPRING_TURN and VEER_IN.
+## grounding, no die. Both are refused fouled or grappled (a linked ship holds, as in V.A); a spring
+## turn also at wind speed 0 (13.E.3) or without springs. Logs SPRING_TURN and VEER_IN.
 func resolve_spring_step(phase: int) -> void:
 	if not is_server:
 		push_error("AnchorController: Cannot resolve the springs step on client")
@@ -329,7 +329,7 @@ func resolve_spring_step(phase: int) -> void:
 	var ships: Array[ShipState] = game_state.ships_on_map()
 	ships.sort_custom(func(a: ShipState, b: ShipState) -> bool: return a.ship_id < b.ship_id)
 	for ship in ships:
-		if not ship.is_anchored() or ship.is_destroyed():
+		if not ship.is_anchored() or ship.is_destroyed() or ship.is_aground():
 			continue
 		var hs := live_this_turn(ship, "HS")
 		if not hs.is_empty():
@@ -379,7 +379,9 @@ func _veer_in(ship: ShipState, phase: int) -> void:
 	var cable := old_cable - 1
 	var new_hexes := AnchorRules.footprint(anchor.get("hex", ship.hex_position),
 		str(anchor.get("end", "bow")), cable, ship.facing, int(game_state.environment.wind_direction))
-	var check := _move_check(ship, new_hexes)
+	var check := {"refused": "fouled or grappled", "blocker": ""}
+	if not ship.is_linked():  # a linked ship holds, as in V.A
+		check = _move_check(ship, new_hexes)
 	var refused := str(check["refused"])
 	game_state.turn_log.add(PhaseEvents.Type.VEER_IN, phase, id,
 		{"cable": cable if refused == "" else old_cable, "refused": refused}, str(check["blocker"]))
