@@ -72,3 +72,40 @@ static func crossing_outcome(scenario: Dictionary, ship: ShipState, from: Vector
 			if may_cross(scenario, ship, b, turn):
 				return {"outcome": ESCAPE, "edge": b.name}
 	return {"outcome": BLOCKED, "edge": b.name}
+
+
+## What shifting a ship's footprint from `old_hexes` to `new_hexes` (paired, bow first) meets when
+## it is forced (drift): {"result": "edge"|"lost"|"escape"|"land"|"ship"|"clear", "edge": name,
+## "blocker": ship id, "shallow_bow": bool}. `others` maps hex -> ship id of the ships the footprint
+## may not enter. Priority: a blocking crossing (edge), then a crossing off the map where there is
+## no sea room (lost), then an escape crossing, then a new hex of land, then a ship in a new hex
+## (bow first), else clear. `shallow_bow` (clear only) says the new bow hex is in a shallow area,
+## so the caller rolls the depth.
+static func forced_move(scenario: Dictionary, ship: ShipState, old_hexes: Array[Vector2i],
+		new_hexes: Array[Vector2i], others: Dictionary, turn: int) -> Dictionary:
+	var lost := ""
+	var escape := ""
+	for i in new_hexes.size():
+		var crossing := crossing_outcome(scenario, ship, old_hexes[i], new_hexes[i], turn)
+		match crossing["outcome"]:
+			BLOCKED:
+				return {"result": "edge", "edge": crossing["edge"], "blocker": "", "shallow_bow": false}
+			LOST:
+				if lost == "":
+					lost = crossing["edge"]
+			ESCAPE:
+				if escape == "":
+					escape = crossing["edge"]
+	if lost != "":
+		return {"result": "lost", "edge": lost, "blocker": "", "shallow_bow": false}
+	if escape != "":
+		return {"result": "escape", "edge": escape, "blocker": "", "shallow_bow": false}
+	var terrain := TerrainMap.of(scenario)
+	for hex in new_hexes:
+		if terrain.is_land(hex):
+			return {"result": "land", "edge": "", "blocker": "", "shallow_bow": false}
+	for hex in new_hexes:
+		if others.has(hex):
+			return {"result": "ship", "edge": "", "blocker": others[hex], "shallow_bow": false}
+	return {"result": "clear", "edge": "", "blocker": "",
+		"shallow_bow": not new_hexes.is_empty() and terrain.area_at(new_hexes[0]) != null}
