@@ -309,6 +309,61 @@ func frame_points_if_needed(points: Array[Vector3], safe_rect: Rect2, margin_px:
 	)
 	return true
 
+## The running frame_ship / restore_view animation, killed when another starts so a retarget
+## continues from the current pose without a jump.
+var _frame_tween: Tween = null
+
+## Smoothly pan and zoom to `distance` (clamped to the zoom limits) so `world_pos` lands at the
+## centre of `safe_rect` (viewport pixels), not the window centre. Never rotates or tilts.
+## Calling it again mid-animation retargets from where the camera is now.
+func frame_ship(world_pos: Vector3, distance: float, safe_rect: Rect2) -> void:
+	var target_distance := clampf(distance, min_zoom, max_zoom)
+	var rad := deg_to_rad(camera_rotation_y)
+	var right := Vector3(sin(rad), 0, -cos(rad))
+	var down := Vector3(cos(rad), 0, sin(rad))
+	var viewport_size := get_viewport().get_visible_rect().size
+	var wpp := 2.0 * target_distance * tan(deg_to_rad(fov) * 0.5) / maxf(viewport_size.y, 1.0)
+	var offset := safe_rect.get_center() - viewport_size * 0.5
+	var target := world_pos - right * offset.x * wpp - down * offset.y * wpp
+	target.y = 0.0
+	_animate_to(target, target_distance, camera_rotation_y)
+
+
+## The camera's pose as a plain Dictionary for restore_view.
+func save_view() -> Dictionary:
+	return {"target": camera_target, "distance": camera_distance,
+		"rotation": camera_rotation_y, "angle": isometric_angle}
+
+
+## Animate back to a pose from save_view (same animation as frame_ship).
+func restore_view(view: Dictionary) -> void:
+	if view.is_empty():
+		return
+	isometric_angle = view.get("angle", isometric_angle)
+	_animate_to(view.get("target", camera_target), view.get("distance", camera_distance),
+		view.get("rotation", camera_rotation_y))
+
+
+func _animate_to(target: Vector3, distance: float, rotation_deg: float) -> void:
+	if _frame_tween != null and _frame_tween.is_valid():
+		_frame_tween.kill()
+	is_tweening = true
+	var tween := create_tween()
+	_frame_tween = tween
+	tween.set_parallel(true)
+	tween.set_ease(Tween.EASE_IN_OUT)
+	tween.set_trans(Tween.TRANS_CUBIC)
+	tween.tween_property(self, "camera_target", target, focus_animation_duration)
+	tween.tween_property(self, "camera_distance", distance, focus_animation_duration)
+	if not is_equal_approx(rotation_deg, camera_rotation_y):
+		tween.tween_property(self, "camera_rotation_y", rotation_deg, focus_animation_duration)
+	tween.finished.connect(func():
+		if _frame_tween == tween:
+			is_tweening = false
+			_frame_tween = null
+		_update_camera_transform()
+	)
+
 func focus_on_ship(world_pos: Vector3, ship_facing: int, zoom_distance: float = -1.0) -> void:
 	"""
 	Focus camera on a specific ship with smooth animation.
