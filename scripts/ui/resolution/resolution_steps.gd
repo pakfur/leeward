@@ -176,8 +176,7 @@ static func _same_drift_group(open_events: Array[PhaseEvents.PhaseEvent], ev: Ph
 		return false
 	var dq := int(a["q"]) - int(b["q"])
 	var dr := int(a["r"]) - int(b["r"])
-	@warning_ignore("integer_division")
-	return (absi(dq) + absi(dq + dr) + absi(dr)) / 2 <= 3
+	@warning_ignore("integer_division") return (absi(dq) + absi(dq + dr) + absi(dr)) / 2 <= 3
 
 
 # --- Filling a step -----------------------------------------------------------
@@ -235,6 +234,8 @@ static func _dice(ev: PhaseEvents.PhaseEvent) -> Array:
 
 static func _modifiers(ev: PhaseEvents.PhaseEvent) -> Array:
 	var out: Array = []
+	if ev.type == PhaseEvents.Type.FIRE and ev.data.get("bgn") is int:
+		out.append({"label": "Base gunfire number", "value": int(ev.data["bgn"]), "base": true})
 	var list: Array = ev.data.get("modifiers", []) if ev.data.get("modifiers") is Array else []
 	for m in list:
 		if m is Dictionary:
@@ -249,7 +250,11 @@ static func _final_text(ev: PhaseEvents.PhaseEvent) -> String:
 	var d := ev.data
 	match ev.type:
 		PhaseEvents.Type.FIRE, PhaseEvents.Type.BLAST:
-			return "Gunfire number %s" % d["fgn"] if d.has("fgn") else ""
+			if not d.has("fgn"):
+				return ""
+			if d.has("mgn") and d.has("d6"):
+				return "%s + d6 %s = gunfire number %s" % [d["mgn"], d["d6"], d["fgn"]]
+			return "Gunfire number %s" % d["fgn"]
 		PhaseEvents.Type.MARINE_FIRE:
 			return "Total %s" % d["total"] if d.has("total") else ""
 		PhaseEvents.Type.MORALE_CHECK, PhaseEvents.Type.RALLY:
@@ -267,7 +272,11 @@ static func _final_text(ev: PhaseEvents.PhaseEvent) -> String:
 				return "Attacker %s, defender %s" % [a["total"], df["total"]]
 			return ""
 		PhaseEvents.Type.DRIFT:  # DriftResolver: drifts when roll + modifier >= needed
-			return "Drifts on %s or more" % d["needed"] if d.has("needed") else ""
+			if not d.has("needed"):
+				return ""
+			if d.has("roll"):
+				return "Total %d, drifts on %s or more" % [int(d["roll"]) + int(d.get("modifier", 0)), d["needed"]]
+			return "Drifts on %s or more" % d["needed"]
 		PhaseEvents.Type.UNFOUL, PhaseEvents.Type.FIRE_FOUGHT, \
 		PhaseEvents.Type.FIRE_SPREAD, PhaseEvents.Type.EXPLOSION_CHECK, \
 		PhaseEvents.Type.CRITICAL_FIXED:
@@ -326,6 +335,8 @@ static func _outcome_text(ev: PhaseEvents.PhaseEvent, ship_info: Dictionary) -> 
 			if d.has("sections_lost"):
 				var who := str(names.get(ev.ship_id, ev.ship_id))
 				var n := int(d["sections_lost"])
+				if n == 0:
+					return "%s: no section lost" % who
 				var line := "%s loses %s" % [who, PhaseEvents.plural(n, "section")]
 				if d.get("marine_section_lost", false):
 					line += ", the marines among them"

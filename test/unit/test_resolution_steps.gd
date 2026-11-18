@@ -95,10 +95,27 @@ func test_morale_dice_and_outcome() -> void:
 func test_fire_modifiers_copied() -> void:
 	var steps := ResolutionSteps.build([_ev(Type.FIRE, "a", _fire_data(), "b")], 0, SHIPS)
 	assert_eq(steps[0].modifiers, [
+		{"label": "Base gunfire number", "value": 22, "base": true},
 		{"label": PhaseEvents.modifier_label("crew_quality"), "value": 2},
 		{"label": PhaseEvents.modifier_label("initial_broadside"), "value": 3},
 	])
-	assert_eq(steps[0].final_text, "Gunfire number 31")
+	assert_eq(steps[0].final_text, "27 + d6 4 = gunfire number 31")
+
+
+func test_blast_final_text_adds_up() -> void:
+	var data := {"range": 1, "mgn": 10, "d6": 3, "fgn": 13, "rigging": 2, "hull": 1, "crew": 3}
+	var steps := ResolutionSteps.build([_ev(Type.BLAST, "a", data, "b")], 0, SHIPS)
+	assert_eq(steps[0].final_text, "10 + d6 3 = gunfire number 13")
+
+
+func test_no_section_lost_wording() -> void:
+	var evs: Array = [
+		_ev(Type.FIRE, "a", _fire_data(), "b"),
+		_ev(Type.DAMAGE, "b", {"cause": "other", "sections_lost": 0, "marine_section_lost": false}),
+	]
+	var steps := ResolutionSteps.build(evs, 0, SHIPS)
+	assert_false(steps[0].outcome_lines[1].contains("loses 0"), steps[0].outcome_lines[1])
+	assert_true(steps[0].outcome_lines[1].contains("no section lost"), steps[0].outcome_lines[1])
 
 
 func test_build_from_index() -> void:
@@ -120,7 +137,7 @@ func test_drift_step() -> void:
 	assert_eq(steps[0].kind, "drift")
 	assert_eq(steps[0].dice, [{"sides": 10, "values": [2]}])
 	assert_eq(steps[0].modifiers, [{"label": "modifier", "value": 1}])
-	assert_eq(steps[0].final_text, "Drifts on 4 or more")
+	assert_eq(steps[0].final_text, "Total 3, drifts on 4 or more")
 
 
 func test_grapple_step() -> void:

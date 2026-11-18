@@ -198,9 +198,10 @@ func test_restore_view_round_trips() -> void:
 	var saved = camera.save_view()
 	camera.frame_ship(Vector3(-8, 0, 9), 6.0, Rect2(Vector2.ZERO, Vector2(800, 600)))
 	await wait_seconds(0.3)
+	camera.camera_rotation_y = 120.0  # the player rotated meanwhile
 	camera.restore_view(saved)
 	await wait_seconds(0.3)
 	assert_almost_eq(camera.camera_target.x, 5.0, 0.01)
 	assert_almost_eq(camera.camera_target.z, 5.0, 0.01)
 	assert_almost_eq(camera.camera_distance, 20.0, 0.01)
-	assert_eq(camera.camera_rotation_y, 200.0)
+	assert_eq(camera.camera_rotation_y, 120.0)

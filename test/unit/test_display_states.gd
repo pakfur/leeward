@@ -77,6 +77,18 @@ func test_ship_switches_after_its_last_step() -> void:
 	assert_eq(_ds.state_for("a").rigging_current_hp[0], 0, "now the copy before phase 5")
 
 
+func test_prompt_step_is_not_the_ships_last_step() -> void:
+	_ds.record_phase(4, 1, [_a])
+	_damage(_a)
+	_ds.record_phase(5, 1, [_a])
+	_ds.begin([4, 5] as Array[int])
+	var prompt := _step(4, "a")
+	prompt.kind = "prompt_maintenance"
+	var steps := _steps([_step(4, "a"), prompt])
+	_ds.step_shown(steps[0], steps, 0)
+	assert_eq(_ds.state_for("a").rigging_current_hp[0], 0, "her roll was her last step")
+
+
 func test_other_ship_waits_for_its_own_step() -> void:
 	_ds.record_phase(4, 1, [_a, _b])
 	_damage(_b)

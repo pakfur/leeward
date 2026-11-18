@@ -26,6 +26,9 @@ var _header_text := ""
 
 
 func _ready() -> void:
+	# Keys act through _unhandled_key_input only: a focused button would also take ui_accept.
+	_next.focus_mode = Control.FOCUS_NONE
+	_resolve_all.focus_mode = Control.FOCUS_NONE
 	_next.pressed.connect(func() -> void: next_pressed.emit())
 	_resolve_all.pressed.connect(func() -> void: resolve_all_pressed.emit())
 	_dice.settled.connect(_on_dice_settled)
@@ -113,7 +116,8 @@ func _fill_modifiers(modifiers: Array) -> void:
 		name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		var value_label := Label.new()
 		value_label.theme_type_variation = &"TabularLabel"
-		value_label.text = signed(int(m.get("value", 0)))
+		value_label.text = str(int(m.get("value", 0))) if m.get("base", false) \
+			else signed(int(m.get("value", 0)))
 		value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		row.add_child(name_label)
 		row.add_child(value_label)

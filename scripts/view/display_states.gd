@@ -49,7 +49,7 @@ func step_shown(step: ResolutionStep, steps: Array[ResolutionStep], index: int, 
 	var last := {}
 	for i in steps.size():
 		var s := steps[i]
-		if s.phase != phase:
+		if s.phase != phase or s.kind.begins_with("prompt_") or not s.prompt.is_empty():
 			continue
 		for id in _ships_of(s):
 			last[id] = i

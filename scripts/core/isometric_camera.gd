@@ -335,13 +335,13 @@ func save_view() -> Dictionary:
 		"rotation": camera_rotation_y, "angle": isometric_angle}
 
 
-## Animate back to a pose from save_view (same animation as frame_ship).
+## Animate back to the target and zoom of a pose from save_view. Rotation and tilt are never
+## touched: they stay as the player left them (only the player's controls rotate the camera).
 func restore_view(view: Dictionary) -> void:
 	if view.is_empty():
 		return
-	isometric_angle = view.get("angle", isometric_angle)
 	_animate_to(view.get("target", camera_target), view.get("distance", camera_distance),
-		view.get("rotation", camera_rotation_y))
+		camera_rotation_y)
 
 
 ## A pan / focus tween ended: keep updating while a frame_ship / restore_view tween still runs.
