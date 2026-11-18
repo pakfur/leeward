@@ -339,3 +339,60 @@ func test_target_in_blocking_hex_can_be_hit() -> void:
 	var near_only: Array[Vector2i] = [target[0]]
 	assert_true(geo.battery_bears(Vector2i.ZERO, 0, ShipState.STARBOARD, near_only, {}, blocking),
 		"a target hex that is itself blocking can be fired on")
+
+
+# --- chase arcs (house rule: chasers dead ahead of the bow hex, astern of the stern hex) ---
+
+func test_chase_arc_ahead_and_astern() -> void:
+	var o := Vector2i(0, 0)
+	for h in [Vector2i(1, 0), Vector2i(2, 0), Vector2i(2, -1), Vector2i(1, 1)]:
+		assert_eq(geo.chase_arc(o, 0, h), FireGeometry.ARC_AHEAD, "%s ahead (30° is the boundary)" % h)
+	for h in [Vector2i(1, -1), Vector2i(0, 1)]:
+		assert_eq(geo.chase_arc(o, 0, h), -1, "%s at 60° is neither" % h)
+	assert_eq(geo.chase_arc(o, 0, Vector2i(3, -2)), -1, "about 40.9° is outside the chase arc")
+	for h in [Vector2i(-1, 0), Vector2i(-2, 1), Vector2i(-1, -1)]:
+		assert_eq(geo.chase_arc(o, 0, h), FireGeometry.ARC_ASTERN, "%s astern (150° is the boundary)" % h)
+	assert_eq(geo.chase_arc(o, 0, Vector2i(-1, 1)), -1, "120° is neither")
+	assert_eq(geo.chase_arc(o, 0, o), -1, "own hex")
+
+
+func test_chase_arc_turns_with_facing() -> void:
+	for f in 6:
+		assert_eq(geo.chase_arc(Vector2i.ZERO, f, _n(f)), FireGeometry.ARC_AHEAD, "facing %d ahead" % f)
+		assert_eq(geo.chase_arc(Vector2i.ZERO, f, _n((f + 3) % 6)), FireGeometry.ARC_ASTERN,
+			"facing %d astern" % f)
+
+
+func test_in_battery_arc_for_chase_arcs() -> void:
+	assert_true(geo.in_battery_arc(Vector2i.ZERO, 0, 2, Vector2i(15, 0)))
+	assert_false(geo.in_battery_arc(Vector2i.ZERO, 0, 2, Vector2i(16, 0)), "beyond MAX_RANGE")
+	assert_false(geo.in_battery_arc(Vector2i.ZERO, 0, 2, Vector2i(0, 1)), "on the beam")
+	assert_eq(geo.bearing_side(Vector2i.ZERO, 0, Vector2i(2, 0)), -1, "bearing_side unchanged")
+
+
+func test_battery_bears_for_chaser_needs_line_of_sight() -> void:
+	var target: Array[Vector2i] = [Vector2i(3, 0), Vector2i(2, 0)]
+	assert_false(geo.battery_bears(Vector2i.ZERO, 0, 2, target, {Vector2i(1, 0): "x"}))
+	assert_true(geo.battery_bears(Vector2i.ZERO, 0, 2, target, {}))
+
+
+func test_chase_arc_hexes() -> void:
+	var ahead := geo.broadside_hexes(Vector2i.ZERO, 0, 2, 2)
+	assert_eq(ahead.size(), 4)
+	for h in [Vector2i(1, 0), Vector2i(2, -1), Vector2i(2, 0), Vector2i(1, 1)]:
+		assert_has(ahead, h)
+	assert_eq(geo.broadside_hexes(Vector2i.ZERO, 0, 3, 1), [Vector2i(-1, 0)] as Array[Vector2i])
+
+
+func test_chase_constants_agree() -> void:
+	assert_eq(GunneryTypes.CHASE_BOW, FireGeometry.ARC_AHEAD)
+	assert_eq(GunneryTypes.CHASE_STERN, FireGeometry.ARC_ASTERN)
+
+
+func test_chase_battery_hex_is_the_chasers_end() -> void:
+	var s := ShipState.new()
+	s.hex_position = Vector2i(4, 2)
+	s.facing = 1
+	assert_eq(FireGeometry.chase_battery_hex(s, FireGeometry.ARC_AHEAD), Vector2i(4, 2), "bow chaser at the bow")
+	assert_eq(FireGeometry.chase_battery_hex(s, FireGeometry.ARC_ASTERN), s.stern_hex(),
+		"stern chaser at the stern")
