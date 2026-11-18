@@ -266,7 +266,9 @@ static func _final_text(ev: PhaseEvents.PhaseEvent) -> String:
 			if a.has("total") and df.has("total"):
 				return "Attacker %s, defender %s" % [a["total"], df["total"]]
 			return ""
-		PhaseEvents.Type.DRIFT, PhaseEvents.Type.UNFOUL, PhaseEvents.Type.FIRE_FOUGHT, \
+		PhaseEvents.Type.DRIFT:  # DriftResolver: drifts when roll + modifier >= needed
+			return "Drifts on %s or more" % d["needed"] if d.has("needed") else ""
+		PhaseEvents.Type.UNFOUL, PhaseEvents.Type.FIRE_FOUGHT, \
 		PhaseEvents.Type.FIRE_SPREAD, PhaseEvents.Type.EXPLOSION_CHECK, \
 		PhaseEvents.Type.CRITICAL_FIXED:
 			return "Needs %s or less" % d["needed"] if d.has("needed") else ""

@@ -114,12 +114,13 @@ func test_build_from_index() -> void:
 
 
 func test_drift_step() -> void:
-	var data := {"roll": 6, "needed": 4, "modifier": 1, "drifted": false, "from": {"q": 1, "r": 2}}
+	# DriftResolver: the ship drifts when roll + modifier >= needed (8.A.2).
+	var data := {"roll": 2, "needed": 4, "modifier": 1, "drifted": false, "from": {"q": 1, "r": 2}}
 	var steps := ResolutionSteps.build([_ev(Type.DRIFT, "a", data, "", 5)], 0, SHIPS)
 	assert_eq(steps[0].kind, "drift")
-	assert_eq(steps[0].dice, [{"sides": 10, "values": [6]}])
+	assert_eq(steps[0].dice, [{"sides": 10, "values": [2]}])
 	assert_eq(steps[0].modifiers, [{"label": "modifier", "value": 1}])
-	assert_eq(steps[0].final_text, "Needs 4 or less")
+	assert_eq(steps[0].final_text, "Drifts on 4 or more")
 
 
 func test_grapple_step() -> void:
