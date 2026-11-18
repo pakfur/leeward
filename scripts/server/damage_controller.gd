@@ -408,6 +408,8 @@ func strike(ship_id: String, reason: String, phase: int) -> void:
 		# A struck ship only fights its fires (8.E.3, 9.C.3): every other task ends.
 		game_state.crew_task_controller.cancel_all_except(ship_id, "FF", "struck", phase)
 	Trace.trace_log("Damage", "Ship %s strikes: %s" % [ship_id, reason])
+	if game_state.get("tow_controller") != null:
+		game_state.tow_controller.on_ship_changed(ship_id, phase)  # her tow parts (towing spec §6)
 
 
 ## An explosion (hull #12, or a burning hulk, 8.E.8): the ship is destroyed and leaves play (spec Q2). Its fires go, its fouling is cleared on
@@ -440,6 +442,8 @@ func destroy(ship_id: String, reason: String, phase: int, extra: Dictionary = {}
 	sc.clear_pending_morale_checks(ship_id)
 	game_state.turn_log.add(PhaseEvents.Type.DESTROYED, phase, ship_id, {"reason": reason}.merged(extra), partner_id)
 	Trace.trace_log("Damage", "Ship %s destroyed: %s" % [ship_id, reason])
+	if game_state.get("tow_controller") != null:
+		game_state.tow_controller.on_ship_changed(ship_id, phase)  # a wreck holds no tow (towing spec §6)
 
 
 func _apply_rigging(ship: ShipState, ship_id: String, amount: int, phase: int,
@@ -465,6 +469,8 @@ func _apply_rigging(ship: ShipState, ship_id: String, amount: int, phase: int,
 			crits.clear_lines_jammed_on_dismasting(ship_id, phase)
 		if not struck_before:
 			_note_morale(ship_id, "dismasted", 1, phase)
+		if game_state.get("tow_controller") != null:
+			game_state.tow_controller.on_ship_changed(ship_id, phase)  # a dismasted tower casts off
 	return applied
 
 

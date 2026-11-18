@@ -393,6 +393,8 @@ enum ResolutionEventType {
 	LEFT_MAP,  # the step left the map by a `none` or crossable escape edge; detail "<edge> <outcome>"
 	AGROUND,  # the step entered land or shallows too shallow for the draft (13.G.2): the ship stops where it was
 	LEAD_SOUNDING,  # casting the lead (13.G.4)
+	TOW_FOLLOW,  # 12.A.5 the towed ship follows her tower's step: from_hex/from_facing -> to_hex/facing
+	TOW_HELD,  # the tower's step is undone: her tow could not follow; detail = reason [" by <id>"]
 }
 
 ## Choices for a potential collision (6.D): bear off to port or starboard, or hold course and collide.
@@ -551,6 +553,9 @@ class ResolutionLog extends RefCounted:
 	## Playback starts here: segments before it were shown from an earlier log of the same turn,
 	## which this one repeats exactly.
 	var resume_impulse: int = 0
+	## towed_id -> tower_id for every tow in the run (12.A.5): the towed ship has no schedule of her
+	## own and follows on her tower's segments, so the view glides her at the tower's pace.
+	var towed_by: Dictionary = {}
 
 	func is_complete() -> bool:
 		return pending_bear_off == null
@@ -577,6 +582,7 @@ class ResolutionLog extends RefCounted:
 			"segment_times": times,
 			"plot_steps": plot_steps,
 			"longest_plot": longest_plot,
+			"towed_by": towed_by,
 			"ship_results": results_dict,
 		}
 

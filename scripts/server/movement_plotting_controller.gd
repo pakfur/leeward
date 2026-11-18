@@ -32,12 +32,16 @@ func _init(p_game_state: Node = null) -> void:
 	movement_validator = MovementValidator.new(game_state)
 
 
-## The error code and text for a ship that cannot plot ([] when it can); same test as
-## DefaultCourse.can_plot.
+## The error code and text for a ship that cannot plot ([] when it can): TOW_HELD (a tower whose
+## tow is fouled or grappled, DefaultCourse.tow_held), then the DefaultCourse.can_plot refusals:
+## SHIP_OFF_MAP, SHIP_CAPTURED, SHIP_FOULED, SHIP_GRAPPLED, SHIP_DESTROYED, SHIP_STRUCK,
+## SHIP_AGROUND, SHIP_ANCHORED, SHIP_TOWED, SHIP_DISMASTED.
 func _plot_refusal(ship_state: ShipState) -> Array:
+	var ship_id := ship_state.ship_id
+	if DefaultCourse.tow_held(game_state, ship_state):  # her tow cannot move (8.C.7)
+		return ["TOW_HELD", "Ship %s cannot move: her tow %s is fouled or grappled (8.C.7)" % [ship_id, ship_state.towing_id]]
 	if DefaultCourse.can_plot(ship_state):
 		return []
-	var ship_id := ship_state.ship_id
 	if not ship_state.is_on_map() or ship_state.is_escaped():
 		return ["SHIP_OFF_MAP", "Ship %s is not on the map" % ship_id]
 	if ship_state.is_captured():  # 10.H.2: a prize cannot sail
@@ -54,6 +58,8 @@ func _plot_refusal(ship_state: ShipState) -> Array:
 		return ["SHIP_AGROUND", "Ship %s is aground and cannot move (13.G.3)" % ship_id]
 	if ship_state.is_anchored():  # 13.C.3
 		return ["SHIP_ANCHORED", "Ship %s is anchored: cut the cable (AX) to get under way (13.C.3)" % ship_id]
+	if ship_state.is_towed():  # 12.A.6
+		return ["SHIP_TOWED", "Ship %s is in tow and follows her tower (12.A.6)" % ship_id]
 	return ["SHIP_DISMASTED", "Ship %s is dismasted and cannot move" % ship_id]
 
 
@@ -97,7 +103,7 @@ func handle_start_plotting(player_id: int, ship_id: String, request_id: String) 
 		Trace.trace_log(Trace.MOVEMENT_PLOTTING_CATEGORY, "SHIP_NOT_FOUND - Player %d does not own ship %s" % [player_id, ship_id])
 		return MovementTypes.PlottingErrorResponse.create(request_id, "UNAUTHORIZED", "Player %d does not own ship %s" % [player_id, ship_id])
 
-	# Fouled, grappled, struck and dismasted ships cannot plot movement
+	# Fouled, grappled, struck, towed (or held by a fouled tow) and dismasted ships cannot plot movement
 	var cannot := _plot_refusal(ship_state)
 	if not cannot.is_empty():
 		return MovementTypes.PlottingErrorResponse.create(request_id, cannot[0], cannot[1])

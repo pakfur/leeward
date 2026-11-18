@@ -11,8 +11,8 @@ extends RefCounted
 ## ship it is not grappled to, when both used <= 2 MPs this g-t (turns count, 8.C.1 example 2). A
 ## burning or struck ship, or one at CQ F or G, cannot grapple (it can be grappled). d10 + DRMs <= 2
 ## succeeds. DRMs: ± SK, fouled to the target -1 (the chart's DRM, which the rule text denies; the
-## chart wins), towing -1 (no towing in Leeward), marines not available +1, wind speed 4 +1, the
-## target did not move (0 MPs this g-t; drift is not movement) -1.
+## chart wins), towing -1 (attempting to tow, TowController), marines not available +1, wind
+## speed 4 +1, the target did not move (0 MPs this g-t; drift is not movement) -1.
 ##
 ## Ungrappling (8.C.4-6, Unfouling table): either ship of a grappled pair may roll d10 on the
 ## Unfouling table, success <= 2 / 3 / 4 by that ship's attempt against that partner. DRMs (All
@@ -64,20 +64,57 @@ func grapple_error(ship_id: String, target_id: String) -> String:
 		if ship.is_captured():
 			return "%s has no crew able to handle lines (10.H.2)" % ship.ship_name
 		return "%s has struck and cannot grapple (8.C.3)" % ship.ship_name
+	var crew_error := roller_error(ship)
+	if crew_error != "":
+		return crew_error
+	var target_error := destroyed_target_error(target)
+	if target_error != "":
+		return target_error
+	if ship.is_grappled_to(target_id):
+		return "already grappled to %s" % target.ship_name
+	if ship.tow_partner() == target_id:
+		return "%s is at the other end of %s's tow (12.A)" % [target.ship_name, ship.ship_name]
+	if _tow_rolled_this_turn(ship_id, target_id):
+		return "%s tried to take %s in tow this turn (12.A.4b)" % [ship.ship_name, target.ship_name]
+	if not adjacent(ship, target):
+		return "%s is not alongside" % target.ship_name
+	return mps_error(ship, target)
+
+
+## Whether `ship_id` rolled a tow attempt (TOW_BEGUN with a roll) against `target_id` this g-t:
+## that throw was her grapple at that ship (12.A.4b, 8.C.1: once per g-t).
+func _tow_rolled_this_turn(ship_id: String, target_id: String) -> bool:
+	var turn_log = game_state.get("turn_log")
+	if turn_log == null:
+		return false
+	for ev in turn_log.of_type(PhaseEvents.Type.TOW_BEGUN):
+		if ev.ship_id == ship_id and ev.target_id == target_id and ev.data.has("roll"):
+			return true
+	return false
+
+
+## Why `ship` may not throw a grapple at all (8.C.3: burning, or a crew at CQ F or G), or "".
+## Shared with TowRules.pair_error (12.A.4b: the tow grapple obeys every 8.C limit).
+static func roller_error(ship: ShipState) -> String:
 	if ship.is_burning():
 		return "%s is on fire and cannot grapple (8.C.3)" % ship.ship_name
 	if NO_GRAPPLE_QUALITIES.has(ship.crew_quality):
 		return "a crew at CQ %s cannot grapple (8.C.3)" % ship.crew_quality
+	return ""
+
+
+## "%s has blown up" when `target` is destroyed, else "". Shared with TowRules.take_target_error.
+static func destroyed_target_error(target: ShipState) -> String:
 	if target.is_destroyed():
 		return "%s has blown up" % target.ship_name
-	if ship.is_grappled_to(target_id):
-		return "already grappled to %s" % target.ship_name
-	if not adjacent(ship, target):
-		return "%s is not alongside" % target.ship_name
-	if ship.mp_used_this_turn > MAX_MPS:
-		return "%s used %d MPs this turn (at most %d, 8.C.1)" % [ship.ship_name, ship.mp_used_this_turn, MAX_MPS]
-	if target.mp_used_this_turn > MAX_MPS:
-		return "%s used %d MPs this turn (at most %d, 8.C.1)" % [target.ship_name, target.mp_used_this_turn, MAX_MPS]
+	return ""
+
+
+## Why the pair may not grapple for the MPs used this g-t (8.C.1: at most MAX_MPS each), or "".
+static func mps_error(ship: ShipState, target: ShipState) -> String:
+	for s: ShipState in [ship, target]:
+		if s.mp_used_this_turn > MAX_MPS:
+			return "%s used %d MPs this turn (at most %d, 8.C.1)" % [s.ship_name, s.mp_used_this_turn, MAX_MPS]
 	return ""
 
 
@@ -92,7 +129,8 @@ func grapple_options(ship_id: String) -> Array[String]:
 
 ## The roll `ship_id` needs to grapple `target_id`: {"needed" (highest d10 that succeeds, may be
 ## below 0), "modifier" (DRM total), "modifiers" ([{name, value}], non-zero only), "percent"}.
-func grapple_chance(ship_id: String, target_id: String) -> Dictionary:
+## With `towing`, the roll is a tow attempt (12.A.4b, TowController) and takes the towing -1.
+func grapple_chance(ship_id: String, target_id: String, towing: bool = false) -> Dictionary:
 	var ship: ShipState = game_state.get_ship(ship_id)
 	var target: ShipState = game_state.get_ship(target_id)
 	var tables: CombatTables = DataManager.combat_tables
@@ -100,6 +138,8 @@ func grapple_chance(ship_id: String, target_id: String) -> Dictionary:
 	_add(mods, "skill", tables.skill_modifier(ship.crew_quality))
 	if ship.fouled_with == target_id:
 		_add(mods, "fouled", tables.grapple_drm("fouled"))
+	if towing:
+		_add(mods, "towing", tables.grapple_drm("towing"))
 	if marines_unavailable(ship):
 		_add(mods, "marines_unavailable", tables.grapple_drm("marines_unavailable"))
 	if _wind_speed() == 4:

@@ -43,3 +43,18 @@ Parked minors (judged harmless): stronger depth-order test, escape band boundary
 11. **Process:** SCV audit clean (two optional guards added).
 
 Parked minors: none beyond those recorded in feature_diff §4.
+
+## Sub-project 5 — towing (merged 2026-11-18)
+
+1. **Starting a tow is a standing crew order** (`tow: "take:<id>"`), rolled at the start of the Grappling sub-phase with no prompt (no new input control). The order is re-checked only when it changes; one whose target can no longer be towed (unknown, own side's enemy, struck, destroyed, escaped, off the map) lapses with a log line. *If wrong:* a player must re-issue an order after it lapses.
+2. **The towed ship takes her tower's speed** and follows in her wake; a turning tow swings differently from Diagram 24 (user decision).
+3. **A prize towed off the map stays CAPTURED** (her value is not handed back to her original side).
+4. **Who may tow:** friendly ships and friendly prizes, not own-side struck ships; a dismasted ship cannot tow, and a tower that becomes dismasted casts off her tow automatically; anchored ships neither tow nor are towed, and a ship in a tow cannot anchor; a tow parts if either ship grounds. *If wrong:* a dismasted tower can no longer hold a tow.
+5. **Blocked tows:** a follow blocked by a third ship, land or the edge undoes the tower's step and trims her plot (no deceleration padding); a collision that stops the tower makes the tow ram her (one collision per ship per segment — a tow already held does not also ram); the towed ship's old stern stays held for the follow segment (spec §5).
+6. **A tower held by a fouled or grappled tow cannot plot**; no grapple is offered between a tower and her own tow; a tower does not escape while her tow is fouled, grappled or locked in a boarding action.
+7. **Hidden information:** tow preparation, PT tasks and lapsed tow orders are hidden from every non-commander; the tow itself is public.
+8. **AI towing:** with no enemy within 8 hexes the nearest AI ship (nearest-first claims, one cripple each) prepares and tows a friendly dismasted ship or prize toward its escape edge or away from the enemy; it approaches by a search that never heads into the wind, up to 2 MPs a g-t (the 8.C limit), gives up a target after 6 g-t's without getting closer (memory reset each game), cuts when an enemy closes within 3 or it cannot make way (with wind). *If wrong:* the AI tows less often than a human would.
+9. **The hawser follows the ships through movement playback.**
+10. **Process:** SCV audit clean.
+
+Parked minors: a tow rollback that undid a bear-off can name the wrong ship in its STOPPED_SHORT line when land held the tow; `TowRules` reads ship names from the GameState autoload for messages; the per-frame hawser mesh is rebuilt rather than scaled.

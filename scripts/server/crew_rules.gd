@@ -40,13 +40,16 @@ const ONE_TURN_CODES: Array[String] = ["T", "BD"]
 const DRAFT_TIE_ORDER: Array[String] = ["RS", "RR", "RH", "SAIL"]
 ## Short words for a section's task (the Crew line on a ship card, CrewOverlayText.section_job).
 const SUMMARY_WORDS := {"guns": "guns", "marine_fire": "fire", "sails": "sails", "braces": "braces",
-	"reorganizing": "RO", "boarders": "boarders", "anchor": "anchor"}
+	"reorganizing": "RO", "boarders": "boarders", "anchor": "anchor",
+	"tow": "tow"}
 ## Station labels and short codes (small deck cards), spec §4.3.
 const STATION_LABELS := {"guns": "Serve the guns", "marine_fire": "Marine fire", "sails": "Sails aloft",
 	"braces": "Braces (tacking)", "reorganizing": "Reorganizing", "boarders": "Boarders", "rr": "Rigging repair",
-	"rh": "Hull repair", "rs": "Shroud repair", "anchor": "Anchor & cable"}
+	"rh": "Hull repair", "rs": "Shroud repair", "anchor": "Anchor & cable",
+	"tow": "Tow"}
 const STATION_SHORT := {"guns": "Guns", "marine_fire": "Marines", "sails": "Sails", "braces": "T",
-	"reorganizing": "RO", "boarders": "FB", "rr": "RR", "rh": "RH", "rs": "RS", "anchor": "Anc"}
+	"reorganizing": "RO", "boarders": "FB", "rr": "RR", "rh": "RH", "rs": "RS", "anchor": "Anc",
+	"tow": "Tow"}
 ## Codes whose sections are locked once begun (5.F.9: a sail change must be completed).
 const LOCKED_CODES: Array[String] = ["SAIL"]
 ## Critical effects whose 8.D.5 fix roll the marines would spoil if busy (+1, "marines not avail.").
@@ -65,6 +68,8 @@ const HOLD_GRAPPLED := "grappled"
 const HOLD_ENEMY := "enemy alongside"
 ## The anchor station (anchoring spec §3) is read-only: its tasks come from the anchor crew order.
 const ANCHOR_REFUSAL := "Anchoring is ordered with the crew orders (anchor), not by placing sections here."
+## The tow station (towing spec §13) is read-only too: its tasks come from the tow crew order.
+const TOW_REFUSAL := "Towing is ordered with the crew orders (tow), not by placing sections here."
 
 
 ## The MPs the ship will sail this g-t, as far as planning knows: the stored course, or, when none
@@ -87,7 +92,9 @@ static func _plotted_mps(game_state: Node, ship: ShipState, steps: Array) -> int
 ## Facts about the ship's situation the rules read (spec §3.2). Pure read of game_state.
 ## ma0_turn_plotted: the stored movement plot begins with a turn at MA 0 (5.D.1), so the Braces (T)
 ## station is open (MovementResolver.plots_ma0_turn, the test the Tacking roll uses).
-static func context(game_state: Node, ship: ShipState) -> Dictionary:
+## `orders`: the crew orders of a plan about to be normalized, when they are not yet stored (its
+## "tow" order names the tow target checked in tow_target_errors; else the ship's stored order).
+static func context(game_state: Node, ship: ShipState, orders: Dictionary = {}) -> Dictionary:
 	var nearest := -1
 	var adjacent: Array = []  # [ship_id, ship_name] of enemies in play alongside (7.G.1)
 	if game_state != null and game_state.get("fire_geometry") != null:
@@ -105,6 +112,15 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 		adjacent_names.append(str(pair[1]))
 	var turn = game_state.get("current_turn") if game_state != null else null
 	var boarding := boarding_context(game_state, ship)
+	# Towing (CrewAuto A2d): why the target of a "take:<id>" tow order may not be taken in tow,
+	# {id: reason or ""}; only that ship is checked, none without such an order (an id not listed
+	# reads as "Unknown ship").
+	var tow_target_errors := {}
+	var tow_parsed := TowRules.parse_order(str(orders.get("tow", ship.tow_order())))
+	if game_state != null and str(tow_parsed["kind"]) == "take":
+		var target: ShipState = game_state.get_ship(str(tow_parsed["target"]))
+		if target != null:
+			tow_target_errors[target.ship_id] = TowRules.take_target_error(ship, target)
 	var env = game_state.get("environment") if game_state != null else null
 	var scenario = game_state.get("active_scenario") if game_state != null else null
 	var ma0_turn := false
@@ -138,6 +154,7 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 		"board_refusals": boarding["board_refusals"],
 		"counter_board": boarding["counter_board"],
 		"ship_names": boarding["ship_names"],
+		"tow_target_errors": tow_target_errors,
 	}
 
 
@@ -370,6 +387,8 @@ static func refusal(ship: ShipState, plan: Dictionary, ctx: Dictionary, section:
 			return ""
 		AnchorRules.STATION:
 			return ANCHOR_REFUSAL
+		TowRules.STATION:
+			return TOW_REFUSAL
 		STATION_REORGANIZING:
 			return "Sections reorganize only after Crew Disorganized (hull critical #4); it cannot be plotted."
 		STATION_RR, STATION_RH, STATION_RS:
@@ -494,6 +513,7 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 	result["dropped"].append_array(boarding["dropped"])
 	result["notes"] = boarding["notes"]
 	_normalize_anchoring(ship, assignments, ctx, locked, result)
+	_normalize_towing(ship, assignments, ctx, locked, result)
 	var sail_target := str(orders.get("sail_target", ""))
 	var on_sails := 0
 	var at_braces := 0
@@ -539,6 +559,8 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 			pass  # made legal by BoardingRules.normalize_manual above
 		elif AnchorRules.is_code(code):
 			pass  # made legal by _normalize_anchoring above
+		elif TowRules.is_code(code):
+			pass  # made legal by _normalize_towing above
 		elif RepairController.is_repair(code):
 			# 8.F.3, 8.F.4: only when there is something to repair, one section per type.
 			why = RepairController.refusal(ship, code)
@@ -606,6 +628,31 @@ static func _normalize_anchoring(ship: ShipState, assignments: Dictionary, ctx: 
 				% ShipState.SECTION_NAMES[section])
 
 
+## The manual plan's towing tasks made legal (towing spec §3): sections in ascending order, each PT
+## or TX checked by TowRules.refusal against the towing codes kept before it; a refused one is
+## dropped with a warning. Edits `assignments` and `result` in place.
+static func _normalize_towing(ship: ShipState, assignments: Dictionary, _ctx: Dictionary,
+		locked: Dictionary, result: Dictionary) -> void:
+	var accepted: Array = []
+	var sections: Array = assignments.keys()
+	sections.sort()
+	for section in sections:
+		if locked.has(section):
+			continue
+		var entry: Dictionary = assignments[section]
+		var code := str(entry.get("code", ""))
+		if not TowRules.is_code(code):
+			continue
+		var why := TowRules.refusal(ship, code, accepted)
+		if why != "":
+			assignments.erase(section)
+			result["dropped"].append(section)
+			result["warnings"].append("%s: %s" % [ShipState.SECTION_NAMES[section], why])
+			continue
+		accepted.append(code)
+		entry["params"] = {}
+
+
 ## FF params: {"fire": seq}, or for fire watch (seq < 0) {"fire": -1, "section": s} so that each
 ## section on watch is its own task (one section per fire once a fire breaks out, 8.E.2).
 static func ff_params(fire: int, section: int) -> Dictionary:
@@ -653,6 +700,8 @@ static func station_of(section: int, entry: Dictionary) -> String:
 		return STATION_BOARDERS
 	if AnchorRules.is_code(code):
 		return AnchorRules.STATION
+	if TowRules.is_code(code):
+		return TowRules.STATION
 	return code.to_lower()
 
 
@@ -678,7 +727,8 @@ static func sail_choices(ship: ShipState) -> Array[Dictionary]:
 ##  warning, disabled_reason, occupants: [sections], locked: [sections], fire: {} or {seq, number}}.
 ## Sails also carries "choices" (sail_choices) and "target". Fire stations come from ctx.fires; the
 ## repair stations (rs, rr, rh) are listed while there is something to repair (8.F.3); the read-only
-## anchor station while the ship is anchored, has an anchor or springs ready, or a section is on it.
+## anchor station while the ship is anchored, has an anchor or springs ready, or a section is on it;
+## the read-only tow station while the ship tows, is in tow, has a tow prepared, or a section is on it.
 static func stations(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Array[Dictionary]:
 	var assignments: Dictionary = plan.get("assignments", {})
 	var orders: Dictionary = plan.get("orders", {})
@@ -808,12 +858,31 @@ static func stations(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Arra
 		var anchor_st: Dictionary = make.call(AnchorRules.STATION, "", 0, 0, "none", AnchorRules.status_text(ship))
 		anchor_st["disabled_reason"] = ANCHOR_REFUSAL
 		out.append(anchor_st)
+	# The tow (12.A): read-only; its tasks (PT, TX) follow the tow crew order.
+	var at_tow: Array = by_station.get(TowRules.STATION, [])
+	if ship.is_towing() or ship.is_towed() or ship.tow_prepared or not at_tow.is_empty():
+		var tow_st: Dictionary = make.call(TowRules.STATION, "", 0, 0, "none", tow_status_text(ship, ctx))
+		tow_st["disabled_reason"] = TOW_REFUSAL
+		out.append(tow_st)
 	if by_station.has(STATION_REORGANIZING):
 		var ro: Dictionary = make.call(STATION_REORGANIZING, CODE_RO, 0, 0, "none",
 			"Crew disorganized (hull critical #4): reorganizing, cannot be moved.")
 		ro["locked"] = (by_station[STATION_REORGANIZING] as Array).duplicate()
 		out.append(ro)
 	return out
+
+
+## The Tow station's note: "Towing <name>", "In tow of <name>", "Ready to pass a tow", or "". The
+## partner's name comes from `ctx.ship_names` (every ship's name), else her id.
+static func tow_status_text(ship: ShipState, ctx: Dictionary = {}) -> String:
+	var names: Dictionary = ctx.get("ship_names", {})
+	if ship.is_towing():
+		return "Towing %s" % str(names.get(ship.towing_id, ship.towing_id))
+	if ship.is_towed():
+		return "In tow of %s" % str(names.get(ship.towed_by, ship.towed_by))
+	if ship.tow_prepared:
+		return "Ready to pass a tow"
+	return ""
 
 
 ## The Boarders station (boarding spec §4.1-4.2). Beyond the common keys: "tags" {section: code}

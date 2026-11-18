@@ -180,7 +180,8 @@ func _build_plotting_state(
 	ps.speed_type = ship_state.ship.speed_type if ship_state.ship else "F/F"
 	ps.sail_state = ship_state.movement_sail_state()
 	ps.rigging_quality = game_state.ship_controller.get_rigging_quality(ship_state.ship_id)
-	ps.mp_loss = ship_state.critical_mp_loss(game_state.ship_controller.current_turn())
+	ps.mp_loss = ship_state.critical_mp_loss(game_state.ship_controller.current_turn()) \
+			+ game_state.ship_controller.tow_mp_loss(ship_state)  # 12.A.7
 	ps.steps_plotted = path_so_far.size()
 
 	var limits: Dictionary = game_state.ship_controller.speed_change_limits(ship_state)

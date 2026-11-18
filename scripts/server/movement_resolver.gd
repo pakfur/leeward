@@ -20,6 +20,15 @@ extends RefCounted
 ## A ship casting the lead (13.G.4) sounds land and shallows before its bow enters them (LEAD_SOUNDING):
 ## too shallow, it bears off to the deeper side (a plot amendment of kind "lead", no Bearing Off
 ## roll), holds back when no turn will do, or, Poor Maneuvering and failing its roll, runs aground.
+## Towing (12.A.5-11, towing spec §5): a towed ship plots nothing and follows each step her tower makes
+## (TOW_FOLLOW, see _follow_tows). A follow that cannot be made (another ship, the edge or land in the
+## way, or the tow held after a collision or fouling) undoes the tower's step: a plot amendment of kind
+## "tow", with no deceleration padding, and the resolution is run again. The tower's old stern is held
+## for her tow (12.A.10). A tower stopped by a collision is run into by her tow (12.A.11).
+## Dice order (all from the resolver's rng, so re-runs repeat them): per segment, after the groups and
+## the bear-off decisions, towers in id order: the towed bow's depth d6 (shallows), then her rigging
+## dice if she runs aground; or, for a ram, the tow's rigging dice, then the fouling d10. No die is
+## drawn for towing when no ship tows.
 
 ## The most MPs a ship may plot and still cast the lead (13.G.4a).
 const LEAD_MAX_MPS := 2
@@ -101,6 +110,13 @@ class ResolutionPass:
 	## The first potential collision of a prompted ship with no decision yet; the pass stops at the
 	## end of its segment.
 	var decision_needed: MovementTypes.BearOffSituation = null
+	## tower_id -> towed_id for every tow whose two ships are in the run (12.A.5, see _follow_tows).
+	## Built from the ship states for every pass, so a replay starts clean.
+	var tows: Dictionary = {}
+	## towed_id -> reason, once the towed ship can no longer follow this pass.
+	var tow_hold: Dictionary = {}
+	## Tower steps undone this pass because the tow could not follow (rollbacks of kind "tow").
+	var tow_amendments: Array = []
 
 
 ## One segment of a pass: the steps the ships make on it and the hexes held while they make them.
@@ -204,6 +220,7 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 	var amended: Dictionary = {}  # ship_id -> steps actually resolved
 	var rollbacks: Dictionary = {}  # ship_id -> the rollback or lost stern contest that amended its plot
 	var undone_contests: Array = []  # contests whose winner's turn was rolled back (ResolutionPass.contests)
+	var undone_bear_offs: Dictionary = {}  # ship_id -> a bear-off rollback a later tow rollback replaced
 	var cycle_breaks: Dictionary = {}  # cycle key -> segment (ResolutionPass.cycle_breaks)
 	var settled_contests: Dictionary = {}  # ResolutionPass.settled_contests
 	var settled_bear_offs: Dictionary = {}  # ResolutionPass.settled_bear_offs
@@ -242,13 +259,21 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 			if rb.get("kind", "") == "lead":
 				lead_records.append(rb)  # not the 6.D.5 bear-off, and not the ship's rollback
 			else:
+				# A tow rollback that undoes a bear-off's turn replaces it as the ship's rollback, but the
+				# bear-off was rolled: its record is kept for the final log (as an undone contest's rolls).
+				var earlier: Dictionary = rollbacks.get(sid, {})
+				if rb.get("kind", "") == "tow" and earlier.get("kind", "") == "bear_off":
+					undone_bear_offs[sid] = earlier
+				elif rb.get("kind", "") == "bear_off":
+					undone_bear_offs.erase(sid)
 				rollbacks[sid] = rb
 			if rb.get("kind", "") == "contest":
 				settled_contests[_segment_hex_key(rb.segment, rb.hex)] = {"winner": rb.other_id, "rolls": rb.rolls}
 			if rb.get("kind", "") == "bear_off":
 				settled_bear_offs[sid] = rb
 			for contest in outcome.contests:
-				if rb.get("kind", "") == "" and contest.winner == sid and contest.segment == rb.segment:
+				# A tow rollback undoes the winner's turn just as an overlap rollback does.
+				if rb.get("kind", "") in ["", "tow"] and contest.winner == sid and contest.segment == rb.segment:
 					undone_contests.append(contest)
 			Trace.trace_log("MovementResolver", "plot amended", {"ship": sid, "segment": rb.segment,
 				"other": rb.get("overlapping", [rb.other_id]), "reason": rb.reason, "steps": amended[sid].size()})
@@ -268,10 +293,15 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 		if rollbacks[sid].get("kind", "") == "bear_off":
 			_record_bear_off(results, rollbacks[sid])
 			continue
+		if rollbacks[sid].get("kind", "") == "tow":
+			_record_tow_hold(results, rollbacks[sid], amended[sid].size())
+			continue
 		_record_rollback(results[sid], rollbacks[sid], amended[sid].size())
 		log.max_impulses = maxi(log.max_impulses, rollbacks[sid].check_segment + 1)
 	for contest in undone_contests:
 		_record_undone_contest(results, contest)
+	for sid in undone_bear_offs:
+		_record_bear_off(results, undone_bear_offs[sid])
 	for record in lead_records:
 		_record_lead(results, record)
 	for sid in steering:
@@ -279,6 +309,9 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 	for sid in results:
 		log.add_result(results[sid])
 	log.plot_steps = plot_sizes
+	var tows: Dictionary = _tows_in_run(ship_map)
+	for tower_id in tows:
+		log.towed_by[tows[tower_id]] = tower_id
 	for n in plot_sizes.values():
 		log.longest_plot = maxi(log.longest_plot, n)
 	_final_segment_count = outcome.max_impulses
@@ -334,6 +367,7 @@ func _resolve_pass(
 	p.prompt_ids = prompt_ids
 	p.settled_bear_offs = settled_bear_offs
 	p.settled_leads = settled_leads
+	p.tows = _tows_in_run(ship_map)
 	for sid in amended:
 		if _find_tacking_impulse(ship_map[sid], plotted[sid]) == 0 \
 				and _find_tacking_impulse(ship_map[sid], amended[sid]) != 0:
@@ -375,7 +409,7 @@ func _resolve_pass(
 			return {"results": p.results, "max_impulses": max_impulses, "rollbacks": [], "contests": p.contests,
 				"failed_cycles": p.failed_cycles}
 		if failed.is_empty():
-			failed = p.contest_amendments + p.bear_off_amendments
+			failed = p.contest_amendments + p.bear_off_amendments + p.tow_amendments
 		if not failed.is_empty():
 			return {"results": p.results, "max_impulses": max_impulses, "rollbacks": failed, "contests": p.contests,
 				"failed_cycles": []}
@@ -521,10 +555,208 @@ func _resolve_impulse(p: ResolutionPass, impulse: int, ships: Array[ShipState]) 
 		for sid in group.ids:
 			_settle(p, seg, sid)
 	_resolve_pending_bear_offs(p, seg)
+	_follow_tows(p, seg)
 	if not seg.speculations.is_empty():
 		p.failed_cycles = _failed_speculations(p, seg)
 	_note_left_map(p, seg)
 	return seg
+
+
+## ============================================================================
+## Towing (12.A.5; towing spec §5)
+## ============================================================================
+
+## tower_id -> towed_id for every tow whose two ships are both in `ship_map`.
+static func _tows_in_run(ship_map: Dictionary) -> Dictionary:
+	var tows: Dictionary = {}
+	for sid in ship_map:
+		var towed_id: String = (ship_map[sid] as ShipState).towing_id
+		if towed_id != "" and ship_map.has(towed_id):
+			tows[sid] = towed_id
+	return tows
+
+
+## The towed ships follow in their towers' wake, once the segment's moves and bear-off decisions are
+## made: for each tower (ship-id order) whose step was made this segment, the towed bow takes the hex
+## the tower's stern just left, pointing at the tower's new stern (TowRules.follow_pose). The follow is
+## on the tower's segment and is a pure function of the tower's step.
+## First, a towed ship hit or fouled this pass is held (`p.tow_hold`): her tower's next step is undone.
+## Then, per tower with a step this segment:
+## - made, her tow held: a tow rollback (reason "tow_<hold>");
+## - made, the follow pose blocked by another ship, off the map or on land: a tow rollback ("blocked");
+## - made, the towed bow entering shallows rolled too shallow for her draft: she runs aground where she
+##   stands (13.G.2) and the tow is struck from the pass, so the tower sails on free (the tow parts after
+##   movement, MapController.ground);
+## - made and clear: the follow (TOW_FOLLOW);
+## - not made because a collision stopped the tower: the tow rams her (12.A.11, _apply_tow_collision),
+##   unless the tow is already held (one collision per ship per segment);
+## - not made for any other reason: nothing; the towed ship stays.
+## Dice (the resolver's rng), towers in id order: the towed bow's depth d6, then her rigging dice if
+## she runs aground; or the ram's rigging dice, then its fouling d10. None when no ship tows.
+func _follow_tows(p: ResolutionPass, seg: Segment) -> void:
+	for tower_id in p.tows:
+		var towed_id: String = p.tows[tower_id]
+		var towed_result: MovementTypes.ShipResolutionResult = p.results[towed_id]
+		if p.tow_hold.has(towed_id):
+			continue
+		if towed_result.collided_with != "":
+			p.tow_hold[towed_id] = "collision"
+		elif towed_result.fouled_with != "":
+			p.tow_hold[towed_id] = "fouled"
+	var towers: Array = p.tows.keys()
+	towers.sort()
+	for tower_id in towers:
+		if not seg.intended_moves.has(tower_id):
+			continue
+		var towed_id: String = p.tows[tower_id]
+		if not seg.moves.has(tower_id):
+			var tower_result: MovementTypes.ShipResolutionResult = p.results[tower_id]
+			# One collision per ship per segment: a tow already held (hit by a third ship, or stopped
+			# earlier) does not also run into her tower.
+			if tower_result.stopped_at_impulse == seg.impulse and tower_result.collided_with != "" \
+					and not p.tow_hold.has(towed_id):
+				_apply_tow_collision(p, seg, towed_id, tower_id)
+			continue
+		if p.tow_hold.has(towed_id):
+			_tow_rollback(p, seg, tower_id, towed_id, "tow_" + str(p.tow_hold[towed_id]))
+			continue
+		var pose: Dictionary = TowRules.follow_pose(seg.start_bows[tower_id], seg.start_facings[tower_id],
+			p.current_hexes[tower_id], p.current_facings[tower_id])
+		if pose.is_empty():
+			continue
+		var blocker: String = _follow_blocker(p, seg, tower_id, towed_id, pose)
+		if blocker != "":
+			_tow_rollback(p, seg, tower_id, towed_id, "blocked", "" if blocker.begins_with("#") else blocker,
+				pose["stern"])
+			continue
+		var area: TerrainMap.ShallowArea = _terrain.area_at(pose["bow"])
+		if area != null:
+			var depth := _roll_depth(area)
+			if depth <= _draft(p.ship_map[towed_id]):
+				_tow_aground(p, seg, tower_id, towed_id, pose["bow"], depth)
+				continue
+		_apply_follow(p, seg, towed_id, pose)
+
+
+## What stops the follow `pose` of `towed_id` behind `tower_id`: the first ship (id order) other than
+## the pair whose footprint at the end of the segment holds the new bow or stern, except a ship whose
+## stern swung into that hex this segment (a 6.B overlap, which its own check settles); else "#edge"
+## or "#land" for a new stern off the map or on land (the new bow is the tower's old stern, always
+## water); else "".
+func _follow_blocker(p: ResolutionPass, seg: Segment, tower_id: String, towed_id: String, pose: Dictionary) -> String:
+	var ids: Array = p.current_hexes.keys()
+	ids.sort()
+	for other_id in ids:
+		if other_id == tower_id or other_id == towed_id:
+			continue
+		for h in _footprint(other_id, p.current_hexes, p.current_facings):
+			if h != pose["bow"] and h != pose["stern"]:
+				continue
+			if not (seg.swings.has(other_id) and seg.swings[other_id].hex == h):
+				return other_id
+	if not _terrain.in_bounds(pose["stern"]):
+		return "#edge"
+	if _terrain.is_land(pose["stern"]):
+		return "#land"
+	return ""
+
+
+## The tower's step this segment is undone because her tow cannot follow (a plot amendment of kind
+## "tow", see run()): her plot keeps the steps before it, with no deceleration padding (towing spec §5).
+func _tow_rollback(p: ResolutionPass, seg: Segment, tower_id: String, towed_id: String, reason: String,
+		other_id: String = "", hex: Variant = null) -> void:
+	var at: Vector2i = hex if hex != null else HexGrid.stern_of(seg.start_bows[tower_id], seg.start_facings[tower_id])
+	p.tow_amendments.append({"ship_id": tower_id, "kind": "tow", "segment": seg.impulse,
+		"step": _schedule_of(p).step_at(tower_id, seg.impulse), "other_id": other_id, "hex": at, "reason": reason,
+		"pre_bow": seg.start_bows[tower_id], "pre_facing": seg.start_facings[tower_id]})
+	Trace.trace_log("MovementResolver", "tow holds the tower back", {"tower": tower_id, "towed": towed_id,
+		"segment": seg.impulse, "reason": reason, "other": other_id})
+
+
+## The towed bow, following into `hex`, finds it too shallow (13.G.2): she runs aground where she
+## stands, loses rigging as in a collision, and the tow is struck from this pass (the tower sails on).
+func _tow_aground(p: ResolutionPass, seg: Segment, tower_id: String, towed_id: String, hex: Vector2i,
+		depth: int) -> void:
+	var towed: ShipState = p.ship_map[towed_id]
+	var result: MovementTypes.ShipResolutionResult = p.results[towed_id]
+	var draft: int = _draft(towed)
+	result.aground = true
+	result.aground_data = {"terrain": "shallow", "hex": {"q": hex.x, "r": hex.y}, "depth": depth, "draft": draft}
+	var loss: int = _roll_collision_rigging_loss(towed)
+	result.rigging_damage += loss
+	result.stopped_at_impulse = seg.impulse
+	var ev = MovementTypes.ResolutionEvent.new(towed_id, seg.impulse, MovementTypes.ResolutionEventType.AGROUND)
+	ev.from_hex = p.current_hexes[towed_id]
+	ev.to_hex = hex
+	ev.facing = p.current_facings[towed_id]
+	ev.success = false
+	ev.detail = "shallow at (%d,%d), depth=%d, draft=%d, rigging_loss=%d, tow" % [hex.x, hex.y, depth, draft, loss]
+	result.events.append(ev)
+	p.tows.erase(tower_id)
+
+
+## 12.A.11: the tower, stopped by a collision, is run into by her tow. The towed ship rolls the rigging
+## loss of the ship that runs in (6.E.3) and stops; the tower is told she was hit (her `collided_with`
+## keeps the ship she hit); then the fouling roll as in _apply_collision. The tow is kept, and the towed
+## ship is held for the rest of the pass.
+func _apply_tow_collision(p: ResolutionPass, seg: Segment, towed_id: String, tower_id: String) -> void:
+	var towed: ShipState = p.ship_map[towed_id]
+	var tower: ShipState = p.ship_map[tower_id]
+	if towed.is_destroyed():
+		return
+	var towed_result: MovementTypes.ShipResolutionResult = p.results[towed_id]
+	var tower_result: MovementTypes.ShipResolutionResult = p.results[tower_id]
+	var loss: int = _roll_collision_rigging_loss(towed)
+	var ev = MovementTypes.ResolutionEvent.new(towed_id, seg.impulse, MovementTypes.ResolutionEventType.COLLISION)
+	ev.from_hex = p.current_hexes[towed_id]
+	ev.to_hex = p.current_hexes[towed_id]
+	ev.facing = p.current_facings[towed_id]
+	ev.detail = "collided with %s, rigging_loss=%d, tow" % [tower_id, loss]
+	towed_result.events.append(ev)
+	if towed_result.collided_with == "":
+		towed_result.collided_with = tower_id
+	towed_result.rigging_damage += loss
+	towed_result.stopped_at_impulse = seg.impulse
+	if loss > 0:
+		var rig_ev = MovementTypes.ResolutionEvent.new(towed_id, seg.impulse,
+			MovementTypes.ResolutionEventType.COLLISION_RIGGING_LOSS)
+		rig_ev.from_hex = p.current_hexes[towed_id]
+		rig_ev.detail = "rigging_loss=%d from sail_state=%s" % [loss, towed.sail_state]
+		towed_result.events.append(rig_ev)
+	var hit_ev = MovementTypes.ResolutionEvent.new(tower_id, seg.impulse, MovementTypes.ResolutionEventType.COLLISION)
+	hit_ev.from_hex = p.current_hexes[tower_id]
+	hit_ev.to_hex = p.current_hexes[tower_id]
+	hit_ev.facing = p.current_facings[tower_id]
+	hit_ev.detail = "hit by %s, tow" % towed_id
+	tower_result.events.append(hit_ev)
+	var either_fouled: bool = towed.fouled_with != "" or tower.fouled_with != "" \
+			or towed_result.fouled_with != "" or tower_result.fouled_with != ""
+	if not either_fouled and roll_fouling(towed, tower):
+		towed_result.fouled_with = tower_id
+		tower_result.fouled_with = towed_id
+		for pair in [[towed_id, tower_id], [tower_id, towed_id]]:
+			var foul_ev = MovementTypes.ResolutionEvent.new(pair[0], seg.impulse,
+				MovementTypes.ResolutionEventType.FOULING)
+			foul_ev.from_hex = p.current_hexes[pair[0]]
+			foul_ev.detail = "fouled with %s" % pair[1]
+			p.results[pair[0]].events.append(foul_ev)
+	p.tow_hold[towed_id] = "collision"
+
+
+## Puts the towed ship in her follow pose and logs TOW_FOLLOW on the tower's segment.
+func _apply_follow(p: ResolutionPass, seg: Segment, towed_id: String, pose: Dictionary) -> void:
+	var result: MovementTypes.ShipResolutionResult = p.results[towed_id]
+	var ev = MovementTypes.ResolutionEvent.new(towed_id, seg.impulse, MovementTypes.ResolutionEventType.TOW_FOLLOW)
+	ev.from_hex = p.current_hexes[towed_id]
+	ev.from_facing = p.current_facings[towed_id]
+	ev.to_hex = pose["bow"]
+	ev.facing = pose["facing"]
+	ev.success = true
+	result.events.append(ev)
+	p.current_hexes[towed_id] = pose["bow"]
+	p.current_facings[towed_id] = pose["facing"]
+	result.final_hex = pose["bow"]
+	result.final_facing = pose["facing"]
 
 
 ## ============================================================================
@@ -797,11 +1029,16 @@ func _note_left_map(p: ResolutionPass, seg: Segment) -> void:
 		result.events.append(ev)
 
 
-## The ship's step this segment is settled: a ship that did not move keeps its old stern hex.
+## The ship's step this segment is settled: a ship that did not move keeps its old stern hex. A tower
+## that moved leaves hers to her tow (12.A.10: the towed bow takes it, so a group waiting to enter it
+## meets the towed ship there), unless her tow is held this pass and will not follow.
 func _settle(p: ResolutionPass, seg: Segment, sid: String) -> void:
 	seg.resolved[sid] = true
+	var old_stern: Vector2i = HexGrid.stern_of(seg.start_bows[sid], seg.start_facings[sid])
 	if _kept_pose(p, seg, sid):
-		seg.held[HexGrid.stern_of(seg.start_bows[sid], seg.start_facings[sid])] = sid  # it keeps its stern
+		seg.held[old_stern] = sid  # it keeps its stern
+	elif p.tows.has(sid) and not p.tow_hold.has(p.tows[sid]):
+		seg.held[old_stern] = p.tows[sid]
 
 
 func _kept_pose(p: ResolutionPass, seg: Segment, sid: String) -> bool:
@@ -1105,6 +1342,8 @@ func _check_overlaps(p: ResolutionPass, impulse: int) -> Array:
 ## like any other, so they may meet a ship and bear off or collide.
 func _amended_steps(ship_state: ShipState, steps: Array, rollback: Dictionary) -> Array:
 	var kept: Array = steps.slice(0, rollback.step)
+	if rollback.get("kind", "") == "tow":
+		return kept  # held back by her tow, as by an edge: no deceleration padding (towing spec §5)
 	if rollback.get("kind", "") in ["bear_off", "lead"]:
 		# 6.D.4 (and 13.G.4b): the ship turns where it bore off, then moves ahead only as far as its
 		# deceleration limit requires, on its new heading.
@@ -1213,6 +1452,25 @@ func _record_bear_off(results: Dictionary, bear_off: Dictionary) -> void:
 		_insert_at_segment_start(results[order_ev.ship_id], bear_off.segment, [order_ev])
 	if result.blocked_by == "":
 		result.blocked_by = bear_off.other_id
+
+
+## Tell a tower step undone because her tow could not follow (a rollback of kind "tow"): TOW_HELD on
+## the tower at that segment, in her pose before the step; detail = reason [" by <other_id>"].
+func _record_tow_hold(results: Dictionary, rollback: Dictionary, steps_resolved: int) -> void:
+	var result: MovementTypes.ShipResolutionResult = results[rollback.ship_id]
+	var ev = MovementTypes.ResolutionEvent.new(rollback.ship_id, rollback.segment,
+		MovementTypes.ResolutionEventType.TOW_HELD)
+	ev.from_hex = rollback.pre_bow
+	ev.to_hex = rollback.pre_bow
+	ev.from_facing = rollback.pre_facing
+	ev.facing = rollback.pre_facing
+	ev.success = false
+	ev.detail = rollback.reason + (" by %s" % rollback.other_id if rollback.other_id != "" else "")
+	_insert_event(result, ev)
+	if result.blocked_by == "":
+		result.blocked_by = rollback.other_id
+	if result.stopped_at_impulse < 0 and steps_resolved <= rollback.step:
+		result.stopped_at_impulse = rollback.segment
 
 
 ## Put back the rolls of a stern contest whose winner's turn was rolled back (6.B.4): in the final pass
@@ -1983,7 +2241,7 @@ func _calculate_tacking_drm(ship_state: ShipState, sections: int = -1, turn_dire
 	if is_reverse_tack(ship_state, _turn_direction_or_plotted(ship_state, turn_direction)):
 		drm += REVERSE_TACK_DRM
 
-	if ship_state.towing:
+	if ship_state.is_towing():
 		drm += 1
 
 	if ship_state.rudder_destroyed:
@@ -2213,10 +2471,12 @@ func _mps_plotted(ship_state: ShipState, steps_by_ship: Dictionary) -> int:
 
 
 func _get_plotted_steps(ship_state: ShipState) -> Array:
-	## Fouled, grappled (8.C.7), struck, destroyed, anchored (13.C.3) and aground (13.G) ships
-	## cannot move: any plot is ignored (defence behind the plotting check).
+	## Fouled, grappled (8.C.7), struck, destroyed, anchored (13.C.3), aground (13.G) and towed
+	## (12.A.6) ships, and a tower whose tow is fouled or grappled, cannot move: any plot is ignored
+	## (defence behind the plotting check).
 	if ship_state.is_linked() or ship_state.is_out_of_play() or ship_state.is_anchored() \
-			or ship_state.is_aground():
+			or ship_state.is_aground() or ship_state.is_towed() \
+			or DefaultCourse.tow_held(game_state, ship_state):
 		return []
 	var plot: Array = ship_state.plotted_actions.get("movement", [])
 	if plot.is_empty() and not ship_state.plotted_actions.get("movement_plotted", false):
@@ -2270,24 +2530,37 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 	var sc = game_state.ship_controller if game_state else null
 	if game_state and game_state.get("turn_log") != null:
 		log_outcomes(log, ships, game_state.turn_log)  # before the plots are cleared
+	# A towed ship takes her tower's speed (the unit's, spec §5), read before any facing is updated.
+	var speeds: Dictionary = {}  # ship_id -> resulting speed
+	for ship_state in ships:
+		var result = log.get_result(ship_state.ship_id)
+		if result != null:
+			speeds[ship_state.ship_id] = _resolved_speed(ship_state, result)
 	for ship_state in ships:
 		var result = log.get_result(ship_state.ship_id)
 		if result == null:
 			continue
 		var sid = ship_state.ship_id
 		if sc:
-			# 5.E.2: speed is the MPs used (turns included) once the ship has moved ahead; a ship that
-			# only turns, or does not move, is stopped.
-			var moved_ahead: bool = _count_hexes_moved(result) > 0
-			var rudder_irons: bool = _rudder_irons(ship_state, result)
+			var speed: int = speeds[sid]
 			var last_step: int = _last_step_direction(result)
 			if last_step != NO_STEP:
 				sc.set_last_step_direction(sid, last_step)
 			if ship_state.pending_turn != result.pending_turn:
 				sc.set_pending_turn(sid, result.pending_turn)
-			sc.set_moved_this_turn(sid, moved_ahead)
-			# 8.F.3b / 8.C.1: MPs used this g-t, turns included, whether or not the ship moved ahead.
-			sc.set_mp_used(sid, _count_steps_executed(result))
+			if log.towed_by.has(sid):
+				# 12.A.5: a towed ship moves by following her tower and has the unit's speed; a collision or
+				# grounding stops her all the same (5.E.3b).
+				var follows: Array = result.events.filter(func(ev) -> bool:
+					return ev.event_type == MovementTypes.ResolutionEventType.TOW_FOLLOW)
+				sc.set_moved_this_turn(sid, follows.any(func(ev) -> bool: return ev.from_hex != ev.to_hex))
+				sc.set_mp_used(sid, follows.size())
+				speed = 0 if result.collided_with != "" or result.aground \
+						else int(speeds.get(log.towed_by[sid], 0))
+			else:
+				sc.set_moved_this_turn(sid, _count_hexes_moved(result) > 0)
+				# 8.F.3b / 8.C.1: MPs used this g-t, turns included, whether or not the ship moved ahead.
+				sc.set_mp_used(sid, _count_steps_executed(result))
 			sc.set_ship_position(sid, result.final_hex)
 			sc.set_ship_facing(sid, result.final_facing)
 			# 5.D.3b: remember the way a ship turned into WF=L; leaving WF=L forgets it.
@@ -2297,11 +2570,7 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 				sc.set_irons_entry_turn(sid, last_step)
 			if result.immobilized:
 				sc.set_immobilized(sid, true)
-			# A ship with its rudder destroyed that enters WF=L is in irons at once (hull #2): stopped.
-			# So is any ship in a collision (5.E.3b; at WF=L that is in irons, 5.D.5): next g-t it
-			# has no deceleration minimum and accelerates from 0 (5.E.7).
-			sc.set_ship_speed(sid, _count_steps_executed(result) if moved_ahead and not rudder_irons \
-					and result.collided_with == "" and not result.aground else 0)
+			sc.set_ship_speed(sid, speed)  # see _resolved_speed
 			if result.collided_with != "":
 				sc.set_collision_this_turn(sid, true)
 			if result.fouled_with != "":
@@ -2317,6 +2586,19 @@ func apply_results(log: MovementTypes.ResolutionLog, ships: Array[ShipState]) ->
 			sc.clear_plotted_actions(sid)
 		else:
 			push_error("MovementResolver: No ship_controller available")
+
+## 5.E.2: speed is the MPs used (turns included) once the ship has moved ahead; a ship that only turns,
+## or does not move, is stopped. A ship whose rudder is destroyed that enters WF=L is in irons at once
+## (hull #2): stopped. So is any ship in a collision (5.E.3b; at WF=L that is in irons, 5.D.5) or run
+## aground: next g-t it has no deceleration minimum and accelerates from 0 (5.E.7). Call before the
+## ship's facing is updated (see _rudder_irons).
+func _resolved_speed(ship_state: ShipState, result: MovementTypes.ShipResolutionResult) -> int:
+	var moved_ahead: bool = _count_hexes_moved(result) > 0
+	if moved_ahead and not _rudder_irons(ship_state, result) and result.collided_with == "" \
+			and not result.aground:
+		return _count_steps_executed(result)
+	return 0
+
 
 ## The ship left the map this g-t (spec §3): lost by a `none` edge, escaped by an escape edge.
 func _leave_map(map_controller: MapController, sid: String, result: MovementTypes.ShipResolutionResult) -> void:
@@ -2431,8 +2713,13 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 					result.blocked_by)
 			if ev.event_type == MovementTypes.ResolutionEventType.COLLISION and ev.detail.begins_with("collided with"):
 				var at := _collision_hex(ev)
-				turn_log.add(PhaseEvents.Type.COLLISION, phase, sid, {"hex": {"q": at.x, "r": at.y}},
-					result.collided_with)
+				var collision := {"hex": {"q": at.x, "r": at.y}}
+				var other_id: String = result.collided_with
+				if ev.detail.ends_with(", tow"):
+					# The tow ran into her tower (12.A.11, _apply_tow_collision): "collided with <tower>, ..., tow".
+					collision["tow"] = true
+					other_id = ev.detail.get_slice(" ", 2).trim_suffix(",")
+				turn_log.add(PhaseEvents.Type.COLLISION, phase, sid, collision, other_id)
 		var planned: int = _get_plotted_steps(ship_state).size()
 		var off_course: bool = result.aground or result.left_map != ""  # MapController logs these
 		if not result.tacking_failed and not off_course and planned > 0 and _count_steps_executed(result) < planned:
@@ -2504,10 +2791,16 @@ static func _last_contest_roll(result: MovementTypes.ShipResolutionResult) -> Mo
 ## when it lost a stern contest to that ship (6.C.5), {"cause": "stern_blocked", "other": id} when its
 ## turn was otherwise cancelled because its stern would swing into that ship, {"cause": "overlap",
 ## "other": id} when its stern swung into that ship and the turn was rolled back (6.B.4), {"cause":
-## "map_edge", "edge": name} when a step was refused at that map edge (spec §3), {} when the
+## "map_edge", "edge": name} when a step was refused at that map edge (spec §3), {"cause": "tow",
+## "other": id} when her tow could not follow and her step was undone (TOW_HELD; `other` the ship in
+## the way, "" for the edge, land or a held tow; towing spec §5), {} when the
 ## result names no cause. A cancelled or rolled-back turn after which the ship made no step comes first,
 ## so a ship run into later is not said to have stopped for that.
 static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary:
+	# Her tow held her back (towing spec §5), unless another ship ran into her: the collision wins.
+	if result.collided_with == "" \
+			and _undone_turn_ended_movement(result, MovementTypes.ResolutionEventType.TOW_HELD):
+		return {"cause": "tow", "other": result.blocked_by}
 	for ev in result.events:
 		if ev.event_type == MovementTypes.ResolutionEventType.EDGE_BLOCKED:
 			return {"cause": "map_edge", "edge": ev.detail}  # it ends the ship's movement

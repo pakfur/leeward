@@ -47,7 +47,7 @@ enum Type {
 	AGROUND,  # a ship runs or drifts aground: {cause: movement/drift, terrain: land/shallow, hex, depth, draft}
 	LEAD_CAST,  # a ship casts the lead: {hex, depth, draft, outcome, side}
 	ESCAPE_DECLARED,  # a ship declares it is trying to escape
-	ESCAPED,  # a ship escapes: {how: edge|distance|speed, edge | range (-1: no enemy on the map)}
+	ESCAPED,  # a ship escapes: {how: edge|distance|speed|in_tow, edge | range (-1: no enemy on the map) | tower (+ prize: true when carried off)}
 	ARRIVED,  # a reinforcement enters: {hex, facing, sail_state, speed}
 	ARRIVAL_DELAYED,  # a reinforcement cannot enter this turn; target_id: the ship in the way
 	ANCHORED,  # 13.C.2 a ship lets go her anchor: {end: bow/stern, springs, hex}
@@ -55,6 +55,8 @@ enum Type {
 	CABLE_CUT,  # 13.F.2 a ship cuts her cable: {hex: the anchor}
 	SPRING_TURN,  # 13.D.2-3 a ship anchored with springs turns 60 degrees: {direction: port/starboard, pivot: bow/stern, from_facing, to_facing, refused}; target_id: the ship holding the hex. Refused (refused != "") she keeps from_facing; to_facing is the facing she would have taken
 	VEER_IN,  # 13.E.2 a ship veers in one hex: {cable, refused}; target_id: the ship in the way. cable is the cable after veering in; refused (refused != "") she keeps her cable
+	TOW_BEGUN,  # 12.A.4 ship_id (the tower) rolls to take target_id in tow: {roll, modifier, modifiers, total, needed, success}; or her order lapses with no roll: {success: false, lapsed: reason}
+	TOW_CUT,  # 12.A.6, 12.A.9 the tow between ship_id (tower) and target_id (towed) is cut: {cause: tx/struck/destroyed/taken/aground/structural/dismasted, by}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -65,6 +67,7 @@ const CREW_TASK_NAMES := {
 	"PBA": "prepare the bow anchor", "PSA": "prepare the stern anchor", "PBS": "prepare bow springs",
 	"PSS": "prepare stern springs", "A": "anchor", "AX": "cut the cable", "VO": "veer out",
 	"VI": "veer in", "HS": "handle the springs",
+	"PT": "prepare to tow", "TX": "cut the tow",
 }
 
 ## The same tasks as gerunds, for "finishes …" / "stops …" lines.
@@ -75,6 +78,7 @@ const CREW_TASK_GERUNDS := {
 	"PBA": "preparing the bow anchor", "PSA": "preparing the stern anchor", "PBS": "preparing bow springs",
 	"PSS": "preparing stern springs", "A": "anchoring", "AX": "cutting the cable", "VO": "veering out",
 	"VI": "veering in", "HS": "handling the springs",
+	"PT": "preparing to tow", "TX": "cutting the tow",
 }
 
 ## Why a crew task ended early, in plain words (reasons not listed are shown as given).
@@ -120,6 +124,17 @@ const MODIFIER_LABELS := {
 	"target_did_not_move": "target did not move",
 	"friendly": "friendly ship",
 	"better_crew": "better crew",
+	"towing": "towing",
+}
+
+## Why a tow parted (TOW_CUT `cause`, towing spec §6); "tx" is worded with the ship that cut it.
+const TOW_CUT_REASONS := {
+	"struck": "a ship has struck",
+	"destroyed": "a ship has blown up",
+	"taken": "a ship has been taken",
+	"aground": "a ship is aground",
+	"structural": "structural damage",
+	"dismasted": "the tower is dismasted",
 }
 
 const SIDE_NAMES := ["port", "starboard"]
@@ -495,7 +510,7 @@ class PhaseEvent extends RefCounted:
 			Type.ESCAPE_DECLARED:
 				return "%s is trying to escape" % who
 			Type.ESCAPED:
-				return _escaped_text(who)
+				return _escaped_text(who, _name(ship_names, str(data.get("tower", ""))))
 			Type.ARRIVED:
 				var sail: String = PhaseEvents.SAIL_NAMES.get(str(data.get("sail_state", "")).to_upper(), "")
 				return "%s arrives at %s%s" % [who, _hex_text("hex"), " under %s" % sail if sail != "" else ""]
@@ -518,6 +533,20 @@ class PhaseEvent extends RefCounted:
 					return "%s cannot veer in: %s" % [who, str(data["refused"])]
 				return "%s veers in to %s of cable" % [who,
 					PhaseEvents.plural(int(data.get("cable", 0)), "hex", "hexes")]
+			Type.TOW_BEGUN:
+				if data.has("lapsed"):
+					return "%s's order to take %s in tow lapses: %s" % [who, other, str(data["lapsed"])]
+				var success: bool = data.get("success", false)
+				return "%s — %s %s %s" % [
+					("%s takes %s in tow" if success else "%s fails to pass a tow to %s") % [who, other],
+					_calc_text(), "≤" if success else ">", _val("needed")]
+			Type.TOW_CUT:
+				var cause := str(data.get("cause", ""))
+				if cause == "tx":
+					return "The tow between %s and %s is cut by %s" % [who, other,
+						_name(ship_names, str(data.get("by", "")))]
+				return "The tow between %s and %s parts: %s" % [who, other,
+					PhaseEvents.TOW_CUT_REASONS.get(cause, cause)]
 			Type.DESTROYED:
 				if str(data.get("reason", "")) == "no_sea_room":
 					return "%s leaves the map where there is no sea room and is lost" % who
@@ -534,6 +563,8 @@ class PhaseEvent extends RefCounted:
 				# Collision fouling. A drift that fouls says so on its own DRIFT line.
 				return "%s and %s are fouled together" % [who, other]
 			Type.COLLISION:
+				if data.get("tow", false):
+					return "%s runs into her tower %s" % [who, other]
 				var at := _hex_text("hex")
 				return "%s collides with %s%s" % [who, other, " at " + at if at != "" else ""]
 			Type.STOPPED_SHORT:
@@ -804,9 +835,13 @@ class PhaseEvent extends RefCounted:
 				text += ", %s" % outcome.replace("_", " ")
 		return text
 
-	func _escaped_text(who: String) -> String:
+	func _escaped_text(who: String, tower: String) -> String:
 		var hexes := PhaseEvents.plural(int(data.get("range", 0)), "hex", "hexes")
 		match str(data.get("how", "")):
+			"in_tow":
+				if data.get("prize", false):
+					return "%s carries off the prize %s" % [tower, who]
+				return "%s escapes in tow of %s" % [who, tower]
 			"distance":
 				if int(data.get("range", -1)) < 0:
 					return "%s escapes with no enemy in sight" % who
@@ -821,6 +856,11 @@ class PhaseEvent extends RefCounted:
 		match str(data.get("cause", "")):
 			"map_edge":
 				return "%s stops at the edge of the map" % who
+			"tow":
+				text = "%s stops short: held back by her tow" % who
+				if target_id != "":
+					text += " (%s in the way)" % other
+				return text
 			"stern_contest", "stern_blocked", "overlap":
 				return _turn_cause_text(text, other)
 			"collision":
@@ -1058,6 +1098,8 @@ class PhaseEvent extends RefCounted:
 				var how := "fouled alongside"
 				if link == "grappled":
 					how = "grappled alongside"
+				elif link == "tow":
+					how = "at the other end of her tow"
 				elif link == "group":
 					how = "in the same grappled or fouled group"
 				return "%s would drift (%s) but is held back by %s, %s, and holds position%s" % [

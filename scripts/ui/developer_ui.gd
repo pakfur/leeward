@@ -295,6 +295,20 @@ func _on_ship_selected(index: int) -> void:
 	cut_btn.pressed.connect(func(): _on_cut_cable_pressed(sid))
 	ship_fields_container.add_child(cut_btn)
 
+	var tow_btn := Button.new()
+	tow_btn.name = "TakeInTowButton"
+	tow_btn.text = "Take in tow"
+	tow_btn.tooltip_text = "Server request: the ship takes the friendly ship lying astern in tow at once (12.A.4)"
+	tow_btn.pressed.connect(func(): _on_take_in_tow_pressed(sid))
+	ship_fields_container.add_child(tow_btn)
+
+	var cast_off_btn := Button.new()
+	cast_off_btn.name = "CutTowButton"
+	cast_off_btn.text = "Cut tow"
+	cast_off_btn.tooltip_text = "Server request: the ship casts off the tow she is in at once (12.A.9)"
+	cast_off_btn.pressed.connect(func(): _on_cast_off_pressed(sid))
+	ship_fields_container.add_child(cast_off_btn)
+
 	var damage_btn := Button.new()
 	damage_btn.name = "DamageShipButton"
 	damage_btn.text = "Mark out 2 rigging, 2 hull"
@@ -606,6 +620,24 @@ func _on_cut_cable_pressed(ship_id: String) -> void:
 		return
 	var reason: String = game_state.dev_commands.cut_anchor_cable(ship_id)
 	_log("Cut cable of %s: %s" % [ship_id, "ok" if reason == "" else reason])
+	if reason == "":
+		ship_changed.emit(ship_id)
+
+
+func _on_take_in_tow_pressed(ship_id: String) -> void:
+	if not game_state or not game_state.dev_commands:
+		return
+	var reason: String = game_state.dev_commands.take_in_tow(ship_id)
+	_log("Take in tow %s: %s" % [ship_id, "ok" if reason == "" else reason])
+	if reason == "":
+		ship_changed.emit(ship_id)
+
+
+func _on_cast_off_pressed(ship_id: String) -> void:
+	if not game_state or not game_state.dev_commands:
+		return
+	var reason: String = game_state.dev_commands.cast_off_tow(ship_id)
+	_log("Cut tow of %s: %s" % [ship_id, "ok" if reason == "" else reason])
 	if reason == "":
 		ship_changed.emit(ship_id)
 

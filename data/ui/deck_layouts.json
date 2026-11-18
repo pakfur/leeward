@@ -32,6 +32,7 @@
     "rh":           {"decks": ["orlop"], "rect": [330, 118, 300, 124]},
     "fire_zone":    {"decks": ["upper"], "rect": [78, 192, 170, 106]},
     "reorganizing": {"decks": ["upper"], "rect": [830, 120, 110, 120]},
-    "anchor":       {"decks": ["upper"], "rect": [830, 252, 150, 90]}
+    "anchor":       {"decks": ["upper"], "rect": [830, 252, 150, 90]},
+    "tow":          {"decks": ["upper"], "rect": [830, 18, 150, 90]}
   }
 }

@@ -209,7 +209,7 @@ func _store_default_courses() -> void:
 		if not human_player_ids.has(game_state.commander_of(s.ship_id)):
 			continue
 		var course: Array = []
-		if DefaultCourse.can_plot(s):
+		if DefaultCourse.can_move(game_state, s):
 			course = DefaultCourse.as_dicts(DefaultCourse.for_ship(game_state, s))
 			game_state.ship_controller.set_plotted_movement(s.ship_id, course)
 		var orders = s.plotted_actions.get("crew_orders", {})
@@ -375,7 +375,7 @@ func plan_errors(player_id: int) -> Dictionary:
 	var errors := {}
 	var validator := MovementValidator.new(game_state)
 	for ship in game_state.ships_of_player(player_id):
-		if not DefaultCourse.can_plot(ship):
+		if not DefaultCourse.can_move(game_state, ship):
 			continue
 		# The lead and the map edge read the stored or default course, plotted or not.
 		var course := stored_course(ship)
@@ -534,7 +534,7 @@ func player_cut_course(player_id: int, ship_id: String, step_index: int) -> Stri
 ## jammed-rudder text: the course is kept, the view warns). {} when the ship cannot plot.
 func course_options(ship_id: String) -> Dictionary:
 	var ship: ShipState = game_state.get_ship(ship_id)
-	if ship == null or not DefaultCourse.can_plot(ship):
+	if ship == null or not DefaultCourse.can_move(game_state, ship):
 		return {}
 	var path := stored_course(ship)
 	var cur_hex: Vector2i = ship.hex_position if path.is_empty() else path[-1].hex
@@ -580,15 +580,14 @@ func stored_course(ship: ShipState) -> Array[MovementTypes.PlotStep]:
 
 
 ## The `_crew_request_error` checks (phase, submitted plan, owner) plus: the ship must be able to
-## plot (not fouled, grappled, struck, dismasted, a prize).
+## plot (DefaultCourse.can_move: not fouled, grappled, struck, dismasted, a prize, in tow, or held
+## by a fouled or grappled tow).
 func _course_request_error(player_id: int, ship_id: String) -> String:
 	var why := _crew_request_error(player_id, ship_id)
 	if why != "":
 		return why
 	var ship: ShipState = game_state.get_ship(ship_id)
-	if not DefaultCourse.can_plot(ship):
-		return "%s cannot move" % ship_id
-	return ""
+	return DefaultCourse.cannot_move_reason(game_state, ship)
 
 
 ## SERVER ONLY: the player's crew plan for one ship (the crew overlay; crew-tasks spec §3.2, §4.4).
@@ -895,20 +894,24 @@ func on_combat_playback_completed() -> void:
 	advance_phase()
 
 func _enter_drift_calculation_phase() -> void:
-	"""SERVER ONLY: Enter drift calculation phase: drift, then the anchoring step (SoP V.A-B:
-	ships ride to their anchors, anchors are dropped and cables cut)."""
+	"""SERVER ONLY: Enter drift calculation phase: drift, then SoP V.B: anchoring and towing
+	(ships ride to their anchors, anchors are dropped and cables cut; a TX begun this g-t cuts its
+	tow)."""
 	current_phase = GamePhase.DRIFT_CALCULATION
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: DRIFT_CALCULATION")
 	game_state.drift_resolver.resolve(GamePhase.DRIFT_CALCULATION)
 	if game_state.get("anchor_controller") != null:
 		game_state.anchor_controller.resolve_anchoring(GamePhase.DRIFT_CALCULATION)
+	if game_state.get("tow_controller") != null:
+		game_state.tow_controller.resolve_cuts(GamePhase.DRIFT_CALCULATION)
 	advance_phase()
 
 func _enter_status_adjustment_phase() -> void:
 	"""SERVER ONLY: Enter status adjustment phase (the Maintenance Phase after drift, SoP V.C-G).
-	Grappling, then ungrappling (8.C), each waiting for a prompted player's orders only when that
-	player has a choice; then unfouling, fixes, fire and the crew tasks."""
+	The tow attempts first (12.A.4, no prompt: ordered in PLANNING), then grappling, then
+	ungrappling (8.C), each waiting for a prompted player's orders only when that player has a
+	choice; then unfouling, fixes, fire and the crew tasks."""
 	current_phase = GamePhase.STATUS_ADJUSTMENT
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: STATUS_ADJUSTMENT")
@@ -916,6 +919,8 @@ func _enter_status_adjustment_phase() -> void:
 	if game_state.get("grappling_controller") == null:
 		_finish_status_adjustment()
 		return
+	if game_state.get("tow_controller") != null:
+		game_state.tow_controller.resolve_tow_attempts(current_phase)
 	_begin_maintenance_step(MaintenanceStep.GRAPPLE)
 
 

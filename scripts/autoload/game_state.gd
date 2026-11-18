@@ -74,6 +74,7 @@ var crew_task_controller: CrewTaskController = null
 var fire_controller: FireController = null
 var repair_controller: RepairController = null
 var anchor_controller: AnchorController = null
+var tow_controller: TowController = null
 var drift_resolver: DriftResolver = null
 var fouling_controller: FoulingController = null
 var grappling_controller: GrapplingController = null
@@ -141,6 +142,9 @@ func _initialize_server_controllers() -> void:
 	anchor_controller = AnchorController.new(self)
 	for code in AnchorRules.CODES:
 		crew_task_controller.register_handler(code, anchor_controller)
+	tow_controller = TowController.new(self)
+	for code in TowRules.CODES:
+		crew_task_controller.register_handler(code, tow_controller)
 	drift_resolver = DriftResolver.new(self)
 	fouling_controller = FoulingController.new(self)
 	grappling_controller = GrapplingController.new(self)
@@ -434,6 +438,9 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	end_offers = {}
 	linked_at_plot = {}
 	boarding_history = {}
+	# The AI's memory of the last game (tow targets given up) goes with it.
+	if stub_ai != null:
+		stub_ai.reset_memory()
 	Trace.trace_log("GameState", "RNG seeded", seed_value)
 
 	# Clear any existing state history
@@ -451,6 +458,7 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	])
 
 	anchor_controller.place_scenario_anchors()
+	tow_controller.place_scenario_tows()
 
 	for message in placement_errors():
 		push_error(message)
@@ -484,6 +492,7 @@ func placement_errors() -> Array[String]:
 			if Occupancy.overlapping_ids(pair).size() > 0:
 				errors.append("GameState: ships '%s' and '%s' overlap" % [pair[0].ship_id, pair[1].ship_id])
 	errors.append_array(AnchorRules.scenario_errors(active_scenario))
+	errors.append_array(TowRules.scenario_errors(active_scenario, get_all_ships()))
 	for s in all_ships:
 		errors.append_array(AnchorRules.footprint_errors(active_scenario, s))
 	return errors

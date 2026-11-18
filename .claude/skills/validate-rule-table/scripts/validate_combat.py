@@ -368,7 +368,7 @@ def check_poor_maneuvering(t, r):
 
 CREW_TASK_CODES = {"SAIL_MAJOR", "SAIL_MINOR", "T", "RO", "FF", "RR", "RH", "RS",
                    "FB", "BR", "BA", "BD",
-                   "PBA", "PSA", "PBS", "PSS", "A", "AX", "VO", "VI", "HS"}
+                   "PBA", "PSA", "PBS", "PSS", "A", "AX", "VO", "VI", "HS", "PT", "TX"}
 TURN_SHAPES = ({"ad", "eg"}, {"sk_base"}, {"sk_base", "times"}, {"fixed"}, {"until"})
 
 

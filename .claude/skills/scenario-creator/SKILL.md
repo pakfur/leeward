@@ -185,6 +185,33 @@ reports a starting anchor whose footprint (the hexes she rides to: `cable` hexes
 facing) is off the map or on land, so check an explicit `hex` against the wind. The anchor hex itself is not
 checked against land. See `data/scenarios/test_anchorage.json`.
 
+## Towing (spec `docs/superpowers/specs/2026-11-18-towing-design.md`)
+
+```json
+"ships": [
+  { "id": "br_frigate_32", "...": "...", "tow": "br_74" },
+  { "id": "br_74", "...": "...", "sail_state": "NS", "speed": 0 }
+]
+```
+
+- Ship `tow` (optional, on the tower): the id of the ship she starts towing. No preparation and no roll; the pair
+  is placed in a tow (`TowController.place_scenario_tows`, at game start).
+- The towed ship's bow must lie astern of the tower so that the tower's **stern is in the hex ahead of her bow**
+  (12.A.4a): the towed ship's bow plus her facing is the tower's stern hex. Give both ships the same facing when
+  they lie in a line (tower bow B, stern B+1 on facing 3; towed bow B+2 on facing 3). Give the towed ship speed 0
+  (she takes the tower's speed on the first g-t).
+- Same side, neither anchored nor aground, neither fouled or grappled, the tower not dismasted and on the map; no
+  ship towed twice, and no ship both towing and towed. The tow ends on strike, destruction, capture or grounding.
+- A scenario cannot damage a ship, so the AI finds no cripple to take in tow unless a ship is dismasted or a prize
+  during play. Starting tows are for the human, the Developer UI (`take_in_tow`) and tests.
+
+Towing checks (`TowRules.scenario_errors`, all start `Towing: `, reported by `placement_errors`; a bad entry is
+skipped): an unknown tower or towed id (`Towing: unknown tower '<id>'`, `Towing: '<id>' tows unknown ship '<id>'`);
+a ship towing itself; a ship towed by two ships; a towed ship that also tows; and the pair check at the placed
+positions (`Towing: '<tower>' cannot tow '<towed>': <reason>`), where the reason is one of: not on the map, struck,
+not of her side, anchored, aground, dismasted tower, stern not in the hex ahead of the towed ship's bow
+(12.A.4a), fouled or grappled. See `data/scenarios/test_towing.json`.
+
 ## Output
 
 Write the scenario file to `data/scenarios/<name>.json`. Use snake_case for the filename.

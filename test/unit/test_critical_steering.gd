@@ -255,7 +255,7 @@ func test_acceleration_reductions_never_below_one() -> void:
 	# 5.E.5 example: type B, two sections left and towing: still 1.
 	var state := _ship("B")
 	state.rigging_current_hp = [0, 0, 6, 6] as Array[int]
-	state.towing = true
+	state.towing_id = "tow"
 	assert_eq(GameState.ship_controller.get_speed_change_limits(state.ship_id).accel, 1)
 
 
