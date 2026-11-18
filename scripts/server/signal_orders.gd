@@ -2,7 +2,8 @@ class_name SignalOrders
 extends RefCounted
 ## Reads a delivered signal's words as a standing order (players-and-sides spec 7). Pure statics.
 ## Phrases: ENGAGE, ENGAGE/ATTACK <ship>, CLOSE TO <1-15>, FOLLOW FLAGSHIP, FOLLOW <ship>,
-## FORM LINE, DISENGAGE. Other words are ignored.
+## FORM LINE, DISENGAGE, ANCHOR, CUT CABLES / CUT CABLE (anchoring spec §11). Other words are
+## ignored (a lone CUT among them).
 
 
 ## ship_ids_by_word: upper-cased one-word ship name (as SignalText.words returns it, and its bare
@@ -47,5 +48,12 @@ static func parse(words: Array[String], ship_ids_by_word: Dictionary) -> Array[D
 					continue
 			"DISENGAGE":
 				out.append({"order": "disengage"})
+			"ANCHOR":
+				out.append({"order": "anchor"})
+			"CUT":
+				if nxt == "CABLES" or nxt == "CABLE":
+					out.append({"order": "cut"})
+					i += 2
+					continue
 		i += 1
 	return out
