@@ -12,10 +12,13 @@ extends RefCounted
 ##   "line"      — follow the ship listed before this one in the order's group (GameState.groups);
 ##                 the first follows the fleet flagship, the flagship engages; no group: the flagship
 ##   "disengage" — open the range from the nearest enemy
+##   "escape"    — a ship whose side may escape this turn, under the scenario's "escape" posture
+##                 (`ai`) or a disengage order: declares escape and runs for a permitted escape edge
 ##   "forward"   — move straight ahead, consuming all available MA (tests)
 ##   "hold"      — submit immediately with empty path (tests)
 ## Every course is carried on to the deceleration limit (_meet_deceleration_minimum). Every strategy
-## but engage keeps the ship on the map (BOUNDED_STRATEGIES).
+## keeps to safe water while it can (_move_safe): no crossing the ship may not make, no land, no hex
+## where it may ground. A course of at most 2 steps into shallow water casts the lead (_maybe_cast_lead).
 ##
 ## Fire: each ship fires each broadside at its best-odds target, splitting a side between two
 ## targets when no full broadside bears (see choose_fire_orders); a ship ordered to engage a ship
@@ -32,8 +35,8 @@ const FIRING_RANGE_WEIGHT := 2
 const SECOND_BATTERY_BONUS := 3
 ## Taken off a close position beyond the ordered range: more than any engage score within range 15.
 const CLOSE_OUTSIDE_PENALTY := 100
-## Strategies that never plot a ship off the map (engage keeps its old course choice).
-const BOUNDED_STRATEGIES := ["close", "follow", "line", "disengage"]
+## An escaping ship's score for a bow off the map (across a permitted escape edge).
+const ESCAPE_EXIT_SCORE := 10000
 
 ## Plotting errors for ships that legitimately cannot move; the AI skips them without error.
 const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_GRAPPLED", "SHIP_CAPTURED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED", "SHIP_AGROUND", "SHIP_OFF_MAP"]
@@ -445,16 +448,38 @@ func _get_ai_ships(player_id: int = -1) -> Array[ShipState]:
 	return result
 
 
-## The ship's strategy: strategy_override when set (tests), else its standing order's (spec 7).
+## The ship's strategy: strategy_override when set (tests), else "escape" under an escape posture
+## (_escape_posture), else its standing order's (spec 7).
 func _get_strategy(ship_state: ShipState) -> String:
 	if strategy_override != "":
 		return strategy_override
+	if _escape_posture(ship_state):
+		return "escape"
 	return str(game_state.order_of(ship_state.ship_id).get("order", "engage"))
+
+
+## The ship escapes (map and scenario spec §12): its side may declare escape this turn, and the
+## scenario's `ai` posture for its side is "escape" or its standing order is disengage.
+func _escape_posture(ship_state: ShipState) -> bool:
+	var scenario: Dictionary = game_state.active_scenario
+	if not MapRules.may_declare(scenario, ship_state.side, game_state.current_turn):
+		return false
+	var postures = scenario.get("ai", {})
+	if postures is Dictionary and str(postures.get(str(ship_state.side), "")) == "escape":
+		return true
+	return str(game_state.order_of(ship_state.ship_id).get("order", "")) == "disengage"
 
 
 func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, strategy: String) -> void:
 	var ship_id := ship_state.ship_id
 	var player_id: int = game_state.commander_of(ship_id)
+
+	# An escaping ship declares before plotting, so the validator offers the escape edge (V.D). A
+	# ship that cannot move declares nothing; the AI never withdraws a declaration.
+	if strategy == "escape" and not ship_state.escape_declared and DefaultCourse.can_plot(ship_state):
+		var refused: String = game_state.phase_controller.player_declare_escape(player_id, ship_id, true)
+		if refused != "":
+			Trace.trace_log("StubAI", "escape declaration refused", {"ship_id": ship_id, "reason": refused})
 
 	var start_response := controller.handle_start_plotting(player_id, ship_id, _next_request_id())
 
@@ -482,6 +507,8 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 			version = _strategy_line(ship_state, controller, session_id, version, started)
 		"disengage":
 			version = _strategy_disengage(ship_state, controller, session_id, version, started)
+		"escape":
+			version = _strategy_escape(ship_state, controller, session_id, version, started)
 		"forward":
 			version = _strategy_forward(ship_state, controller, session_id, version, started)
 		"hold":
@@ -489,14 +516,13 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 
 	# 5.E.4: a course that stops short of the deceleration limit is carried on until it meets it.
 	# A ship keeping station on a leader pads with moves that stay out of the other ships' hexes.
-	# A ship under a standing order other than engage pads with moves that stay on the map.
+	# Every ship pads with safe moves (_move_safe) while it has one.
 	var avoid := {}
 	if strategy in ["follow", "line"]:
 		var ships: Array[ShipState] = []
 		ships.assign(game_state.get_all_ships())
 		avoid = Occupancy.build(ships, [ship_id])
-	version = _meet_deceleration_minimum(ship_id, controller, session_id, version, avoid,
-		strategy in BOUNDED_STRATEGIES)
+	version = _meet_deceleration_minimum(ship_id, controller, session_id, version, avoid)
 	var submit_response := controller.handle_submit_movement(session_id, version, _next_request_id())
 	if submit_response is MovementTypes.PlottingErrorResponse:
 		refusals.append({"ship_id": ship_id,
@@ -528,6 +554,7 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 		Trace.trace_log("StubAI", "submit FAILED", {"ship_id": ship_id, "error": err.error_code})
 		return
 
+	_maybe_cast_lead(ship_state)
 	Trace.trace_log("StubAI", "plotted ship", {
 		"ship_id": ship_id,
 		"strategy": strategy,
@@ -536,12 +563,11 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 
 
 ## Extends the session's course with moves ahead (else the first move offered) while it cannot be
-## submitted for being short of the deceleration limit (5.E.4). With `avoid` (hex -> ship id) or
-## `keep_in_bounds`, it first takes a move ahead, then any move, that keeps bow and stern out of
-## those hexes and (with `keep_in_bounds`) on the map, and only when there is none the plain choice.
-## Returns the session version.
+## submitted for being short of the deceleration limit (5.E.4). It first takes a move ahead, then
+## any move, that is safe (_move_safe) and keeps bow and stern out of `avoid` (hex -> ship id), and
+## only when there is none the plain choice. Returns the session version.
 func _meet_deceleration_minimum(ship_id: String, controller: MovementPlottingController,
-		session_id: String, version: int, avoid: Dictionary = {}, keep_in_bounds: bool = false) -> int:
+		session_id: String, version: int, avoid: Dictionary = {}) -> int:
 	var validator := MovementValidator.new(game_state)
 	var ship: ShipState = game_state.get_ship(ship_id)
 	for _i in range(MAX_PADDING_STEPS):
@@ -553,15 +579,14 @@ func _meet_deceleration_minimum(ship_id: String, controller: MovementPlottingCon
 			break
 		var move: MovementTypes.ValidMove = valid.forward[0] if not valid.forward.is_empty() \
 				else valid.get_all_valid_moves()[0]
-		if not avoid.is_empty() or keep_in_bounds:
-			var here := ship.hex_position
-			if not session.plotted_path.is_empty():
-				here = session.plotted_path[session.plotted_path.size() - 1].hex
-			var clear := _clear_move(valid.forward, here, avoid, keep_in_bounds)
-			if clear == null:
-				clear = _clear_move(valid.get_all_valid_moves(), here, avoid, keep_in_bounds)
-			if clear != null:
-				move = clear
+		var here := ship.hex_position
+		if not session.plotted_path.is_empty():
+			here = session.plotted_path[session.plotted_path.size() - 1].hex
+		var clear := _clear_move(ship, valid.forward, here, avoid)
+		if clear == null:
+			clear = _clear_move(ship, valid.get_all_valid_moves(), here, avoid)
+		if clear != null:
+			move = clear
 		var response := controller.handle_select_hex(session_id, version, move.hex, _next_request_id())
 		if response is MovementTypes.PlottingErrorResponse:
 			break
@@ -633,7 +658,7 @@ func _strategy_close(
 	var friendly := _friendly_footprints(ship_state)
 	var score := func(bow: Vector2i, facing: int) -> int:
 		return _score_close(bow, facing, enemy, limit, occupied, friendly)
-	return _steer(ship_state, controller, session_id, version, started, score, true, false, true)
+	return _steer(ship_state, controller, session_id, version, started, score, true, false)
 
 
 ## Sails for the hex astern of the leader's stern (_score_follow), never putting bow or stern into
@@ -674,7 +699,20 @@ func _strategy_disengage(
 		return version
 	var score := func(bow: Vector2i, facing: int) -> int:
 		return _score_disengage(bow, facing, enemy)
-	return _steer(ship_state, controller, session_id, version, started, score, false, false, true)
+	return _steer(ship_state, controller, session_id, version, started, score, false, false)
+
+
+## Runs for the nearest permitted escape edge (_score_escape), using every move it has.
+func _strategy_escape(
+	ship_state: ShipState,
+	controller: MovementPlottingController,
+	session_id: String,
+	version: int,
+	started: MovementTypes.PlottingStartedResponse
+) -> int:
+	var score := func(bow: Vector2i, facing: int) -> int:
+		return _score_escape(bow, facing, ship_state)
+	return _steer(ship_state, controller, session_id, version, started, score, false, false)
 
 
 func _follow_leader(ship_state: ShipState, leader_id: String, controller: MovementPlottingController,
@@ -684,7 +722,7 @@ func _follow_leader(ship_state: ShipState, leader_id: String, controller: Moveme
 		return _strategy_engage(ship_state, controller, session_id, version, started)
 	var score := func(bow: Vector2i, facing: int) -> int:
 		return _score_follow(bow, facing, leader)
-	return _steer(ship_state, controller, session_id, version, started, score, true, true, true)
+	return _steer(ship_state, controller, session_id, version, started, score, true, true)
 
 
 ## The ship a "line" order follows: the nearest ship in play listed before this one in the order's
@@ -739,12 +777,12 @@ func _friendly_footprints(ship_state: ShipState) -> Array:
 ## (Callable(bow, facing) -> int; ties by _option_beats), skipping turns that swing the stern into
 ## another ship's hexes and, with `avoid_bows`, moves that put the bow into one. With `hold`, a ship
 ## whose position scores > 0 stops once no option is strictly better; otherwise it keeps way on,
-## even through a lower-scoring step, until it has no move left. With `keep_in_bounds` (every
-## strategy but engage) it never takes a move that puts bow or stern off the map (_move_in_bounds).
+## even through a lower-scoring step, until it has no move left. It never takes an unsafe move
+## (_move_safe: a forbidden crossing, land, or a hex where it may ground); with none safe it stops.
 ## Returns the session version.
 func _steer(ship_state: ShipState, controller: MovementPlottingController, session_id: String,
 		version: int, started: MovementTypes.PlottingStartedResponse, score: Callable, hold: bool,
-		avoid_bows: bool, keep_in_bounds: bool = false) -> int:
+		avoid_bows: bool) -> int:
 	var ships: Array[ShipState] = []
 	ships.assign(game_state.get_all_ships())
 	# Footprints of everyone else: a turn may not swing the stern into one (the resolver would
@@ -766,7 +804,7 @@ func _steer(ship_state: ShipState, controller: MovementPlottingController, sessi
 				continue
 			if avoid_bows and others.has(move.metadata.resulting_hex):
 				continue
-			if keep_in_bounds and not _move_in_bounds(move):
+			if not _move_safe(ship_state, move):
 				continue
 			var move_score: int = score.call(move.metadata.resulting_hex, move.metadata.resulting_facing)
 			if best == null or _option_beats(move, move_score, best, best_score, current_facing):
@@ -904,24 +942,104 @@ func _score_follow(bow: Vector2i, facing: int, leader: ShipState) -> int:
 	return -(2 * _axial_distance(bow, wake) + _misalignment(bow, facing, wake))
 
 
-## The first of `moves` that keeps bow and stern out of `avoid` (and, with `keep_in_bounds`, on the
-## map), from a ship whose bow is at `here`; null when none does.
-func _clear_move(moves: Array, here: Vector2i, avoid: Dictionary,
-		keep_in_bounds: bool = false) -> MovementTypes.ValidMove:
+## Escape (map and scenario spec §12): a bow off the map (it has left across an escape edge) scores
+## ESCAPE_EXIT_SCORE; with escape boundaries the side may use, minus ten times the bow's distance to
+## the nearest of them; with none, the disengage score against the nearest enemy (0 with no enemy).
+func _score_escape(bow: Vector2i, facing: int, ship_state: ShipState) -> int:
+	var terrain := TerrainMap.of(game_state.active_scenario)
+	if not terrain.in_bounds(bow):
+		return ESCAPE_EXIT_SCORE
+	var nearest := -1
+	for boundary_name in _escape_boundaries(ship_state):
+		var d := terrain.distance_to_boundary(bow, boundary_name)
+		if d >= 0 and (nearest < 0 or d < nearest):
+			nearest = d
+	if nearest >= 0:
+		return -10 * nearest
+	var enemy := _nearest_enemy(ship_state)
+	return _score_disengage(bow, facing, enemy) if enemy != null else 0
+
+
+## The names of the escape boundaries the ship's side is permitted (MapRules.permission: its
+## `edges`, or every escape boundary when none are listed).
+func _escape_boundaries(ship_state: ShipState) -> Array[String]:
+	var out: Array[String] = []
+	var permission := MapRules.permission(game_state.active_scenario, ship_state.side)
+	if permission.is_empty():
+		return out
+	var edges: Array = permission["edges"]
+	for b in TerrainMap.of(game_state.active_scenario).boundaries:
+		if b.kind == TerrainMap.ESCAPE and (edges.is_empty() or edges.has(b.name)):
+			out.append(b.name)
+	return out
+
+
+## The first of `moves` that is safe (_move_safe) and keeps bow and stern out of `avoid`, from a
+## ship whose bow is at `here`; null when none does.
+func _clear_move(ship_state: ShipState, moves: Array, here: Vector2i,
+		avoid: Dictionary) -> MovementTypes.ValidMove:
 	for move: MovementTypes.ValidMove in moves:
 		if avoid.has(move.metadata.resulting_hex) or _stern_blocked(move, here, avoid):
 			continue
-		if keep_in_bounds and not _move_in_bounds(move):
+		if not _move_safe(ship_state, move):
 			continue
 		return move
 	return null
 
 
-## Both hexes of the ship after `move` lie inside the scenario's map bounds (always, with none).
-func _move_in_bounds(move: MovementTypes.ValidMove) -> bool:
+## True when `move`, from the ship's current pose in its plotting session (its position when it has
+## no session or path), keeps to safe water: the hex side it crosses (the bow's on a move ahead, the
+## stern's on a turn) is clear or an escape the ship may make (MapRules.crossing_outcome); neither the
+## new bow nor the new stern is land; and a new bow on the map never grounds at the ship's draft.
+func _move_safe(ship_state: ShipState, move: MovementTypes.ValidMove) -> bool:
+	var scenario: Dictionary = game_state.active_scenario
+	var terrain := TerrainMap.of(scenario)
+	var pose_bow := ship_state.hex_position
+	var pose_facing := ship_state.facing
+	var session: MovementPlottingSession = null
+	if game_state.movement_plotting_controller != null:
+		session = game_state.movement_plotting_controller.get_session_for_ship(ship_state.ship_id)
+	if session != null and not session.plotted_path.is_empty():
+		var last: MovementTypes.PlotStep = session.plotted_path[session.plotted_path.size() - 1]
+		pose_bow = last.hex
+		pose_facing = last.facing
 	var bow := move.metadata.resulting_hex
-	return Occupancy.in_bounds(bow, game_state.active_scenario) \
-			and Occupancy.in_bounds(HexGrid.stern_of(bow, move.metadata.resulting_facing), game_state.active_scenario)
+	var stern := HexGrid.stern_of(bow, move.metadata.resulting_facing)
+	var from := pose_bow
+	var to := bow
+	if bow == pose_bow:  # a turn: the bow pivots, the stern swings (5.C.2)
+		from = HexGrid.stern_of(pose_bow, pose_facing)
+		to = stern
+	var outcome: String = MapRules.crossing_outcome(scenario, ship_state, from, to,
+		game_state.current_turn)["outcome"]
+	if outcome != MapRules.CLEAR and outcome != MapRules.ESCAPE:
+		return false
+	if terrain.is_land(bow) or terrain.is_land(stern):
+		return false
+	return not terrain.in_bounds(bow) or terrain.grounds(bow, ship_state.ship.draft) == "never"
+
+
+## After a successful submit: a course of at most 2 steps with a step ahead whose bow may or will
+## ground casts the lead (13.G.4), through the player's own request.
+func _maybe_cast_lead(ship_state: ShipState) -> void:
+	var steps: Array = ship_state.plotted_actions.get("movement", [])
+	if steps.is_empty() or steps.size() > 2:
+		return
+	var terrain := TerrainMap.of(game_state.active_scenario)
+	var prev := ship_state.hex_position
+	var doubtful := false
+	for step in steps:
+		var hex := Vector2i(int(step["hex"]["q"]), int(step["hex"]["r"]))
+		if hex != prev and terrain.grounds(hex, ship_state.ship.draft) != "never":
+			doubtful = true
+		prev = hex
+	if not doubtful:
+		return
+	var player_id: int = game_state.commander_of(ship_state.ship_id)
+	var refused: String = game_state.phase_controller.player_set_cast_lead(player_id,
+		ship_state.ship_id, true)
+	if refused != "":
+		Trace.trace_log("StubAI", "cast lead refused", {"ship_id": ship_state.ship_id, "reason": refused})
 
 
 ## Higher score wins; ties keep the current facing, then lowest q, then lowest r.
