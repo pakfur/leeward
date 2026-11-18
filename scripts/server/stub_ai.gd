@@ -721,7 +721,10 @@ func _engage_enemy(ship_state: ShipState) -> ShipState:
 func _occupied_except(ship_state: ShipState, enemy: ShipState) -> Dictionary:
 	var ships: Array[ShipState] = []
 	ships.assign(game_state.get_all_ships())
-	return Occupancy.build(ships, [ship_state.ship_id, enemy.ship_id])
+	var occupied := Occupancy.build(ships, [ship_state.ship_id, enemy.ship_id])
+	for hex in TerrainMap.of(game_state.active_scenario).land:
+		occupied[hex] = "land"
+	return occupied
 
 
 ## Friendly footprints make blocking hexes (7.B.10), as in GunneryCalculator.preview.

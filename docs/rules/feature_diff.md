@@ -58,7 +58,7 @@ These are the gaps and differences that most change how a game plays out, in rou
 |---|---|---|
 | Reinforcements | 2.B.1, 3.A | Every ship is placed at the start. |
 | Escape and exit from the map, removal of escaped ships | 2.B.5g, 8.G.1f | Plotted movement is not even limited to the map (Known limitation). The 8.G.1f removal step exists for exploded ships (`ShipStateController.remove_from_map`, §2.1 fire row); escaped ships do not reach it yet. |
-| Shallow water, land, running aground, casting the lead | 13.G | No depth map. `draft` is loaded and never read. Land does not block LOS (7.B.7). |
+| Shallow water, land, running aground, casting the lead | 13.G | No depth map. `draft` is loaded and never read. Land blocks LOS like a ship (7.B.7–9; shallows do not; `gunnery_calculator.gd` `_occupied_hexes`, `stub_ai.gd` `_occupied_except`), and an aground ship cannot fire its guns (13.G.3; it can be fired on and its marines may fire). |
 | Towing | 12.A | A `towing` flag on the ship state feeds the Tacking DRM and the 5.E.5 acceleration reduction, but nothing sets it. |
 | Acceleration reductions (two rigging sections missing, WS=1, towing) | 5.E.5 | **Fixed:** −1 each, never below 1 (`ShipStateController.speed_change_limits`); towing itself does not exist yet. |
 | A collision or grapple in WF=L puts the ship in irons ✔ | 5.D.5 | **Fixed** (boarding spec B3). Leeward knows a ship is in irons by WF=L at speed 0. A ship at WF=L in a collision gets speed 0 even when it moved ahead (`movement_resolver.gd` (`apply_results`)), and each ship of a new grapple that lies at WF=L gets speed 0 (`grappling_controller.gd` (`_irons_on_grapple`)); either then needs the in-irons Tacking roll to turn out (5.D.6). |
