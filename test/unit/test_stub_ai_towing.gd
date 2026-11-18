@@ -54,6 +54,11 @@ func before_each() -> void:
 	GameState.active_scenario = _scenario()
 	sc = GameState.ship_controller
 	stub_ai = StubAI.new(GameState)
+	_make_fixture()
+
+
+## a and the dismasted b of side 1, the enemy e of side 0.
+func _make_fixture() -> void:
 	_make_ship("a", 1, Vector2i(-10, -5), 3)
 	var b := _make_ship("b", 1, Vector2i(-6, -5), 3)
 	b.rigging_current_hp = [0, 0, 0, 0] as Array[int]
@@ -62,6 +67,8 @@ func before_each() -> void:
 
 
 func after_each() -> void:
+	GameState.stub_ai.strategy_override = ""
+	GameState.stub_ai.reset_memory()
 	pc._reset_maintenance()
 	GameState.active_scenario = _saved_scenario
 	GameState.environment = _saved_env
@@ -304,6 +311,47 @@ func test_gives_up_after_six_turns_without_closing() -> void:
 	stub_ai.plot_all_ai_ships()
 	assert_eq(stub_ai.tow_target(_ship("a")), "", "given up")
 	assert_eq(stub_ai.tow_target(_ship("a2")), "b", "the claim moves on")
+
+
+func test_new_game_forgets_given_up_tows() -> void:
+	var ai: StubAI = GameState.stub_ai
+	ai.strategy_override = "hold"
+	for i in range(StubAI.TOW_GIVE_UP_TURNS + 1):
+		ai.plot_all_ai_ships()
+		GameState.current_turn += 1
+	assert_eq(ai.tow_target(_ship("a")), "", "given up")
+	ai.strategy_override = ""
+	_reset_ships()
+	GameState.start_new_game({"seed": 1, "map_bounds": {"width": 40, "height": 30}})
+	# The next game: the same ships, the same places.
+	_reset_ships()
+	var env := EnvironmentState.new()
+	env.wind_direction = 0
+	env.wind_speed = 3
+	GameState.environment = env
+	GameState.active_scenario = _scenario()
+	GameState.current_turn = 3
+	pc.current_phase = PLANNING
+	_make_fixture()
+	assert_eq(ai.tow_target(_ship("a")), "b", "claimable again")
+
+
+func test_far_tower_closing_does_not_give_up() -> void:
+	# Beyond TOW_SEARCH_RADIUS of the station no way is searched: progress is hexes to the station.
+	var a := _ship("a")
+	a.hex_position = Vector2i(18, 10)
+	_ship("e").hex_position = Vector2i(-19, 14)
+	for i in range(StubAI.TOW_GIVE_UP_TURNS + 2):
+		stub_ai._update_tow_memory()
+		assert_eq(stub_ai.tow_target(a), "b", "g-t %d: still closing" % i)
+		assert_eq(str(stub_ai._tow_progress["a"]["measure"]), "hexes")
+		a.hex_position += Vector2i(-1, 0)
+		GameState.current_turn += 1
+	# Now she stops closing: given up after TOW_GIVE_UP_TURNS g-t's.
+	for i in range(StubAI.TOW_GIVE_UP_TURNS + 1):
+		stub_ai._update_tow_memory()
+		GameState.current_turn += 1
+	assert_eq(stub_ai.tow_target(a), "")
 
 
 # --- the approach, turn by turn ----------------------------------------------------------

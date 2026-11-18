@@ -83,6 +83,13 @@ var _tow_progress: Dictionary = {}
 var _tow_given_up: Dictionary = {}
 
 
+## Forgets the give-up rule's memory (GameState.start_new_game: one game's given-up tows are not the
+## next game's).
+func reset_memory() -> void:
+	_tow_progress = {}
+	_tow_given_up = {}
+
+
 func _init(p_game_state: Node = null) -> void:
 	game_state = p_game_state if p_game_state else GameState
 
@@ -176,9 +183,10 @@ func _tow_claims(side: int) -> Dictionary:
 
 
 ## The give-up rule (controller ruling, towing spec §11): once a planning, for each AI ship with a
-## tow target, the distance from her bow to the ideal bow of the tow station (0 on station). A ship
-## that has not come closer than her best for TOW_GIVE_UP_TURNS g-t's gives that target up for
-## good, and the claim moves on. The memory is the AI's own, never ShipState.
+## tow target, the moves left to her tow station (_tow_station_distance, 0 on station), or with no
+## way found the hexes from her bow to the station. A ship that has not come closer than her best
+## for TOW_GIVE_UP_TURNS g-t's gives that target up for good, and the claim moves on. The memory is
+## the AI's own, never ShipState; reset_memory clears it for a new game.
 func _update_tow_memory() -> void:
 	for ship_state in _get_ai_ships():
 		var target_id := tow_target(ship_state)
@@ -186,11 +194,19 @@ func _update_tow_memory() -> void:
 		if target_id == "":
 			_tow_progress.erase(ship_state.ship_id)
 			continue
-		var distance := _tow_station_distance(ship_state, game_state.get_ship(target_id))
+		var target: ShipState = game_state.get_ship(target_id)
+		var distance := _tow_station_distance(ship_state, target)
+		# With no way found (beyond TOW_SEARCH_RADIUS, or no wind-legal way), progress is the hexes
+		# from her bow to the station; the two measures are never compared with each other.
+		var measure := "way"
+		if distance >= TOW_UNREACHABLE:
+			measure = "hexes"
+			distance = _axial_distance(ship_state.hex_position, TowRules.station_hex(target))
 		var turn: int = game_state.current_turn
-		if str(memory.get("target", "")) != target_id or distance < int(memory.get("best", 0)) \
-				or distance == 0:
-			_tow_progress[ship_state.ship_id] = {"target": target_id, "best": distance, "since": turn}
+		if str(memory.get("target", "")) != target_id or str(memory.get("measure", "")) != measure \
+				or distance < int(memory.get("best", 0)) or distance == 0:
+			_tow_progress[ship_state.ship_id] = {"target": target_id, "measure": measure,
+				"best": distance, "since": turn}
 			continue
 		if turn - int(memory.get("since", turn)) >= TOW_GIVE_UP_TURNS:
 			var given_up: Array = _tow_given_up.get(ship_state.ship_id, [])

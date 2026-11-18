@@ -438,6 +438,9 @@ func start_new_game(scenario_data: Dictionary) -> void:
 	end_offers = {}
 	linked_at_plot = {}
 	boarding_history = {}
+	# The AI's memory of the last game (tow targets given up) goes with it.
+	if stub_ai != null:
+		stub_ai.reset_memory()
 	Trace.trace_log("GameState", "RNG seeded", seed_value)
 
 	# Clear any existing state history
