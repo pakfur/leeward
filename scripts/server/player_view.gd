@@ -12,7 +12,9 @@ extends RefCounted
 ## Anchor preparations are hidden the same way (a captain cannot see another ship's ground tackle
 ## being got ready): anchor_ready, springs_ready and the preparation crew tasks (AnchorRules.PREP_CODES)
 ## of a ship the reader does not command. The anchor itself (anchor, anchorings_used, cable_cut_turn)
-## stays public, as does a CREW_TASK event for any other code.
+## stays public, as does a CREW_TASK event for any other code. A tow prepared (tow_prepared and the
+## PT task and its events) is hidden from every non-commander, teammates too; the tow itself
+## (towing_id, towed_by) is public.
 ##
 ## Signals and talks are hidden whatever the scenario: a SIGNAL event goes to the sending player's
 ## side only (by data.from_player, not the event's side stamp: the sending ship may be taken before
@@ -63,13 +65,18 @@ const SHIP_BOX_KEYS: Array[String] = ["rigging_current_hp", "hull_current_hp", "
 ## ShipState.serialize keys dropped for a ship the reader does not command: the boxes sent away as
 ## a prize crew, and her plan (no captain sees another ship's plot; ruling 2026-11-17).
 const SHIP_HIDDEN_KEYS: Array[String] = ["detached_boxes", "plotted_actions", "pending_turn",
-	"anchor_ready", "springs_ready"]
+	"anchor_ready", "springs_ready", "tow_prepared"]
 
 var game_state: Node = null
 
 
 func _init(p_game_state: Node) -> void:
 	game_state = p_game_state
+
+
+## A preparation task a captain cannot see on another ship: an anchor (PBA, PSA, PBS, PSS) or a tow (PT).
+static func _is_prep_code(code: String) -> bool:
+	return AnchorRules.PREP_CODES.has(code) or code == "PT"
 
 
 ## Limited information is on unless the scenario is a tournament game (14.C.3).
@@ -105,7 +112,7 @@ func ship_for(player_id: int, ship_id: String) -> Dictionary:
 	data["marine_section_lost"] = ship.marine_count <= 0 and (type == null or type.marine_count > 0)
 	var visible_tasks: Array = []
 	for task in data.get("crew_tasks", []):
-		if not AnchorRules.PREP_CODES.has(str(task.get("code", ""))):
+		if not _is_prep_code(str(task.get("code", ""))):
 			visible_tasks.append(task)
 	data["crew_tasks"] = visible_tasks
 	var prize: Dictionary = data.get("prize", {})
@@ -142,7 +149,7 @@ func events_for(player_id: int, turn: int) -> Array[Dictionary]:
 			continue
 		if ev.type == Type.TALK and not _in_talk(player_id, str(ev.data.get("talk_id", ""))):
 			continue
-		if limit and ev.type == Type.CREW_TASK and AnchorRules.PREP_CODES.has(str(ev.data.get("code", ""))) \
+		if limit and ev.type == Type.CREW_TASK and _is_prep_code(str(ev.data.get("code", ""))) \
 				and not game_state.commands(player_id, ev.ship_id):
 			continue
 		var d: Dictionary = ev.to_dict()

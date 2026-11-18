@@ -119,7 +119,9 @@ static func order_task(ship: ShipState, order: String) -> Dictionary:
 ## Why `tower` may not try to take `towed` in tow now (spec §4, 12.A.2-4), or "". With `setup`
 ## (Developer UI, a scenario's starting tow) the preparation, fire, crew-quality and MP checks are
 ## skipped.
-static func pair_error(tower: ShipState, towed: ShipState, setup: bool = false) -> String:
+## `placed` is a tow already made (a scenario's starting tow, checked once placed): the tow-state
+## checks (already towing / in tow) are skipped, the rest still hold.
+static func pair_error(tower: ShipState, towed: ShipState, setup: bool = false, placed: bool = false) -> String:
 	if tower.ship_id == towed.ship_id:
 		return "a ship cannot tow itself"
 	for s: ShipState in [tower, towed]:
@@ -133,14 +135,15 @@ static func pair_error(tower: ShipState, towed: ShipState, setup: bool = false) 
 		return GrapplingController.destroyed_target_error(towed)
 	if towed.side != tower.side:
 		return "only friendly ships may be towed (12.A.2)"
-	if tower.is_towing():
-		return "%s already tows %s" % [tower.ship_name, tower.towing_id]
-	if tower.is_towed():
-		return "a towed ship cannot tow (12.A.2)"
-	if towed.is_towed():
-		return "%s is already in tow" % towed.ship_name
-	if towed.is_towing():
-		return "%s already tows %s" % [towed.ship_name, towed.towing_id]
+	if not placed:
+		if tower.is_towing():
+			return "%s already tows %s" % [tower.ship_name, tower.towing_id]
+		if tower.is_towed():
+			return "a towed ship cannot tow (12.A.2)"
+		if towed.is_towed():
+			return "%s is already in tow" % towed.ship_name
+		if towed.is_towing():
+			return "%s already tows %s" % [towed.ship_name, towed.towing_id]
 	for s: ShipState in [tower, towed]:
 		if s.is_anchored():
 			return "%s is anchored" % s.ship_name
@@ -175,3 +178,46 @@ static func broken_reason(tower: ShipState, towed: ShipState) -> String:
 	if tower.is_captured() or towed.side != tower.side:
 		return "taken"
 	return ""
+
+
+## The scenario's starting tows (spec §7): a ship entry's optional "tow": "<towed ship id>". The
+## problem with `entry`'s tow (an entry with none gives ""), judged against every entry of the
+## scenario and the placed `ships` (ShipStates). Messages start "Towing: ".
+static func entry_error(entry: Dictionary, entries: Array, ships: Array) -> String:
+	if not entry.has("tow"):
+		return ""
+	var id := str(entry.get("id", ""))
+	var towed_id := str(entry["tow"])
+	var by_id := {}
+	for s: ShipState in ships:
+		by_id[s.ship_id] = s
+	if not by_id.has(id):
+		return "Towing: unknown tower '%s'" % id
+	if not by_id.has(towed_id):
+		return "Towing: '%s' tows unknown ship '%s'" % [id, towed_id]
+	if towed_id == id:
+		return "Towing: '%s' cannot tow itself" % id
+	for other in entries:
+		if not (other is Dictionary) or other == entry or not other.has("tow"):
+			continue
+		if str(other["tow"]) == towed_id:
+			return "Towing: '%s' is towed by two ships" % towed_id
+		if str(other.get("id", "")) == towed_id:
+			return "Towing: '%s' is towed and also tows" % towed_id
+	var why := pair_error(by_id[id], by_id[towed_id], true, by_id[id].towing_id == towed_id)
+	if why != "":
+		return "Towing: '%s' cannot tow '%s': %s" % [id, towed_id, why]
+	return ""
+
+
+## Problems with the scenario's starting tows, one message each; empty when all are legal.
+static func scenario_errors(scenario: Dictionary, ships: Array) -> Array[String]:
+	var errors: Array[String] = []
+	var entries: Array = scenario.get("ships", [])
+	for entry in entries:
+		if not (entry is Dictionary):
+			continue
+		var why := entry_error(entry, entries, ships)
+		if why != "":
+			errors.append(why)
+	return errors

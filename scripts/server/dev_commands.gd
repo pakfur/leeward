@@ -114,6 +114,45 @@ func cut_anchor_cable(ship_id: String) -> String:
 	return reason
 
 
+## The tower takes `towed_id` in tow at once (12.A.4, no preparation, no roll); an empty id picks the
+## ship lying in tow position astern. "" or a reason.
+func take_in_tow(tower_id: String, towed_id: String = "") -> String:
+	var reason := _refusal()
+	if reason != "":
+		return reason
+	var tower: ShipState = game_state.get_ship(tower_id)
+	if tower == null:
+		return "no ship %s" % tower_id
+	if towed_id == "":
+		for s: ShipState in game_state.get_all_ships():
+			if s.is_on_map() and s.ship_id != tower_id and TowRules.station_hex(s) == tower.stern_hex():
+				towed_id = s.ship_id
+				break
+		if towed_id == "":
+			return "no ship lies in tow position astern of %s" % tower_id
+	var towed: ShipState = game_state.get_ship(towed_id)
+	if towed == null:
+		return "no ship %s" % towed_id
+	reason = TowRules.pair_error(tower, towed, true)
+	if reason != "":
+		return reason
+	if not game_state.tow_controller.begin(tower_id, towed_id, game_state.phase_controller.current_phase):
+		return "the server refused the tow"
+	Trace.trace_log("DevCommands", "%s takes %s in tow" % [tower_id, towed_id])
+	return ""
+
+
+## Casts off the tow the ship is in, from either end (12.A.9). "" or a reason.
+func cast_off_tow(ship_id: String) -> String:
+	var reason := _refusal()
+	if reason != "":
+		return reason
+	if not game_state.tow_controller.cut(ship_id, "tx", game_state.phase_controller.current_phase, ship_id):
+		return "%s is in no tow" % ship_id
+	Trace.trace_log("DevCommands", "%s cast off her tow" % ship_id)
+	return ""
+
+
 ## Marks out `rigging` rigging and `hull` hull boxes on the ship (DamageController.apply_hits,
 ## lowest section first, with the usual checks), for trying out repairs in a running game.
 func damage_ship(ship_id: String, rigging: int, hull: int) -> String:

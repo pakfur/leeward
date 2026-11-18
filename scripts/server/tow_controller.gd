@@ -166,3 +166,19 @@ func _sorted_ids() -> Array:
 func _current_turn() -> int:
 	var turn = game_state.get("current_turn") if game_state != null else null
 	return int(turn) if turn != null else -1
+
+
+## The scenario's starting tows (spec §7), made with no event right after the anchors are placed:
+## each ship entry with a legal "tow": "<towed ship id>" begins its tow.
+func place_scenario_tows() -> void:
+	if not is_server:
+		push_error("TowController: Cannot place tows on client")
+		return
+	var entries: Array = game_state.active_scenario.get("ships", [])
+	var ships: Array = game_state.get_all_ships()
+	var legal: Array[Dictionary] = []
+	for entry in entries:
+		if entry is Dictionary and entry.has("tow") and TowRules.entry_error(entry, entries, ships) == "":
+			legal.append(entry)
+	for entry in legal:
+		begin(str(entry["id"]), str(entry["tow"]), game_state.phase_controller.current_phase)
