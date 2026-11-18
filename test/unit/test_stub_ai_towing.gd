@@ -233,7 +233,8 @@ func test_tow_strategy_slows() -> void:
 	_ship("a").speed = 4
 	stub_ai.plot_all_ai_ships()
 	var course: Array = _ship("a").plotted_actions.get("movement", [])
-	assert_eq(course.size(), 1, "one move, the full deceleration: %s" % [course])
+	# Speed 4 less deceleration 3 needs one move; she makes no more than a tow allows (8.C.1).
+	assert_between(course.size(), 1, TowRules.MAX_MPS, "slowed to a tow's MPs: %s" % [course])
 
 
 func test_tow_strategy_holds_on_station() -> void:
@@ -263,5 +264,101 @@ func test_towed_ai_ship_skipped() -> void:
 	_a_on_station()
 	_a_tows_b()
 	stub_ai.plot_all_ai_ships()
-	for r in stub_ai.refusals:
-		assert_ne(str(r["ship_id"]), "b", "no refusal for the towed ship: %s" % [r])
+	assert_eq(stub_ai.refusals, [], "no refusal for either ship of the tow")
+	assert_push_error(0)
+	assert_eq((_ship("b").plotted_actions.get("movement", []) as Array).size(), 0, "b is left unplotted")
+
+
+func test_second_cripple_goes_to_the_next_ship() -> void:
+	_make_ship("a2", 1, Vector2i(-3, -5), 3)
+	var c := _make_ship("c", 1, Vector2i(-12, 0), 3)
+	c.rigging_current_hp = [0, 0, 0, 0] as Array[int]
+	assert_eq(stub_ai.tow_target(_ship("a2")), "b")
+	assert_eq(stub_ai.tow_target(_ship("a")), "c", "a2 claims b, so a takes the other cripple")
+
+
+func test_tow_wins_over_anchor_order() -> void:
+	GameState.active_scenario["anchoring"] = true
+	_ship("a").standing_order = {"order": "anchor"}
+	assert_false(stub_ai.wants_to_anchor(_ship("a")))
+	assert_eq(stub_ai._get_strategy(_ship("a")), "tow")
+	_ship("b").rigging_current_hp = [5, 5, 6, 6] as Array[int]  # no cripple: the order stands
+	assert_true(stub_ai.wants_to_anchor(_ship("a")))
+
+
+func test_off_station_score_never_heads_into_the_wind() -> void:
+	# From the fixture (downwind of b, facing away), the first move is never a turn head to wind.
+	stub_ai.plot_all_ai_ships()
+	var course: Array = _ship("a").plotted_actions.get("movement", [])
+	assert_eq(course.size(), 1)
+	assert_ne(int(course[0]["facing"]), 0, "never into the wind (from 0): %s" % [course])
+
+
+func test_gives_up_after_six_turns_without_closing() -> void:
+	_make_ship("a2", 1, Vector2i(-3, 3), 3)  # farther from b than a
+	stub_ai.strategy_override = "hold"  # a never moves, so never closes
+	for i in range(StubAI.TOW_GIVE_UP_TURNS):
+		stub_ai.plot_all_ai_ships()
+		assert_eq(stub_ai.tow_target(_ship("a")), "b", "turn %d: still trying" % i)
+		GameState.current_turn += 1
+	stub_ai.plot_all_ai_ships()
+	assert_eq(stub_ai.tow_target(_ship("a")), "", "given up")
+	assert_eq(stub_ai.tow_target(_ship("a2")), "b", "the claim moves on")
+
+
+# --- the approach, turn by turn ----------------------------------------------------------
+
+## Plays up to `turns` g-t's: AI plotting, crew tasks, the movement resolver, then the Status
+## Adjustment phase (tow attempt, task progress). Returns {arrived: g-t on station with <= 2 MPs or
+## -1, towed: g-t the tow was passed or -1}.
+func _play(turns: int) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 12345
+	GameState.rng = rng
+	GameState.dice = Dice.new(rng)
+	var a := _ship("a")
+	var b := _ship("b")
+	var res := MovementResolver.new(GameState, rng)
+	var ctl: CrewTaskController = GameState.crew_task_controller
+	var out := {"arrived": -1, "towed": -1}
+	for i in range(turns):
+		pc.current_phase = PLANNING
+		for ship in GameState.get_all_ships():
+			ship.mp_used_this_turn = 0
+		# b's crew would repair her rigging and she would stop being a cripple: keep her dismasted.
+		b.rigging_current_hp = [0, 0, 0, 0] as Array[int]
+		stub_ai.plot_all_ai_ships()
+		ctl.finalize_plots()
+		pc.current_phase = TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
+		ctl.begin_turn_tasks(pc.current_phase)
+		var ships: Array[ShipState] = []
+		ships.assign(GameState.get_all_ships())
+		res.apply_results(res.run(ships, GameState.environment), ships)
+		ctl.after_movement(pc.current_phase)
+		if out["arrived"] < 0 and TowRules.in_position(a, b) and a.mp_used_this_turn <= TowRules.MAX_MPS:
+			out["arrived"] = i
+		pc.current_phase = DRIFT
+		pc._enter_status_adjustment_phase()
+		pc._reset_maintenance()
+		if a.is_towing():
+			out["towed"] = i
+			return out
+		GameState.current_turn += 1
+		GameState.turn_log = GameState.new_turn_log(GameState.current_turn)
+	return out
+
+
+func test_approach_from_downwind() -> void:
+	var a := _ship("a")
+	a.hex_position = Vector2i(-13, -3)
+	a.facing = 5
+	a.speed = 2
+	var result := _play(12)
+	assert_gte(int(result["arrived"]), 0, "reaches the station with <= 2 MPs: %s" % [result])
+	assert_gte(int(result["towed"]), 0, "and passes the tow: %s" % [result])
+
+
+func test_approach_from_the_fixture_layout() -> void:
+	var result := _play(12)
+	assert_gte(int(result["arrived"]), 0, "reaches the station with <= 2 MPs: %s" % [result])
+	assert_gte(int(result["towed"]), 0, "and passes the tow: %s" % [result])
