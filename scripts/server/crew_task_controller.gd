@@ -62,6 +62,10 @@ func plot_crew(player_id: int, ship_id: String, plan: Dictionary) -> String:
 	var target := str(plan.get("orders", {}).get("sail_target", ""))
 	if target != "" and target != ship.ordered_sail_target() and not target in SailController.targets_for(ship):
 		return "Cannot change to %s from %s" % [target, ship.sail_state]
+	# The anchor order (anchoring spec §3): one of AnchorRules.ORDERS ("" = none).
+	var anchor_order := str(plan.get("orders", {}).get("anchor", ""))
+	if not anchor_order in AnchorRules.ORDERS:
+		return "Unknown anchor order %s" % anchor_order
 	# The boarding order (boarding spec §2.4 #6): "", "ready", "stand_down" or "board:<enemy>".
 	var boarding := str(plan.get("orders", {}).get("boarding", ""))
 	if boarding != "" and boarding != "ready" and boarding != "stand_down":

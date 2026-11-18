@@ -10,6 +10,9 @@ extends RefCounted
 ##   A2 other tasks in progress continue with the same sections while still legal (RR is dropped
 ##      above FS, RH when the movement plot uses more than 4 MPs);
 ##   A2b the boarding order (BoardingRules.auto_assign, boarding spec §2.4 #6);
+##   A2c the anchor order (crew_orders.anchor, AnchorRules.order_task): its task goes to the first
+##      section in worker order, when AnchorRules.refusal allows it beside the anchoring tasks
+##      already placed (a preparation in progress continues under A2);
 ##   A3 the ordered sail change, 1 or 2 sections in worker order;
 ##   A4 tacking crew: when the movement plot holds a turn at MA 0, as many of 3 sections as are
 ##      free, in worker order (5.D.2a);
@@ -56,6 +59,19 @@ static func allocate(ship: ShipState, orders: Dictionary, ctx: Dictionary) -> Di
 	# lowest sailor section as boarders, "board:<id>" also sends the readied ones away, no order or
 	# "stand_down" disbands readied sections.
 	taken = BoardingRules.auto_assign(ship, orders, ctx, taken)
+	# A2c: the anchor order (anchoring spec §3): its task, if AnchorRules allows it beside the
+	# anchoring tasks already placed, goes to the first free section in worker order.
+	var wanted := AnchorRules.order_task(ship, str(orders.get("anchor", "")))
+	if not wanted.is_empty():
+		var accepted: Array = []
+		for section in taken:
+			var code := str(taken[section].get("code", ""))
+			if AnchorRules.is_code(code):
+				accepted.append(code)
+		if AnchorRules.refusal(ship, str(wanted["code"]), wanted["params"], ctx, accepted) == "":
+			var free := CrewRules.worker_order(ship, ctx, taken)
+			if not free.is_empty():
+				taken[free[0]] = wanted
 	# A3: the ordered sail change. Placed only when every section it needs is free; otherwise it
 	# does not start ("no crew") and nobody leaves the guns for it.
 	var needed := CrewRules.sail_sections_needed(ship, orders)
