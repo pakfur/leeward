@@ -179,8 +179,11 @@ overlapping ships. Keep ships clear of land, off the map edge, and avoid startin
 Anchoring checks (`AnchorRules.scenario_errors`, all start `Anchoring: `, reported by `placement_errors`; a
 bad ship entry is skipped, nothing is anchored): `anchoring` not true, false or a zone; a zone with neither
 `rows` nor `areas`; `rows` not `[first, last]`; `areas` not a list or naming an unknown area; a ship `anchor`
-that is not an object or whose `end` is not bow or stern; `cable` outside 1-4; an explicit `hex` off the map.
-The anchor hex itself is not checked against land. See `data/scenarios/test_anchorage.json`.
+that is not an object or whose `end` is not bow or stern; `cable` outside 1-4; an explicit `hex` off the map; an
+`anchor` on a reinforcement (`arrives` later than 1: reinforcements enter under way). `placement_errors` also
+reports a starting anchor whose footprint (the hexes she rides to: `cable` hexes downwind of the anchor, on her
+facing) is off the map or on land, so check an explicit `hex` against the wind. The anchor hex itself is not
+checked against land. See `data/scenarios/test_anchorage.json`.
 
 ## Output
 
