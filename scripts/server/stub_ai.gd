@@ -36,7 +36,7 @@ const CLOSE_OUTSIDE_PENALTY := 100
 const BOUNDED_STRATEGIES := ["close", "follow", "line", "disengage"]
 
 ## Plotting errors for ships that legitimately cannot move; the AI skips them without error.
-const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_GRAPPLED", "SHIP_CAPTURED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED"]
+const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_GRAPPLED", "SHIP_CAPTURED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED", "SHIP_AGROUND", "SHIP_OFF_MAP"]
 ## Submission refusals after which the ship is replotted with a plain course.
 const REPLOT_ERROR_CODES := ["RUDDER_JAMMED", "TOO_SLOW", "CANNOT_SUBMIT"]
 ## The most moves added to reach the deceleration limit (more than any movement allowance).

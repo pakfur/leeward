@@ -451,6 +451,68 @@ func remove_from_map(ship_id: String) -> bool:
 	ship_state_changed.emit(ship_id)
 	return true
 
+func set_aground(ship_id: String, turn: int) -> bool:
+	"""SERVER ONLY: The ship runs aground on `turn` (13.G)."""
+	if not is_server:
+		push_error("ShipStateController: Cannot set aground on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.aground = true
+	ship.aground_turn = turn
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_escape_declared(ship_id: String, on: bool) -> bool:
+	"""SERVER ONLY: Declare (or withdraw) the ship's escape."""
+	if not is_server:
+		push_error("ShipStateController: Cannot declare escape on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.escape_declared = on
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_cast_lead(ship_id: String, on: bool) -> bool:
+	"""SERVER ONLY: The ship casts the lead this turn; the flag lives in the plot."""
+	if not is_server:
+		push_error("ShipStateController: Cannot cast the lead on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.plotted_actions["cast_lead"] = on
+	ship_state_changed.emit(ship_id)
+	return true
+
+func place_arrival(ship_id: String, speed: int) -> bool:
+	"""SERVER ONLY: A reinforcement comes onto the map at `speed`."""
+	if not is_server:
+		push_error("ShipStateController: Cannot place an arrival on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.awaiting_arrival = false
+	ship.speed = speed
+	ship_state_changed.emit(ship_id)
+	return true
+
+func delay_arrival(ship_id: String, turn: int) -> bool:
+	"""SERVER ONLY: Put a waiting reinforcement's arrival back to `turn`."""
+	if not is_server:
+		push_error("ShipStateController: Cannot delay an arrival on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.arrives_turn = turn
+	ship_state_changed.emit(ship_id)
+	return true
+
 func add_guns_dismounted(ship_id: String, amount: int, side: int = -1) -> bool:
 	"""SERVER ONLY: Add dismounted guns to one side (PORT/STARBOARD), or both sides when side is -1"""
 	if not is_server:

@@ -42,6 +42,10 @@ const FORBIDDEN := [
 	# server's END_TURN step removes a ship
 	["\\bremove_from_map\\(", "a ship removed from the map by view code"],
 	["\\.removed_from_map\\s*(=|\\+=|-=)[^=]", "removed_from_map written from view code"],
+	# terrain, escape and arrival (map and scenario spec): the view reads is_aground() /
+	# is_escaped() / is_awaiting_arrival() / casts_lead()
+	["\\.(aground|aground_turn|escape_declared|awaiting_arrival|arrives_turn)\\s*(=|\\+=|-=)[^=]", "a terrain, escape or arrival field written from view code"],
+	["(?<!player_)\\b(set_aground|set_escape_declared|set_cast_lead|place_arrival|delay_arrival)\\(", "a terrain, escape or arrival mutator called from view code"],
 	["(?<!dev_commands\\.)\\b(start_fire|explode|add_fire|remove_fire|clear_fires|set_explosion_checks)\\(",
 			"a fire mutator called from view code"],
 	# gunfire and marine fire (7.G): the view previews through GunneryCalculator and
@@ -224,6 +228,35 @@ func test_boarding_patterns_catch_mutations() -> void:
 		"if BoardingController.recapture_due(s):",
 		"if ship.navy == \"French\":",
 		"GameState.phase_controller.player_submit_maintenance_orders(0, {\"prize_size\": {3: 4}})",
+	]
+	var checks: Array = []
+	for f in FORBIDDEN:
+		var re := RegEx.new()
+		re.compile(f[0])
+		checks.append(re)
+	for line in bad:
+		var hit := false
+		for re in checks:
+			if re.search(line) != null:
+				hit = true
+		assert_true(hit, "caught: %s" % line)
+	for line in good:
+		for re in checks:
+			assert_null(re.search(line), "allowed: %s" % line)
+
+
+## The terrain, escape and arrival patterns catch writes and mutator calls, and let the queries through.
+func test_terrain_patterns_catch_mutations() -> void:
+	var bad := [
+		"ship.aground = true",
+		"s.escape_declared = false",
+		"GameState.ship_controller.set_aground(\"a\", 2)",
+		"place_arrival(id, 5)",
+	]
+	var good := [
+		"if ship.is_aground():",
+		"GameState.phase_controller.player_set_cast_lead(0, \"a\", true)",
+		"if ship.aground == true:",
 	]
 	var checks: Array = []
 	for f in FORBIDDEN:

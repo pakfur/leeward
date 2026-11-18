@@ -453,8 +453,12 @@ func placement_errors() -> Array[String]:
 	var errors: Array[String] = []
 	var terrain := TerrainMap.of(active_scenario)
 	errors.append_array(terrain.errors)
-	var all_ships := get_all_ships()
-	for s in all_ships:
+	var all_ships: Array[ShipState] = []
+	var waiting: Array[ShipState] = []
+	for s in get_all_ships():
+		(waiting if s.is_awaiting_arrival() else all_ships).append(s)
+	# a waiting ship holds no hexes yet, but its entry footprint must be on the board and in the water
+	for s in waiting + all_ships:
 		for h in s.occupied_hexes():
 			if not Occupancy.in_bounds(h, active_scenario):
 				errors.append("GameState: ship '%s' occupies %s, outside map_bounds" % [s.ship_id, h])
@@ -519,7 +523,8 @@ func add_ship(ship_state: ShipState) -> bool:
 	others.assign(ships.values())
 	var occupied := Occupancy.build(others)
 	for h in ship_state.occupied_hexes():
-		if occupied.has(h):
+		# a waiting reinforcement holds no hexes until it arrives
+		if occupied.has(h) and not ship_state.is_awaiting_arrival():
 			push_error("GameState: ship '%s' starts on %s, already occupied by '%s'; rejected" % [
 				ship_state.ship_id, h, occupied[h]])
 			return false
