@@ -578,7 +578,8 @@ static func _tows_in_run(ship_map: Dictionary) -> Dictionary:
 ##   stands (13.G.2) and the tow is struck from the pass, so the tower sails on free (the tow parts after
 ##   movement, MapController.ground);
 ## - made and clear: the follow (TOW_FOLLOW);
-## - not made because a collision stopped the tower: the tow rams her (12.A.11, _apply_tow_collision);
+## - not made because a collision stopped the tower: the tow rams her (12.A.11, _apply_tow_collision),
+##   unless the tow is already held (one collision per ship per segment);
 ## - not made for any other reason: nothing; the towed ship stays.
 ## Dice (the resolver's rng), towers in id order: the towed bow's depth d6, then her rigging dice if
 ## she runs aground; or the ram's rigging dice, then its fouling d10. None when no ship tows.
@@ -600,7 +601,10 @@ func _follow_tows(p: ResolutionPass, seg: Segment) -> void:
 		var towed_id: String = p.tows[tower_id]
 		if not seg.moves.has(tower_id):
 			var tower_result: MovementTypes.ShipResolutionResult = p.results[tower_id]
-			if tower_result.stopped_at_impulse == seg.impulse and tower_result.collided_with != "":
+			# One collision per ship per segment: a tow already held (hit by a third ship, or stopped
+			# earlier) does not also run into her tower.
+			if tower_result.stopped_at_impulse == seg.impulse and tower_result.collided_with != "" \
+					and not p.tow_hold.has(towed_id):
 				_apply_tow_collision(p, seg, towed_id, tower_id)
 			continue
 		if p.tow_hold.has(towed_id):

@@ -290,6 +290,59 @@ func test_tower_collision_rams_tow() -> void:
 		assert_eq(logged[0].to_text({"w": "w", "t": "t"}), "w runs into her tower t")
 
 
+## One collision per ship per segment: c runs into w while t runs into x; w, already held, does not
+## also ram t (no second COLLISION, no rigging-loss roll for her).
+func test_held_tow_does_not_ram_tower() -> void:
+	var ships := _pair(1)
+	var w: ShipState = ships[1]
+	w.rigging_current_hp = [5, 5, 6, 6] as Array[int]
+	w.sail_state = "MS"  # a ram would cost her d6 + 1 rigging
+	ships.append(_ship("x", Vector2i(4, 5), 1))
+	_plot("t", [[Vector2i(4, 5), 3]])
+	var c := _ship("c", Vector2i(9, 5), 3, 3, 1, 1)
+	_plot("c", [[Vector2i(8, 5), 3]])  # into w's stern
+	ships.append(c)
+	var log := _resolver().run(ships, GameState.environment, {
+		"c": {"choice": "collide", "segment": 0}, "t": {"choice": "collide", "segment": 0}})
+	assert_eq(log.get_result("t").collided_with, "x")
+	var wr: MovementTypes.ShipResolutionResult = log.get_result("w")
+	assert_eq(wr.collided_with, "c")
+	var collisions := _events(wr, MovementTypes.ResolutionEventType.COLLISION)
+	assert_eq(collisions.size(), 1, "one collision for the tow")
+	if collisions.size() == 1:
+		assert_eq(collisions[0].detail, "hit by c")
+	assert_eq(_events(wr, MovementTypes.ResolutionEventType.COLLISION_RIGGING_LOSS).size(), 0)
+	assert_eq(wr.rigging_damage, 0, "no rigging-loss roll for the tow")
+	assert_false(_events(log.get_result("t"), MovementTypes.ResolutionEventType.COLLISION).any(
+		func(ev) -> bool: return ev.detail.contains("tow")), "the tower is not hit by her tow")
+
+
+## t wins a stern contest with y for (5, 6), but her tow cannot follow (land at (7, 4)): the tow
+## rollback undoes the winning turn, and the contest dice stay in the final log.
+func test_tow_rollback_keeps_contest_dice() -> void:
+	_scenario_with({"land": [[7, 4]]})
+	var ships := _pair(1)
+	ships[0].crew_quality = "A"  # +6 against y's G: t always wins
+	_starboard_turn()  # new stern (5, 6)
+	var y := _ship("y", Vector2i(4, 6), 4, 3, 1, 1)  # stern (4, 7)
+	y.crew_quality = "G"
+	_plot("y", [[Vector2i(4, 6), 3]])  # port turn: the stern swings into (5, 6)
+	ships.append(y)
+	var log := _resolver().run(ships, GameState.environment)
+	var t: MovementTypes.ShipResolutionResult = log.get_result("t")
+	var yr: MovementTypes.ShipResolutionResult = log.get_result("y")
+	assert_eq(_tow_held(t).size(), 1)
+	assert_eq(t.final_facing, 3, "the won turn is undone")
+	assert_eq(yr.final_facing, 3, "y turns into the hex in the replay")
+	var t_rolls := _events(t, MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL)
+	var y_rolls := _events(yr, MovementTypes.ResolutionEventType.CONTESTED_HEX_ROLL)
+	assert_eq(t_rolls.size(), 1, "t's contest die is kept")
+	assert_eq(y_rolls.size(), 1, "y's contest die is kept")
+	if t_rolls.size() == 1:
+		assert_true(t_rolls[0].success)
+		assert_eq(t_rolls[0].impulse, 0)
+
+
 func test_towed_grounds_and_parts() -> void:
 	_scenario_with({"shallow": [{"name": "A", "base": 0, "hexes": [[6, 5]]}]})
 	var ships := _pair()
