@@ -436,6 +436,13 @@ class ResolutionEvent extends RefCounted:
 	var threshold: float = -1.0
 	var success: bool = true
 	var detail: String = ""
+	## When in the g-t this happened (MoveSchedule time); ZERO = not stamped yet.
+	var time: Vector2i = Vector2i.ZERO
+
+	static func time_text(t: Vector2i) -> String:
+		if t.y == 0:
+			return "end"
+		return "%d/%d" % [t.x, t.y]
 
 	func _init(p_ship_id: String = "", p_impulse: int = 0, p_type: ResolutionEventType = ResolutionEventType.MOVE) -> void:
 		ship_id = p_ship_id
@@ -452,6 +459,7 @@ class ResolutionEvent extends RefCounted:
 			"facing": facing,
 			"from_facing": from_facing,
 			"success": success,
+			"time": time_text(time),
 		}
 		if roll >= 0.0:
 			d["roll"] = roll
@@ -511,6 +519,10 @@ class ResolutionLog extends RefCounted:
 	var turn: int = 0
 	var ship_results: Dictionary = {}
 	var max_impulses: int = 0
+	## The time of each segment index (MoveSchedule.END for the end check), one per index below max_impulses.
+	var segment_times: Array[Vector2i] = []
+	var plot_steps: Dictionary = {}  # ship_id -> N, the steps each ship plotted
+	var longest_plot: int = 0
 	## A potential collision waiting for the player's decision: the log is complete only before
 	## `pending_bear_off.segment`; play it up to there, then ask (see TurnPhaseController).
 	var pending_bear_off: BearOffSituation = null
@@ -534,9 +546,15 @@ class ResolutionLog extends RefCounted:
 		var results_dict := {}
 		for sid in ship_results:
 			results_dict[sid] = ship_results[sid].to_dict()
+		var times: Array = []
+		for t in segment_times:
+			times.append(ResolutionEvent.time_text(t))
 		return {
 			"turn": turn,
 			"max_impulses": max_impulses,
+			"segment_times": times,
+			"plot_steps": plot_steps,
+			"longest_plot": longest_plot,
 			"ship_results": results_dict,
 		}
 

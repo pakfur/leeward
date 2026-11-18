@@ -24,6 +24,7 @@ var _steering_failed_tacks: Dictionary = {}
 ## Which step each ship takes on which segment this run, built from the plots once poor maneuvering has
 ## rewritten them (see run()). Amended plots never change it.
 var _schedule: MoveSchedule = null
+var _final_segment_count: int = 0  # the last pass's segment count (see _stamp_times)
 
 
 ## One resolution pass (see run()): every ship's steps, pose and progress, and the overlap bookkeeping
@@ -237,8 +238,26 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 		_record_steering(ship_map[sid], results[sid], steering[sid], amended.get(sid, plotted[sid]), amended.has(sid))
 	for sid in results:
 		log.add_result(results[sid])
+	log.plot_steps = plot_sizes
+	for n in plot_sizes.values():
+		log.longest_plot = maxi(log.longest_plot, n)
+	_final_segment_count = outcome.max_impulses
+	_stamp_times(log)
 
 	return log
+
+
+## Fills `log.segment_times` and stamps every event not already stamped (the pre-movement ones are at
+## START) with the time of its segment. Indices at or above the final pass's segment count (the end
+## check, even a stale check index from an earlier pass) are END.
+func _stamp_times(log: MovementTypes.ResolutionLog) -> void:
+	log.segment_times = []
+	for i in range(log.max_impulses):
+		log.segment_times.append(_schedule.time_of(i) if i < _final_segment_count else MoveSchedule.END)
+	for sid in log.ship_results:
+		for ev in log.ship_results[sid].events:
+			if ev.time == Vector2i.ZERO:
+				ev.time = log.segment_times[ev.impulse]
 
 
 ## One resolution of every ship's steps (`amended` overrides a ship's plot; `cycle_breaks` and
@@ -341,6 +360,7 @@ func _roll_pre_movement(p: ResolutionPass, ships: Array[ShipState]) -> void:
 				imm_ev.to_hex = p.current_hexes[sid]
 				imm_ev.facing = ship_state.facing
 				imm_ev.detail = "poor maneuvering failed"
+				imm_ev.time = MoveSchedule.START
 				result.events.append(imm_ev)
 			if not tack_success:
 				# The plotted turn is erased (5.D.1): the ship keeps its hex and heading.
@@ -1529,6 +1549,7 @@ func _remain_in_irons(ship_state: ShipState, result: MovementTypes.ShipResolutio
 	imm_ev.to_hex = ship_state.hex_position
 	imm_ev.facing = ship_state.facing
 	imm_ev.detail = detail
+	imm_ev.time = MoveSchedule.START
 	result.events.append(imm_ev)
 
 
@@ -1564,6 +1585,7 @@ func _roll_tacking(
 	ev.threshold = float(number)
 	ev.success = success
 	ev.detail = "d10=%d drm=%+d needed<=%d" % [d10, drm, number]
+	ev.time = MoveSchedule.START
 	result.events.append(ev)
 
 	if not success:
@@ -1574,6 +1596,7 @@ func _roll_tacking(
 		imm_ev.to_hex = ship_state.hex_position
 		imm_ev.facing = ship_state.facing
 		imm_ev.detail = "tacking failed"
+		imm_ev.time = MoveSchedule.START
 		result.events.append(imm_ev)
 
 	return success

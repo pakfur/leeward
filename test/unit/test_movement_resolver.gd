@@ -3544,3 +3544,62 @@ func test_ma0_turn_happens_at_time_one() -> void:
 		assert_eq(_impulses(result, MovementTypes.ResolutionEventType.MOVE), [3])
 		break
 	assert_true(found, "Some seed tacks")
+
+
+func _race_log() -> MovementTypes.ResolutionLog:
+	return resolver.run(_race(), env, {"slow": {"choice": MovementTypes.BEAR_OFF_COLLIDE, "segment": 6}})
+
+
+func test_log_lists_every_segment_time() -> void:
+	var log = _race_log()
+	assert_eq(log.segment_times, [Vector2i(1, 8), Vector2i(1, 4), Vector2i(1, 3), Vector2i(3, 8),
+		Vector2i(1, 2), Vector2i(5, 8), Vector2i(2, 3), Vector2i(3, 4), Vector2i(7, 8), Vector2i(1, 1)])
+	assert_eq(log.plot_steps, {"fast": 8, "slow": 3})
+	assert_eq(log.longest_plot, 8)
+
+
+func test_every_event_carries_its_time() -> void:
+	var log = _race_log()
+	for sid in ["fast", "slow"]:
+		for ev in log.get_result(sid).events:
+			assert_eq(ev.time, log.segment_times[ev.impulse], "%s event at impulse %d" % [sid, ev.impulse])
+	var into_x: Array = _events_of(log.get_result("fast"), MovementTypes.ResolutionEventType.MOVE).filter(
+		func(ev): return ev.to_hex == Vector2i(4, 5))
+	assert_eq(into_x.size(), 1)
+	if into_x.size() == 1:
+		assert_eq(into_x[0].time, Vector2i(1, 2))
+
+
+func test_pre_movement_events_are_at_start() -> void:
+	var t = _make_ship_state(Vector2i(5, 5), 0, 0, "C", "t")
+	_plot_turn(t, 1)
+	var other = _make_ship_state(Vector2i(12, 12), 3, 3, "C", "other")
+	_plot_straight(other, 4)
+	var ships: Array[ShipState] = [t, other]
+	rng.seed = 1
+	var result = resolver.run(ships, env).get_result("t")
+	var rolls: Array = _events_of(result, MovementTypes.ResolutionEventType.TACKING_ROLL)
+	assert_eq(rolls.size(), 1)
+	if rolls.size() == 1:
+		assert_eq(rolls[0].time, MoveSchedule.START)
+
+
+func test_rollback_on_the_end_check_is_at_end() -> void:
+	var t = _make_ship_state(Vector2i(5, 5), 3, 0, "C", "t")
+	GameState.ship_controller.set_plotted_movement("t", [{"hex": {"q": 5, "r": 5}, "facing": 4}])
+	var f = _make_ship_state(Vector2i(4, 6), 3, 0, "C", "f")
+	GameState.ship_controller.set_plotted_movement("f", [])
+	var ships: Array[ShipState] = [t, f]
+	var log = resolver.run(ships, env)
+	var result = log.get_result("t")
+	var overlaps: Array = _events_of(result, MovementTypes.ResolutionEventType.OVERLAP)
+	var rollbacks: Array = _events_of(result, MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK)
+	assert_eq(overlaps.size(), 1)
+	assert_eq(rollbacks.size(), 1)
+	if overlaps.size() == 1:
+		assert_eq(overlaps[0].impulse, 0)
+	if rollbacks.size() == 1:
+		assert_eq(rollbacks[0].impulse, 1)
+		assert_eq(rollbacks[0].time, MoveSchedule.END)
+	assert_eq(log.segment_times, [Vector2i(1, 1), MoveSchedule.END])
+	assert_eq(log.max_impulses, 2)

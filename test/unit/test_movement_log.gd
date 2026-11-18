@@ -364,3 +364,22 @@ func test_lost_stern_contest_text_shows_the_rolls() -> void:
 		{"cause": "stern_contest", "roll": 2, "other_roll": 4}, "b")
 	assert_eq(ev.to_text({"a": "Alpha", "b": "Bravo"}),
 		"Alpha stops short of its plotted course — it lost the contest with Bravo for the hex its stern was turning into (rolled 2 against 4)")
+
+
+func test_log_to_dict_writes_times() -> void:
+	var log := MovementTypes.ResolutionLog.new(1)
+	log.segment_times = [Vector2i(1, 2), Vector2i(1, 1)]
+	log.longest_plot = 2
+	log.plot_steps = {"a": 2}
+	var a := MovementTypes.ShipResolutionResult.new("a")
+	_move(a, 0, Vector2i(0, 0), Vector2i(1, 0))
+	a.events[0].time = Vector2i(1, 2)
+	log.add_result(a)
+	var d := log.to_dict()
+	assert_eq(d["segment_times"], ["1/2", "1/1"])
+	assert_eq(d["longest_plot"], 2)
+	assert_eq(d["plot_steps"], {"a": 2})
+	assert_eq(d["ship_results"]["a"]["events"][0]["time"], "1/2")
+	var end := MovementTypes.ResolutionEvent.new("a", 1, T.MOVE)
+	end.time = MoveSchedule.END
+	assert_eq(end.to_dict()["time"], "end")
