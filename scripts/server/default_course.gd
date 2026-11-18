@@ -13,11 +13,11 @@ extends RefCounted
 
 
 ## The refusals of MovementPlottingController.handle_start_plotting (SHIP_CAPTURED, SHIP_FOULED,
-## SHIP_GRAPPLED, SHIP_OFF_MAP, SHIP_DESTROYED, SHIP_STRUCK, SHIP_AGROUND, SHIP_DISMASTED): such a ship cannot plot or move.
+## SHIP_GRAPPLED, SHIP_OFF_MAP, SHIP_DESTROYED, SHIP_STRUCK, SHIP_AGROUND, SHIP_ANCHORED, SHIP_DISMASTED): such a ship cannot plot or move.
 static func can_plot(ship: ShipState) -> bool:
 	return not (ship.is_captured() or ship.fouled_with != "" or ship.is_grappled() \
 			or ship.is_destroyed() or ship.is_struck() or ship.is_dismasted() \
-			or ship.is_aground() or not ship.is_on_map() or ship.is_escaped())
+			or ship.is_aground() or ship.is_anchored() or not ship.is_on_map() or ship.is_escaped())
 
 
 ## The default course: up to min(speed, MA) forward steps along the facing. Empty at MA 0, at

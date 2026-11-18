@@ -121,6 +121,16 @@ var ship_type: String:
 ## Aground on a shoal (13.G): in play and targetable, but cannot move. `aground_turn` = the turn it grounded.
 @export var aground: bool = false
 @export var aground_turn: int = -1
+## Anchoring (anchoring spec §1; mutated only through ShipStateController). `anchor` is {} when
+## not anchored, else {hex: Vector2i, end: "bow"|"stern", springs, cable, veered, swing_dir,
+## wind_dir, turn}. `anchor_ready` / `springs_ready` are the standing orders (set by the crew
+## task, cleared on dropping); `anchorings_used` counts drops; `cable_cut_turn` = the turn the
+## cable was cut (-1 = none).
+@export var anchor: Dictionary = {}
+@export var anchor_ready: String = ""
+@export var springs_ready: bool = false
+@export var anchorings_used: int = 0
+@export var cable_cut_turn: int = -1
 ## The player has declared this ship's escape (leaving by the escape edge).
 @export var escape_declared: bool = false
 ## A reinforcement not yet on the map: off the map and out of play until it arrives on `arrives_turn`.
@@ -227,6 +237,18 @@ func is_escaped() -> bool:
 
 func is_aground() -> bool:
 	return aground
+
+func is_anchored() -> bool:
+	return not anchor.is_empty()
+
+func has_springs() -> bool:
+	return is_anchored() and bool(anchor.get("springs", false))
+
+## The hex the cable holds: the bow when anchored by the bow, else the stern (the bow hex when not anchored).
+func anchored_end_hex() -> Vector2i:
+	if is_anchored() and str(anchor.get("end", "bow")) == "stern":
+		return stern_hex()
+	return hex_position
 
 func is_awaiting_arrival() -> bool:
 	return awaiting_arrival
@@ -610,6 +632,25 @@ func is_poor_maneuvering() -> bool:
 func max_turns_per_gt() -> int:
 	return 1 if is_poor_maneuvering() else UNLIMITED_TURNS
 
+func _serialize_anchor() -> Dictionary:
+	if anchor.is_empty():
+		return {}
+	var out: Dictionary = anchor.duplicate(true)
+	var h: Vector2i = anchor.get("hex", Vector2i.ZERO)
+	out["hex"] = {"q": h.x, "r": h.y}
+	return out
+
+static func _deserialize_anchor(data) -> Dictionary:
+	if not (data is Dictionary) or data.is_empty():
+		return {}
+	var out: Dictionary = data.duplicate(true)
+	var h = data.get("hex", {})
+	if h is Dictionary:
+		out["hex"] = Vector2i(int(h.get("q", 0)), int(h.get("r", 0)))
+	elif not (h is Vector2i):
+		out["hex"] = Vector2i.ZERO
+	return out
+
 func serialize() -> Dictionary:
 	"""Serialize state for network transmission or save/load"""
 	var data = {
@@ -658,6 +699,11 @@ func serialize() -> Dictionary:
 		"removed_from_map": removed_from_map,
 		"aground": aground,
 		"aground_turn": aground_turn,
+		"anchor": _serialize_anchor(),
+		"anchor_ready": anchor_ready,
+		"springs_ready": springs_ready,
+		"anchorings_used": anchorings_used,
+		"cable_cut_turn": cable_cut_turn,
 		"escape_declared": escape_declared,
 		"awaiting_arrival": awaiting_arrival,
 		"arrives_turn": arrives_turn,
@@ -768,6 +814,11 @@ static func deserialize(data: Dictionary) -> ShipState:
 	state.removed_from_map = bool(data.get("removed_from_map", false))
 	state.aground = bool(data.get("aground", false))
 	state.aground_turn = int(data.get("aground_turn", -1))
+	state.anchor = _deserialize_anchor(data.get("anchor", {}))
+	state.anchor_ready = str(data.get("anchor_ready", ""))
+	state.springs_ready = bool(data.get("springs_ready", false))
+	state.anchorings_used = int(data.get("anchorings_used", 0))
+	state.cable_cut_turn = int(data.get("cable_cut_turn", -1))
 	state.escape_declared = bool(data.get("escape_declared", false))
 	state.awaiting_arrival = bool(data.get("awaiting_arrival", false))
 	state.arrives_turn = int(data.get("arrives_turn", 1))

@@ -448,6 +448,80 @@ func remove_from_map(ship_id: String) -> bool:
 	for grappled_id in ship.grappled_with.duplicate():
 		remove_grapple(ship_id, grappled_id)
 	ship.removed_from_map = true
+	ship.anchor = {}
+	ship_state_changed.emit(ship_id)
+	return true
+
+func drop_anchor(ship_id: String, data: Dictionary) -> bool:
+	"""SERVER ONLY: The ship lets go her anchor (13.C): `data` is the anchor dictionary (ShipState.anchor)."""
+	if not is_server:
+		push_error("ShipStateController: Cannot drop anchor on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.anchor = data.duplicate(true)
+	ship.anchor_ready = ""
+	ship.springs_ready = false
+	ship.anchorings_used += 1
+	ship.speed = 0
+	ship.irons_entry_turn = -1
+	ship.cable_cut_turn = -1
+	ship_state_changed.emit(ship_id)
+	return true
+
+func update_anchor(ship_id: String, fields: Dictionary) -> bool:
+	"""SERVER ONLY: Merge `fields` into the ship's anchor (cable, veered, swing, ...)."""
+	if not is_server:
+		push_error("ShipStateController: Cannot update anchor on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	if not ship.is_anchored():
+		push_error("ShipStateController: update_anchor: ship %s is not anchored" % ship_id)
+		return false
+	ship.anchor.merge(fields.duplicate(true), true)
+	ship_state_changed.emit(ship_id)
+	return true
+
+func cut_cable(ship_id: String, turn: int) -> bool:
+	"""SERVER ONLY: The cable is cut on `turn`; the ship is under way again, the anchor lost."""
+	if not is_server:
+		push_error("ShipStateController: Cannot cut cable on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.anchor = {}
+	ship.cable_cut_turn = turn
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_anchor_ready(ship_id: String, end: String) -> bool:
+	"""SERVER ONLY: The anchor is made ready at "bow" or "stern" ("" = not ready)."""
+	if not is_server:
+		push_error("ShipStateController: Cannot set anchor ready on client")
+		return false
+	if end not in ["", "bow", "stern"]:
+		push_error("ShipStateController: set_anchor_ready: unknown anchor end '%s'" % end)
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.anchor_ready = end
+	ship_state_changed.emit(ship_id)
+	return true
+
+func set_springs_ready(ship_id: String, on: bool) -> bool:
+	"""SERVER ONLY: Springs are rigged ready for the next anchoring."""
+	if not is_server:
+		push_error("ShipStateController: Cannot set springs ready on client")
+		return false
+	var ship = _server_ship(ship_id)
+	if not ship:
+		return false
+	ship.springs_ready = on
 	ship_state_changed.emit(ship_id)
 	return true
 

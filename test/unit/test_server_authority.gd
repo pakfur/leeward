@@ -49,6 +49,11 @@ const FORBIDDEN := [
 	# is_escaped() / is_awaiting_arrival() / casts_lead()
 	["\\.(aground|aground_turn|escape_declared|awaiting_arrival|arrives_turn)\\s*(=|\\+=|-=)[^=]", "a terrain, escape or arrival field written from view code"],
 	["(?<!player_)\\b(set_aground|set_escape_declared|set_cast_lead|place_arrival|delay_arrival)\\(", "a terrain, escape or arrival mutator called from view code"],
+	# anchoring (anchoring spec): the view reads is_anchored() / has_springs() / anchored_end_hex()
+	["\\.(anchor|anchor_ready|springs_ready|anchorings_used|cable_cut_turn)\\s*(=|\\+=|-=)[^=]", "an anchor field written from view code"],
+	["\\.anchor\\[[^\\]]*\\]\\s*=[^=]", "an anchor field written from view code"],
+	["(?<!player_)\\b(drop_anchor|update_anchor|cut_cable|set_anchor_ready|set_springs_ready)\\(", "an anchor mutator called from view code"],
+	["\\banchor_controller\\.", "AnchorController used from view code"],
 	["(?<!dev_commands\\.)\\b(start_fire|explode|add_fire|remove_fire|clear_fires|set_explosion_checks)\\(",
 			"a fire mutator called from view code"],
 	# gunfire and marine fire (7.G): the view previews through GunneryCalculator and
@@ -260,6 +265,37 @@ func test_terrain_patterns_catch_mutations() -> void:
 		"if ship.is_aground():",
 		"GameState.phase_controller.player_set_cast_lead(0, \"a\", true)",
 		"if ship.aground == true:",
+	]
+	var checks: Array = []
+	for f in FORBIDDEN:
+		var re := RegEx.new()
+		re.compile(f[0])
+		checks.append(re)
+	for line in bad:
+		var hit := false
+		for re in checks:
+			if re.search(line) != null:
+				hit = true
+		assert_true(hit, "caught: %s" % line)
+	for line in good:
+		for re in checks:
+			assert_null(re.search(line), "allowed: %s" % line)
+
+
+## The anchor patterns catch writes and mutator calls, and let the queries through.
+func test_anchor_patterns_catch_mutations() -> void:
+	var bad := [
+		"ship.anchor = {}",
+		"s.anchor[\"cable\"] = 2",
+		"ship.anchor_ready = \"bow\"",
+		"GameState.ship_controller.drop_anchor(\"a\", {})",
+		"GameState.anchor_controller.cut_now(\"a\", 5)",
+	]
+	var good := [
+		"if ship.is_anchored():",
+		"var c: int = ship.anchor.get(\"cable\", 0)",
+		"label.anchor_left = 0.5",
+		"if ship.anchor_ready == \"bow\":",
 	]
 	var checks: Array = []
 	for f in FORBIDDEN:
