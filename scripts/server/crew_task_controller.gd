@@ -87,7 +87,7 @@ func plot_crew(player_id: int, ship_id: String, plan: Dictionary) -> String:
 			var why := BoardingRules.target_error(ship, CrewRules.context(game_state, ship), board_target)
 			if why != "":
 				return why
-	_store(ship, CrewRules.normalize(ship, plan, CrewRules.context(game_state, ship)))
+	_store(ship, CrewRules.normalize(ship, plan, CrewRules.context(game_state, ship, plan.get("orders", {}))))
 	return ""
 
 

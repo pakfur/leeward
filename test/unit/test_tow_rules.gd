@@ -5,17 +5,21 @@ extends GutTest
 ## dismasted unless stated.
 
 var sc: ShipStateController
+var _old_ships: Dictionary
+var _old_by_side: Dictionary
 
 
 func before_each() -> void:
-	GameState.ships.clear()
+	_old_ships = GameState.ships
+	_old_by_side = GameState.ships_by_side
+	GameState.ships = {}
 	GameState.ships_by_side = {0: [], 1: []}
 	sc = autofree(ShipStateController.new(GameState))
 
 
 func after_each() -> void:
-	GameState.ships.clear()
-	GameState.ships_by_side = {0: [], 1: []}
+	GameState.ships = _old_ships
+	GameState.ships_by_side = _old_by_side
 
 
 func _ship(id: String, hex: Vector2i, facing: int = 3, side: int = 0, ship_class: int = 3) -> ShipState:
@@ -155,6 +159,17 @@ func test_take_target_error() -> void:
 	prize.controller_side = 0
 	assert_eq(TowRules.take_target_error(t, prize), "")
 	assert_eq(TowRules.take_target_error(t, _w()), "")
+	# Off the map: escaped, carried off or not yet arrived; the order lapses.
+	var fled := _ship("f", Vector2i(8, 0))
+	fled.status = ShipState.Status.ESCAPED
+	fled.removed_from_map = true
+	assert_eq(TowRules.take_target_error(t, fled), "f has escaped")
+	var away := _ship("a", Vector2i(10, 0))
+	away.removed_from_map = true
+	assert_eq(TowRules.take_target_error(t, away), "a is not on the map")
+	away.removed_from_map = false
+	away.awaiting_arrival = true
+	assert_eq(TowRules.take_target_error(t, away), "a is not on the map")
 
 
 func test_refusal_pt_and_tx() -> void:
@@ -229,8 +244,20 @@ func test_pair_error_in_order() -> void:
 	assert_string_contains(_error_with(func(_t, w): w.mp_used_this_turn = 3), "8.C.1")
 
 
+func _tows_hermes(t: ShipState) -> void:
+	_ship("x", Vector2i(0, 9)).ship.ship_name = "Hermes"
+	t.towing_id = "x"
+
+
+func test_pair_error_off_map() -> void:
+	# Check 2: both ships on the map.
+	assert_eq(_error_with(func(_t, w): w.removed_from_map = true), "w is not on the map")
+	assert_eq(_error_with(func(t, _w): t.awaiting_arrival = true), "t is not on the map")
+
+
 func test_pair_error_tows_already_made() -> void:
-	assert_string_contains(_error_with(func(t, _w): t.towing_id = "x"), "already tows")
+	assert_eq(_error_with(func(t, _w): _tows_hermes(t)), "t already tows Hermes", "the partner by name")
+	assert_eq(_error_with(func(_t, w): w.towing_id = "x"), "w already tows x", "an unknown partner: her id")
 	assert_string_contains(_error_with(func(_t, w): w.towed_by = "x"), "already in tow")
 	assert_string_contains(_error_with(func(t, _w): t.towed_by = "x"), "12.A.2")
 

@@ -193,6 +193,19 @@ func test_order_lapses_for_unknown_target() -> void:
 	assert_eq(str(begun[0].data["lapsed"]), "Unknown ship")
 
 
+func test_order_lapses_when_target_off_the_map() -> void:
+	# A target that has escaped (or is otherwise off the map) can never be taken in tow: the order
+	# lapses with one event and no die.
+	sc.set_status("w", ShipState.Status.ESCAPED)
+	sc.remove_from_map("w")
+	tows.resolve_tow_attempts(STATUS)
+	assert_eq(_ship("t").tow_order(), "")
+	var begun := _events(PhaseEvents.Type.TOW_BEGUN)
+	assert_eq(begun.size(), 1)
+	assert_eq(str(begun[0].data["lapsed"]), "w has escaped")
+	assert_eq(_dice.remaining(), 0)
+
+
 func test_attempt_runs_before_grapple_step() -> void:
 	_dice.queue([5])
 	pc.current_phase = DRIFT

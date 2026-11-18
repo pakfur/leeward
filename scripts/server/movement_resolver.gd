@@ -220,6 +220,7 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 	var amended: Dictionary = {}  # ship_id -> steps actually resolved
 	var rollbacks: Dictionary = {}  # ship_id -> the rollback or lost stern contest that amended its plot
 	var undone_contests: Array = []  # contests whose winner's turn was rolled back (ResolutionPass.contests)
+	var undone_bear_offs: Dictionary = {}  # ship_id -> a bear-off rollback a later tow rollback replaced
 	var cycle_breaks: Dictionary = {}  # cycle key -> segment (ResolutionPass.cycle_breaks)
 	var settled_contests: Dictionary = {}  # ResolutionPass.settled_contests
 	var settled_bear_offs: Dictionary = {}  # ResolutionPass.settled_bear_offs
@@ -258,6 +259,13 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 			if rb.get("kind", "") == "lead":
 				lead_records.append(rb)  # not the 6.D.5 bear-off, and not the ship's rollback
 			else:
+				# A tow rollback that undoes a bear-off's turn replaces it as the ship's rollback, but the
+				# bear-off was rolled: its record is kept for the final log (as an undone contest's rolls).
+				var earlier: Dictionary = rollbacks.get(sid, {})
+				if rb.get("kind", "") == "tow" and earlier.get("kind", "") == "bear_off":
+					undone_bear_offs[sid] = earlier
+				elif rb.get("kind", "") == "bear_off":
+					undone_bear_offs.erase(sid)
 				rollbacks[sid] = rb
 			if rb.get("kind", "") == "contest":
 				settled_contests[_segment_hex_key(rb.segment, rb.hex)] = {"winner": rb.other_id, "rolls": rb.rolls}
@@ -292,6 +300,8 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 		log.max_impulses = maxi(log.max_impulses, rollbacks[sid].check_segment + 1)
 	for contest in undone_contests:
 		_record_undone_contest(results, contest)
+	for sid in undone_bear_offs:
+		_record_bear_off(results, undone_bear_offs[sid])
 	for record in lead_records:
 		_record_lead(results, record)
 	for sid in steering:
@@ -2704,9 +2714,12 @@ func log_outcomes(log: MovementTypes.ResolutionLog, ships: Array[ShipState], tur
 			if ev.event_type == MovementTypes.ResolutionEventType.COLLISION and ev.detail.begins_with("collided with"):
 				var at := _collision_hex(ev)
 				var collision := {"hex": {"q": at.x, "r": at.y}}
-				if result.collided_with != "" and result.collided_with == ship_state.tow_partner():
-					collision["tow"] = true  # the tow ran into her tower (12.A.11)
-				turn_log.add(PhaseEvents.Type.COLLISION, phase, sid, collision, result.collided_with)
+				var other_id: String = result.collided_with
+				if ev.detail.ends_with(", tow"):
+					# The tow ran into her tower (12.A.11, _apply_tow_collision): "collided with <tower>, ..., tow".
+					collision["tow"] = true
+					other_id = ev.detail.get_slice(" ", 2).trim_suffix(",")
+				turn_log.add(PhaseEvents.Type.COLLISION, phase, sid, collision, other_id)
 		var planned: int = _get_plotted_steps(ship_state).size()
 		var off_course: bool = result.aground or result.left_map != ""  # MapController logs these
 		if not result.tacking_failed and not off_course and planned > 0 and _count_steps_executed(result) < planned:
@@ -2784,8 +2797,10 @@ static func _last_contest_roll(result: MovementTypes.ShipResolutionResult) -> Mo
 ## result names no cause. A cancelled or rolled-back turn after which the ship made no step comes first,
 ## so a ship run into later is not said to have stopped for that.
 static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary:
-	if _undone_turn_ended_movement(result, MovementTypes.ResolutionEventType.TOW_HELD):
-		return {"cause": "tow", "other": result.blocked_by}  # her tow held her back (towing spec §5)
+	# Her tow held her back (towing spec §5), unless another ship ran into her: the collision wins.
+	if result.collided_with == "" \
+			and _undone_turn_ended_movement(result, MovementTypes.ResolutionEventType.TOW_HELD):
+		return {"cause": "tow", "other": result.blocked_by}
 	for ev in result.events:
 		if ev.event_type == MovementTypes.ResolutionEventType.EDGE_BLOCKED:
 			return {"cause": "map_edge", "edge": ev.detail}  # it ends the ship's movement

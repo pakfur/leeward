@@ -63,7 +63,8 @@ static func parse_order(order: String) -> Dictionary:
 	return {"kind": "bad", "target": ""}
 
 
-## Why `ship` may not be ordered to take `target` in tow (spec §3, §4), or "".
+## Why `ship` may not be ordered to take `target` in tow (spec §3, §4), or "": an order with such a
+## target lapses at the attempt (TowController.resolve_tow_attempts).
 static func take_target_error(ship: ShipState, target: ShipState) -> String:
 	if target == null:
 		return "Unknown ship"
@@ -73,7 +74,14 @@ static func take_target_error(ship: ShipState, target: ShipState) -> String:
 		return "only friendly ships may be towed (12.A.2)"
 	if target.is_struck():
 		return "%s has struck: a ship that has surrendered is not towed (ruling)" % target.ship_name
-	return GrapplingController.destroyed_target_error(target)
+	var destroyed := GrapplingController.destroyed_target_error(target)
+	if destroyed != "":
+		return destroyed
+	if target.is_escaped():
+		return "%s has escaped" % target.ship_name
+	if not target.is_on_map():
+		return "%s is not on the map" % target.ship_name
+	return ""
 
 
 ## Why `ship` may not plot `code` (PT or TX) now, `accepted` the codes already in the plan (spec §3),
@@ -137,13 +145,13 @@ static func pair_error(tower: ShipState, towed: ShipState, setup: bool = false, 
 		return "only friendly ships may be towed (12.A.2)"
 	if not placed:
 		if tower.is_towing():
-			return "%s already tows %s" % [tower.ship_name, tower.towing_id]
+			return "%s already tows %s" % [tower.ship_name, _ship_name(tower.towing_id)]
 		if tower.is_towed():
 			return "a towed ship cannot tow (12.A.2)"
 		if towed.is_towed():
 			return "%s is already in tow" % towed.ship_name
 		if towed.is_towing():
-			return "%s already tows %s" % [towed.ship_name, towed.towing_id]
+			return "%s already tows %s" % [towed.ship_name, _ship_name(towed.towing_id)]
 	for s: ShipState in [tower, towed]:
 		if s.is_anchored():
 			return "%s is anchored" % s.ship_name
@@ -166,6 +174,12 @@ static func pair_error(tower: ShipState, towed: ShipState, setup: bool = false, 
 	return GrapplingController.mps_error(tower, towed)
 
 
+## The name of the ship `ship_id` (GameState), or the id when there is no such ship.
+static func _ship_name(ship_id: String) -> String:
+	var s: ShipState = GameState.get_ship(ship_id)
+	return s.ship_name if s != null else ship_id
+
+
 ## Why a standing tow breaks now (spec §6), or "": "destroyed", "struck", "aground" (either ship),
 ## "taken" (the tower captured, or the tow no longer of the tower's side) or "dismasted" (the
 ## tower: a dismasted ship cannot tow, so she casts off her tow; ruling).
@@ -184,10 +198,12 @@ static func broken_reason(tower: ShipState, towed: ShipState) -> String:
 
 
 ## The scenario's starting tows (spec §7): a ship entry's optional "tow": "<towed ship id>". The
-## problem with `entry`'s tow (an entry with none gives ""), judged against every entry of the
-## scenario and the placed `ships` (ShipStates). Messages start "Towing: ".
-static func entry_error(entry: Dictionary, entries: Array, ships: Array) -> String:
-	if not entry.has("tow"):
+## problem with the tow of `entries[index]` (an entry with none gives ""), judged against every other
+## entry of the scenario (by index, so two equal entries are still two ships) and the placed `ships`
+## (ShipStates). Messages start "Towing: ".
+static func entry_error(index: int, entries: Array, ships: Array) -> String:
+	var entry = entries[index]
+	if not (entry is Dictionary) or not entry.has("tow"):
 		return ""
 	var id := str(entry.get("id", ""))
 	var towed_id := str(entry["tow"])
@@ -200,8 +216,9 @@ static func entry_error(entry: Dictionary, entries: Array, ships: Array) -> Stri
 		return "Towing: '%s' tows unknown ship '%s'" % [id, towed_id]
 	if towed_id == id:
 		return "Towing: '%s' cannot tow itself" % id
-	for other in entries:
-		if not (other is Dictionary) or other == entry or not other.has("tow"):
+	for i in range(entries.size()):
+		var other = entries[i]
+		if i == index or not (other is Dictionary) or not other.has("tow"):
 			continue
 		if str(other["tow"]) == towed_id:
 			return "Towing: '%s' is towed by two ships" % towed_id
@@ -217,10 +234,8 @@ static func entry_error(entry: Dictionary, entries: Array, ships: Array) -> Stri
 static func scenario_errors(scenario: Dictionary, ships: Array) -> Array[String]:
 	var errors: Array[String] = []
 	var entries: Array = scenario.get("ships", [])
-	for entry in entries:
-		if not (entry is Dictionary):
-			continue
-		var why := entry_error(entry, entries, ships)
+	for i in range(entries.size()):
+		var why := entry_error(i, entries, ships)
 		if why != "":
 			errors.append(why)
 	return errors

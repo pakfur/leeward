@@ -113,6 +113,17 @@ func test_plot_take_order_places_pt_automatic() -> void:
 	assert_eq(_tow_codes(ctrl.current_plan("t")), {ShipState.MARINES: "PT"})
 
 
+func test_tow_target_errors_only_for_a_take_order() -> void:
+	# CrewRules.context checks only the target of a take order: the stored one, or the plan's.
+	var t := _ship("t")
+	assert_eq(CrewRules.context(GameState, t)["tow_target_errors"], {})
+	assert_eq(CrewRules.context(GameState, t, {"tow": "take:e"})["tow_target_errors"],
+		{"e": "only friendly ships may be towed (12.A.2)"})
+	assert_eq(_plot_order("t", "take:w"), "")
+	assert_eq(CrewRules.context(GameState, t)["tow_target_errors"], {"w": ""})
+	assert_eq(CrewRules.context(GameState, t, {"tow": "cut"})["tow_target_errors"], {})
+
+
 func test_take_order_refused_for_enemy_and_unknown() -> void:
 	assert_string_contains(_plot_order("t", "take:e"), "12.A.2")
 	assert_string_contains(_plot_order("t", "take:nobody"), "Unknown ship")

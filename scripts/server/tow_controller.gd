@@ -178,8 +178,9 @@ func place_scenario_tows() -> void:
 	var entries: Array = game_state.active_scenario.get("ships", [])
 	var ships: Array = game_state.get_all_ships()
 	var legal: Array[Dictionary] = []
-	for entry in entries:
-		if entry is Dictionary and entry.has("tow") and TowRules.entry_error(entry, entries, ships) == "":
+	for i in range(entries.size()):
+		var entry = entries[i]
+		if entry is Dictionary and entry.has("tow") and TowRules.entry_error(i, entries, ships) == "":
 			legal.append(entry)
 	for entry in legal:
 		begin(str(entry["id"]), str(entry["tow"]), game_state.phase_controller.current_phase)

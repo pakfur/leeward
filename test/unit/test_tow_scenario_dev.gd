@@ -220,3 +220,40 @@ func test_scenario_tow_errors() -> void:
 	assert_true(away[0].contains("12.A.4a"), away[0])
 	assert_true(_tow_errors("w").is_empty())
 	assert_push_error(4, "Towing: ")
+
+
+## t (0, 0), w (2, 0) and u (4, 0), all facing W: each one's stern is the tow station of the next.
+func _three(t_tow: Variant, w_extra: Dictionary, u_tow: Variant) -> Array[String]:
+	var s := _scenario(t_tow)
+	var w: Dictionary = s["ships"][1]
+	w.merge(w_extra, true)
+	var u := {"id": "u", "ship_name": "U", "player_id": 0, "ship_type": "frigate_38",
+		"position": {"q": 4, "r": 0}, "facing": 3, "speed": 0, "sail_state": "FS",
+		"crew_quality": "B", "crew_morale": 4}
+	if u_tow != null:
+		u["tow"] = u_tow
+	s["ships"].append(u)
+	GameState.start_scenario(s, [0] as Array[int])
+	return TowRules.scenario_errors(s, GameState.get_all_ships())
+
+
+func test_scenario_tow_errors_between_entries() -> void:
+	var by_two := _three("w", {}, "w")
+	assert_true(by_two.has("Towing: 'w' is towed by two ships"), str(by_two))
+	var chain := _three("w", {"tow": "u"}, null)
+	assert_true(chain.has("Towing: 'w' is towed and also tows"), str(chain))
+	var anchored := _three("w", {"anchor": {"end": "stern", "springs": false, "cable": 1}}, null)
+	assert_eq(anchored.size(), 1, str(anchored))
+	if anchored.size() == 1:
+		assert_true(anchored[0].contains("W is anchored"), anchored[0])
+	assert_true(_three("w", {}, null).is_empty())
+	assert_push_error(4, "Towing: ")  # by two: one per entry; the chain and the anchor: one each
+
+
+func test_scenario_entries_compared_by_index() -> void:
+	# Two equal entries are two entries: the second tow of w is still a second tow.
+	_pair()
+	var entries := [{"id": "t", "tow": "w"}, {"id": "t", "tow": "w"}]
+	assert_eq(TowRules.entry_error(0, entries, GameState.get_all_ships()), "Towing: 'w' is towed by two ships")
+	assert_eq(TowRules.entry_error(0, [{"id": "t", "tow": "w"}, {"id": "w"}], GameState.get_all_ships()), "",
+		"one tow of w")

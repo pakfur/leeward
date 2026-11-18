@@ -92,7 +92,9 @@ static func _plotted_mps(game_state: Node, ship: ShipState, steps: Array) -> int
 ## Facts about the ship's situation the rules read (spec §3.2). Pure read of game_state.
 ## ma0_turn_plotted: the stored movement plot begins with a turn at MA 0 (5.D.1), so the Braces (T)
 ## station is open (MovementResolver.plots_ma0_turn, the test the Tacking roll uses).
-static func context(game_state: Node, ship: ShipState) -> Dictionary:
+## `orders`: the crew orders of a plan about to be normalized, when they are not yet stored (its
+## "tow" order names the tow target checked in tow_target_errors; else the ship's stored order).
+static func context(game_state: Node, ship: ShipState, orders: Dictionary = {}) -> Dictionary:
 	var nearest := -1
 	var adjacent: Array = []  # [ship_id, ship_name] of enemies in play alongside (7.G.1)
 	if game_state != null and game_state.get("fire_geometry") != null:
@@ -110,12 +112,15 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 		adjacent_names.append(str(pair[1]))
 	var turn = game_state.get("current_turn") if game_state != null else null
 	var boarding := boarding_context(game_state, ship)
-	# Towing (CrewAuto A2d): why each other ship may not be taken in tow, {id: reason or ""}.
+	# Towing (CrewAuto A2d): why the target of a "take:<id>" tow order may not be taken in tow,
+	# {id: reason or ""}; only that ship is checked, none without such an order (an id not listed
+	# reads as "Unknown ship").
 	var tow_target_errors := {}
-	if game_state != null:
-		for other: ShipState in game_state.get_all_ships():
-			if other.ship_id != ship.ship_id:
-				tow_target_errors[other.ship_id] = TowRules.take_target_error(ship, other)
+	var tow_parsed := TowRules.parse_order(str(orders.get("tow", ship.tow_order())))
+	if game_state != null and str(tow_parsed["kind"]) == "take":
+		var target: ShipState = game_state.get_ship(str(tow_parsed["target"]))
+		if target != null:
+			tow_target_errors[target.ship_id] = TowRules.take_target_error(ship, target)
 	var env = game_state.get("environment") if game_state != null else null
 	var scenario = game_state.get("active_scenario") if game_state != null else null
 	var ma0_turn := false
