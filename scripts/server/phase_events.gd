@@ -50,6 +50,9 @@ enum Type {
 	ESCAPED,  # a ship escapes: {how: edge|distance|speed, edge | range (-1: no enemy on the map)}
 	ARRIVED,  # a reinforcement enters: {hex, facing, sail_state, speed}
 	ARRIVAL_DELAYED,  # a reinforcement cannot enter this turn; target_id: the ship in the way
+	ANCHORED,  # 13.C.2 a ship lets go her anchor: {end: bow/stern, springs, hex}
+	ANCHOR_MOVE,  # 13.C.4-6, 13.E.1 a ship rides to her anchor: {causes, from_facing, to_facing, roll, from, to, cable, blocked, fouled}; target_id: the blocker
+	CABLE_CUT,  # 13.F.2 a ship cuts her cable: {hex: the anchor}
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -495,6 +498,13 @@ class PhaseEvent extends RefCounted:
 				return "%s arrives at %s%s" % [who, _hex_text("hex"), " under %s" % sail if sail != "" else ""]
 			Type.ARRIVAL_DELAYED:
 				return "%s cannot enter: %s holds her entry hex; she will try next turn" % [who, other]
+			Type.ANCHORED:
+				return "%s anchors by the %s%s at %s" % [who, str(data.get("end", "bow")),
+					" with springs" if data.get("springs", false) else "", _hex_text("hex")]
+			Type.ANCHOR_MOVE:
+				return _anchor_move_text(who, other)
+			Type.CABLE_CUT:
+				return "%s cuts her cable" % who
 			Type.DESTROYED:
 				if str(data.get("reason", "")) == "no_sea_room":
 					return "%s leaves the map where there is no sea room and is lost" % who
@@ -723,6 +733,38 @@ class PhaseEvent extends RefCounted:
 		var text := "%s %s aground on %s at %s" % [who, how, on, _hex_text("hex")]
 		if on != "land" and data.has("depth"):
 			text += ": %s ft, draws %s ft" % [_val("depth"), _val("draft")]
+		return text
+
+	## 13.C.4-6, 13.E.1: what moved the ship on her cable, or what held her.
+	func _anchor_move_text(who: String, other: String) -> String:
+		match str(data.get("blocked", "")):
+			"ship":
+				var fouled = data.get("fouled", null)
+				var tail := "" if fouled == null else (" (fouled)" if fouled else " (not fouled)")
+				return "%s cannot ride to her anchor: %s is in the way%s" % [who, other, tail]
+			"land":
+				return "%s cannot ride to her anchor: she takes the ground" % who
+			"edge":
+				return "%s cannot ride to her anchor: the map edge is in the way" % who
+			"linked":
+				return "%s cannot ride to her anchor: she is fouled or grappled" % who
+		var parts := PackedStringArray()
+		for cause in data.get("causes", []):
+			match str(cause):
+				"swing":
+					parts.append("swings to her anchor")
+				"wind":
+					parts.append("rides round to the wind")
+				"settle":
+					parts.append("drops back on her cable")
+				"veer_out":
+					var cable := int(data.get("cable", 0))
+					parts.append("veers out to %s of cable" % PhaseEvents.plural(cable, "hex", "hexes"))
+		var text := who + " " + (", ".join(parts.slice(0, parts.size() - 1)) + " and " + parts[-1]
+			if parts.size() > 1 else (parts[0] if parts.size() == 1 else "rides to her anchor"))
+		var to := _hex_text("to")
+		if to != "" and to != _hex_text("from"):
+			text += " to %s" % to
 		return text
 
 	func _lead_text(who: String) -> String:

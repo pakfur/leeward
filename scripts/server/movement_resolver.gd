@@ -1744,7 +1744,7 @@ func _apply_collision(p: ResolutionPass, seg: Segment, ship_a_id: String, ship_b
 		rig_ev_b.detail = "rigging_loss=%d from sail_state=%s" % [rigging_loss_b, state_b.sail_state]
 		result_b.events.append(rig_ev_b)
 
-	# Only a free, unfouled pair can foul (as in DriftResolver._try_foul): a ship already fouled
+	# Only a free, unfouled pair can foul (as in DriftResolver.try_foul): a ship already fouled
 	# with a third ship, before or earlier in this resolution, keeps its partner and no roll is made.
 	var either_fouled: bool = state_a.fouled_with != "" or state_b.fouled_with != "" \
 			or result_a.fouled_with != "" or result_b.fouled_with != ""

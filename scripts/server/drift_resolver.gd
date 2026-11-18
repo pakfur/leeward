@@ -7,8 +7,8 @@ extends RefCounted
 ## line itself names the ship in the way and says whether they fouled.
 ## Ships fouled or grappled together drift as one group (8.A.6): the connected ships over
 ## ShipState.linked_ids(), one d10 by the member least likely to drift, never a partial drift, and
-## the whole group stays when any of its hexes is blocked. An aground ship never drifts and holds its
-## group (8.A.1); a drift onto land or into shoals too shallow for the draft runs the ship aground
+## the whole group stays when any of its hexes is blocked. An aground or anchored ship never drifts
+## and holds its group (8.A.1; anchoring spec §6); a drift onto land or into shoals too shallow for the draft runs the ship aground
 ## where it stands (13.G.2); a drift across a `none` edge loses the ship, across a crossable escape
 ## edge escapes it (map and scenario spec).
 ## All mutations go through ShipStateController.
@@ -44,16 +44,7 @@ func resolve(phase: int) -> void:
 		return
 
 	var downwind_dir: int = (game_state.environment.wind_direction + 3) % 6
-	var delta: Vector2i = HexGrid.DIRECTIONS[downwind_dir]
-	var downwind_vector: Vector3 = _hex_grid.axial_to_world(delta.x, delta.y)
-
-	var ships: Array[ShipState] = game_state.ships_on_map()
-	ships.sort_custom(func(x: ShipState, y: ShipState) -> bool:
-		var px := _projection(x, downwind_vector)
-		var py := _projection(y, downwind_vector)
-		if not is_equal_approx(px, py):
-			return px > py
-		return x.ship.ship_id < y.ship.ship_id)
+	var ships: Array[ShipState] = leeward_first(game_state.ships_on_map(), downwind_dir)
 
 	var done := {}
 	for ship in ships:
@@ -92,14 +83,31 @@ func _linked_group(ship: ShipState) -> Array[ShipState]:
 	return group
 
 
+## `ships` sorted leeward-most first (8.A.2): the largest projection of the footprint's middle on
+## the `downwind_dir` world vector, ties by ship_id. A sorted copy; `ships` is left as it was. The
+## drift order, shared with the anchoring step (AnchorController.resolve_anchoring).
+func leeward_first(ships: Array[ShipState], downwind_dir: int) -> Array[ShipState]:
+	var delta: Vector2i = HexGrid.DIRECTIONS[downwind_dir]
+	var downwind_vector: Vector3 = _hex_grid.axial_to_world(delta.x, delta.y)
+	var sorted: Array[ShipState] = ships.duplicate()
+	sorted.sort_custom(func(x: ShipState, y: ShipState) -> bool:
+		var px := _projection(x, downwind_vector)
+		var py := _projection(y, downwind_vector)
+		if not is_equal_approx(px, py):
+			return px > py
+		return x.ship.ship_id < y.ship.ship_id)
+	return sorted
+
+
 func _projection(ship: ShipState, downwind_vector: Vector3) -> float:
 	return _hex_grid.ship_center_world(ship.hex_position, ship.facing).dot(downwind_vector)
 
 
 ## Whether `ship` is held in place and holds every ship tied to it (8.A.1: an aground ship never
-## drifts). Anchoring will extend this one test; so will towing for the group.
+## drifts; anchoring spec §6: nor does an anchored one, which rides to her anchor instead). Towing
+## will extend this one test for the group.
 func _holds_group(ship: ShipState) -> bool:
-	return ship.is_aground()
+	return ship.is_aground() or ship.is_anchored()
 
 
 func _is_eligible(group: Array[ShipState]) -> bool:
@@ -196,7 +204,7 @@ func _resolve_group(group: Array[ShipState], downwind_dir: int, wind_speed: int,
 	# the drift line, so a single line tells what happened. null: no fouling roll was made.
 	var fouled: Variant = null
 	if blocked == "ship" and group.size() == 1:
-		fouled = _try_foul(group[0], blocker)
+		fouled = try_foul(group[0], blocker)
 
 	if partial != "":
 		# The moving end meets the terrain on its own (8.A.5): an edge or land stops the pivot, a
@@ -354,8 +362,9 @@ func _partial_drift(ship: ShipState, free_end: String, downwind_dir: int) -> Dic
 
 ## Rolls to foul a drifter against the ship blocking it. Returns whether they fouled, or null when
 ## no roll is made: only a free, unfouled pair can foul (a ship fouled with a third ship keeps its
-## partner), and a dismasted ship never fouls.
-func _try_foul(drifter: ShipState, other: ShipState) -> Variant:
+## partner), and a dismasted ship never fouls. Also the fouling roll of an anchored ship's blocked
+## forced move (AnchorController).
+func try_foul(drifter: ShipState, other: ShipState) -> Variant:
 	if drifter.fouled_with != "" or other.fouled_with != "":
 		return null
 	if drifter.is_dismasted() or other.is_dismasted():

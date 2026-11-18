@@ -891,11 +891,14 @@ func on_combat_playback_completed() -> void:
 	advance_phase()
 
 func _enter_drift_calculation_phase() -> void:
-	"""SERVER ONLY: Enter drift calculation phase"""
+	"""SERVER ONLY: Enter drift calculation phase: drift, then the anchoring step (SoP V.A-B:
+	ships ride to their anchors, anchors are dropped and cables cut)."""
 	current_phase = GamePhase.DRIFT_CALCULATION
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: DRIFT_CALCULATION")
 	game_state.drift_resolver.resolve(GamePhase.DRIFT_CALCULATION)
+	if game_state.get("anchor_controller") != null:
+		game_state.anchor_controller.resolve_anchoring(GamePhase.DRIFT_CALCULATION)
 	advance_phase()
 
 func _enter_status_adjustment_phase() -> void:
