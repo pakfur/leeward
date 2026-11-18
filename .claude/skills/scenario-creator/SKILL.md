@@ -160,6 +160,28 @@ areas, a negative shallow `base`, boundary side hexes that are not neighbours. `
 adds: a ship hex (bow or stern, including a waiting reinforcement's entry footprint) off the map or on land, and
 overlapping ships. Keep ships clear of land, off the map edge, and avoid starting them in shallows.
 
+## Anchoring (spec `docs/superpowers/specs/2026-11-17-anchoring-design.md`)
+
+```json
+"anchoring": true,
+"ships": [ { "id": "fr1", "...": "...", "anchor": {"end": "bow", "springs": true, "cable": 1} } ]
+```
+
+- `anchoring`: where ships may anchor (Scenario Book V.B). Absent or `false` = nowhere (default), `true` =
+  anywhere, or a zone `{"rows": [first, last], "areas": ["shoal name", ...]}`: odd-r offset rows (inclusive)
+  and/or named `terrain.shallow` areas. Checked at the hex the anchor would drop in.
+- Ship `anchor` (optional): the ship starts at anchor. `end` (`"bow"` or `"stern"`, required); `springs`
+  (default `false`); `cable` 1-4 (default 1); `hex` `[q, r]` (default: `cable` hexes upwind of the anchored end).
+  It counts as one of the ship's two anchorings (13.A.5). Give the ship her proper facing (bow into the wind for a
+  bow anchor, stern into the wind for a stern anchor; otherwise she swings to it on the first g-t). The
+  `anchoring` permission is not checked for a starting anchor.
+
+Anchoring checks (`AnchorRules.scenario_errors`, all start `Anchoring: `, reported by `placement_errors`; a
+bad ship entry is skipped, nothing is anchored): `anchoring` not true, false or a zone; a zone with neither
+`rows` nor `areas`; `rows` not `[first, last]`; `areas` not a list or naming an unknown area; a ship `anchor`
+that is not an object or whose `end` is not bow or stern; `cable` outside 1-4; an explicit `hex` off the map.
+The anchor hex itself is not checked against land. See `data/scenarios/test_anchorage.json`.
+
 ## Output
 
 Write the scenario file to `data/scenarios/<name>.json`. Use snake_case for the filename.

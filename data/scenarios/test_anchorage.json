@@ -1,0 +1,78 @@
+{
+  "name": "Test Scenario - Anchorage",
+  "description": "Two French frigates ride at anchor in open water (one with springs) while a British ship of the line and frigate close from the east. Exercises anchoring, springs and the anchored gunnery bonus.",
+  "region": "coastal",
+  "seed": 42,
+  "wind_direction": 0,
+  "wind_speed": 2,
+  "wind_speed_change": "steady",
+  "wind_direction_change": "none",
+  "sea_state": 1,
+  "turn_limit": 20,
+  "anchoring": true,
+  "map": {
+    "map_texture": "res://assets/textures/water_default.png",
+    "show_hex": true
+  },
+  "minimap_texture": "",
+  "map_bounds": {
+    "width": 40,
+    "height": 30
+  },
+  "terrain": {
+    "edges": {"N": "open", "E": "open", "S": "open", "W": "open"}
+  },
+  "navies": {"0": "British", "1": "French"},
+  "ships": [
+    {
+      "id": "fr_frigate_38",
+      "ship_name": "Pallas",
+      "side": 1,
+      "ship_type": "frigate_38",
+      "position": {"q": 2, "r": 0},
+      "facing": 0,
+      "speed": 0,
+      "sail_state": "MS",
+      "crew_quality": "Trained",
+      "crew_morale": 4,
+      "anchor": {"end": "bow", "springs": true, "cable": 1}
+    },
+    {
+      "id": "fr_frigate_32",
+      "ship_name": "Topaze",
+      "side": 1,
+      "ship_type": "frigate_32",
+      "position": {"q": 2, "r": 4},
+      "facing": 3,
+      "speed": 0,
+      "sail_state": "MS",
+      "crew_quality": "Trained",
+      "crew_morale": 4,
+      "anchor": {"end": "stern", "cable": 1}
+    },
+    {
+      "id": "br_ship_of_line",
+      "ship_name": "HMS Agamemnon",
+      "side": 0,
+      "ship_type": "ship_of_line_74",
+      "position": {"q": 16, "r": -2},
+      "facing": 3,
+      "speed": 2,
+      "sail_state": "MS",
+      "crew_quality": "Trained",
+      "crew_morale": 4
+    },
+    {
+      "id": "br_frigate_38",
+      "ship_name": "HMS Lively",
+      "side": 0,
+      "ship_type": "frigate_38",
+      "position": {"q": 16, "r": 3},
+      "facing": 3,
+      "speed": 2,
+      "sail_state": "MS",
+      "crew_quality": "Trained",
+      "crew_morale": 4
+    }
+  ]
+}
