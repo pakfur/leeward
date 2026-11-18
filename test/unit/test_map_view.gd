@@ -76,6 +76,16 @@ func test_views_to_spawn() -> void:
 	assert_eq(GameControllerScript.views_to_spawn(["a"], ships), ["b"] as Array[String])
 
 
+func test_planning_cards_only_for_ships_on_the_map() -> void:
+	var a := _ship("a")
+	var c := _ship("c")
+	c.awaiting_arrival = true
+	var d := _ship("d")
+	d.removed_from_map = true
+	var ships: Array[ShipState] = [a, c, d]
+	assert_eq(GameControllerScript.planning_ships(ships), [a] as Array[ShipState])
+
+
 func test_no_explosion_off_the_map() -> void:
 	var ship := _ship("x")
 	ship.status = ShipState.Status.DESTROYED

@@ -287,6 +287,7 @@ func player_reset_course(player_id: int, ship_id: String) -> String:
 	if not planning_snapshot.has(ship_id):
 		return "no planning start course for %s" % ship_id
 	_restore_snapshot(ship_id, false)
+	game_state.ship_controller.set_cast_lead(ship_id, false)  # the lead goes with the course (13.G.4a)
 	return ""
 
 

@@ -448,6 +448,16 @@ static func views_to_spawn(view_ids: Array, ships: Array[ShipState]) -> Array[St
 	return out
 
 
+## The ships that get a planning-panel card: those on the map (no card for a reinforcement still
+## waiting to arrive, or a ship gone off the map).
+static func planning_ships(ships: Array[ShipState]) -> Array[ShipState]:
+	var out: Array[ShipState] = []
+	for ship_state in ships:
+		if ship_state.is_on_map():
+			out.append(ship_state)
+	return out
+
+
 func _spawn_ship_view(ship_state: ShipState) -> void:
 	# Create ship view (presentation only)
 	var ship_view = ShipView.new()
@@ -884,7 +894,7 @@ func _enter_planning_phase() -> void:
 		combat_log_panel.auto_expand(false)  # the map is what matters while plotting
 
 	# Get player ships
-	var player_0_ships := GameState.ships_of_player(HUMAN_PLAYER_ID)
+	var player_0_ships := planning_ships(GameState.ships_of_player(HUMAN_PLAYER_ID))
 	if player_0_ships.is_empty():
 		Trace.trace_log("GameController", "No ships for player %d" % HUMAN_PLAYER_ID)
 		return
