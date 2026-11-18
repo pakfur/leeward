@@ -282,11 +282,12 @@ func test_poor_maneuvering_lead_can_fail() -> void:
 	assert_eq(seen.size(), 2, "Both outcomes over the seeds")
 
 
-func test_lead_bear_off_does_not_use_the_6_d_5_bear_off() -> void:
+func test_lead_bear_off_is_not_counted_as_the_6_d_5_bear_off() -> void:
 	# Speed 4, maneuverability A (deceleration 2): after the starboard turn the ship must go on one
 	# hex ahead, into (0, 1), held by a stopped blocker (bow (1, 1), stern (0, 1)). Within 2 MPs that
-	# step follows the lead's turn, so no second turn is legal there (no consecutive pivots): the
-	# potential collision is judged as any other, "no legal turn", never "already bore off".
+	# step follows the lead's turn, so no second turn is legal there (no consecutive pivots) and no
+	# Bearing Off roll can be made: the potential collision is denied as "no legal turn", the reason
+	# any ship gets, never "already bore off this turn" (6.D.5).
 	GameState.active_scenario = _scenario({"land": _hexes([Vector2i(1, 0)])})
 	var a := _caster(4, 2, "A")
 	var blocker := _ship("blocker", Vector2i(1, 1), 0, 0)
@@ -316,3 +317,76 @@ func test_lead_rerun_is_deterministic() -> void:
 		rng.state = start
 		var second = resolver.run(ships, env).to_dict()
 		assert_eq(second, first, "seed %d" % seed_value)
+
+
+func test_lead_turn_rolled_back_is_not_offered_again() -> void:
+	# Speed 3, maneuverability A (minimum 1), land ahead. A stopped ship holds (0, -1), the starboard
+	# turn's new stern: that turn overlaps and is rolled back, the amended plot sails ahead into the
+	# land again, and the lead must not choose starboard a second time.
+	GameState.active_scenario = _scenario({"land": _hexes([Vector2i(1, 0)])})
+	var a := _caster(3, 2, "A")
+	var blocker := _ship("blocker", Vector2i(0, -1), 0, 0)  # bow (0, -1), stern (-1, -1)
+	var ships: Array[ShipState] = [a, blocker]
+	var log = resolver.run(ships, env)
+	assert_push_error(0, "The passes settle")
+	assert_true(log.is_complete())
+	var r = log.get_result("a")
+	assert_false(r.aground)
+	assert_true(r.final_facing == 5 or (r.final_hex == Vector2i(0, 0) and r.final_facing == 0),
+		"Bears off to port or holds: facing %d at %s" % [r.final_facing, r.final_hex])
+	var cast := _lead_cast_log(log, ships)
+	assert_eq(cast.size(), 1, "One sounding stands in the final log")
+	if cast.size() == 1:
+		var outcome: String = cast[0].data.get("outcome")
+		assert_true(outcome == "held" or (outcome == "bore_off" and cast[0].data.get("side") == ShipState.PORT),
+			"outcome %s" % outcome)
+
+
+func test_lead_side_prefers_maybe_over_always() -> void:
+	# Starboard's hex ahead (0, 1) always grounds (11-16), port's (1, -1) may not (13-18).
+	GameState.active_scenario = _scenario({"land": _hexes([Vector2i(1, 0)]),
+		"shallow": [{"name": "flat", "base": 10, "hexes": _hexes([Vector2i(0, 1)])},
+			{"name": "bank", "base": 12, "hexes": _hexes([Vector2i(1, -1)])}]})
+	var a := _caster()
+	var r = resolver.run([a] as Array[ShipState], env).get_result("a")
+	assert_eq(r.final_facing, 5, "Port: maybe beats always")
+
+
+func test_lead_side_prefers_the_deeper_area() -> void:
+	# Both sides may ground: starboard's base 11, port's base 13.
+	GameState.active_scenario = _scenario({"land": _hexes([Vector2i(1, 0)]),
+		"shallow": [{"name": "flat", "base": 11, "hexes": _hexes([Vector2i(0, 1)])},
+			{"name": "bank", "base": 13, "hexes": _hexes([Vector2i(1, -1)])}]})
+	var a := _caster()
+	var r = resolver.run([a] as Array[ShipState], env).get_result("a")
+	assert_eq(r.final_facing, 5, "Port: the deeper base")
+
+
+func test_lead_side_ranks_a_blocked_way_worst() -> void:
+	# An open boundary between (0, 0) and (0, 1) blocks starboard's way ahead; port's (1, -1) always
+	# grounds, which is still better.
+	GameState.active_scenario = _scenario({"land": _hexes([Vector2i(1, 0)]),
+		"shallow": [{"name": "flat", "base": 10, "hexes": _hexes([Vector2i(1, -1)])}],
+		"boundaries": [{"name": "reef", "kind": "open", "sides": [[[0, 0], [0, 1]]]}]})
+	var a := _caster()
+	var r = resolver.run([a] as Array[ShipState], env).get_result("a")
+	assert_eq(r.final_facing, 5, "Port: a blocked way ahead ranks below any depth")
+
+
+func test_stopped_short_names_the_lead() -> void:
+	# Held: nothing made. Bore off at speed 2, maneuverability C (minimum 0): only the turn is made.
+	for terrain in [{"land": _hexes([Vector2i(-1, 1), Vector2i(0, -1), Vector2i(1, 0)])},
+			{"land": _hexes([Vector2i(1, 0)])}]:
+		GameState.ships.clear()
+		GameState.turn_log = PhaseEvents.PhaseLog.new()
+		GameState.active_scenario = _scenario(terrain)
+		var a := _caster()
+		var ships: Array[ShipState] = [a]
+		var log = resolver.run(ships, env)
+		assert_eq(MovementResolver.stop_cause(log.get_result("a")), {"cause": "lead"})
+		resolver.log_outcomes(log, ships, GameState.turn_log)
+		var short := _turn_log_of(PhaseEvents.Type.STOPPED_SHORT)
+		assert_eq(short.size(), 1)
+		if short.size() == 1:
+			assert_eq(short[0].data.get("cause"), "lead")
+			assert_string_contains(short[0].to_text({}),"after casting the lead")

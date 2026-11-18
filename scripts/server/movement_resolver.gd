@@ -91,6 +91,10 @@ class ResolutionPass:
 	## ship_id -> the bear-off rollback (kind "bear_off") of a ship that bore off in an earlier pass
 	## (input): it bears off once per g-t (6.D.5), so a later potential collision is automatic.
 	var settled_bear_offs: Dictionary = {}
+	## "<ship_id>:<segment>" -> the sides (MovementTypes.BEAR_OFF_*) of lead bear-offs (13.G.4) made there
+	## in an earlier pass whose turn was then undone (input): _lead_side no longer offers them, so the
+	## replay cannot amend the same turn again.
+	var settled_leads: Dictionary = {}
 	## Bear-offs that succeeded this pass: rollbacks of kind "bear_off" (with `step`, the blocked step) that
 	## amend the ship's plot.
 	var bear_off_amendments: Array = []
@@ -206,13 +210,14 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 	# Lead bear-offs (kind "lead", 13.G.4) that amended a plot, in the order found; several per ship
 	# are all kept (see _record_lead).
 	var lead_records: Array = []
+	var settled_leads: Dictionary = {}  # ResolutionPass.settled_leads
 	var outcome: Dictionary = {}
 	# All overlaps that fail at the same segment end are rolled back together (they are simultaneous,
 	# 6.B.4); the pass then restarts.
 	for attempt in range(pass_limit):
 		rng.state = rng_start
 		outcome = _resolve_pass(ships, ship_map, plotted, amended, cycle_breaks, settled_contests, environment,
-			bear_off_decisions, prompt_ids, settled_bear_offs)
+			bear_off_decisions, prompt_ids, settled_bear_offs, settled_leads)
 		if outcome.rollbacks.is_empty() and outcome.failed_cycles.is_empty():
 			break
 		if attempt == pass_limit - 1:
@@ -230,14 +235,14 @@ func run(ships: Array[ShipState], environment: EnvironmentState, bear_off_decisi
 					cycle_breaks.erase(key)
 			amended[sid] = _amended_steps(ship_map[sid], amended.get(sid, plotted[sid]), rb)
 			# The plot changes from rb.segment on: a lead bear-off of this ship there or later is replayed
-			# anew (and found again if it still happens).
-			lead_records = lead_records.filter(func(rec): return rec.ship_id != sid or rec.segment < rb.segment)
+			# anew (and found again if it still happens). One whose own turn this rollback undoes (same
+			# segment) keeps its side out of the replay, else the ship would sound and turn the same way
+			# again, pass after pass.
+			lead_records = _drop_lead_records(lead_records, rb, settled_leads)
 			if rb.get("kind", "") == "lead":
 				lead_records.append(rb)  # not the 6.D.5 bear-off, and not the ship's rollback
-				Trace.trace_log("MovementResolver", "plot amended", {"ship": sid, "segment": rb.segment,
-					"reason": rb.reason, "steps": amended[sid].size()})
-				continue
-			rollbacks[sid] = rb
+			else:
+				rollbacks[sid] = rb
 			if rb.get("kind", "") == "contest":
 				settled_contests[_segment_hex_key(rb.segment, rb.hex)] = {"winner": rb.other_id, "rolls": rb.rolls}
 			if rb.get("kind", "") == "bear_off":
@@ -317,7 +322,8 @@ func _resolve_pass(
 	environment: EnvironmentState,
 	bear_off_decisions: Dictionary = {},
 	prompt_ids: Array = [],
-	settled_bear_offs: Dictionary = {}
+	settled_bear_offs: Dictionary = {},
+	settled_leads: Dictionary = {}
 ) -> Dictionary:
 	var p := ResolutionPass.new()
 	p.ship_map = ship_map
@@ -327,6 +333,7 @@ func _resolve_pass(
 	p.bear_off_decisions = bear_off_decisions
 	p.prompt_ids = prompt_ids
 	p.settled_bear_offs = settled_bear_offs
+	p.settled_leads = settled_leads
 	for sid in amended:
 		if _find_tacking_impulse(ship_map[sid], plotted[sid]) == 0 \
 				and _find_tacking_impulse(ship_map[sid], amended[sid]) != 0:
@@ -652,7 +659,8 @@ func _cast_lead(p: ResolutionPass, seg: Segment, ship_state: ShipState, entered:
 		var new_facing: int = (facing + 5) % 6 if side == MovementTypes.BEAR_OFF_PORT else (facing + 1) % 6
 		p.bear_off_amendments.append({"kind": "lead", "ship_id": sid, "segment": seg.impulse,
 			"step": _schedule_of(p).step_at(sid, seg.impulse), "pre_bow": bow, "pre_facing": facing,
-			"facing": new_facing, "other_id": "", "reason": "cast the lead", "events": events, "lead": lead})
+			"facing": new_facing, "other_id": "", "reason": "cast the lead", "events": events, "lead": lead,
+			"side": side})
 		seg.intended_moves.erase(sid)
 		_stop(p, sid, seg.impulse)
 		return
@@ -669,16 +677,18 @@ func _cast_lead(p: ResolutionPass, seg: Segment, ship_state: ShipState, entered:
 ## The side a casting ship bears off to (MovementTypes.BEAR_OFF_PORT / _STARBOARD), or "" when no turn
 ## will do. Of the turns legal here whose new stern is not land, the one whose hex ahead grounds least
 ## (never < maybe < always; off the map or across a blocking edge worst), then the deeper area base
-## (deep water deepest, land shallowest), then starboard.
+## (deep water deepest, land shallowest), then starboard. A side whose lead turn here was undone in an
+## earlier pass (ResolutionPass.settled_leads) is not offered again.
 func _lead_side(p: ResolutionPass, sid: String, impulse: int) -> String:
 	var ship_state: ShipState = p.ship_map[sid]
 	var bow: Vector2i = p.current_hexes[sid]
 	var facing: int = p.current_facings[sid]
 	var eligible: Array[String] = _eligible_turns(p, sid, impulse)
+	var undone: Array = p.settled_leads.get(_lead_key(sid, impulse), [])
 	var best := ""
 	var best_key: Array = []
 	for side in [MovementTypes.BEAR_OFF_STARBOARD, MovementTypes.BEAR_OFF_PORT]:  # ties go to starboard
-		if not side in eligible:
+		if not side in eligible or side in undone:
 			continue
 		var new_facing: int = (facing + 5) % 6 if side == MovementTypes.BEAR_OFF_PORT else (facing + 1) % 6
 		if _terrain.is_land(HexGrid.stern_of(bow, new_facing)):
@@ -698,6 +708,27 @@ func _lead_side(p: ResolutionPass, sid: String, impulse: int) -> String:
 			best = side
 			best_key = [rank, base]
 	return best
+
+
+static func _lead_key(sid: String, segment: int) -> String:
+	return "%s:%d" % [sid, segment]
+
+
+## `records` (kind "lead" amendments) without those of `rollback`'s ship at its segment or later: its
+## plot changes from there. A lead record on the rollback's own segment whose turn the rollback undoes
+## (any other kind: an overlap, a lost stern contest) adds its side to `settled_leads`.
+static func _drop_lead_records(records: Array, rollback: Dictionary, settled_leads: Dictionary) -> Array:
+	var kept: Array = []
+	for rec in records:
+		if rec.ship_id != rollback.ship_id or rec.segment < rollback.segment:
+			kept.append(rec)
+			continue
+		if rec.segment == rollback.segment and rollback.get("kind", "") != "lead":
+			var key := _lead_key(rec.ship_id, rec.segment)
+			if not settled_leads.has(key):
+				settled_leads[key] = []
+			settled_leads[key].append(rec.side)
+	return kept
 
 
 static func _side_index(side: String) -> int:
@@ -2476,6 +2507,8 @@ static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary
 		return _stern_blocked_cause(result)
 	if result.collided_with != "":
 		return {"cause": "collision", "other": result.collided_with}
+	if _lead_ended_movement(result):
+		return {"cause": "lead"}
 	for ev in result.events:
 		if ev.event_type == MovementTypes.ResolutionEventType.BEARING_OFF_ROLL and ev.success:
 			return {"cause": "bore_off", "other": result.blocked_by}
@@ -2484,6 +2517,21 @@ static func stop_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary
 		if ev.event_type == MovementTypes.ResolutionEventType.OVERLAP_ROLLBACK:
 			return {"cause": "overlap", "other": result.blocked_by}
 	return {}
+
+
+## True when a sounding with the lead found the water too shallow (13.G.4: the ship held back or bore
+## off) and the ship made no step after that segment.
+static func _lead_ended_movement(result: MovementTypes.ShipResolutionResult) -> bool:
+	var segment := -1
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.LEAD_SOUNDING and not ev.success:
+			segment = maxi(segment, ev.impulse)
+	if segment < 0:
+		return false
+	for ev in result.events:
+		if ev.event_type == MovementTypes.ResolutionEventType.MOVE and ev.impulse > segment:
+			return false
+	return true
 
 
 static func _stern_blocked_cause(result: MovementTypes.ShipResolutionResult) -> Dictionary:

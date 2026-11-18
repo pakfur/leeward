@@ -761,6 +761,8 @@ class PhaseEvent extends RefCounted:
 			"collision":
 				if target_id != "":
 					return "%s after colliding with %s" % [text, other]
+			"lead":
+				text += " after casting the lead"
 			"bore_off":
 				text += " after bearing off"
 				if target_id != "":
