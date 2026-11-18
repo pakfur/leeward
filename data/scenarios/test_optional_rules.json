@@ -1,0 +1,88 @@
+{
+  "name": "Test Scenario - Optional Rules",
+  "description": "Two British ships against two French on opposite lines, wind from the north-east at sea state 1. The scenario switches on every optional rule of 14: voluntary surrender and rallying (14.B), fatigue (14.D) and both historical gunfire limits (14.E). The French crews are CQ E, so they fire low only on a 1-3, and each side's north broadside is to windward.",
+  "region": "oceanic",
+  "seed": 42,
+  "wind_direction": 5,
+  "wind_speed": 2,
+  "wind_speed_change": "steady",
+  "wind_direction_change": "none",
+  "sea_state": 1,
+  "turn_limit": 30,
+  "optional_rules": {
+    "voluntary_surrender": true,
+    "fatigue": true,
+    "gunfire_limits": "both"
+  },
+  "map": {
+    "map_texture": "res://assets/textures/water_default.png",
+    "show_hex": true
+  },
+  "minimap_texture": "",
+  "map_bounds": {
+    "width": 40,
+    "height": 30
+  },
+  "terrain": {
+    "edges": {
+      "N": "open",
+      "E": "open",
+      "S": "open",
+      "W": "open"
+    }
+  },
+  "navies": {
+    "0": "British",
+    "1": "French"
+  },
+  "ships": [
+    {
+      "id": "br_74",
+      "ship_name": "HMS Bellona",
+      "side": 0,
+      "ship_type": "br_74",
+      "position": {"q": -8, "r": -4},
+      "facing": 0,
+      "speed": 0,
+      "sail_state": "MS",
+      "crew_quality": "C",
+      "crew_morale": 4
+    },
+    {
+      "id": "br_38",
+      "ship_name": "HMS Arethusa",
+      "side": 0,
+      "ship_type": "br_38",
+      "position": {"q": -8, "r": 4},
+      "facing": 0,
+      "speed": 0,
+      "sail_state": "MS",
+      "crew_quality": "C",
+      "crew_morale": 4
+    },
+    {
+      "id": "fr_74",
+      "ship_name": "Héros",
+      "side": 1,
+      "ship_type": "fr_74",
+      "position": {"q": 8, "r": -4},
+      "facing": 3,
+      "speed": 0,
+      "sail_state": "MS",
+      "crew_quality": "E",
+      "crew_morale": 4
+    },
+    {
+      "id": "fr_38",
+      "ship_name": "Sirène",
+      "side": 1,
+      "ship_type": "fr_38",
+      "position": {"q": 8, "r": 4},
+      "facing": 3,
+      "speed": 0,
+      "sail_state": "MS",
+      "crew_quality": "E",
+      "crew_morale": 4
+    }
+  ]
+}
