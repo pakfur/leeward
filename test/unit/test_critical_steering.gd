@@ -479,6 +479,17 @@ func test_ma_zero_turn_needs_both_rolls() -> void:
 	assert_true(_steering_rolls(next).is_empty())
 
 
+func test_ma_zero_poor_maneuvering_roll_is_at_start() -> void:
+	var state := _ship("D", "E", 0, 2)
+	state.wheel_shot_away = true
+	_plot(state, "S")
+	var log := _run([state] as Array[ShipState], [9, 3])
+	var rolls := _steering_rolls(log.get_result(state.ship_id))
+	assert_eq(rolls.size(), 1)
+	if rolls.size() == 1:
+		assert_eq(rolls[0].time, MoveSchedule.START)
+
+
 func test_ma_zero_left_over_turn_failing_its_tack_resets() -> void:
 	# 6.F.5: a failed Tacking roll on the second g-t resets the condition.
 	var state := _ship("A", "E", 0, 0)

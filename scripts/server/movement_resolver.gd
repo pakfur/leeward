@@ -256,7 +256,12 @@ func _stamp_times(log: MovementTypes.ResolutionLog) -> void:
 		log.segment_times.append(_schedule.time_of(i) if i < _final_segment_count else MoveSchedule.END)
 	for sid in log.ship_results:
 		for ev in log.ship_results[sid].events:
-			if ev.time == Vector2i.ZERO:
+			if ev.time != Vector2i.ZERO:
+				continue
+			if ev.impulse >= log.segment_times.size():
+				push_error("MovementResolver: event at impulse %d is past the %d segments" % [ev.impulse, log.segment_times.size()])
+				ev.time = MoveSchedule.END
+			else:
 				ev.time = log.segment_times[ev.impulse]
 
 
@@ -1826,6 +1831,8 @@ func _record_steering(ship_state: ShipState, result: MovementTypes.ShipResolutio
 	for ev in pm.events:
 		if not pm.tack_rolled:
 			ev.impulse = _schedule.segment_of(ship_state.ship_id, ev.impulse)  # the roll's step -> its segment
+		else:
+			ev.time = MoveSchedule.START  # the MA-0 roll is made with the Tacking roll, before movement
 		if not _reached_segment(result, ev.impulse):
 			continue
 		var bow: Vector2i = ship_state.hex_position

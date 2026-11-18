@@ -3584,6 +3584,37 @@ func test_pre_movement_events_are_at_start() -> void:
 		assert_eq(rolls[0].time, MoveSchedule.START)
 
 
+func test_paused_bear_off_log_is_fully_stamped() -> void:
+	var ships := _bear_off_setup()
+	var log = resolver.run(ships, env, {}, ["mover"])
+	assert_not_null(log.pending_bear_off)
+	assert_eq(log.segment_times.size(), log.max_impulses)
+	for sid in ["mover", "blocker"]:
+		for ev in log.get_result(sid).events:
+			assert_ne(ev.time, Vector2i.ZERO, "%s event at impulse %d" % [sid, ev.impulse])
+
+
+func test_rerun_with_an_amended_plot_stamps_inserted_events() -> void:
+	# A bear-off re-run amends the plot mid-way and inserts its events afterwards; every event, the
+	# inserted ones included, still carries the time of its segment.
+	var ships := _trailing_bear_off_setup()
+	var checked := false
+	for seed_value in range(1, 40):
+		rng.seed = seed_value
+		var log = resolver.run(ships, env, _decide("starboard", 3), ["mover"])
+		var rolls: Array = _events_of(log.get_result("mover"), MovementTypes.ResolutionEventType.BEARING_OFF_ROLL)
+		if rolls.is_empty() or not rolls[0].success:
+			continue
+		checked = true
+		assert_eq(log.segment_times.size(), log.max_impulses)
+		for sid in ["mover", "blocker", "g"]:
+			for ev in log.get_result(sid).events:
+				assert_ne(ev.time, Vector2i.ZERO)
+				assert_eq(ev.time, log.segment_times[ev.impulse], "%s event at impulse %d" % [sid, ev.impulse])
+		break
+	assert_true(checked, "Some seed bears off")
+
+
 func test_rollback_on_the_end_check_is_at_end() -> void:
 	var t = _make_ship_state(Vector2i(5, 5), 3, 0, "C", "t")
 	GameState.ship_controller.set_plotted_movement("t", [{"hex": {"q": 5, "r": 5}, "facing": 4}])
