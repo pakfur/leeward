@@ -53,6 +53,8 @@ enum Type {
 	ANCHORED,  # 13.C.2 a ship lets go her anchor: {end: bow/stern, springs, hex}
 	ANCHOR_MOVE,  # 13.C.4-6, 13.E.1 a ship rides to her anchor: {causes, from_facing, to_facing, roll, from, to, cable, blocked, fouled}; target_id: the blocker. On a hold (blocked != "") the ship stays at from/from_facing; to/to_facing are where she would have gone
 	CABLE_CUT,  # 13.F.2 a ship cuts her cable: {hex: the anchor}
+	SPRING_TURN,  # 13.D.2-3 a ship anchored with springs turns 60 degrees: {direction: port/starboard, pivot: bow/stern, from_facing, to_facing, refused}; target_id: the ship holding the hex. Refused (refused != "") she keeps from_facing; to_facing is the facing she would have taken
+	VEER_IN,  # 13.E.2 a ship veers in one hex: {cable, refused}; target_id: the ship in the way. cable is the cable after veering in; refused (refused != "") she keeps her cable
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -505,6 +507,16 @@ class PhaseEvent extends RefCounted:
 				return _anchor_move_text(who, other)
 			Type.CABLE_CUT:
 				return "%s cuts her cable" % who
+			Type.SPRING_TURN:
+				var way := str(data.get("direction", ""))
+				if str(data.get("refused", "")) != "":
+					return "%s cannot turn to %s on her springs: %s" % [who, way, str(data["refused"])]
+				return "%s turns to %s on her springs" % [who, way]
+			Type.VEER_IN:
+				if str(data.get("refused", "")) != "":
+					return "%s cannot veer in: %s" % [who, str(data["refused"])]
+				return "%s veers in to %s of cable" % [who,
+					PhaseEvents.plural(int(data.get("cable", 0)), "hex", "hexes")]
 			Type.DESTROYED:
 				if str(data.get("reason", "")) == "no_sea_room":
 					return "%s leaves the map where there is no sea room and is lost" % who

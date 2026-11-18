@@ -2184,8 +2184,14 @@ func _record_steering(ship_state: ShipState, result: MovementTypes.ShipResolutio
 ## Utility
 ## ============================================================================
 
-## In irons: stopped at WF=L, except in the g-t after the wind rose from a calm (3.D.4, 5.D.4c).
+## In irons: stopped at WF=L, except at anchor (5.D.4a), in the g-t after she cut her cable (5.D.4b,
+## 13.F.3) and in the g-t after the wind rose from a calm (3.D.4, 5.D.4c).
 func _is_in_irons(ship_state: ShipState, environment: EnvironmentState) -> bool:
+	if ship_state.is_anchored():
+		return false
+	if game_state and ship_state.cable_cut_turn >= 0 \
+			and ship_state.cable_cut_turn == game_state.current_turn - 1:
+		return false
 	if environment != null and game_state and environment.calm_just_ended(game_state.current_turn):
 		return false
 	var wind_facing: String = _get_ship_wind_facing(ship_state)

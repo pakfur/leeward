@@ -30,6 +30,10 @@ extends CrewTaskHandler
 ##   2. then either the fouling d10 (DriftResolver.try_foul: a ship in the way, both free of fouling,
 ##      neither dismasted nor a wreck) or the depth d6 (a clear move whose bow enters a new shoal)
 ## V.B rolls nothing. At wind speed 0 V.A rolls nothing and moves nothing.
+##
+## The springs step at the start of MOVEMENT_RESOLUTION (spec §5), resolve_spring_step: spring
+## turns (HS) and veering in (VI) begun this g-t, before any ship moves, so every resolver pass sees
+## the new hexes. Refused when the hex is held, land or off the map. No dice.
 
 const ENDED_ANCHORED := "anchored"
 const ENDED_NO_BOW := "no bow anchor"
@@ -309,3 +313,104 @@ static func _ground_data(ship: ShipState, terrain: String, hex: Vector2i, depth:
 
 static func _hex_dict(hex: Vector2i) -> Dictionary:
 	return {"q": hex.x, "r": hex.y}
+
+
+## SERVER ONLY: the springs step at the start of MOVEMENT_RESOLUTION (spec §5), before any ship
+## moves, by ship id: a live HS begun this g-t turns a ship anchored with springs 60 degrees
+## (13.D.2-3: AB on her bow, AS on her stern), then a live VI begun this g-t brings her anchored end
+## one hex upwind (13.E.2). Each ship is checked against the hexes as they stand when her turn
+## comes. A hex held by a ship, land or off the map refuses it: no collision, no fouling, no
+## grounding, no die. A spring turn is also refused at wind speed 0 (13.E.3), without springs, or
+## fouled or grappled. Logs SPRING_TURN and VEER_IN.
+func resolve_spring_step(phase: int) -> void:
+	if not is_server:
+		push_error("AnchorController: Cannot resolve the springs step on client")
+		return
+	var ships: Array[ShipState] = game_state.ships_on_map()
+	ships.sort_custom(func(a: ShipState, b: ShipState) -> bool: return a.ship_id < b.ship_id)
+	for ship in ships:
+		if not ship.is_anchored() or ship.is_destroyed():
+			continue
+		var hs := live_this_turn(ship, "HS")
+		if not hs.is_empty():
+			_spring_turn(ship, hs, phase)
+		if not live_this_turn(ship, "VI").is_empty():
+			_veer_in(ship, phase)
+
+
+## 13.D.2-3: one spring turn to the HS task's params.turn.
+func _spring_turn(ship: ShipState, task: Dictionary, phase: int) -> void:
+	var id := ship.ship_id
+	var params = task.get("params", {})
+	var way := str(params.get("turn", "")) if params is Dictionary else ""
+	var turn := AnchorRules.spring_turn(ship, -1 if way == "port" else 1)
+	var new_hexes: Array[Vector2i] = turn["hexes"]
+	var refused := ""
+	var blocker_id := ""
+	if int(game_state.environment.wind_speed) <= 0:
+		refused = "no wind (13.E.3)"
+	elif not ship.has_springs():
+		refused = "springs not rigged (13.D)"
+	elif ship.is_linked():
+		refused = "fouled or grappled (13.D.2)"
+	else:
+		var check := _move_check(ship, new_hexes)
+		refused = str(check["refused"])
+		blocker_id = str(check["blocker"])
+	game_state.turn_log.add(PhaseEvents.Type.SPRING_TURN, phase, id, {
+		"direction": way, "pivot": str(ship.anchor.get("end", "bow")), "from_facing": ship.facing,
+		"to_facing": int(turn["facing"]), "refused": refused,
+	}, blocker_id)
+	if refused != "":
+		Trace.trace_log("Anchor", "Ship %s cannot turn on her springs: %s" % [id, refused])
+		return
+	var sc: ShipStateController = game_state.ship_controller
+	sc.set_ship_position(id, new_hexes[0])
+	sc.set_ship_facing(id, int(turn["facing"]))
+	Trace.trace_log("Anchor", "Ship %s turns to %s on her springs" % [id, way])
+
+
+## 13.E.2: the anchored end one hex upwind, cable and veered each one less. Refused, she keeps her
+## cable (VEER_IN `cable` is the cable she then has).
+func _veer_in(ship: ShipState, phase: int) -> void:
+	var id := ship.ship_id
+	var anchor := ship.anchor
+	var old_cable := int(anchor.get("cable", 0))
+	var cable := old_cable - 1
+	var new_hexes := AnchorRules.footprint(anchor.get("hex", ship.hex_position),
+		str(anchor.get("end", "bow")), cable, ship.facing, int(game_state.environment.wind_direction))
+	var check := _move_check(ship, new_hexes)
+	var refused := str(check["refused"])
+	game_state.turn_log.add(PhaseEvents.Type.VEER_IN, phase, id,
+		{"cable": cable if refused == "" else old_cable, "refused": refused}, str(check["blocker"]))
+	if refused != "":
+		Trace.trace_log("Anchor", "Ship %s cannot veer in: %s" % [id, refused])
+		return
+	var sc: ShipStateController = game_state.ship_controller
+	sc.set_ship_position(id, new_hexes[0])
+	sc.update_anchor(id, {"cable": cable, "veered": int(anchor.get("veered", 0)) - 1})
+	Trace.trace_log("Anchor", "Ship %s veers in to %d of cable" % [id, cable])
+
+
+## What refuses the springs-step move of `ship` to `new_hexes` (bow first): {"refused": "" or the
+## reason, "blocker": ship id or ""}. Depth is never rolled: neither a turn nor a veer in is a bow
+## entering ahead.
+func _move_check(ship: ShipState, new_hexes: Array[Vector2i]) -> Dictionary:
+	var others := Occupancy.build(game_state.ships_on_map(), [ship.ship_id])
+	var check := AnchorRules.forced_check(game_state.active_scenario, ship.occupied_hexes(), new_hexes,
+		others)
+	match str(check["result"]):
+		"clear":
+			return {"refused": "", "blocker": ""}
+		"ship":
+			var blocker_id := str(check["blocker"])
+			var blocker: ShipState = game_state.get_ship(blocker_id)
+			return {"refused": "%s holds the hex" % (blocker.ship_name if blocker != null else blocker_id),
+				"blocker": blocker_id}
+		"land":
+			return {"refused": "land", "blocker": ""}
+		"edge":
+			return {"refused": "the edge of the map", "blocker": ""}
+		var other:
+			push_error("AnchorController: unknown forced_check result '%s' for %s; refused" % [other, ship.ship_id])
+			return {"refused": "the edge of the map", "blocker": ""}
