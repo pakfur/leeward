@@ -367,8 +367,9 @@ def check_poor_maneuvering(t, r):
 
 
 CREW_TASK_CODES = {"SAIL_MAJOR", "SAIL_MINOR", "T", "RO", "FF", "RR", "RH", "RS",
-                   "FB", "BR", "BA", "BD"}
-TURN_SHAPES = ({"ad", "eg"}, {"sk_base"}, {"fixed"}, {"until"})
+                   "FB", "BR", "BA", "BD",
+                   "PBA", "PSA", "PBS", "PSS", "A", "AX", "VO", "VI", "HS"}
+TURN_SHAPES = ({"ad", "eg"}, {"sk_base"}, {"sk_base", "times"}, {"fixed"}, {"until"})
 
 
 def check_crew_tasks(t, r):
@@ -392,7 +393,7 @@ def check_crew_tasks(t, r):
             r.err(path, "sections must be [min, max] with 1 <= min <= max <= 3")
         turns = row.get("turns")
         if not isinstance(turns, dict) or set(turns) not in TURN_SHAPES:
-            r.err(path, "turns must be exactly one of {ad, eg}, {sk_base}, {fixed}, {until}")
+            r.err(path, "turns must be exactly one of {ad, eg}, {sk_base}, {sk_base, times}, {fixed}, {until}")
             continue
         if "ad" in turns:
             if not all(isinstance(turns[k], int) and turns[k] >= 1 for k in ("ad", "eg")) \
@@ -402,9 +403,9 @@ def check_crew_tasks(t, r):
             if turns["until"] not in ("out", "turn"):
                 r.err(path, "until must be 'out' or 'turn'")
         else:
-            v = next(iter(turns.values()))
-            if not isinstance(v, int) or v < 1:
-                r.err(path, "turn count must be an int >= 1")
+            for v in turns.values():
+                if not isinstance(v, int) or isinstance(v, bool) or v < 1:
+                    r.err(path, "turn count (and times) must be an int >= 1")
     for code in ("FB", "BR", "BA", "BD"):
         row = t.get(code)
         if not isinstance(row, dict) or row.get("sections") != [1, 1] or row.get("turns") != {"fixed": 1}:

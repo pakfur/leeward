@@ -57,6 +57,9 @@ const CREW_TASK_NAMES := {
 	"T": "work the braces", "RO": "reorganize", "FF": "fight the fire",
 	"RR": "repair rigging", "RH": "repair the hull", "RS": "repair the shrouds",
 	"FB": "form boarders", "BR": "stand ready to board", "BA": "board", "BD": "disband the boarders",
+	"PBA": "prepare the bow anchor", "PSA": "prepare the stern anchor", "PBS": "prepare bow springs",
+	"PSS": "prepare stern springs", "A": "anchor", "AX": "cut the cable", "VO": "veer out",
+	"VI": "veer in", "HS": "handle the springs",
 }
 
 ## The same tasks as gerunds, for "finishes …" / "stops …" lines.
@@ -64,6 +67,9 @@ const CREW_TASK_GERUNDS := {
 	"T": "working the braces", "RO": "reorganizing", "FF": "fighting the fire",
 	"RR": "repairing rigging", "RH": "repairing the hull", "RS": "repairing the shrouds",
 	"FB": "forming boarders", "BR": "standing ready to board", "BA": "boarding", "BD": "disbanding the boarders",
+	"PBA": "preparing the bow anchor", "PSA": "preparing the stern anchor", "PBS": "preparing bow springs",
+	"PSS": "preparing stern springs", "A": "anchoring", "AX": "cutting the cable", "VO": "veering out",
+	"VI": "veering in", "HS": "handling the springs",
 }
 
 ## Why a crew task ended early, in plain words (reasons not listed are shown as given).
