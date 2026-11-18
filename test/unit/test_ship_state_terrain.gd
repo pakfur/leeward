@@ -170,3 +170,12 @@ func test_placement_skips_overlap_for_waiting_ship() -> void:
 	assert_not_null(a)
 	assert_not_null(w)
 	assert_not_null(l)
+
+
+func test_waiting_ship_is_not_targetable_or_boardable_until_placed() -> void:
+	var a := _make_ship("a", Vector2i(5, 5), {"arrives": 3})
+	assert_false(a.is_targetable())
+	assert_false(a.can_be_boarded())
+	assert_true(GameState.ship_controller.place_arrival("a", 3))
+	assert_true(a.is_targetable())
+	assert_true(a.can_be_boarded())

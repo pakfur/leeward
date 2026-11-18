@@ -221,7 +221,7 @@ func is_struck() -> bool:
 func is_destroyed() -> bool:
 	return status == Status.DESTROYED
 
-## Taken by boarding (10.H): a prize of the side in controller_side.
+## Left the map by the escape edge.
 func is_escaped() -> bool:
 	return status == Status.ESCAPED
 
@@ -235,18 +235,19 @@ func is_awaiting_arrival() -> bool:
 func casts_lead() -> bool:
 	return bool(plotted_actions.get("cast_lead", false))
 
+## Taken by boarding (10.H): a prize of the side in controller_side.
 func is_captured() -> bool:
 	return status == Status.CAPTURED
 
 ## May be fired on (gunfire and marine fire): in play, or a prize, which its old side may fire on
 ## (10.H.1). Struck and destroyed ships are not targets (feature_diff §4).
 func is_targetable() -> bool:
-	return status == Status.ACTIVE or status == Status.CAPTURED
+	return (status == Status.ACTIVE or status == Status.CAPTURED) and not awaiting_arrival
 
 ## May be boarded (10.A.2-3, 10.G.5): in play, struck or a prize, and not on fire.
 func can_be_boarded() -> bool:
 	return (status == Status.ACTIVE or status == Status.STRUCK or status == Status.CAPTURED) \
-		and not is_burning()
+		and not is_burning() and not awaiting_arrival
 
 ## The morale rating that fixes the ship's point value (VI.B): the original crew's while a prize,
 ## the one before a recapture after it (value_morale_rating), else the current one.
