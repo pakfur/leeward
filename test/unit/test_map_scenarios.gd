@@ -95,8 +95,20 @@ func test_coastal_plays_twenty_turns_cleanly() -> void:
 		_play_turn()
 		assert_true(_on_map_and_dry(), "turn %d: no ship on land or off the map" % pc.current_turn)
 	assert_true(pc.current_turn >= 20 or not pc.game_result.is_empty(), "the loop ran its turns")
-	assert_true(side1.escape_declared or side1.status == ShipState.Status.ESCAPED,
-			"the side-1 ship tried to escape")
+	assert_eq(side1.status, ShipState.Status.ESCAPED, "the side-1 ship escapes within the run")
+	var escaped_on := -1
+	var irons: Array[int] = []
+	for turn in GameState.turn_logs:
+		var log: PhaseEvents.PhaseLog = GameState.turn_logs[turn]
+		for ev in log.of_type(PhaseEvents.Type.ESCAPED):
+			if ev.ship_id == "p1":
+				escaped_on = int(turn)
+		for ev in log.of_type(PhaseEvents.Type.IN_IRONS):
+			if ev.ship_id == "p1":
+				irons.append(int(turn))
+	gut.p("coastal: p1 escaped on turn %d, in irons on turns %s" % [escaped_on, str(irons)])
+	assert_gt(escaped_on, 0, "an ESCAPED event for the side-1 ship")
+	assert_eq(irons, [] as Array[int], "the escaping ship never steers into irons")
 
 
 func test_reinforcements_arrive_on_their_turns() -> void:

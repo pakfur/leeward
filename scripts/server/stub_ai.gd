@@ -37,6 +37,9 @@ const SECOND_BATTERY_BONUS := 3
 const CLOSE_OUTSIDE_PENALTY := 100
 ## An escaping ship's score for a bow off the map (across a permitted escape edge).
 const ESCAPE_EXIT_SCORE := 10000
+## Escape: a heading into the wind (WF "L", in irons, 5.D.5) is worth this many hexes of distance
+## to the escape edge less than any other, so the ship never luffs to save a step.
+const ESCAPE_LUFF_PENALTY := 50
 
 ## Plotting errors for ships that legitimately cannot move; the AI skips them without error.
 const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_GRAPPLED", "SHIP_CAPTURED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED", "SHIP_AGROUND", "SHIP_OFF_MAP"]
@@ -712,7 +715,7 @@ func _strategy_escape(
 ) -> int:
 	var score := func(bow: Vector2i, facing: int) -> int:
 		return _score_escape(bow, facing, ship_state)
-	return _steer(ship_state, controller, session_id, version, started, score, false, false)
+	return _steer(ship_state, controller, session_id, version, started, score, false, false, true)
 
 
 func _follow_leader(ship_state: ShipState, leader_id: String, controller: MovementPlottingController,
@@ -782,7 +785,7 @@ func _friendly_footprints(ship_state: ShipState) -> Array:
 ## Returns the session version.
 func _steer(ship_state: ShipState, controller: MovementPlottingController, session_id: String,
 		version: int, started: MovementTypes.PlottingStartedResponse, score: Callable, hold: bool,
-		avoid_bows: bool) -> int:
+		avoid_bows: bool, hold_turns: bool = false) -> int:
 	var ships: Array[ShipState] = []
 	ships.assign(game_state.get_all_ships())
 	# Footprints of everyone else: a turn may not swing the stern into one (the resolver would
@@ -815,6 +818,11 @@ func _steer(ship_state: ShipState, controller: MovementPlottingController, sessi
 		# An engaged ship holds position unless an option is strictly better; otherwise it keeps
 		# way on and works round toward the enemy, even through a lower-scoring step.
 		if hold and can_submit and stay_score > 0 and best_score <= stay_score:
+			break
+		# `hold_turns`: a turn (the bow stays put) is made only when it scores strictly better than
+		# the present heading, so left-over MPs are never spent turning into the wind.
+		if hold_turns and can_submit and best.metadata.resulting_hex == current_hex \
+				and best_score <= stay_score:
 			break
 
 		var response := controller.handle_select_hex(session_id, current_version, best.hex, _next_request_id())
@@ -944,7 +952,8 @@ func _score_follow(bow: Vector2i, facing: int, leader: ShipState) -> int:
 
 ## Escape (map and scenario spec §12): a bow off the map (it has left across an escape edge) scores
 ## ESCAPE_EXIT_SCORE; with escape boundaries the side may use, minus ten times the bow's distance to
-## the nearest of them; with none, the disengage score against the nearest enemy (0 with no enemy).
+## the nearest of them, and ten times ESCAPE_LUFF_PENALTY less for a heading into the wind; with
+## none, the disengage score against the nearest enemy (0 with no enemy).
 func _score_escape(bow: Vector2i, facing: int, ship_state: ShipState) -> int:
 	var terrain := TerrainMap.of(game_state.active_scenario)
 	if not terrain.in_bounds(bow):
@@ -955,7 +964,11 @@ func _score_escape(bow: Vector2i, facing: int, ship_state: ShipState) -> int:
 		if d >= 0 and (nearest < 0 or d < nearest):
 			nearest = d
 	if nearest >= 0:
-		return -10 * nearest
+		var luff := 0
+		if game_state.environment != null \
+				and HexGrid.new().get_wind_facing(facing, game_state.environment.wind_direction) == "L":
+			luff = 10 * ESCAPE_LUFF_PENALTY
+		return -10 * nearest - luff
 	var enemy := _nearest_enemy(ship_state)
 	return _score_disengage(bow, facing, enemy) if enemy != null else 0
 

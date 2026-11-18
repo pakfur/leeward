@@ -224,6 +224,28 @@ func test_ai_leaves_across_the_escape_edge() -> void:
 		assert_false(terrain.in_bounds(steps[0][0]), "the first step leaves the map: %s" % [steps])
 
 
+func test_escape_score_penalises_a_heading_into_the_wind() -> void:
+	GameState.active_scenario = _escape_scenario(true)
+	env.wind_direction = 2  # from the south-west: facing 2 luffs, facing 3 (W) is close-hauled
+	var ai := _make_ship("ai1", 1, Vector2i(0, 0), 3, 3)
+	var luffing: int = stub_ai._score_escape(Vector2i(0, 0), 2, ai)
+	var close_hauled: int = stub_ai._score_escape(Vector2i(0, 0), 3, ai)
+	assert_lt(luffing, close_hauled)
+	assert_lt(luffing, stub_ai._score_escape(Vector2i(5, 0), 3, ai), "worse than being 5 hexes farther off")
+
+
+func test_escaping_ship_never_turns_into_the_wind() -> void:
+	GameState.active_scenario = _escape_scenario(true)
+	env.wind_direction = 2
+	_make_ship("p1", 0, Vector2i(8, 8), 0, 0)
+	var ai := _make_ship("ai1", 1, Vector2i(0, 0), 3, 3)
+	stub_ai.plot_all_ai_ships()
+	var steps := _plotted(ai)
+	assert_gt(steps.size(), 0, "the ship moves")
+	for step in steps:
+		assert_ne(step[1], 2, "no step heads into the wind: %s" % [steps])
+
+
 func test_disengage_order_escapes_only_when_permitted() -> void:
 	var scenario := _escape_scenario(false)
 	scenario.erase("escape")
