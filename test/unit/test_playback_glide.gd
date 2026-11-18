@@ -1,19 +1,20 @@
 extends GutTest
-## The glide playback (sea-state spec D): each ship's move is split into stretches at every segment
-## that carries an event; within a stretch it glides and arrives exactly on the resolver's pose.
+## The glide playback (sea-state spec D, proportional-movement spec §6): one clock for the turn, each
+## ship gliding at its own pace; the clock halts on every segment that carries an event, and every
+## ship arrives exactly on the resolver's pose.
 
 
 var hex_grid: HexGrid
 
 
-## Records the ship views' poses at the end of every stretch.
+## Records the ship views' poses at the end of every glide of the clock.
 class StretchPoseSpy extends MovementResolutionPlaybackController:
-	var stretches: Array = []  # [first, last] per glided stretch
-	var poses: Array = []  # {ship_id: [base_position, model yaw]} at each stretch end
+	var stretches: Array = []  # [from_clock, to_clock] per glide of the clock
+	var poses: Array = []  # {ship_id: [base_position, model yaw]} at each glide end
 
-	func _glide_stretch(first: int, last: int) -> void:
-		await super(first, last)
-		stretches.append([first, last])
+	func _glide_clock(from_clock: float, to_clock: float, tracks: Array) -> void:
+		await super(from_clock, to_clock, tracks)
+		stretches.append([from_clock, to_clock])
 		var snap := {}
 		for sid in _ship_views:
 			var view: ShipView = _ship_views[sid]
@@ -23,23 +24,6 @@ class StretchPoseSpy extends MovementResolutionPlaybackController:
 
 func before_each() -> void:
 	hex_grid = HexGrid.new()
-
-
-## ============================================================================
-## Stretches
-## ============================================================================
-
-func test_stretches_split_at_events() -> void:
-	assert_eq(MovementResolutionPlaybackController.glide_stretches([3] as Array[int], 1, 6), [[1, 3], [4, 6]])
-	assert_eq(MovementResolutionPlaybackController.glide_stretches([1, 4] as Array[int], 0, 5), [[0, 1], [2, 4], [5, 5]],
-		"every event segment ends a stretch")
-
-
-func test_no_events_one_stretch() -> void:
-	assert_eq(MovementResolutionPlaybackController.glide_stretches([] as Array[int], 0, 4), [[0, 4]])
-	assert_eq(MovementResolutionPlaybackController.glide_stretches([4] as Array[int], 0, 4), [[0, 4]], "an event on the last segment splits nothing")
-	assert_eq(MovementResolutionPlaybackController.glide_stretches([7, -1] as Array[int], 0, 4), [[0, 4]], "events outside the range are ignored")
-	assert_eq(MovementResolutionPlaybackController.glide_stretches([] as Array[int], 3, 2), [], "an empty range has no stretch")
 
 
 ## ============================================================================
@@ -69,6 +53,26 @@ func _in_range(events: Array, first: int, last: int) -> Array:
 	return events.filter(func(ev): return ev.impulse >= first and ev.impulse <= last)
 
 
+## Clocks for `n` equal segments: segment i ends at clock i + 1.
+func _clocks(n: int) -> Array:
+	var clocks: Array = []
+	for i in range(n):
+		clocks.append(float(i + 1))
+	return clocks
+
+
+## Gives a hand-built log the resolver's timing for equal plots of `max_impulses` steps.
+func _timed(log: MovementTypes.ResolutionLog) -> MovementTypes.ResolutionLog:
+	var n: int = log.max_impulses
+	log.segment_times = []
+	for i in range(n):
+		log.segment_times.append(Vector2i(i + 1, n))
+	log.longest_plot = n
+	for ship_id in log.ship_results:
+		log.plot_steps[ship_id] = n
+	return log
+
+
 func _assert_pose(pose: Array, ev: MovementTypes.ResolutionEvent, what: String) -> void:
 	var bow := hex_grid.axial_to_world(ev.to_hex.x, ev.to_hex.y)
 	assert_almost_eq(pose[0].x, bow.x, 0.0001, what + ": bow x")
@@ -79,49 +83,48 @@ func _assert_pose(pose: Array, ev: MovementTypes.ResolutionEvent, what: String) 
 
 func test_pose_at_event_segment_matches_resolver() -> void:
 	var events := _moves("a", [0, 1, 2, 3, 4, 5], 2)
-	var stretches: Array = MovementResolutionPlaybackController.glide_stretches([2] as Array[int], 0, 5)
-	assert_eq(stretches, [[0, 2], [3, 5]])
-	var angle := MovementResolutionPlaybackController._model_angle(0)
-	for stretch in stretches:
-		var part := _in_range(events, stretch[0], stretch[1])
-		var track: MovementResolutionPlaybackController.GlideTrack = MovementResolutionPlaybackController.track_for(part, hex_grid, angle)
-		var end_pose: Array = MovementResolutionPlaybackController.pose_at(track, float(stretch[1] + 1))
-		_assert_pose(end_pose, part[-1], "end of stretch %s" % [stretch])
-		var start_pose: Array = MovementResolutionPlaybackController.pose_at(track, float(stretch[0]))
-		var start_bow := hex_grid.axial_to_world(part[0].from_hex.x, part[0].from_hex.y)
-		assert_almost_eq(start_pose[0].distance_to(start_bow), 0.0, 0.0001, "starts where the last stretch ended")
-		angle = end_pose[1]
+	var track := MovementResolutionPlaybackController.track_for(events, hex_grid,
+		MovementResolutionPlaybackController._model_angle(0), _clocks(6), 6, 6)
+	_assert_pose(MovementResolutionPlaybackController.pose_at(track, 3.0), events[2], "at the clock of the event segment")
+	_assert_pose(MovementResolutionPlaybackController.pose_at(track, 6.0), events[-1], "at the end")
+	var start_bow := hex_grid.axial_to_world(events[0].from_hex.x, events[0].from_hex.y)
+	assert_almost_eq(MovementResolutionPlaybackController.pose_at(track, 0.0)[0].distance_to(start_bow), 0.0, 0.0001,
+		"starts on the pose before the first step")
 
 
 func test_pose_at_event_segment_for_ship_idle_at_the_event() -> void:
 	# Moved on segment 0 only; the event is on segment 2: the ship has arrived long before the pause.
 	var events := _moves("b", [0])
-	var track: MovementResolutionPlaybackController.GlideTrack = MovementResolutionPlaybackController.track_for(events, hex_grid, MovementResolutionPlaybackController._model_angle(0))
+	var track := MovementResolutionPlaybackController.track_for(events, hex_grid,
+		MovementResolutionPlaybackController._model_angle(0), _clocks(3), 3, 3)
 	_assert_pose(MovementResolutionPlaybackController.pose_at(track, 3.0), events[0], "at the event")
 	_assert_pose(MovementResolutionPlaybackController.pose_at(track, 1.0), events[0], "on arrival")
 
 
 func test_glide_accelerates_and_decelerates() -> void:
 	var events := _moves("c", [0, 1, 2, 3])
-	var track: MovementResolutionPlaybackController.GlideTrack = MovementResolutionPlaybackController.track_for(events, hex_grid, MovementResolutionPlaybackController._model_angle(0))
+	var track := MovementResolutionPlaybackController.track_for(events, hex_grid,
+		MovementResolutionPlaybackController._model_angle(0), _clocks(4), 4, 4)
 	var start: Vector3 = MovementResolutionPlaybackController.pose_at(track, 0.0)[0]
 	var finish: Vector3 = MovementResolutionPlaybackController.pose_at(track, 4.0)[0]
 	var total := start.distance_to(finish)
 	var early: float = start.distance_to(MovementResolutionPlaybackController.pose_at(track, 0.4)[0])
 	var middle: float = MovementResolutionPlaybackController.pose_at(track, 1.8)[0].distance_to(MovementResolutionPlaybackController.pose_at(track, 2.2)[0])
 	assert_lt(early, middle, "slow off the mark, fastest mid-glide")
+	var late: float = finish.distance_to(MovementResolutionPlaybackController.pose_at(track, 3.6)[0])
+	assert_lt(late, middle, "slows to a stop")
 	assert_almost_eq(MovementResolutionPlaybackController.pose_at(track, 2.0)[0].distance_to(start), total * 0.5, 0.0001, "halfway at mid-time")
 
 
-func test_segments_where_nobody_moves_take_no_clock_time() -> void:
-	var clock := MovementResolutionPlaybackController.moving_clock([4, 0, 3])
-	assert_eq(clock, {0: 0, 3: 1, 4: 2})
-	var events := _moves("d", [0, 3, 4])
-	var track: MovementResolutionPlaybackController.GlideTrack = MovementResolutionPlaybackController.track_for(events, hex_grid, MovementResolutionPlaybackController._model_angle(0), clock)
-	assert_eq(track.t0, 0.0)
-	assert_eq(track.t1, 3.0, "three moving segments, not five")
-	_assert_pose(MovementResolutionPlaybackController.pose_at(track, 3.0), events[-1], "still exact on arrival")
-	assert_eq(MovementResolutionPlaybackController.moving_clock([]), {})
+func test_ship_holds_its_pose_between_its_steps() -> void:
+	# A 4-MP ship that moved on segments 0 and 3 only (it waited in between): it holds the pose after
+	# its first step until its second step's glide starts, one unit before that step's clock.
+	var events := _moves("d", [0, 3])
+	var track := MovementResolutionPlaybackController.track_for(events, hex_grid,
+		MovementResolutionPlaybackController._model_angle(0), _clocks(4), 4, 4)
+	assert_eq(track.spans, [[0.0, 1.0], [3.0, 4.0]])
+	_assert_pose(MovementResolutionPlaybackController.pose_at(track, 2.0), events[0], "waiting")
+	_assert_pose(MovementResolutionPlaybackController.pose_at(track, 4.0), events[-1], "still exact on arrival")
 
 
 func test_glide_seconds_default_without_sea_model() -> void:
@@ -168,11 +171,12 @@ func test_final_pose_unchanged() -> void:
 	result.final_hex = events[-1].to_hex
 	result.final_facing = events[-1].facing
 	log.add_result(result)
+	_timed(log)
 
 	pb.play(log)
 	await wait_for_signal(pb.playback_completed, 10.0)
 
-	assert_eq(pb.stretches, [[0, 1], [2, 2]], "split at the contest")
+	assert_eq(pb.stretches, [[0.0, 2.0], [2.0, 3.0]], "the clock halts at the contest")
 	if pb.poses.size() == 2:
 		var at_event: Array = pb.poses[0]["live"]
 		var expected := hex_grid.ship_center_world(events[1].to_hex, events[1].facing)
@@ -210,6 +214,7 @@ func test_resume_after_bear_off_pause_starts_from_the_paused_pose() -> void:
 	for ev in _in_range(events, 0, 1):
 		r1.events.append(ev)
 	paused_log.add_result(r1)
+	_timed(paused_log)
 	var first := MovementResolutionPlaybackController.new(hex_grid, {"live": view}, 0)
 	add_child_autofree(first)
 	first.play(paused_log)
@@ -224,6 +229,7 @@ func test_resume_after_bear_off_pause_starts_from_the_paused_pose() -> void:
 	for ev in events:
 		r2.events.append(ev)
 	resumed_log.add_result(r2)
+	_timed(resumed_log)
 	var second := FirstFrameSpy.new(hex_grid, {"live": view}, 0)
 	add_child_autofree(second)
 	second.play(resumed_log)

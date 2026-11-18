@@ -63,7 +63,7 @@ var swell_shading: float = 0.4      ## normal tilt from the swell when zoomed ou
 var chop_strength: float = 1.0      ## short waves and normal maps
 var inertia_mult: float = 1.0       ## ship motion low-pass time constants
 var heel_mult: float = 1.0
-var glide_seconds: float = 0.8      ## movement playback, seconds per segment
+var glide_seconds: float = 0.8      ## movement playback, seconds per clock unit (one MP of the longest plot)
 var whitecap_threshold: float = 0.8 ## crest height (fraction of the swell) where foam starts
 var whitecap_strength: float = 1.0  ## × WHITECAP_BY_SEA × zoom
 # ---- tunables: globals (sea_presets.json "globals") ----
