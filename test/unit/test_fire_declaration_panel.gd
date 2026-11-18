@@ -733,3 +733,28 @@ func test_chase_colour() -> void:
 	assert_eq(BroadsideColors.color(GunneryTypes.CHASE_BOW), BroadsideColors.CHASE)
 	assert_eq(BroadsideColors.color(GunneryTypes.CHASE_STERN), BroadsideColors.CHASE)
 	assert_eq(BroadsideColors.color(ShipState.STARBOARD), BroadsideColors.STARBOARD)
+
+
+func test_ship_no_shot_reason_also_previews_the_chasers() -> void:
+	var own := _state("o", "HMS Phoebe", 0, Vector2i(0, 0))
+	var foe := _state("f", "Foe", 1, Vector2i(3, 0))
+	var arc := "target is not in that broadside's arc"
+	var calc := FakeCalculator.new()
+	calc.reasons = {ShipState.PORT: arc, ShipState.STARBOARD: arc,
+		"2:chase": "target is out of range (8 hexes, maximum 7)",
+		"3:chase": "target is not in the stern chaser's arc"}
+	assert_eq(FirePanel.ship_no_shot_reason(own, [own, foe], calc, HexGrid.new(1.0)), "out of range")
+	calc.reasons["2:chase"] = "target is not in the bow chaser's arc"
+	assert_eq(FirePanel.ship_no_shot_reason(own, [own, foe], calc, HexGrid.new(1.0)), "out of both broadside arcs")
+
+
+func test_two_target_note_says_shot_when_a_chaser_is_involved() -> void:
+	assert_eq(FirePanel.two_target_note(-12, true), "Two targets: −12 on each shot")
+	assert_eq(FirePanel.two_target_note(-12), "Two targets: −12 on each broadside")
+
+
+func test_gun_rows_flag_the_chasers() -> void:
+	var rows := CrewOverlayText.gun_rows(_state("o", "HMS Phoebe", 0, Vector2i.ZERO))
+	var flagged := rows.filter(func(r): return r.get("chase", false))
+	assert_eq(flagged.size(), 2)
+	assert_eq(rows.size() - flagged.size(), 2, "the broadside rows carry no flag")

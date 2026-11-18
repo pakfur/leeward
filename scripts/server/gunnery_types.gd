@@ -17,6 +17,8 @@ const BATTERY_CHASE := "chase"
 const CHASE_BOW := 2
 const CHASE_STERN := 3
 const CHASE_SIDES: Array[int] = [CHASE_BOW, CHASE_STERN]
+## The chaser's name by side, as the combat log and the calculator's refusals say it.
+const CHASE_NAMES := {CHASE_BOW: "bow chaser", CHASE_STERN: "stern chaser"}
 
 
 ## Whether an order's `side` is a chaser's end rather than a broadside.

@@ -55,8 +55,10 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 	var geometry: FireGeometry = game_state.fire_geometry
 	var tables: CombatTables = DataManager.combat_tables
 	var firer_hexes := firer.occupied_hexes()
-	var battery_hexes: Array[Vector2i] = [FireGeometry.chase_battery_hex(firer, order.side)]
-	if not chase:
+	var battery_hexes: Array[Vector2i] = []
+	if chase:
+		battery_hexes.append(FireGeometry.chase_battery_hex(firer, order.side))
+	else:
 		battery_hexes = _battery_hexes(firer_hexes, order.battery)
 	var target_hexes := target.occupied_hexes()
 	p.range_hexes = geometry.range_between(firer_hexes, target_hexes)
@@ -64,7 +66,7 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 
 	if not _any_in_arc(geometry, battery_hexes, firer.facing, order.side, target_hexes):
 		if chase:
-			return _refuse(p, "target is not in the %s's arc" % PhaseEvents.CHASE_NAMES[order.side])
+			return _refuse(p, "target is not in the %s's arc" % GunneryTypes.CHASE_NAMES[order.side])
 		return _refuse(p, "target is not in that broadside's arc")
 	var max_range := FireRules.max_range(order.ammo)
 	if p.range_hexes > max_range:

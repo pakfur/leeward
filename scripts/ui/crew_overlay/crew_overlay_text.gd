@@ -213,7 +213,7 @@ static func gun_rows(ship: ShipState, env: EnvironmentState = null) -> Array[Dic
 	for name in ["Bow chase", "Stern chase"]:
 		rows.append({"side": name, "lg": int(FireRules.CHASE_GUN_FACTORS["lg"]),
 			"mg": int(FireRules.CHASE_GUN_FACTORS["mg"]), "cr": int(FireRules.CHASE_GUN_FACTORS["cr"]),
-			"dismounted": 0, "lower_deck": 0, "status": "ready"})
+			"dismounted": 0, "lower_deck": 0, "status": "ready", "chase": true})
 	return rows
 
 

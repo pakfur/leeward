@@ -912,3 +912,42 @@ func test_chaser_at_second_target_takes_two_target_penalty() -> void:
 	var alone := calc.preview_orders(_orders([_chase(AHEAD, "ahead")]))
 	assert_true(alone[0].can_fire, alone[0].reason)
 	assert_eq(_mod(alone[0], "two_targets"), 0)
+
+
+func test_chaser_refused_for_an_aground_firer() -> void:
+	target.hex_position = Vector2i(2, 0)
+	assert_true(calc.preview(_chase()).can_fire)
+	firer.aground = true
+	assert_true(firer.is_aground())
+	var p := calc.preview(_chase())
+	assert_false(p.can_fire)
+	assert_string_contains(p.reason, "aground")
+
+
+func test_chaser_refused_for_a_prize_firer() -> void:
+	target.hex_position = Vector2i(2, 0)
+	firer.status = ShipState.Status.CAPTURED
+	var p := calc.preview(_chase())
+	assert_false(p.can_fire)
+	assert_string_contains(p.reason, "prize")
+
+
+func test_tow_astern_blocks_the_stern_chaser() -> void:
+	# A friendly ship in tow astern (bow (-3,0), stern (-4,0)) stands in the stern chaser's line.
+	target.hex_position = Vector2i(-7, 0)
+	assert_true(calc.preview(_chase(ASTERN)).can_fire, "clear without the tow")
+	var tow := _make_ship("tow", 0, Vector2i(-3, 0), 0)
+	firer.towing_id = "tow"
+	tow.towed_by = "firer"
+	var p := calc.preview(_chase(ASTERN))
+	assert_false(p.can_fire)
+	assert_string_contains(p.reason, "line of sight")
+
+
+func test_a_chaser_as_a_third_target_is_refused() -> void:
+	_make_ship("ahead", 1, Vector2i(3, 0), 0)
+	_make_ship("astern", 1, Vector2i(-4, 0), 0)
+	var orders := _orders([_battery("full"), _chase(AHEAD, "ahead"), _chase(ASTERN, "astern")])
+	assert_ne(calc.validate_orders(0, orders), "", "a broadside and two chasers at three targets")
+	assert_eq(calc.validate_orders(0, _orders([_chase(AHEAD, "ahead"), _chase(ASTERN, "astern")])), "",
+		"two chasers at two targets is fine")

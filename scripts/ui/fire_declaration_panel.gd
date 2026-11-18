@@ -459,8 +459,10 @@ static func _better_row(x: Dictionary, y: Dictionary) -> bool:
 
 ## Shown next to the main button while some ship fires both broadsides, e.g.
 ## "Two targets: −12 on each broadside". `modifier` is the (negative) two-target modifier.
-static func two_target_note(modifier: int) -> String:
-	return "Two targets: %s%d on each broadside" % ["−" if modifier < 0 else "+", absi(modifier)]
+## `with_chaser` (a chaser is one of the two targets) says "shot" instead of "broadside".
+static func two_target_note(modifier: int, with_chaser: bool = false) -> String:
+	return "Two targets: %s%d on each %s" % ["−" if modifier < 0 else "+", absi(modifier),
+		"shot" if with_chaser else "broadside"]
 
 
 ## The main reason a ship cannot fire at its nearest enemy, in plain words, from the calculator's
@@ -518,7 +520,7 @@ static func nearest_enemy(ship: ShipState, all_ships: Array, grid: HexGrid) -> S
 
 
 ## Why `ship` has no shot, in plain words: its calculator previews (a pure query) of both
-## broadsides against its nearest enemy, mapped by no_shot_reason(). `calculator` is a
+## broadsides and chasers against its nearest enemy, mapped by no_shot_reason(). `calculator` is a
 ## GunneryCalculator (anything with preview(order)).
 static func ship_no_shot_reason(ship: ShipState, all_ships: Array, calculator, grid: HexGrid) -> String:
 	if ship.is_destroyed():
@@ -539,6 +541,13 @@ static func ship_no_shot_reason(ship: ShipState, all_ships: Array, calculator, g
 						reason = single
 						break
 			reasons.append(reason)
+		# A chaser may be the only thing that bears (or the only refusal worth naming): an empty
+		# reason means it could fire, so it says nothing.
+		for side in GunneryTypes.CHASE_SIDES:
+			var chase_reason := _no_shot_preview(calculator, ship.ship_id, side, target.ship_id,
+				GunneryTypes.BATTERY_CHASE)
+			if chase_reason != "":
+				reasons.append(chase_reason)
 	return no_shot_reason(reasons)
 
 
@@ -1102,7 +1111,8 @@ func _update_fire_button() -> void:
 		fire_button.text = fire_button_text_with_marines(orders, marine_orders.size())
 		instructions_label.text = footer_text(orders.size() + marine_orders.size(), targets_changed())
 	if two_target_label:
-		two_target_label.text = two_target_note(DataManager.combat_tables.flat_modifier("two_targets")) \
+		two_target_label.text = two_target_note(DataManager.combat_tables.flat_modifier("two_targets"),
+			any_two_target_chaser()) \
 			if DataManager.combat_tables else ""
 		two_target_label.visible = any_ship_fires_both()
 
@@ -1127,6 +1137,17 @@ func any_ship_fires_both() -> bool:
 	for ship_id in _ship_order:
 		if get_target_ids(ship_id).size() > 1:
 			return true
+	return false
+
+
+## True while a ship naming two targets fires a chaser at one of them.
+func any_two_target_chaser() -> bool:
+	for ship_id in _ship_order:
+		if get_target_ids(ship_id).size() < 2:
+			continue
+		for order in _orders(ship_id, _ships[ship_id]["sides"]):
+			if order.battery == GunneryTypes.BATTERY_CHASE:
+				return true
 	return false
 
 

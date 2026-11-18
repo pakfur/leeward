@@ -138,8 +138,6 @@ const TOW_CUT_REASONS := {
 }
 
 const SIDE_NAMES := ["port", "starboard"]
-## FIRE `side` 2 and 3 (GunneryTypes.CHASE_BOW / CHASE_STERN): the chaser that fired.
-const CHASE_NAMES := {2: "bow chaser", 3: "stern chaser"}
 
 ## The human player's id (single-player: player 0); VICTORY text is written from their side.
 const HUMAN_SIDE := 0
@@ -897,8 +895,8 @@ class PhaseEvent extends RefCounted:
 		var side := ""
 		if side_idx >= 0 and side_idx < PhaseEvents.SIDE_NAMES.size():
 			side = " " + PhaseEvents.SIDE_NAMES[side_idx]
-		elif PhaseEvents.CHASE_NAMES.has(side_idx):
-			side = " " + PhaseEvents.CHASE_NAMES[side_idx]
+		elif GunneryTypes.CHASE_NAMES.has(side_idx):
+			side = " " + GunneryTypes.CHASE_NAMES[side_idx]
 		# A half broadside names its battery ("starboard bow battery"); a full broadside reads as before.
 		var battery := str(data.get("battery", GunneryTypes.BATTERY_FULL))
 		if battery == GunneryTypes.BATTERY_BOW or battery == GunneryTypes.BATTERY_STERN:

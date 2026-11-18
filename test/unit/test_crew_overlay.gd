@@ -408,9 +408,9 @@ func test_gun_rows_list_the_chasers() -> void:
 	env.sea_state = 5
 	var rows := CrewOverlayText.gun_rows(ship, env)
 	assert_eq(rows[2], {"side": "Bow chase", "lg": 1, "mg": 0, "cr": 0, "dismounted": 0, "lower_deck": 0,
-		"status": "ready"})
+		"status": "ready", "chase": true})
 	assert_eq(rows[3], {"side": "Stern chase", "lg": 1, "mg": 0, "cr": 0, "dismounted": 0, "lower_deck": 0,
-		"status": "ready"})
+		"status": "ready", "chase": true})
 
 
 func test_deck_layouts_by_class() -> void:

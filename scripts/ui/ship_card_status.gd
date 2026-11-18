@@ -101,7 +101,7 @@ func _guns(ship: ShipState, plan: Dictionary) -> Control:
 		var off := mini(int(row["dismounted"]), kinds.size())
 		for k in kinds.size():
 			segs.add_child(_seg(kinds[k], k >= kinds.size() - off, Style.px(9)))
-		var is_chase := str(row["side"]).ends_with("chase")
+		var is_chase: bool = bool(row.get("chase", false))
 		segs.tooltip_text = ("%s: 1 long gun factor (house rule: never dismounted, lower deck immaterial)" % row["side"]) if is_chase else "%s broadside: %d long gun, %d medium gun and %d carronade factors%s" % [
 			row["side"], row["lg"], row["mg"], row["cr"],
 			"" if off == 0 else ", %d guns dismounted (−1 each to this side's fire)" % off]

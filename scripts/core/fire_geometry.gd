@@ -72,6 +72,7 @@ func chase_arc(from_hex: Vector2i, facing: int, to_hex: Vector2i) -> int:
 ## The hex a chaser fires from: the bow hex for the bow chaser (ARC_AHEAD), the stern hex for the
 ## stern chaser (ARC_ASTERN). Only meaningful for those two sides.
 static func chase_battery_hex(ship: ShipState, side: int) -> Vector2i:
+	assert(side == ARC_AHEAD or side == ARC_ASTERN, "chase_battery_hex: side must be a chaser side")
 	return ship.stern_hex() if side == ARC_ASTERN else ship.hex_position
 
 

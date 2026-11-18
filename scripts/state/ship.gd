@@ -10,7 +10,6 @@ var side: int = 0
 var flag: String = ""
 var ship_name: String = ""
 var ship_type: String = ""
-var crew_quality: String = "B" # A=Elite, B=Veteran, C-D=Trained, E=Green, F-G=Demoralized
 
 # Basic ship information (from type definition)
 var name: String = ""
@@ -51,7 +50,6 @@ static func from_dict(data: Dictionary) -> Ship:
 	ship.side = data.get("side", data.get("player_id", 0))
 	ship.ship_name = data.get("ship_name", "")
 	ship.ship_type = data.get("ship_type", "")
-	ship.crew_quality = data.get("crew_quality", "Trained")
 	ship.flag = str(data.get("flag", ""))
 
 	# Basic information
@@ -106,7 +104,6 @@ static func initialize_from_scenario(data: Dictionary, type_def: Dictionary) -> 
 	ship.side = data.get("side", data.get("player_id", 0))
 	ship.ship_type = data.get("ship_type", "")
 	ship.ship_name = data.get("ship_name", ship.name)
-	ship.crew_quality = data.get("crew_quality", "Trained")
 	ship.flag = str(data.get("flag", ""))
 
 	return ship
@@ -119,7 +116,6 @@ func to_dict() -> Dictionary:
 		"flag": flag,
 		"ship_name": ship_name,
 		"ship_type": ship_type,
-		"crew_quality": crew_quality,
 		"name": name,
 		"nationality": nationality,
 		"rating": rating,

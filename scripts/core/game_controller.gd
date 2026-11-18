@@ -1382,7 +1382,8 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 		var whole := broadside_arc(geometry, ship_state, side)
 		var batteries: Array[String] = fire_panel.get_batteries(ship_id, side)
 		if batteries.is_empty():
-			hex_overlay.show_arc(whole, side)
+			# A chaser holding fire keeps its arc on the map, faint (fill only); a broadside as before.
+			hex_overlay.show_arc(whole, side, not GunneryTypes.is_chase_side(side))
 			continue
 		var chosen := battery_arc(geometry, ship_state, side, batteries)
 		var rest: Array[Vector2i] = []
