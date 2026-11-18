@@ -86,8 +86,45 @@ func test_land_blocks_gunfire_line_of_sight() -> void:
 
 func test_shallow_does_not_block_line_of_sight() -> void:
 	GameState.active_scenario = {"terrain": {"shallow": [{"name": "bar", "base": 10, "hexes": _fill()}]}}
+	var terrain := TerrainMap.of(GameState.active_scenario)
+	assert_not_null(terrain.area_at(Vector2i(0, 2)), "the hex is parsed as shallow")
+	assert_false(terrain.is_land(Vector2i(0, 2)))
 	var p := calc.preview(_order())
 	assert_true(p.can_fire, p.reason)
+
+
+## The bow battery's line to the target's bow runs along hexes (0,1), (0,2), (0,3).
+func test_single_land_hex_on_the_line_blocks() -> void:
+	var order := _order()
+	order.battery = "bow"
+	assert_true(calc.preview(order).can_fire, "baseline")
+	GameState.active_scenario = {"terrain": {"land": [[0, 2]]}}
+	var p := calc.preview(order)
+	assert_false(p.can_fire)
+	assert_eq(p.reason, "no line of sight to target")
+
+
+## Firer bow (0,0) facing NE, target bow (1,1) facing NW: the line to (1,1) runs along the spine
+## between (1,0) and (0,1) (7.B.8), so it is blocked only when both hexes are land.
+func _spine_order() -> GunneryTypes.FireOrder:
+	firer.facing = 5
+	target.hex_position = Vector2i(1, 1)
+	target.facing = 4
+	var order := _order()
+	order.battery = "bow"
+	return order
+
+
+func test_spine_blocks_only_when_both_hexes_are_land() -> void:
+	var order := _spine_order()
+	assert_true(calc.preview(order).can_fire, "baseline")
+	GameState.active_scenario = {"terrain": {"land": [[1, 0]]}}
+	var p := calc.preview(order)
+	assert_true(p.can_fire, "land on one side of the spine: " + p.reason)
+	GameState.active_scenario = {"terrain": {"land": [[1, 0], [0, 1]]}}
+	p = calc.preview(order)
+	assert_false(p.can_fire)
+	assert_eq(p.reason, "no line of sight to target")
 
 
 func test_aground_ship_cannot_fire_guns() -> void:
@@ -98,11 +135,13 @@ func test_aground_ship_cannot_fire_guns() -> void:
 	assert_eq(calc.eligible_shots("firer").size(), 0)
 
 
-func test_aground_ship_can_be_fired_on_and_use_marines() -> void:
+func test_aground_ship_can_be_fired_on() -> void:
 	target.aground = true
 	var p := calc.preview(_order())
 	assert_true(p.can_fire, p.reason)
-	target.aground = false
+
+
+func test_aground_ship_marines_may_fire() -> void:
 	firer.aground = true
 	target.hex_position = Vector2i(0, 1)
 	firer.marine_count = 2
