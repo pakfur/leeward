@@ -241,8 +241,16 @@ func is_struck() -> bool:
 	return status == Status.STRUCK
 
 ## 14.B.3: struck by a voluntary surrender and not yet struck for good: she may try to rally.
+## A ship with no hull boxes or no crew left never does (9.C: her surrender is permanent).
 func can_rally() -> bool:
-	return is_struck() and surrendered
+	return is_struck() and surrendered and not is_gutted()
+
+## No hull box or no crew box (sailors and marines) left.
+func is_gutted() -> bool:
+	var hull := 0
+	for boxes in hull_current_hp:
+		hull += boxes
+	return hull <= 0 or total_crew_boxes() <= 0
 
 func is_destroyed() -> bool:
 	return status == Status.DESTROYED

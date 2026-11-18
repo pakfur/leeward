@@ -367,3 +367,96 @@ func test_surrender_text() -> void:
 	assert_string_contains(ev.to_text({"a_id": "HMS Alert"}), "cannot rally again")
 	var strike := PhaseEvents.PhaseEvent.new(PhaseEvents.Type.STRIKE, PHASE, "a_id", {"reason": "surrender"})
 	assert_string_contains(strike.to_text({"a_id": "HMS Alert"}), "surrendered")
+
+
+# --- fix wave: cancel, rally turn, gutted ships, boarders, muskets ---
+
+func test_cancel_planning_withdraws_the_surrender_order() -> void:
+	pc.planning_snapshot = {}
+	_order_surrender(a)
+	assert_true(a.surrender_ordered)
+	assert_eq(pc.player_reset_planning(0), "")
+	assert_false(a.surrender_ordered, "Cancel withdraws the order, snapshot or not")
+
+
+func test_no_surrender_on_the_turn_of_a_rally() -> void:
+	a.crew_quality = "F"
+	a.rally_turn = pc.current_turn
+	assert_string_contains(pc.player_surrender(0, "a_id"), "rallied this turn")
+	assert_false(a.surrender_ordered)
+	a.rally_turn = pc.current_turn - 1
+	assert_eq(pc.player_surrender(0, "a_id"), "")
+
+
+func test_gutted_ship_surrender_is_permanent() -> void:
+	_set_hull(a, [0, 0, 0, 0])
+	_order_surrender(a)
+	GameState.morale_controller.resolve_phase(PHASE)
+	assert_true(a.is_struck())
+	assert_false(a.surrendered, "no hull left: struck for good")
+	assert_false(a.can_rally())
+	assert_eq(_events(PhaseEvents.Type.SURRENDER)[0].data["permanent"], true)
+
+
+func test_no_crew_ship_cannot_rally() -> void:
+	_order_surrender(a)
+	GameState.morale_controller.resolve_phase(PHASE)
+	assert_true(a.can_rally())
+	_set_crew(a, [0, 0, 0, 0])
+	a.marine_count = 0
+	assert_false(a.can_rally(), "can_rally reflects it")
+	assert_string_contains(SurrenderRules.rally_error(a, 5), "permanent")
+	_dice.queue([9])
+	var result: Dictionary = GameState.morale_controller.rally("a_id", PHASE)
+	assert_false(result["passed"])
+	assert_true(a.is_struck(), "never back to ACTIVE")
+	assert_eq(_dice.remaining(), 1, "no die rolled")
+	assert_false(a.surrendered)
+
+
+func test_fire_gutted_hull_cannot_rally() -> void:
+	_order_surrender(a)
+	GameState.morale_controller.resolve_phase(PHASE)
+	_set_hull(a, [0, 0, 0, 0])
+	assert_false(a.can_rally())
+	assert_string_contains(SurrenderRules.rally_error(a, 5), "permanent")
+
+
+func test_plotted_ba_is_dropped_for_a_surrendering_ship() -> void:
+	a.task_seq += 1
+	a.crew_tasks.append(ShipState.crew_task_from({"seq": a.task_seq, "code": "BR", "sections": [0],
+		"done": 0, "started_turn": 0, "params": {"section": 0}, "forced": false,
+		"marines_available": true, "ended": ""}))
+	_set_rigging(a, [0, 0, 6, 6])
+	_set_hull(a, [0, 0, 5, 6])
+	a.marine_count = 0
+	a.crew_auto = false
+	a.grappled_with.append("b_id")
+	b.grappled_with.append("a_id")
+	GameState.boarding_controller.take_link_snapshot()
+	var ctx := CrewRules.context(GameState, a)
+	var plan := {"assignments": {0: BoardingRules.entry("BA", 0, "b_id")}, "orders": {}}
+	var before := CrewRules.normalize(a, plan, ctx)
+	assert_eq(str(before["assignments"][0]["code"]), "BA", "before the order the boarding plot stands")
+	assert_eq(pc.player_surrender(0, "a_id"), "")
+	ctx = CrewRules.context(GameState, a)
+	var after := CrewRules.normalize(a, plan, ctx)
+	assert_eq(str(after["assignments"][0]["code"]), "BR", "the boarding plot stays ready, no BA")
+	GameState.crew_task_controller.plot_crew(0, "a_id", plan)
+	GameState.crew_task_controller.finalize_plots()
+	var stored: Dictionary = GameState.crew_task_controller.current_plan("a_id", true)
+	assert_eq(str(stored["assignments"][0]["code"]), "BR", "and through finalize_plots")
+
+
+func test_surrendering_ship_has_no_marine_shots() -> void:
+	a.marine_count = 2
+	b.marine_count = 2
+	b.hex_position = Vector2i(1, 0)
+	b.facing = 3
+	var before := GameState.marine_fire_resolver.eligible_marine_shots("a_id").size()
+	assert_gt(before, 0, "adjacent enemy: a shot exists before the order")
+	_order_surrender(a)
+	assert_eq(GameState.marine_fire_resolver.eligible_marine_shots("a_id").size(), 0)
+	b.marine_count = 0
+	assert_false(GameState.marine_fire_resolver.any_eligible_marine_shot(), "nobody else can shoot either")
+

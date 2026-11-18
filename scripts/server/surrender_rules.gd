@@ -35,9 +35,11 @@ static func eligible(ship: ShipState) -> bool:
 
 ## "" when the ship may be ordered to surrender, else why not. Any ship in play and on the map may
 ## (aground, anchored, fouled, grappled or towed included) when eligible.
-static func surrender_error(ship: ShipState) -> String:
+static func surrender_error(ship: ShipState, turn: int = -1) -> String:
 	if ship.is_out_of_play() or not ship.is_on_map():
 		return "%s is not in play" % ship.ship_name
+	if turn >= 0 and ship.rally_turn == turn:
+		return "%s rallied this turn: she may not surrender again until the next (14.B.3)" % ship.ship_name
 	if not eligible(ship):
 		return "%s may surrender only at CQ F or G or with five sections lost (14.B.2): %d lost" % [
 			ship.ship_name, sections_lost(ship)]
@@ -52,6 +54,8 @@ static func rally_error(ship: ShipState, turn: int) -> String:
 		return "%s has surrendered twice: she has struck for good (14.B.4)" % ship.ship_name
 	if ship.is_struck() and not ship.surrendered:
 		return "%s has struck for good" % ship.ship_name
+	if ship.is_struck() and ship.surrendered and ship.is_gutted():
+		return "%s has no hull or no crew left: her surrender is permanent (9.C)" % ship.ship_name
 	if not ship.can_rally():
 		return "%s has not surrendered" % ship.ship_name
 	if ship.rally_turn == turn:

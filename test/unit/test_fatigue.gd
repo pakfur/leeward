@@ -192,3 +192,10 @@ func test_fire_event_mgn_includes_fatigue() -> void:
 func test_gunfire_turns_serialized() -> void:
 	a.gunfire_turns = 7
 	assert_eq(ShipState.deserialize(a.serialize()).gunfire_turns, 7)
+
+
+func test_chaser_only_turn_counts() -> void:
+	_setup_ships(0, Vector2i(3, 0))
+	_sixes()
+	_fire([_order("a_ship", "b_ship", GunneryTypes.BATTERY_CHASE, GunneryTypes.CHASE_BOW)])
+	assert_eq(a.gunfire_turns, 1, "a turn of chaser fire alone counts")

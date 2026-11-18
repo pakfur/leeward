@@ -178,8 +178,8 @@ func enemy_guns_within(ship_state: ShipState, max_range: int) -> int:
 ## 14.B.2: the ship is eligible, has not ordered it, did not just rally, and is either linked to an
 ## enemy in play with boarders or outgunned SURRENDER_ODDS : 1 within SURRENDER_ODDS_RANGE.
 func wants_to_surrender(ship_state: ShipState) -> bool:
-	if ship_state.is_out_of_play() or ship_state.surrender_ordered \
-			or ship_state.rally_turn == game_state.current_turn:
+	if SurrenderRules.surrender_error(ship_state, game_state.phase_controller.current_turn) != "" \
+			or ship_state.surrender_ordered:
 		return false
 	if not SurrenderRules.eligible(ship_state):
 		return false

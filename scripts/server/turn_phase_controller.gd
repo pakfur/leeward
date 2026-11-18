@@ -296,6 +296,10 @@ func player_reset_planning(player_id: int) -> String:
 			continue
 		_restore_snapshot(ship_id, true)
 		game_state.ship_controller.set_cast_lead(ship_id, false)
+	# 14.B.2: a surrender ordered this planning is withdrawn too (a ship with no snapshot entry included).
+	for ship in game_state.ships_of_player(player_id):
+		if ship.surrender_ordered:
+			game_state.ship_controller.set_surrender_ordered(ship.ship_id, false)
 	Trace.trace_log("TurnPhase", "Player %d reset the planning" % player_id)
 	return ""
 
@@ -481,7 +485,7 @@ func player_surrender(player_id: int, ship_id: String, on: bool = true) -> Strin
 	if why != "":
 		return why
 	if on:
-		why = SurrenderRules.surrender_error(game_state.get_ship(ship_id))
+		why = SurrenderRules.surrender_error(game_state.get_ship(ship_id), current_turn)
 		if why != "":
 			return why
 	game_state.ship_controller.set_surrender_ordered(ship_id, on)

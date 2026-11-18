@@ -231,7 +231,9 @@ func test_rally_then_second_surrender_is_permanent() -> void:
 	_dice.queue([6])
 	assert_eq(pc.player_rally(0, "a_id"), "")
 	a.crew_quality = "F"
-	assert_eq(pc.player_surrender(0, "a_id"), "")
+	assert_string_contains(pc.player_surrender(0, "a_id"), "rallied this turn")
+	_planning(3)
+	assert_eq(pc.player_surrender(0, "a_id"), "", "the next g-t she may")
 	GameState.morale_controller.resolve_phase(PHASE)
 	var surrenders := GameState.turn_log.of_type(PhaseEvents.Type.SURRENDER)
 	assert_eq(surrenders[surrenders.size() - 1].data["permanent"], true)

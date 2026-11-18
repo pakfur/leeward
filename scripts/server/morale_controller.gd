@@ -43,7 +43,7 @@ func resolve_surrenders(phase: int) -> void:
 		if ship.is_out_of_play():
 			continue
 		var n: int = game_state.ship_controller.record_surrender(ship_id)
-		var permanent: bool = n >= SurrenderRules.MAX_SURRENDERS
+		var permanent: bool = n >= SurrenderRules.MAX_SURRENDERS or ship.is_gutted()
 		game_state.turn_log.add(PhaseEvents.Type.SURRENDER, phase, ship_id,
 			{"surrenders": n, "permanent": permanent})
 		game_state.damage_controller.strike(ship_id, "surrender", phase)
@@ -80,6 +80,10 @@ func rally(ship_id: String, phase: int) -> Dictionary:
 		return {"passed": false}
 	var ship: ShipState = game_state.get_ship(ship_id)
 	if ship == null:
+		return {"passed": false}
+	if ship.is_gutted():
+		# 9.C: no hull or no crew left, her surrender is permanent; no attempt, no die.
+		game_state.ship_controller.end_surrender(ship_id)
 		return {"passed": false}
 	game_state.ship_controller.set_rally_turn(ship_id, game_state.phase_controller.current_turn)
 	var roll: int = game_state.dice.d10()
