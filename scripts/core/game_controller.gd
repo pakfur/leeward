@@ -1415,7 +1415,18 @@ func _on_fire_pressed(orders: Array) -> void:
 		return
 	# Accepted: the declare step is over, so the panel must not stay interactive.
 	_close_fire_panel()
-	var lines: Array[String] = [orders_summary_line(orders, marine_orders.size())]
+	_show_orders_while_declaring(orders, marine_orders.size())
+
+
+## "Your orders: ..." in the side panel while the other players still declare. When the submit
+## completed the declarations, combat has already resolved inside it and the resolution replay (or a
+## later phase) holds the side panel: it is not replaced.
+func _show_orders_while_declaring(orders: Array, marine_count: int) -> void:
+	var pc := GameState.phase_controller
+	if pc == null or pc.current_phase != TurnPhaseController.GamePhase.COMBAT_RESOLUTION \
+			or pc.combat_step != TurnPhaseController.CombatStep.DECLARE:
+		return
+	var lines: Array[String] = [orders_summary_line(orders, marine_count)]
 	_show_combat_panel(lines)
 
 

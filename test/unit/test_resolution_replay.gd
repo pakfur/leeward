@@ -360,6 +360,36 @@ func test_combat_steps_hold_the_server_until_the_last_next() -> void:
 		assert_false(gc._replay_running()))
 
 
+func test_orders_summary_does_not_replace_the_replay() -> void:
+	# The player's submit completes the declarations, so combat resolves inside it and the replay
+	# takes the side panel before the fire-pressed handler goes on: it must not cover the replay.
+	var ctx := StubContextPanel.new()
+	add_child_autofree(ctx)
+	var gc := _combat_controller(ctx)
+	var combat_log := _with_combat_log([_ev(PhaseEvents.Type.FIRE, COMBAT, "a", "b")])
+	_run_combat(combat_log, func(_pc: TurnPhaseController) -> void:
+		gc._on_combat_log_ready(combat_log)
+		gc._show_orders_while_declaring([{"battery": "full"}], 0)
+		assert_eq(ctx.contents.size(), 1, "nothing replaced the resolution panel")
+		assert_true(ctx.contents[-1] is ResolutionPanel)
+		gc._cancel_resolution_replay())
+
+
+func test_orders_summary_shows_while_others_declare() -> void:
+	var ctx := StubContextPanel.new()
+	add_child_autofree(ctx)
+	var gc := _combat_controller(ctx)
+	var pc := GameState.phase_controller
+	var old_phase := pc.current_phase
+	pc.current_phase = TurnPhaseController.GamePhase.COMBAT_RESOLUTION
+	pc.combat_step = TurnPhaseController.CombatStep.DECLARE
+	gc._show_orders_while_declaring([{"battery": "full"}], 0)
+	pc.combat_step = TurnPhaseController.CombatStep.NONE
+	pc.current_phase = old_phase
+	assert_eq(ctx.contents.size(), 1)
+	assert_eq(ctx.contents[0].name, "CombatPanel")
+
+
 func test_leaving_mid_replay_reports_nothing() -> void:
 	var ctx := StubContextPanel.new()
 	add_child_autofree(ctx)
