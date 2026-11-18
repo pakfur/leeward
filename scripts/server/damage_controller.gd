@@ -414,7 +414,7 @@ func strike(ship_id: String, reason: String, phase: int) -> void:
 ## both ships (the partner is freed), a sail change in progress or ordered is dropped and its
 ## pending morale checks are cleared. The wreck keeps its two hexes, which still block movement
 ## and line of sight. A struck ship can still be destroyed. Logs DESTROYED.
-func destroy(ship_id: String, reason: String, phase: int) -> void:
+func destroy(ship_id: String, reason: String, phase: int, extra: Dictionary = {}) -> void:
 	if not is_server:
 		push_error("DamageController: Cannot destroy a ship on client")
 		return
@@ -438,7 +438,7 @@ func destroy(ship_id: String, reason: String, phase: int) -> void:
 		game_state.crew_task_controller.drop_all(ship_id, "destroyed")
 	sc.clear_fires(ship_id)  # a wreck does not burn (spec Q10)
 	sc.clear_pending_morale_checks(ship_id)
-	game_state.turn_log.add(PhaseEvents.Type.DESTROYED, phase, ship_id, {"reason": reason}, partner_id)
+	game_state.turn_log.add(PhaseEvents.Type.DESTROYED, phase, ship_id, {"reason": reason}.merged(extra), partner_id)
 	Trace.trace_log("Damage", "Ship %s destroyed: %s" % [ship_id, reason])
 
 

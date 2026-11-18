@@ -65,6 +65,7 @@ var dice: Dice = null
 var fire_geometry: FireGeometry = null
 var gunnery_calculator: GunneryCalculator = null
 var damage_controller: DamageController = null
+var map_controller: MapController = null
 var critical_hit_controller: CriticalHitController = null
 var gunnery_resolver: GunneryResolver = null
 var marine_fire_resolver: MarineFireResolver = null
@@ -122,6 +123,7 @@ func _initialize_server_controllers() -> void:
 	fire_geometry = FireGeometry.new(HexGrid.new())
 	gunnery_calculator = GunneryCalculator.new(self)
 	damage_controller = DamageController.new(self)
+	map_controller = MapController.new(self)
 	critical_hit_controller = CriticalHitController.new(self)
 	gunnery_resolver = GunneryResolver.new(self)
 	marine_fire_resolver = MarineFireResolver.new(self)

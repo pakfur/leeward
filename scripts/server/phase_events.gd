@@ -44,6 +44,12 @@ enum Type {
 	SIGNAL,  # 11.A a flag signal delivered, ship_id = the sending ship: {from_player, address: {kind, name}, words}
 	TALK,  # 11.B.3 a word passed between sterns-adjacent ships of one side, ship_id = the speaking ship: {talk_id, from_player, words}
 	END_OFFER,  # 2.A.1 a side offers or withdraws an offer to end the game, ship_id empty: {side, offer: bool}
+	AGROUND,  # a ship runs or drifts aground: {cause: movement/drift, terrain: land/shallow, hex, depth, draft}
+	LEAD_CAST,  # a ship casts the lead: {hex, depth, draft, outcome, side}
+	ESCAPE_DECLARED,  # a ship declares it is trying to escape
+	ESCAPED,  # a ship escapes: {how: edge/range/pursuit, edge | range}
+	ARRIVED,  # a reinforcement enters: {hex, facing, sail_state, speed}
+	ARRIVAL_DELAYED,  # a reinforcement cannot enter this turn; target_id: the ship in the way
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -71,6 +77,7 @@ const CREW_TASK_REASONS := {
 	"retaken": "the ship is retaken",
 	"destroyed": "the ship has been destroyed",
 	"struck": "the ship has struck",
+	"escaped": "the ship has escaped",
 }
 
 const MODIFIER_LABELS := {
@@ -211,6 +218,20 @@ static func wind_direction_word(direction: int) -> String:
 ## Display label for a gunnery modifier id ("initial_broadside" -> "initial broadside").
 static func modifier_label(modifier_id: String) -> String:
 	return MODIFIER_LABELS.get(modifier_id, modifier_id.replace("_", " "))
+
+
+## An edge name in words ("W" -> "west"); other boundary names as given.
+static func edge_label(edge_name: String) -> String:
+	match edge_name:
+		"N":
+			return "north"
+		"E":
+			return "east"
+		"S":
+			return "south"
+		"W":
+			return "west"
+	return edge_name
 
 
 ## "1 turn" / "2 turns"; `many` defaults to `one` + "s".
@@ -455,7 +476,22 @@ class PhaseEvent extends RefCounted:
 			Type.REORGANIZING_ABORTED:
 				return "%s's boarders stop reorganizing to defend the prize %s (%s)" % [who, other,
 					PhaseEvents.sections_text(data.get("sections", []))]
+			Type.AGROUND:
+				return _aground_text(who)
+			Type.LEAD_CAST:
+				return _lead_text(who)
+			Type.ESCAPE_DECLARED:
+				return "%s is trying to escape" % who
+			Type.ESCAPED:
+				return _escaped_text(who)
+			Type.ARRIVED:
+				var sail: String = PhaseEvents.SAIL_NAMES.get(str(data.get("sail_state", "")).to_upper(), "")
+				return "%s arrives at %s%s" % [who, _hex_text("hex"), " under %s" % sail if sail != "" else ""]
+			Type.ARRIVAL_DELAYED:
+				return "%s cannot enter: %s holds her entry hex; she will try next turn" % [who, other]
 			Type.DESTROYED:
+				if str(data.get("reason", "")) == "no_sea_room":
+					return "%s leaves the map where there is no sea room and is lost" % who
 				var text := "%s explodes and is destroyed" % who
 				if target_id != "":
 					text += "; %s is no longer fouled with her" % other
@@ -676,9 +712,38 @@ class PhaseEvent extends RefCounted:
 		return text
 
 	## "… stops short of its plotted course", with the cause the resolution recorded, if any.
+	func _aground_text(who: String) -> String:
+		var how := "drifts" if str(data.get("cause", "")) == "drift" else "runs"
+		var on := "land" if str(data.get("terrain", "")) == "land" else "the shoal"
+		var text := "%s %s aground on %s at %s" % [who, how, on, _hex_text("hex")]
+		if on != "land" and data.has("depth"):
+			text += ": %s ft, draws %s ft" % [_val("depth"), _val("draft")]
+		return text
+
+	func _lead_text(who: String) -> String:
+		var text := "%s casts the lead: %s ft at %s, draws %s ft" % [who, _val("depth"), _hex_text("hex"), _val("draft")]
+		var outcome := str(data.get("outcome", ""))
+		var side := int(data.get("side", -1))
+		if outcome == "bears_off" and side >= 0 and side < PhaseEvents.SIDE_NAMES.size():
+			text += ", bears off to %s" % PhaseEvents.SIDE_NAMES[side]
+		elif outcome != "":
+			text += ", %s" % outcome.replace("_", " ")
+		return text
+
+	func _escaped_text(who: String) -> String:
+		var hexes := PhaseEvents.plural(int(data.get("range", 0)), "hex", "hexes")
+		match str(data.get("how", "")):
+			"range":
+				return "%s escapes %s from the nearest enemy" % [who, hexes]
+			"pursuit":
+				return "%s escapes %s off, and no enemy can catch her" % [who, hexes]
+		return "%s escapes off the %s edge" % [who, PhaseEvents.edge_label(str(data.get("edge", "")))]
+
 	func _stopped_short_text(who: String, other: String) -> String:
 		var text := "%s stops short of its plotted course" % who
 		match str(data.get("cause", "")):
+			"map_edge":
+				return "%s stops at the edge of the map" % who
 			"stern_contest", "stern_blocked", "overlap":
 				return _turn_cause_text(text, other)
 			"collision":
@@ -897,6 +962,8 @@ class PhaseEvent extends RefCounted:
 		if not data.has("blocked"):
 			return "%s holds position%s (drift roll %s, needed %s)" % [who, at, _roll_text(), _val("needed")]
 		match str(data["blocked"]):
+			"aground":
+				return "%s drifts aground" % who
 			"map edge":
 				return "%s would drift (%s) but is at the edge of the map and holds position%s" % [who, dice, at]
 			"ship":
