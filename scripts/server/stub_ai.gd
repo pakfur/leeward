@@ -57,6 +57,11 @@ const MAX_PADDING_STEPS := 20
 const MOVE_ORDERS: Array[String] = ["engage", "close", "follow", "line", "disengage"]
 ## Drift danger looks this many hexes downwind (spec §11).
 const DRIFT_DANGER_HEXES := 4
+## No enemy in play within this many hexes (closest hexes) before a ship sets out to tow (towing
+## spec §11).
+const TOW_SAFE_RANGE := 8
+## A tower cuts her tow when an enemy in play comes within this many hexes (towing spec §11).
+const TOW_CUT_RANGE := 3
 
 var game_state: Node = null
 var _request_counter: int = 0
@@ -103,7 +108,91 @@ func assign_crew() -> void:
 		if not ship_state.crew_auto:
 			sc.set_crew_auto(ship_state.ship_id, true)
 		sc.set_crew_orders(ship_state.ship_id, {"sail_target": "", "boarding": boarding_order(ship_state),
-			"anchor": anchor_order(ship_state)})
+			"anchor": anchor_order(ship_state), "tow": tow_order(ship_state)})
+
+
+## The AI's tow order (towing spec §11), crew_orders.tow: a tower "cut" when an enemy in play is
+## within TOW_CUT_RANGE, else ""; a towed ship "" (the tower decides); otherwise "take:<id>" for
+## her tow target (tow_target), or "". A tow still being prepared is never cut.
+func tow_order(ship_state: ShipState) -> String:
+	if ship_state.is_towing():
+		return "cut" if _enemy_within(ship_state, TOW_CUT_RANGE) else ""
+	if ship_state.is_towed():
+		return ""
+	var target := tow_target(ship_state)
+	return "take:" + target if target != "" else ""
+
+
+## The ship the AI ship sets out to tow (towing spec §11), or "": with the ship free to tow
+## (_may_start_tow), the nearest candidate (_tow_candidates) she is the nearest free AI ship of her
+## side to (ties by ship id), so two towers never chase one cripple.
+func tow_target(ship_state: ShipState) -> String:
+	if not _may_start_tow(ship_state):
+		return ""
+	for candidate in _tow_candidates(ship_state):
+		var claimant := _tow_claimant(candidate)
+		if claimant != null and claimant.ship_id == ship_state.ship_id:
+			return candidate.ship_id
+	return ""
+
+
+## The ship may set out to tow: on the map and in play, her crew able to act, not a prize, neither
+## towing nor towed, not anchored, aground, dismasted or linked, able to make way at some heading,
+## and no enemy in play within TOW_SAFE_RANGE.
+func _may_start_tow(ship_state: ShipState) -> bool:
+	if ship_state.is_out_of_play() or not ship_state.is_on_map() or not ship_state.crew_can_act():
+		return false
+	if ship_state.is_captured() or ship_state.is_towing() or ship_state.is_towed():
+		return false
+	if ship_state.is_anchored() or ship_state.is_aground() or ship_state.is_dismasted() \
+			or ship_state.is_linked():
+		return false
+	if not _can_make_way(ship_state):
+		return false
+	return not _enemy_within(ship_state, TOW_SAFE_RANGE)
+
+
+## The friendly ships on the map the ship might tow, nearest first (closest hexes, ties by ship
+## id): dismasted or a prize, not struck or destroyed, neither towing nor towed, not anchored,
+## aground or linked.
+func _tow_candidates(ship_state: ShipState) -> Array[ShipState]:
+	var found: Array = []
+	for other: ShipState in game_state.ships_on_map():
+		if other.ship_id == ship_state.ship_id or other.side != ship_state.side:
+			continue
+		if not (other.is_dismasted() or other.is_captured()) or other.is_struck() or other.is_destroyed():
+			continue
+		if other.is_towing() or other.is_towed() or other.is_anchored() or other.is_aground() \
+				or other.is_linked():
+			continue
+		var r: int = game_state.fire_geometry.range_between(ship_state.occupied_hexes(), other.occupied_hexes())
+		if r < 0:
+			continue
+		found.append([r, other.ship_id, other])
+	found.sort_custom(func(a, b): return a[0] < b[0] or (a[0] == b[0] and str(a[1]) < str(b[1])))
+	var out: Array[ShipState] = []
+	for entry in found:
+		out.append(entry[2])
+	return out
+
+
+## The AI ship of the candidate's side, free to tow (_may_start_tow), nearest to her (closest
+## hexes, ties by ship id); null when there is none.
+func _tow_claimant(candidate: ShipState) -> ShipState:
+	var best: ShipState = null
+	var best_range := -1
+	for ship_state in _get_ai_ships():
+		if ship_state.side != candidate.side or ship_state.ship_id == candidate.ship_id \
+				or not _may_start_tow(ship_state):
+			continue
+		var r: int = game_state.fire_geometry.range_between(ship_state.occupied_hexes(),
+			candidate.occupied_hexes())
+		if r < 0:
+			continue
+		if best == null or r < best_range or (r == best_range and ship_state.ship_id < best.ship_id):
+			best = ship_state
+			best_range = r
+	return best
 
 
 ## The AI's anchor order (anchoring spec §11), one of AnchorRules.ORDERS, placed by rule A2c.
@@ -613,12 +702,19 @@ func _get_ai_ships(player_id: int = -1) -> Array[ShipState]:
 	return result
 
 
-## The ship's strategy: strategy_override when set (tests), else "escape" under an escape posture
-## (_escape_posture), else "anchor" when she wants to anchor (wants_to_anchor), else its standing
-## order's (spec 7).
+## The ship's strategy: strategy_override when set (tests); a tower "escape" when her side may
+## declare escape, else "disengage" (towing spec §11); "tow" with a tow target (tow_target); else
+## "escape" under an escape posture (_escape_posture), else "anchor" when she wants to anchor
+## (wants_to_anchor), else its standing order's (spec 7).
 func _get_strategy(ship_state: ShipState) -> String:
 	if strategy_override != "":
 		return strategy_override
+	if ship_state.is_towing():
+		if MapRules.may_declare(game_state.active_scenario, ship_state.side, game_state.current_turn):
+			return "escape"
+		return "disengage"
+	if tow_target(ship_state) != "":
+		return "tow"
 	if _escape_posture(ship_state):
 		return "escape"
 	if wants_to_anchor(ship_state):
@@ -681,6 +777,8 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 			version = _strategy_disengage(ship_state, controller, session_id, version, started)
 		"escape":
 			version = _strategy_escape(ship_state, controller, session_id, version, started)
+		"tow":
+			version = _strategy_tow(ship_state, controller, session_id, version, started)
 		"forward":
 			version = _strategy_forward(ship_state, controller, session_id, version, started)
 		"hold", "anchor":
@@ -690,7 +788,7 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 	# A ship keeping station on a leader pads with moves that stay out of the other ships' hexes.
 	# Every ship pads with safe moves (_move_safe) while it has one.
 	var avoid := {}
-	if strategy in ["follow", "line"]:
+	if strategy in ["follow", "line", "tow"]:
 		var ships: Array[ShipState] = []
 		ships.assign(game_state.get_all_ships())
 		avoid = Occupancy.build(ships, [ship_id])
@@ -887,6 +985,28 @@ func _strategy_escape(
 	return _steer(ship_state, controller, session_id, version, started, score, false, false, true)
 
 
+## Steers for the tow station pose (towing spec §11): the stern on the hex ahead of the target's
+## bow (TowRules.station_hex), heading as she does. One move a g-t at most once the course can be
+## submitted, so the ship slows by her full deceleration and arrives with few MPs used (8.C.1).
+func _strategy_tow(
+	ship_state: ShipState,
+	controller: MovementPlottingController,
+	session_id: String,
+	version: int,
+	started: MovementTypes.PlottingStartedResponse
+) -> int:
+	var target: ShipState = game_state.get_ship(tow_target(ship_state))
+	if target == null:
+		return version
+	var station := TowRules.station_hex(target)
+	var ideal_bow: Vector2i = station + HexGrid.DIRECTIONS[target.facing]
+	var score := func(bow: Vector2i, facing: int) -> int:
+		if HexGrid.stern_of(bow, facing) == station:
+			return FIRING_POSITION_BASE - _turn_steps(facing, target.facing)
+		return -(2 * _axial_distance(bow, ideal_bow) + _misalignment(bow, facing, ideal_bow))
+	return _steer(ship_state, controller, session_id, version, started, score, true, true, false, 1)
+
+
 func _follow_leader(ship_state: ShipState, leader_id: String, controller: MovementPlottingController,
 		session_id: String, version: int, started: MovementTypes.PlottingStartedResponse) -> int:
 	var leader: ShipState = game_state.get_ship(leader_id) if leader_id != "" else null
@@ -951,10 +1071,11 @@ func _friendly_footprints(ship_state: ShipState) -> Array:
 ## whose position scores > 0 stops once no option is strictly better; otherwise it keeps way on,
 ## even through a lower-scoring step, until it has no move left. It never takes an unsafe move
 ## (_move_safe: a forbidden crossing, land, or a hex where it may ground); with none safe it stops.
+## With `max_moves` >= 0 it stops once it has made that many moves and the course can be submitted.
 ## Returns the session version.
 func _steer(ship_state: ShipState, controller: MovementPlottingController, session_id: String,
 		version: int, started: MovementTypes.PlottingStartedResponse, score: Callable, hold: bool,
-		avoid_bows: bool, hold_turns: bool = false) -> int:
+		avoid_bows: bool, hold_turns: bool = false, max_moves: int = -1) -> int:
 	var ships: Array[ShipState] = []
 	ships.assign(game_state.get_all_ships())
 	# Footprints of everyone else: a turn may not swing the stern into one (the resolver would
@@ -966,8 +1087,11 @@ func _steer(ship_state: ShipState, controller: MovementPlottingController, sessi
 	var current_valid := started.valid_next_hexes
 	var current_version := version
 	var can_submit := started.can_submit
+	var moves_made := 0
 
 	while current_valid and current_valid.has_any_moves():
+		if max_moves >= 0 and moves_made >= max_moves and can_submit:
+			break
 		var stay_score: int = score.call(current_hex, current_facing)
 		var best: MovementTypes.ValidMove = null
 		var best_score := 0
@@ -1001,6 +1125,7 @@ func _steer(ship_state: ShipState, controller: MovementPlottingController, sessi
 		current_version = selected.session_version
 		current_valid = selected.valid_next_hexes
 		can_submit = selected.can_submit
+		moves_made += 1
 		current_hex = best.metadata.resulting_hex
 		current_facing = best.metadata.resulting_facing
 
