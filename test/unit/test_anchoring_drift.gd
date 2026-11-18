@@ -358,13 +358,50 @@ func test_forced_move_into_deep_enough_shallows_moves() -> void:
 	assert_eq(ship.hex_position, Vector2i(-1, 0))
 
 
-func test_bow_settling_onto_own_shoal_hex_rolls_no_depth() -> void:
+## 13.G.2a, 13.G.4b, as in drift: a bow anchor settling moves her bow onto her own old stern hex,
+## which is a new bow hex, so a shoal there rolls depth.
+func test_bow_settling_onto_own_shoal_hex_rolls_depth_and_grounds() -> void:
 	GameState.active_scenario["terrain"] = {"shallow": [
 		{"name": "bar", "base": 10, "hexes": [[-1, 0]]}]}
 	var ship := _anchored("a", Vector2i(0, 0), 0, Vector2i(0, 0), 0)
+	_dice.queue([3])  # 13 <= 16
+	anchors.resolve_anchoring(PHASE)
+	assert_true(ship.is_aground())
+	assert_eq(ship.hex_position, Vector2i(0, 0))
+	assert_eq(_moves()[0].data["blocked"], "land")
+
+
+func test_bow_settling_onto_own_shoal_hex_deep_enough_moves() -> void:
+	GameState.active_scenario["terrain"] = {"shallow": [
+		{"name": "bar", "base": 14, "hexes": [[-1, 0]]}]}
+	var ship := _anchored("a", Vector2i(0, 0), 0, Vector2i(0, 0), 0)
+	_dice.queue([3])  # 17 > 16
 	anchors.resolve_anchoring(PHASE)
 	assert_false(ship.is_aground())
 	assert_eq(ship.hex_position, Vector2i(-1, 0))
+
+
+func test_bow_veering_out_into_shoal_rolls_depth() -> void:
+	GameState.active_scenario["terrain"] = {"shallow": [
+		{"name": "bar", "base": 10, "hexes": [[-2, 0]]}]}
+	var ship := _anchored("a", Vector2i(-1, 0), 0, Vector2i(0, 0), 1)
+	_task(ship, "VO")
+	_dice.queue([6])  # 16 <= 16: aground, the VO lost
+	anchors.resolve_anchoring(PHASE)
+	assert_true(ship.is_aground())
+	assert_eq(ship.hex_position, Vector2i(-1, 0))
+	assert_eq(int(ship.anchor["cable"]), 1)
+	assert_eq(int(ship.anchor["veered"]), 0)
+
+
+func test_swing_about_the_bow_in_a_shoal_rolls_no_depth() -> void:
+	GameState.active_scenario["terrain"] = {"shallow": [
+		{"name": "bar", "base": 10, "hexes": [[-1, 0]]}]}
+	var ship := _anchored("a", Vector2i(-1, 0), 1, Vector2i(0, 0), 1)
+	anchors.resolve_anchoring(PHASE)
+	assert_eq(ship.facing, 0)
+	assert_eq(ship.hex_position, Vector2i(-1, 0))
+	assert_false(ship.is_aground())
 
 
 func test_forced_move_off_map_holds() -> void:
@@ -392,6 +429,21 @@ func test_linked_anchored_ship_holds() -> void:
 	assert_eq(_moves()[0].data["blocked"], "linked")
 	assert_eq(_moves()[0].data["fouled"], null)
 	assert_eq(int(ship.anchor["cable"]), 1)
+
+
+func test_linked_ship_facing_away_rolls_swing_and_holds() -> void:
+	var ship := _anchored("a", Vector2i(-1, 0), 3, Vector2i(0, 0), 1)
+	_make_ship("b", Vector2i(-1, -1), 3, 1)
+	sc.add_grapple("a", "b")
+	_dice.queue([5])  # starboard
+	anchors.resolve_anchoring(PHASE)
+	assert_eq(ship.facing, 3)
+	assert_eq(ship.hex_position, Vector2i(-1, 0))
+	var move = _moves()[0]
+	assert_eq(move.data["blocked"], "linked")
+	assert_eq(move.data["roll"], 5)
+	assert_eq(move.data["to_facing"], 4)
+	assert_eq(int(ship.anchor["swing_dir"]), 1)
 
 
 # --- V.B: drop and cut ----------------------------------------------------------
@@ -431,6 +483,13 @@ func test_drop_stern_anchor_with_springs() -> void:
 	assert_true(ship.has_springs())
 	var ev = GameState.turn_log.of_type(PhaseEvents.Type.ANCHORED)[0]
 	assert_eq(ev.to_text({"a": "Ajax"}), "Ajax anchors by the stern with springs at (-1, 0)")
+
+
+func test_drop_needs_a_ready_anchor() -> void:
+	var ship := _make_ship("a", Vector2i(0, 0), 0)
+	assert_false(anchors.drop("a", PHASE))
+	assert_false(ship.is_anchored())
+	assert_eq(GameState.turn_log.of_type(PhaseEvents.Type.ANCHORED).size(), 0)
 
 
 func test_anchored_group_does_not_drift() -> void:

@@ -151,16 +151,16 @@ func resolve_anchoring(phase: int) -> void:
 
 
 ## SERVER ONLY: the ship lets go her ready anchor where she lies (13.C.2), in the anchored end's
-## hex, with no cable out yet; logs ANCHORED. False when she is already anchored. With no anchor
-## ready (a Developer UI drop) she anchors by the bow.
+## hex, with no cable out yet; logs ANCHORED. False when she is already anchored or has no anchor
+## ready (a Developer UI drop sets one ready first).
 func drop(ship_id: String, phase: int) -> bool:
 	if not is_server:
 		push_error("AnchorController: Cannot drop anchor on client")
 		return false
 	var ship: ShipState = game_state.get_ship(ship_id)
-	if ship == null or ship.is_anchored():
+	if ship == null or ship.is_anchored() or ship.anchor_ready == "":
 		return false
-	var end := ship.anchor_ready if ship.anchor_ready != "" else "bow"
+	var end := ship.anchor_ready
 	var hex := AnchorRules.drop_hex(ship)
 	var springs := ship.springs_ready
 	game_state.ship_controller.drop_anchor(ship_id, {"hex": hex, "end": end, "springs": springs,
@@ -267,7 +267,10 @@ func _ride(ship: ShipState, phase: int) -> void:
 			"land":
 				blocked = BLOCKED_LAND
 				grounding = _ground_data(ship, "land", _first_land(new_hexes), -1)
-			_:
+			"edge":
+				blocked = BLOCKED_EDGE
+			var other:
+				push_error("AnchorController: unknown forced_check result '%s' for %s; she holds" % [other, id])
 				blocked = BLOCKED_EDGE
 
 	game_state.turn_log.add(PhaseEvents.Type.ANCHOR_MOVE, phase, id, {

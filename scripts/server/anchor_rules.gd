@@ -189,7 +189,9 @@ static func swing_step(facing: int, proper: int, swing_dir: int, roll: int) -> D
 ## {"result": "clear"|"edge"|"land"|"ship", "blocker": ship id or "", "shallow_bow": bool}.
 ## `others` maps hex -> ship id. An anchored ship never leaves the map: any new hex off the board,
 ## and any boundary crossing MapRules.forced_move finds (blocked, lost or escape), is "edge".
-## `shallow_bow` (clear only): the new bow is in a shallow area it was not in before.
+## `shallow_bow` (clear only): the bow enters a new hex, and that hex is shallow (13.G.2a, 13.G.4b,
+## as in drift), even when it was her own stern hex. A bow that stays where it was, as in a swing
+## about the anchored bow, rolls nothing.
 static func forced_check(scenario: Dictionary, old_hexes: Array[Vector2i], new_hexes: Array[Vector2i],
 		others: Dictionary) -> Dictionary:
 	var terrain := TerrainMap.of(scenario)
@@ -207,7 +209,8 @@ static func forced_check(scenario: Dictionary, old_hexes: Array[Vector2i], new_h
 			return _forced("land")
 		"ship":
 			return _forced("ship", str(r["blocker"]))
-	var shallow := bool(r["shallow_bow"]) and not new_hexes.is_empty() and not old_hexes.has(new_hexes[0])
+	var shallow := bool(r["shallow_bow"]) and not new_hexes.is_empty() \
+		and (old_hexes.is_empty() or new_hexes[0] != old_hexes[0])
 	return {"result": "clear", "blocker": "", "shallow_bow": shallow}
 
 

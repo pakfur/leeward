@@ -261,11 +261,15 @@ func test_forced_check() -> void:
 		[Vector2i(-1, 0), Vector2i(-2, 0)] as Array[Vector2i], {Vector2i(-2, 0): "b"})
 	assert_eq(ship["result"], "ship")
 	assert_eq(ship["blocker"], "b")
-	var kept := AnchorRules.forced_check(sc, [Vector2i(0, 0), Vector2i(-1, 0)] as Array[Vector2i],
+	var onto_stern := AnchorRules.forced_check(sc, [Vector2i(0, 0), Vector2i(-1, 0)] as Array[Vector2i],
 		[Vector2i(-1, 0), Vector2i(-2, 0)] as Array[Vector2i], {})
+	assert_eq(onto_stern["result"], "clear")
+	assert_eq(onto_stern["blocker"], "")
+	assert_true(onto_stern["shallow_bow"], "the bow enters her old stern hex, in the shallows")
+	var kept := AnchorRules.forced_check(sc, [Vector2i(-1, 0), Vector2i(-2, 0)] as Array[Vector2i],
+		[Vector2i(-1, 0), Vector2i(-1, -1)] as Array[Vector2i], {})
 	assert_eq(kept["result"], "clear")
-	assert_eq(kept["blocker"], "")
-	assert_false(kept["shallow_bow"], "the bow was already in the shallows")
+	assert_false(kept["shallow_bow"], "the bow stays in her hex: a swing rolls no depth")
 	var entered := AnchorRules.forced_check(sc, [Vector2i(0, 0), Vector2i(1, 0)] as Array[Vector2i],
 		[Vector2i(-1, 0), Vector2i(-2, 0)] as Array[Vector2i], {})
 	assert_eq(entered["result"], "clear")

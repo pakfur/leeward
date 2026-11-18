@@ -51,7 +51,7 @@ enum Type {
 	ARRIVED,  # a reinforcement enters: {hex, facing, sail_state, speed}
 	ARRIVAL_DELAYED,  # a reinforcement cannot enter this turn; target_id: the ship in the way
 	ANCHORED,  # 13.C.2 a ship lets go her anchor: {end: bow/stern, springs, hex}
-	ANCHOR_MOVE,  # 13.C.4-6, 13.E.1 a ship rides to her anchor: {causes, from_facing, to_facing, roll, from, to, cable, blocked, fouled}; target_id: the blocker
+	ANCHOR_MOVE,  # 13.C.4-6, 13.E.1 a ship rides to her anchor: {causes, from_facing, to_facing, roll, from, to, cable, blocked, fouled}; target_id: the blocker. On a hold (blocked != "") the ship stays at from/from_facing; to/to_facing are where she would have gone
 	CABLE_CUT,  # 13.F.2 a ship cuts her cable: {hex: the anchor}
 }
 
