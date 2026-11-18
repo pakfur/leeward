@@ -13,6 +13,9 @@ extends RefCounted
 ##   A2c the anchor order (crew_orders.anchor, AnchorRules.order_task): its task goes to the first
 ##      section in worker order, when AnchorRules.refusal allows it beside the anchoring tasks
 ##      already placed (a preparation in progress continues under A2);
+##   A2d the tow order (crew_orders.tow, TowRules.order_task): PT for "take:<id>", TX for "cut";
+##      its task goes to the first free section in worker order, when TowRules.refusal allows it
+##      beside the towing tasks already placed (a PT in progress continues under A2);
 ##   A3 the ordered sail change, 1 or 2 sections in worker order;
 ##   A4 tacking crew: when the movement plot holds a turn at MA 0, as many of 3 sections as are
 ##      free, in worker order (5.D.2a);
@@ -72,6 +75,19 @@ static func allocate(ship: ShipState, orders: Dictionary, ctx: Dictionary) -> Di
 			var free := CrewRules.worker_order(ship, ctx, taken)
 			if not free.is_empty():
 				taken[free[0]] = wanted
+	# A2d: the tow order (towing spec §3): its task, if TowRules allows it beside the towing tasks
+	# already placed, goes to the first free section in worker order.
+	var tow_wanted := TowRules.order_task(ship, str(orders.get("tow", "")))
+	if not tow_wanted.is_empty():
+		var tow_accepted: Array = []
+		for section in taken:
+			var code := str(taken[section].get("code", ""))
+			if TowRules.is_code(code):
+				tow_accepted.append(code)
+		if TowRules.refusal(ship, str(tow_wanted["code"]), tow_accepted) == "":
+			var free := CrewRules.worker_order(ship, ctx, taken)
+			if not free.is_empty():
+				taken[free[0]] = tow_wanted
 	# A3: the ordered sail change. Placed only when every section it needs is free; otherwise it
 	# does not start ("no crew") and nobody leaves the guns for it.
 	var needed := CrewRules.sail_sections_needed(ship, orders)

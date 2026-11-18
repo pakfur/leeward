@@ -40,13 +40,16 @@ const ONE_TURN_CODES: Array[String] = ["T", "BD"]
 const DRAFT_TIE_ORDER: Array[String] = ["RS", "RR", "RH", "SAIL"]
 ## Short words for a section's task (the Crew line on a ship card, CrewOverlayText.section_job).
 const SUMMARY_WORDS := {"guns": "guns", "marine_fire": "fire", "sails": "sails", "braces": "braces",
-	"reorganizing": "RO", "boarders": "boarders", "anchor": "anchor"}
+	"reorganizing": "RO", "boarders": "boarders", "anchor": "anchor",
+	"tow": "tow"}
 ## Station labels and short codes (small deck cards), spec §4.3.
 const STATION_LABELS := {"guns": "Serve the guns", "marine_fire": "Marine fire", "sails": "Sails aloft",
 	"braces": "Braces (tacking)", "reorganizing": "Reorganizing", "boarders": "Boarders", "rr": "Rigging repair",
-	"rh": "Hull repair", "rs": "Shroud repair", "anchor": "Anchor & cable"}
+	"rh": "Hull repair", "rs": "Shroud repair", "anchor": "Anchor & cable",
+	"tow": "Tow"}
 const STATION_SHORT := {"guns": "Guns", "marine_fire": "Marines", "sails": "Sails", "braces": "T",
-	"reorganizing": "RO", "boarders": "FB", "rr": "RR", "rh": "RH", "rs": "RS", "anchor": "Anc"}
+	"reorganizing": "RO", "boarders": "FB", "rr": "RR", "rh": "RH", "rs": "RS", "anchor": "Anc",
+	"tow": "Tow"}
 ## Codes whose sections are locked once begun (5.F.9: a sail change must be completed).
 const LOCKED_CODES: Array[String] = ["SAIL"]
 ## Critical effects whose 8.D.5 fix roll the marines would spoil if busy (+1, "marines not avail.").
@@ -494,6 +497,7 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 	result["dropped"].append_array(boarding["dropped"])
 	result["notes"] = boarding["notes"]
 	_normalize_anchoring(ship, assignments, ctx, locked, result)
+	_normalize_towing(ship, assignments, ctx, locked, result)
 	var sail_target := str(orders.get("sail_target", ""))
 	var on_sails := 0
 	var at_braces := 0
@@ -539,6 +543,8 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 			pass  # made legal by BoardingRules.normalize_manual above
 		elif AnchorRules.is_code(code):
 			pass  # made legal by _normalize_anchoring above
+		elif TowRules.is_code(code):
+			pass  # made legal by _normalize_towing above
 		elif RepairController.is_repair(code):
 			# 8.F.3, 8.F.4: only when there is something to repair, one section per type.
 			why = RepairController.refusal(ship, code)
@@ -606,6 +612,31 @@ static func _normalize_anchoring(ship: ShipState, assignments: Dictionary, ctx: 
 				% ShipState.SECTION_NAMES[section])
 
 
+## The manual plan's towing tasks made legal (towing spec §3): sections in ascending order, each PT
+## or TX checked by TowRules.refusal against the towing codes kept before it; a refused one is
+## dropped with a warning. Edits `assignments` and `result` in place.
+static func _normalize_towing(ship: ShipState, assignments: Dictionary, _ctx: Dictionary,
+		locked: Dictionary, result: Dictionary) -> void:
+	var accepted: Array = []
+	var sections: Array = assignments.keys()
+	sections.sort()
+	for section in sections:
+		if locked.has(section):
+			continue
+		var entry: Dictionary = assignments[section]
+		var code := str(entry.get("code", ""))
+		if not TowRules.is_code(code):
+			continue
+		var why := TowRules.refusal(ship, code, accepted)
+		if why != "":
+			assignments.erase(section)
+			result["dropped"].append(section)
+			result["warnings"].append("%s: %s" % [ShipState.SECTION_NAMES[section], why])
+			continue
+		accepted.append(code)
+		entry["params"] = {}
+
+
 ## FF params: {"fire": seq}, or for fire watch (seq < 0) {"fire": -1, "section": s} so that each
 ## section on watch is its own task (one section per fire once a fire breaks out, 8.E.2).
 static func ff_params(fire: int, section: int) -> Dictionary:
@@ -653,6 +684,8 @@ static func station_of(section: int, entry: Dictionary) -> String:
 		return STATION_BOARDERS
 	if AnchorRules.is_code(code):
 		return AnchorRules.STATION
+	if TowRules.is_code(code):
+		return TowRules.STATION
 	return code.to_lower()
 
 

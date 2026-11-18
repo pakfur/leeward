@@ -66,6 +66,16 @@ func plot_crew(player_id: int, ship_id: String, plan: Dictionary) -> String:
 	var anchor_order := str(plan.get("orders", {}).get("anchor", ""))
 	if not anchor_order in AnchorRules.ORDERS:
 		return "Unknown anchor order %s" % anchor_order
+	# The tow order (towing spec §3): "", "cut" or "take:<friend>".
+	var tow := str(plan.get("orders", {}).get("tow", ""))
+	var parsed := TowRules.parse_order(tow)
+	match str(parsed["kind"]):
+		"bad":
+			return "Unknown tow order %s" % tow
+		"take":
+			var tow_error := TowRules.take_target_error(ship, game_state.get_ship(str(parsed["target"])))
+			if tow_error != "":
+				return tow_error
 	# The boarding order (boarding spec §2.4 #6): "", "ready", "stand_down" or "board:<enemy>".
 	var boarding := str(plan.get("orders", {}).get("boarding", ""))
 	if boarding != "" and boarding != "ready" and boarding != "stand_down":
