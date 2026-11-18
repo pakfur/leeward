@@ -27,3 +27,19 @@ Parked minors (not fixed, judged harmless): the playback clock can idle briefly 
 10. **Process:** the docs-only task was reviewed in the whole-branch review; SCV audit clean.
 
 Parked minors (judged harmless): stronger depth-order test, escape band boundary tests (19/20/30), padding-fallback tiers for the AI, the status-overlay clamp rect after a board resize, `LEFT_MAP.from_hex` is the post-step bow, a turn that would be no better than the present heading ends an escaping AI's plot early.
+
+## Sub-project 4 — anchoring (merged 2026-11-18)
+
+1. **Weighing anchor is not built:** an anchored ship leaves by cutting her cable (13.F.1 covers cutting); the register's "cutting and weighing" was read as cutting. *If wrong:* add a weigh task later.
+2. **Manual crews have no overlay control to order anchoring yet** (view-only UI scope): Automatic crew's anchor order and the Developer UI cover it until the UX pass. *If wrong:* manual players cannot anchor by hand yet.
+3. **Spring turns and veering in are refused** into a held hex, land or off the map, and for a ship fouled or grappled to another; aground ships take no part. *If wrong:* none.
+4. **An anchored bow rolls depth whenever it enters a new hex** (settling, veering out onto her old stern hex), as drift does; a bow that stays put while the ship swings rolls nothing.
+5. **Blocked forced moves at anchor** are a blocked drift: a ship in the way gives a fouling roll and the ship stays; land grounds her; an edge holds her; an anchored ship is never moved off the map.
+6. **An anchored ship cannot escape and does not count as a pursuer** (like aground). *If wrong:* a ship must cut before escaping.
+7. **No starting anchor on a reinforcement** (scenario error). A starting anchor counts as one of the ship's two anchorings.
+8. **Anchoring preparation is hidden from every non-commander** (teammates too); the anchor itself is public.
+9. **AI:** stays anchored, prepares springs and hauls to bear; cuts only on a signalled move order (or an escape posture) with no enemy in range, and never while it would drift into danger unanchored or cannot make way; emergency anchoring when drifting toward land or a `none` edge (an escape edge is not danger). *If wrong:* an AI ship may stay anchored longer than a human would.
+10. **Movement never moves an anchored or aground ship** even if a plot was stored (defence added after the live check found the Developer UI path).
+11. **Process:** SCV audit clean (two optional guards added).
+
+Parked minors: none beyond those recorded in feature_diff §4.

@@ -1,5 +1,5 @@
 {
-  "_doc": "Crew Task Order Codes (1997 ship log, checked against ship-log-blank-1.png). sections = [min, max] crew sections. turns: {ad, eg} = g-t's at CQ A-D / CQ E-G; {sk_base: n} = max(1, n + SK mod); {fixed: n}; {until: 'out'|'turn'} = open-ended. SAIL_MAJOR is MS<->PS (2 CS), SAIL_MINOR FS<->MS and FS<->Furl (1 CS); both are plotted as code SAIL. FB/BR/BA/BD (boarding, 10.B-10.C): one section per task, one g-t per plot; BR and BD are re-plotted each g-t (10.B.3, 10.B.5).",
+  "_doc": "Crew Task Order Codes (1997 ship log, checked against ship-log-blank-1.png). sections = [min, max] crew sections. turns: {ad, eg} = g-t's at CQ A-D / CQ E-G; {sk_base: n} = max(1, n + SK mod); {sk_base: n, times: k} = k x max(1, n + SK mod); {fixed: n}; {until: 'out'|'turn'} = open-ended. SAIL_MAJOR is MS<->PS (2 CS), SAIL_MINOR FS<->MS and FS<->Furl (1 CS); both are plotted as code SAIL. FB/BR/BA/BD (boarding, 10.B-10.C): one section per task, one g-t per plot; BR and BD are re-plotted each g-t (10.B.3, 10.B.5).",
   "SAIL_MAJOR": {"name": "Alter sail MS<->PS", "sections": [2, 2], "turns": {"ad": 2, "eg": 3}},
   "SAIL_MINOR": {"name": "Alter sail FS<->MS, FS<->Furl", "sections": [1, 1], "turns": {"ad": 1, "eg": 2}},
   "T":  {"name": "Braces (tacking)", "sections": [1, 3], "turns": {"until": "turn"}, "drm_per_section_short": 2, "assumed_sections": 3},
@@ -11,5 +11,14 @@
   "FB": {"name": "Form boarders", "sections": [1, 1], "turns": {"fixed": 1}},
   "BR": {"name": "Boarders ready", "sections": [1, 1], "turns": {"fixed": 1}},
   "BA": {"name": "Boarders away", "sections": [1, 1], "turns": {"fixed": 1}},
-  "BD": {"name": "Boarders disband", "sections": [1, 1], "turns": {"fixed": 1}}
+  "BD": {"name": "Boarders disband", "sections": [1, 1], "turns": {"fixed": 1}},
+  "PBA": {"name": "Prepare bow anchor", "sections": [1, 1], "turns": {"ad": 2, "eg": 3}},
+  "PSA": {"name": "Prepare stern anchor", "sections": [1, 1], "turns": {"sk_base": 6}},
+  "PBS": {"name": "Prepare bow springs", "sections": [1, 1], "turns": {"sk_base": 5, "times": 2}},
+  "PSS": {"name": "Prepare stern springs", "sections": [1, 1], "turns": {"sk_base": 6, "times": 2}},
+  "A": {"name": "Anchor", "sections": [1, 1], "turns": {"fixed": 1}},
+  "AX": {"name": "Cut anchor", "sections": [1, 1], "turns": {"fixed": 1}},
+  "VO": {"name": "Veer out", "sections": [1, 1], "turns": {"fixed": 1}},
+  "VI": {"name": "Veer in", "sections": [1, 1], "turns": {"fixed": 1}},
+  "HS": {"name": "Handle springs", "sections": [1, 1], "turns": {"fixed": 1}}
 }

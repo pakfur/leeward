@@ -40,13 +40,13 @@ const ONE_TURN_CODES: Array[String] = ["T", "BD"]
 const DRAFT_TIE_ORDER: Array[String] = ["RS", "RR", "RH", "SAIL"]
 ## Short words for a section's task (the Crew line on a ship card, CrewOverlayText.section_job).
 const SUMMARY_WORDS := {"guns": "guns", "marine_fire": "fire", "sails": "sails", "braces": "braces",
-	"reorganizing": "RO", "boarders": "boarders"}
+	"reorganizing": "RO", "boarders": "boarders", "anchor": "anchor"}
 ## Station labels and short codes (small deck cards), spec §4.3.
 const STATION_LABELS := {"guns": "Serve the guns", "marine_fire": "Marine fire", "sails": "Sails aloft",
 	"braces": "Braces (tacking)", "reorganizing": "Reorganizing", "boarders": "Boarders", "rr": "Rigging repair",
-	"rh": "Hull repair", "rs": "Shroud repair"}
+	"rh": "Hull repair", "rs": "Shroud repair", "anchor": "Anchor & cable"}
 const STATION_SHORT := {"guns": "Guns", "marine_fire": "Marines", "sails": "Sails", "braces": "T",
-	"reorganizing": "RO", "boarders": "FB", "rr": "RR", "rh": "RH", "rs": "RS"}
+	"reorganizing": "RO", "boarders": "FB", "rr": "RR", "rh": "RH", "rs": "RS", "anchor": "Anc"}
 ## Codes whose sections are locked once begun (5.F.9: a sail change must be completed).
 const LOCKED_CODES: Array[String] = ["SAIL"]
 ## Critical effects whose 8.D.5 fix roll the marines would spoil if busy (+1, "marines not avail.").
@@ -63,6 +63,25 @@ const HOLD_EFFECT := "damage to fix"
 const HOLD_FOULED := "fouled"
 const HOLD_GRAPPLED := "grappled"
 const HOLD_ENEMY := "enemy alongside"
+## The anchor station (anchoring spec §3) is read-only: its tasks come from the anchor crew order.
+const ANCHOR_REFUSAL := "Anchoring is ordered with the crew orders (anchor), not by placing sections here."
+
+
+## The MPs the ship will sail this g-t, as far as planning knows: the stored course, or, when none
+## is stored, her default course (6.G.2; AnchorController.actual_steps reads it the same way at End
+## Planning), so the 13.C.1 and 8.F.3b warnings fire for a ship nobody plotted.
+static func _plotted_mps(game_state: Node, ship: ShipState, steps: Array) -> int:
+	if not steps.is_empty() or bool(ship.plotted_actions.get("movement_plotted", false)):
+		return steps.size()
+	if game_state == null or game_state.get("ship_controller") == null:
+		return 0
+	# Only while this g-t's course is still to be sailed: after movement the plot is cleared and the
+	# default course would be next g-t's (and costly on every overlay redraw).
+	var pc = game_state.get("phase_controller")
+	if pc != null and not pc.current_phase in [TurnPhaseController.GamePhase.PLANNING,
+			TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION]:
+		return 0
+	return DefaultCourse.for_ship(game_state, ship).size()
 
 
 ## Facts about the ship's situation the rules read (spec §3.2). Pure read of game_state.
@@ -86,6 +105,8 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 		adjacent_names.append(str(pair[1]))
 	var turn = game_state.get("current_turn") if game_state != null else null
 	var boarding := boarding_context(game_state, ship)
+	var env = game_state.get("environment") if game_state != null else null
+	var scenario = game_state.get("active_scenario") if game_state != null else null
 	var ma0_turn := false
 	var steps: Array = ship.plotted_actions.get("movement", [])
 	if not steps.is_empty() and game_state != null and game_state.get("ship_controller") != null \
@@ -99,13 +120,17 @@ static func context(game_state: Node, ship: ShipState) -> Dictionary:
 		# final: End Planning (finalize_plots, begin_turn_tasks). While planning, braces placed
 		# before the MA-0 turn is plotted are kept (with a warning) rather than dropped.
 		"final": false,
-		"plotted_mps": (ship.plotted_actions.get("movement", []) as Array).size(),
+		"plotted_mps": _plotted_mps(game_state, ship, steps),
 		"nearest_enemy": nearest,
 		"enemy_in_gun_range": nearest >= 0 and nearest <= FireRules.MAX_RANGE,
 		"enemy_adjacent": nearest == 1,
 		# Names of the enemy ships the marines could fire on (7.G.1), by ship_id.
 		"adjacent_enemies": adjacent_names,
 		"turn": int(turn) if turn != null else 0,
+		# Anchoring (AnchorRules.refusal): the wind speed (13.E.3) and whether the scenario allows
+		# anchoring where the ready anchor would drop (Scenario Book V.B).
+		"wind_speed": int(env.wind_speed) if env != null else 0,
+		"anchoring_here": scenario is Dictionary and AnchorRules.permitted(scenario, AnchorRules.drop_hex(ship)),
 		# Boarding (boarding spec §2.4; BoardingRules): the enemies the ship may board this g-t
 		# [{id, name, odds}], why others may not {id: reason}, counter-boarding {enemy: [sections]},
 		# and every ship's name.
@@ -343,6 +368,8 @@ static func refusal(ship: ShipState, plan: Dictionary, ctx: Dictionary, section:
 			if at_braces >= TackCrewHandler.max_sections():
 				return "Braces (tacking) is full (%d sections)." % TackCrewHandler.max_sections()
 			return ""
+		AnchorRules.STATION:
+			return ANCHOR_REFUSAL
 		STATION_REORGANIZING:
 			return "Sections reorganize only after Crew Disorganized (hull critical #4); it cannot be plotted."
 		STATION_RR, STATION_RH, STATION_RS:
@@ -466,6 +493,7 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 	result["warnings"].append_array(boarding["warnings"])
 	result["dropped"].append_array(boarding["dropped"])
 	result["notes"] = boarding["notes"]
+	_normalize_anchoring(ship, assignments, ctx, locked, result)
 	var sail_target := str(orders.get("sail_target", ""))
 	var on_sails := 0
 	var at_braces := 0
@@ -509,6 +537,8 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 				entry["params"] = ff_params(fire, section)
 		elif BoardingRules.is_code(code):
 			pass  # made legal by BoardingRules.normalize_manual above
+		elif AnchorRules.is_code(code):
+			pass  # made legal by _normalize_anchoring above
 		elif RepairController.is_repair(code):
 			# 8.F.3, 8.F.4: only when there is something to repair, one section per type.
 			why = RepairController.refusal(ship, code)
@@ -542,6 +572,38 @@ static func normalize(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Dic
 			"section" if needed == 1 else "sections", on_sails])
 	result["assignments"] = assignments
 	return result
+
+
+## The manual plan's anchoring tasks made legal (anchoring spec §3): sections in ascending order,
+## each checked by AnchorRules.refusal against the anchoring codes kept before it; a refused one is
+## dropped with a warning. An A kept while MPs are plotted is warned of: End Planning erases it
+## (13.C.1). Edits `assignments` and `result` in place.
+static func _normalize_anchoring(ship: ShipState, assignments: Dictionary, ctx: Dictionary,
+		locked: Dictionary, result: Dictionary) -> void:
+	var accepted: Array = []
+	var sections: Array = assignments.keys()
+	sections.sort()
+	for section in sections:
+		if locked.has(section):
+			continue
+		var entry: Dictionary = assignments[section]
+		var code := str(entry.get("code", ""))
+		if not AnchorRules.is_code(code):
+			continue
+		var raw = entry.get("params", {})
+		var params: Dictionary = raw if raw is Dictionary else {}
+		var why := AnchorRules.refusal(ship, code, params, ctx, accepted)
+		if why != "":
+			assignments.erase(section)
+			result["dropped"].append(section)
+			result["warnings"].append("%s: %s" % [ShipState.SECTION_NAMES[section], why])
+			continue
+		accepted.append(code)
+		entry["params"] = {"turn": str(params["turn"])} if code == "HS" else {}
+		if code == "A" and int(ctx.get("plotted_mps", 0)) > 0 and not bool(ctx.get("final", false)):
+			result["warnings"].append(
+				"%s: anchoring needs a plot of no MPs; erased at End Planning unless the course is cut (13.C.1)."
+				% ShipState.SECTION_NAMES[section])
 
 
 ## FF params: {"fire": seq}, or for fire watch (seq < 0) {"fire": -1, "section": s} so that each
@@ -589,6 +651,8 @@ static func station_of(section: int, entry: Dictionary) -> String:
 			return STATION_FIRE_PREFIX + str(int(entry.get("params", {}).get("fire", -1)))
 	if BoardingRules.is_code(code):
 		return STATION_BOARDERS
+	if AnchorRules.is_code(code):
+		return AnchorRules.STATION
 	return code.to_lower()
 
 
@@ -613,7 +677,8 @@ static func sail_choices(ship: ShipState) -> Array[Dictionary]:
 ## {id, code, label, short, capacity, turns, accepts ("sailor"/"marine"/"any"/"none"), note,
 ##  warning, disabled_reason, occupants: [sections], locked: [sections], fire: {} or {seq, number}}.
 ## Sails also carries "choices" (sail_choices) and "target". Fire stations come from ctx.fires; the
-## repair stations (rs, rr, rh) are listed while there is something to repair (8.F.3).
+## repair stations (rs, rr, rh) are listed while there is something to repair (8.F.3); the read-only
+## anchor station while the ship is anchored, has an anchor or springs ready, or a section is on it.
 static func stations(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Array[Dictionary]:
 	var assignments: Dictionary = plan.get("assignments", {})
 	var orders: Dictionary = plan.get("orders", {})
@@ -737,6 +802,12 @@ static func stations(ship: ShipState, plan: Dictionary, ctx: Dictionary) -> Arra
 		if mp != "" and why == "":
 			rep_st["warning"] = mp
 		out.append(rep_st)
+	# The anchor (13.B-F): read-only; its tasks follow the anchor crew order.
+	var at_anchor: Array = by_station.get(AnchorRules.STATION, [])
+	if ship.is_anchored() or ship.anchor_ready != "" or ship.springs_ready or not at_anchor.is_empty():
+		var anchor_st: Dictionary = make.call(AnchorRules.STATION, "", 0, 0, "none", AnchorRules.status_text(ship))
+		anchor_st["disabled_reason"] = ANCHOR_REFUSAL
+		out.append(anchor_st)
 	if by_station.has(STATION_REORGANIZING):
 		var ro: Dictionary = make.call(STATION_REORGANIZING, CODE_RO, 0, 0, "none",
 			"Crew disorganized (hull critical #4): reorganizing, cannot be moved.")
@@ -825,6 +896,8 @@ static func task_name(code: String, params: Dictionary = {}) -> String:
 			return "hull repair"
 		"RS":
 			return "shroud repair"
+	if AnchorRules.is_code(code):
+		return str(PhaseEvents.CREW_TASK_GERUNDS[code])
 	return code
 
 

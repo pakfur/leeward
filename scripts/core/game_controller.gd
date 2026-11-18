@@ -47,6 +47,7 @@ var selected_ship_id: String = ""
 var ship_indicators: Node3D = null     # ShipIndicators
 var indicator_overlay: Control = null  # IndicatorOverlay
 var status_overlay: ShipStatusOverlay = null  # graphic status by a clicked or hovered enemy ship
+var anchor_markers: AnchorMarkers = null  # anchors and cables of anchored ships (13), redrawn with the ships
 var grapple_lines: GrappleLines = null  # the grapples between ships (8.C), redrawn with the ships
 var _mouse_pos: Vector2 = Vector2(-1, -1)  # last mouse position seen (viewport coordinates)
 const HUMAN_PLAYER_ID := 0
@@ -448,6 +449,21 @@ static func views_to_spawn(view_ids: Array, ships: Array[ShipState]) -> Array[St
 	return out
 
 
+## The ids of the ships the springs step moved before movement this g-t (a spring turn or a veer in
+## that was not refused, 13.D.2, 13.E.2), sorted: their views are synced before playback starts, so
+## they sail from the new hexes.
+static func spring_step_ship_ids(turn_log: PhaseEvents.PhaseLog) -> Array[String]:
+	var out: Array[String] = []
+	if turn_log == null:
+		return out
+	for type in [PhaseEvents.Type.SPRING_TURN, PhaseEvents.Type.VEER_IN]:
+		for ev in turn_log.of_type(type):
+			if str(ev.data.get("refused", "")) == "" and not out.has(ev.ship_id):
+				out.append(ev.ship_id)
+	out.sort()
+	return out
+
+
 ## The ships that get a planning-panel card: those on the map (no card for a reinforcement still
 ## waiting to arrive, or a ship gone off the map).
 static func planning_ships(ships: Array[ShipState]) -> Array[ShipState]:
@@ -614,7 +630,8 @@ func _course_info(ship: ShipState, options: Dictionary, ships: Array) -> Diction
 		var wind: int = GameState.environment.wind_direction
 		var end_facing: int = path[-1].facing if not path.is_empty() else ship.facing
 		info["note"] = CourseView.course_note(options, grid.get_wind_facing(ship.facing, wind),
-			grid.get_wind_facing(end_facing, wind), GameState.environment.calm_just_ended(GameState.current_turn))
+			grid.get_wind_facing(end_facing, wind),
+			IronsRules.excused(ship, GameState.environment, GameState.current_turn))
 	info["tacking"] = _tacking_text(ship, bool(options.get("is_tacking_attempt", false)))
 	info["steering"] = _steering_text(ship)
 	var collision := path_collision_text(path, ship.hex_position, ship.facing, ships, ship.ship_id)
@@ -1094,6 +1111,16 @@ func _on_resolution_log_ready(log: MovementTypes.ResolutionLog) -> void:
 	# Clear hex overlay from planning
 	if hex_overlay:
 		hex_overlay.clear_everything()
+
+	# The springs step (spring turns, veering in) moved some ships before movement: on the first log
+	# only, their views take the new hexes so playback starts from them. Not every view: on a
+	# bear-off re-run the movement results are not applied yet.
+	if log.resume_impulse == 0 and hex_map:
+		for ship_id in spring_step_ship_ids(GameState.turn_log):
+			var view = ship_views.get(ship_id)
+			var ship_state: ShipState = GameState.get_ship(ship_id)
+			if view and ship_state:
+				view.sync_to_state(ship_state, hex_map.get_hex_grid())
 
 	# Create playback controller
 	if playback_controller and playback_controller.is_inside_tree():
@@ -1671,6 +1698,10 @@ func _sync_all_views() -> void:
 			if selected_ship_id == ship_id:
 				_deselect_ship()
 	if hex_map:
+		if anchor_markers == null:
+			anchor_markers = AnchorMarkers.new()
+			add_child(anchor_markers)
+		anchor_markers.refresh(GameState.get_all_ships(), hex_map.get_hex_grid())
 		if grapple_lines == null:
 			grapple_lines = GrappleLines.new()
 			add_child(grapple_lines)

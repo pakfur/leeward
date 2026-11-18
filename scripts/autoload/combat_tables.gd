@@ -185,7 +185,7 @@ func task_turns(code: String, crew_quality: String) -> int:
 	if turns.has("ad"):
 		return int(turns["eg"]) if crew_quality in ["E", "F", "G"] else int(turns["ad"])
 	if turns.has("sk_base"):
-		return maxi(1, int(turns["sk_base"]) + skill_modifier(crew_quality))
+		return int(turns.get("times", 1)) * maxi(1, int(turns["sk_base"]) + skill_modifier(crew_quality))
 	if turns.has("fixed"):
 		return int(turns["fixed"])
 	return -1

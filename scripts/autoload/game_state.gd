@@ -73,6 +73,7 @@ var sail_controller: SailController = null
 var crew_task_controller: CrewTaskController = null
 var fire_controller: FireController = null
 var repair_controller: RepairController = null
+var anchor_controller: AnchorController = null
 var drift_resolver: DriftResolver = null
 var fouling_controller: FoulingController = null
 var grappling_controller: GrapplingController = null
@@ -137,6 +138,9 @@ func _initialize_server_controllers() -> void:
 	repair_controller = RepairController.new(self)
 	for code in RepairController.CODES:
 		crew_task_controller.register_handler(code, repair_controller)
+	anchor_controller = AnchorController.new(self)
+	for code in AnchorRules.CODES:
+		crew_task_controller.register_handler(code, anchor_controller)
 	drift_resolver = DriftResolver.new(self)
 	fouling_controller = FoulingController.new(self)
 	grappling_controller = GrapplingController.new(self)
@@ -446,6 +450,8 @@ func start_new_game(scenario_data: Dictionary) -> void:
 		environment.wind_speed
 	])
 
+	anchor_controller.place_scenario_anchors()
+
 	for message in placement_errors():
 		push_error(message)
 
@@ -477,6 +483,9 @@ func placement_errors() -> Array[String]:
 			var pair: Array[ShipState] = [all_ships[i], all_ships[j]]
 			if Occupancy.overlapping_ids(pair).size() > 0:
 				errors.append("GameState: ships '%s' and '%s' overlap" % [pair[0].ship_id, pair[1].ship_id])
+	errors.append_array(AnchorRules.scenario_errors(active_scenario))
+	for s in all_ships:
+		errors.append_array(AnchorRules.footprint_errors(active_scenario, s))
 	return errors
 
 

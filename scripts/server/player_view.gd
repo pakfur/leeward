@@ -9,6 +9,11 @@ extends RefCounted
 ## (and whether the marine section is one) in place of the box counts. Guns, critical hits, fires,
 ## repairs and the rest stay visible (14.C.1d, 14.C.2).
 ##
+## Anchor preparations are hidden the same way (a captain cannot see another ship's ground tackle
+## being got ready): anchor_ready, springs_ready and the preparation crew tasks (AnchorRules.PREP_CODES)
+## of a ship the reader does not command. The anchor itself (anchor, anchorings_used, cable_cut_turn)
+## stays public, as does a CREW_TASK event for any other code.
+##
 ## Signals and talks are hidden whatever the scenario: a SIGNAL event goes to the sending player's
 ## side only (by data.from_player, not the event's side stamp: the sending ship may be taken before
 ## delivery), a TALK event to the two players in that talk.
@@ -57,7 +62,8 @@ const BOX_FIELDS := {
 const SHIP_BOX_KEYS: Array[String] = ["rigging_current_hp", "hull_current_hp", "crew_count", "marine_count"]
 ## ShipState.serialize keys dropped for a ship the reader does not command: the boxes sent away as
 ## a prize crew, and her plan (no captain sees another ship's plot; ruling 2026-11-17).
-const SHIP_HIDDEN_KEYS: Array[String] = ["detached_boxes", "plotted_actions", "pending_turn"]
+const SHIP_HIDDEN_KEYS: Array[String] = ["detached_boxes", "plotted_actions", "pending_turn",
+	"anchor_ready", "springs_ready"]
 
 var game_state: Node = null
 
@@ -97,6 +103,11 @@ func ship_for(player_id: int, ship_id: String) -> Dictionary:
 	data["hull_sections_lost"] = _lost(ship.hull_current_hp, type.hull_hp if type else [])
 	data["crew_sections_lost"] = _lost(ship.crew_count, type.crew_count if type else [])
 	data["marine_section_lost"] = ship.marine_count <= 0 and (type == null or type.marine_count > 0)
+	var visible_tasks: Array = []
+	for task in data.get("crew_tasks", []):
+		if not AnchorRules.PREP_CODES.has(str(task.get("code", ""))):
+			visible_tasks.append(task)
+	data["crew_tasks"] = visible_tasks
 	var prize: Dictionary = data.get("prize", {})
 	if prize.has("original_crew"):
 		var below: Dictionary = prize["original_crew"]
@@ -130,6 +141,9 @@ func events_for(player_id: int, turn: int) -> Array[Dictionary]:
 		if ev.type == Type.SIGNAL and not _same_side(player_id, int(ev.data.get("from_player", -1))):
 			continue
 		if ev.type == Type.TALK and not _in_talk(player_id, str(ev.data.get("talk_id", ""))):
+			continue
+		if limit and ev.type == Type.CREW_TASK and AnchorRules.PREP_CODES.has(str(ev.data.get("code", ""))) \
+				and not game_state.commands(player_id, ev.ship_id):
 			continue
 		var d: Dictionary = ev.to_dict()
 		if limit:

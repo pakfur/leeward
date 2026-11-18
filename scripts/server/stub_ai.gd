@@ -14,11 +14,17 @@ extends RefCounted
 ##   "disengage" — open the range from the nearest enemy
 ##   "escape"    — a ship whose side may escape this turn, under the scenario's "escape" posture
 ##                 (`ai`) or a disengage order: declares escape and runs for a permitted escape edge
+##   "anchor"    — a ship that wants to anchor (wants_to_anchor: an ANCHOR signal, or drift danger)
+##                 holds (an empty plot carried to the deceleration minimum) until she may let go
 ##   "forward"   — move straight ahead, consuming all available MA (tests)
 ##   "hold"      — submit immediately with empty path (tests)
 ## Every course is carried on to the deceleration limit (_meet_deceleration_minimum). Every strategy
 ## keeps to safe water while it can (_move_safe): no crossing the ship may not make, no land, no hex
 ## where it may ground. A course of at most 2 steps into shallow water casts the lead (_maybe_cast_lead).
+##
+## Anchors (anchoring spec §11): the crew's anchor order (anchor_order) rides at anchor, rigs springs
+## and hauls to bear (haul_choice), cuts on CUT CABLES or when a signalled move order finds no enemy
+## within range; an unanchored ship told ANCHOR, or in drift danger, prepares an anchor and lets go.
 ##
 ## Fire: each ship fires each broadside at its best-odds target, splitting a side between two
 ## targets when no full broadside bears (see choose_fire_orders); a ship ordered to engage a ship
@@ -42,11 +48,15 @@ const ESCAPE_EXIT_SCORE := 10000
 const ESCAPE_LUFF_PENALTY := 50
 
 ## Plotting errors for ships that legitimately cannot move; the AI skips them without error.
-const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_GRAPPLED", "SHIP_CAPTURED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED", "SHIP_AGROUND", "SHIP_OFF_MAP"]
+const LOCKED_ERROR_CODES := ["SHIP_FOULED", "SHIP_GRAPPLED", "SHIP_CAPTURED", "SHIP_STRUCK", "SHIP_DESTROYED", "SHIP_DISMASTED", "SHIP_AGROUND", "SHIP_ANCHORED", "SHIP_OFF_MAP"]
 ## Submission refusals after which the ship is replotted with a plain course.
 const REPLOT_ERROR_CODES := ["RUDDER_JAMMED", "TOO_SLOW", "CANNOT_SUBMIT"]
 ## The most moves added to reach the deceleration limit (more than any movement allowance).
 const MAX_PADDING_STEPS := 20
+## Standing orders that send an anchored ship under way when no enemy is within range (spec §11).
+const MOVE_ORDERS: Array[String] = ["engage", "close", "follow", "line", "disengage"]
+## Drift danger looks this many hexes downwind (spec §11).
+const DRIFT_DANGER_HEXES := 4
 
 var game_state: Node = null
 var _request_counter: int = 0
@@ -92,7 +102,159 @@ func assign_crew() -> void:
 			continue
 		if not ship_state.crew_auto:
 			sc.set_crew_auto(ship_state.ship_id, true)
-		sc.set_crew_orders(ship_state.ship_id, {"sail_target": "", "boarding": boarding_order(ship_state)})
+		sc.set_crew_orders(ship_state.ship_id, {"sail_target": "", "boarding": boarding_order(ship_state),
+			"anchor": anchor_order(ship_state)})
+
+
+## The AI's anchor order (anchoring spec §11), one of AnchorRules.ORDERS, placed by rule A2c.
+## Anchored: "cut" on CUT CABLES, under an escape posture (_escape_posture, ruling 2026-11-18: an
+## anchored ship cannot escape), or when a signalled move order finds no enemy in play within
+## FireRules.MAX_RANGE, but never while she cannot make way at any heading or her lee is dangerous
+## (downwind_danger: cutting would only put her back in drift danger); else "prepare_springs" while
+## springs may be prepared; else, with springs, the haul (haul_choice). Not anchored and wanting to
+## (wants_to_anchor): "anchor" with an anchor ready, else "prepare_bow" when it may be prepared and
+## no anchor is being prepared. Otherwise "".
+func anchor_order(ship_state: ShipState) -> String:
+	if ship_state.is_out_of_play() or not ship_state.crew_can_act():
+		return ""
+	if ship_state.is_anchored():
+		var signalled := str(ship_state.standing_order.get("order", ""))
+		var wants_cut := signalled == "cut" or _escape_posture(ship_state) \
+			or (MOVE_ORDERS.has(signalled) and not _enemy_within(ship_state, FireRules.MAX_RANGE))
+		if wants_cut and _can_make_way(ship_state) and not downwind_danger(ship_state):
+			return "cut"
+		var springs_code := str(AnchorRules.order_task(ship_state, "prepare_springs")["code"])
+		if ship_state.tasks_with("PBS").is_empty() and ship_state.tasks_with("PSS").is_empty() \
+				and AnchorRules.refusal(ship_state, springs_code, {}, {}, []) == "":
+			return "prepare_springs"
+		if ship_state.has_springs():
+			return haul_choice(ship_state)
+		return ""
+	if wants_to_anchor(ship_state):
+		if ship_state.anchor_ready != "":
+			return "anchor"
+		if ship_state.tasks_with("PBA").is_empty() and ship_state.tasks_with("PSA").is_empty() \
+				and AnchorRules.refusal(ship_state, "PBA", {}, {}, []) == "":
+			return "prepare_bow"
+	return ""
+
+
+## The ship wants to anchor (spec §11): not anchored, the scenario allows anchoring at her drop hex,
+## fewer than two anchorings used, and an ANCHOR standing order or drift danger.
+func wants_to_anchor(ship_state: ShipState) -> bool:
+	if ship_state.is_out_of_play() or not ship_state.crew_can_act():
+		return false
+	if ship_state.is_anchored() or ship_state.anchorings_used >= AnchorRules.MAX_ANCHORINGS:
+		return false
+	if not AnchorRules.permitted(game_state.active_scenario, AnchorRules.drop_hex(ship_state)):
+		return false
+	return str(ship_state.standing_order.get("order", "")) == "anchor" or drift_danger(ship_state)
+
+
+## Drift danger (spec §11): on the map, neither anchored nor aground, unable to make way (dismasted,
+## or no movement allowance at her facing), and shifting her footprint downwind one hex at a time,
+## up to DRIFT_DANGER_HEXES times, she meets danger (downwind_danger).
+func drift_danger(ship_state: ShipState) -> bool:
+	if not ship_state.is_on_map() or ship_state.is_anchored() or ship_state.is_aground():
+		return false
+	if not ship_state.is_dismasted() \
+			and game_state.ship_controller.get_movement_allowance(ship_state.ship_id) != 0:
+		return false
+	return downwind_danger(ship_state)
+
+
+## The downwind scan of drift danger, whatever the ship's state: shifting her footprint downwind one
+## hex at a time, up to DRIFT_DANGER_HEXES times, she meets a `none` crossing (LOST), land or a hex
+## that always grounds her bow before any crossing that holds her (BLOCKED, an `open` edge; an
+## ESCAPE crossing counts the same, ruling F9). A shift with a LOST crossing is danger even when
+## another of its crossings holds.
+func downwind_danger(ship_state: ShipState) -> bool:
+	var scenario: Dictionary = game_state.active_scenario
+	var terrain := TerrainMap.of(scenario)
+	var wind_dir: int = game_state.environment.wind_direction if game_state.environment else 0
+	var step: Vector2i = HexGrid.DIRECTIONS[AnchorRules.downwind(wind_dir)]
+	var hexes := ship_state.occupied_hexes()
+	for _i in range(DRIFT_DANGER_HEXES):
+		var shifted: Array[Vector2i] = []
+		for h in hexes:
+			shifted.append(h + step)
+		var held := false
+		for k in hexes.size():
+			var outcome := str(MapRules.crossing_outcome(scenario, ship_state, hexes[k], shifted[k],
+				game_state.current_turn)["outcome"])
+			if outcome == MapRules.LOST:
+				return true
+			if outcome == MapRules.BLOCKED or outcome == MapRules.ESCAPE:
+				held = true
+		if held:
+			return false
+		for k in shifted.size():
+			if not hexes.has(shifted[k]) and terrain.is_land(shifted[k]):
+				return true
+		if terrain.in_bounds(shifted[0]) and terrain.grounds(shifted[0], ship_state.ship.draft) == "always":
+			return true
+		hexes = shifted
+	return false
+
+
+## The spring haul of an anchored ship (spec §11): "", "turn_starboard" or "turn_port". Of no turn,
+## starboard and port (that order breaks ties), the one whose footprint brings the most batteries of
+## one side to bear on her target (the ordered engage target while an enemy in play, else the
+## nearest enemy) within FireRules.MAX_RANGE; a turn counts only when the crew may handle the
+## springs for it (AnchorRules.refusal "HS") and its swing is clear (AnchorRules.forced_check).
+func haul_choice(ship_state: ShipState) -> String:
+	var target_id := str(game_state.order_of(ship_state.ship_id).get("target", ""))
+	var target: ShipState = game_state.get_ship(target_id) if target_id != "" else null
+	if target == null or target.side == ship_state.side or target.is_out_of_play():
+		target = _nearest_enemy(ship_state)
+	if target == null:
+		return ""
+	var here := ship_state.occupied_hexes()
+	var r: int = game_state.fire_geometry.range_between(here, target.occupied_hexes())
+	if r < 0 or r > FireRules.MAX_RANGE:
+		return ""
+	var occupied := _occupied_except(ship_state, target)
+	var friendly := _friendly_footprints(ship_state)
+	var others := Occupancy.build(game_state.ships_on_map(), [ship_state.ship_id])
+	var ctx := CrewRules.context(game_state, ship_state)
+	var best := ""
+	var best_score := _bearing_batteries(here, ship_state.facing, target.occupied_hexes(), occupied, friendly)
+	for choice in [["turn_starboard", 1], ["turn_port", -1]]:
+		var side_name := "starboard" if int(choice[1]) > 0 else "port"
+		if AnchorRules.refusal(ship_state, "HS", {"turn": side_name}, ctx, []) != "":
+			continue
+		var turn := AnchorRules.spring_turn(ship_state, int(choice[1]))
+		var hexes: Array[Vector2i] = []
+		hexes.assign(turn["hexes"])
+		if str(AnchorRules.forced_check(game_state.active_scenario, here, hexes, others)["result"]) != "clear":
+			continue
+		var score := _bearing_batteries(hexes, int(turn["facing"]), target.occupied_hexes(), occupied, friendly)
+		if score > best_score:
+			best = str(choice[0])
+			best_score = score
+	return best
+
+
+## The ship could make way at some heading: not dismasted, and a movement allowance above 0 at
+## one facing at least (a bow-anchored ship lies head to wind, MA 0 at her own facing).
+func _can_make_way(ship_state: ShipState) -> bool:
+	if ship_state.is_dismasted():
+		return false
+	for f in range(6):
+		if game_state.ship_controller.get_movement_allowance(ship_state.ship_id, f) > 0:
+			return true
+	return false
+
+
+## An enemy in play on the map lies within `max_range` of the ship (footprint to footprint).
+func _enemy_within(ship_state: ShipState, max_range: int) -> bool:
+	for other: ShipState in game_state.get_all_ships():
+		if other.side == ship_state.side or other.is_out_of_play() or not other.is_on_map():
+			continue
+		var r: int = game_state.fire_geometry.range_between(ship_state.occupied_hexes(), other.occupied_hexes())
+		if r >= 0 and r <= max_range:
+			return true
+	return false
 
 
 ## The AI's boarding order (boarding spec §3.6), placed by rule A2b: "board:<id>" at an enemy linked
@@ -452,13 +614,20 @@ func _get_ai_ships(player_id: int = -1) -> Array[ShipState]:
 
 
 ## The ship's strategy: strategy_override when set (tests), else "escape" under an escape posture
-## (_escape_posture), else its standing order's (spec 7).
+## (_escape_posture), else "anchor" when she wants to anchor (wants_to_anchor), else its standing
+## order's (spec 7).
 func _get_strategy(ship_state: ShipState) -> String:
 	if strategy_override != "":
 		return strategy_override
 	if _escape_posture(ship_state):
 		return "escape"
-	return str(game_state.order_of(ship_state.ship_id).get("order", "engage"))
+	if wants_to_anchor(ship_state):
+		return "anchor"
+	var order := str(game_state.order_of(ship_state.ship_id).get("order", "engage"))
+	# CUT CABLES under way, or ANCHOR where she may not anchor, is engage (spec §11).
+	if order == "cut" or order == "anchor":
+		return "engage"
+	return order
 
 
 ## The ship escapes (map and scenario spec §12): its side may declare escape this turn, and the
@@ -514,7 +683,7 @@ func _plot_ship(ship_state: ShipState, controller: MovementPlottingController, s
 			version = _strategy_escape(ship_state, controller, session_id, version, started)
 		"forward":
 			version = _strategy_forward(ship_state, controller, session_id, version, started)
-		"hold":
+		"hold", "anchor":
 			pass
 
 	# 5.E.4: a course that stops short of the deceleration limit is carried on until it meets it.

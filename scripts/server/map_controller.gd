@@ -55,21 +55,21 @@ func escape(ship_id: String, data: Dictionary, phase: int) -> void:
 	Trace.trace_log("Map", "Ship %s escaped (%s)" % [ship_id, str(data.get("how", ""))])
 
 
-## The enemy ships that could chase `ship` (V.D.1): of another side, in play, on the map and not
-## aground.
+## The enemy ships that could chase `ship` (V.D.1): of another side, in play, on the map, not
+## aground and not anchored (ruling 2026-11-18).
 func pursuers(ship: ShipState) -> Array[ShipState]:
 	var out: Array[ShipState] = []
 	for other: ShipState in game_state.get_all_ships():
 		if other.side == ship.side or other.is_out_of_play() or not other.is_on_map() \
-				or other.is_aground():
+				or other.is_aground() or other.is_anchored():
 			continue
 		out.append(other)
 	return out
 
 
 ## End of the turn (V.D.1-4): first every declared ship in play is reported (ESCAPE_DECLARED, in
-## ship id order); then every declared ship in play, on the map, not fouled or grappled and in no
-## live boarding action, of a
+## ship id order); then every declared ship in play, on the map, not fouled, grappled or anchored
+## (ruling 2026-11-18) and in no live boarding action, of a
 ## side that may escape this turn, escapes by distance or speed (MapRules.condition). Every
 ## condition is read from the positions before any ship leaves.
 func resolve_escapes(turn: int, phase: int) -> void:
@@ -87,7 +87,8 @@ func resolve_escapes(turn: int, phase: int) -> void:
 	var env: EnvironmentState = game_state.environment
 	var escapes: Array = []
 	for ship in declared:
-		if not ship.is_on_map() or ship.is_linked() or escape_locked(game_state, ship.ship_id) \
+		if not ship.is_on_map() or ship.is_linked() or ship.is_anchored() \
+				or escape_locked(game_state, ship.ship_id) \
 				or not MapRules.may_declare(game_state.active_scenario, ship.side, turn):
 			continue
 		var how := MapRules.condition(ship, pursuers(ship), env.wind_direction, env.wind_speed)

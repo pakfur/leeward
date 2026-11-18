@@ -68,18 +68,19 @@ static func tacking_note(chance: float, sections: int, full_chance: float, full_
 
 
 const IRONS_NOTE := "Head to wind: the ship will be in irons and movement ends here."
-## The g-t after a calm (3.D.4): no ship is in irons, but a course into WF=L still ends there (5.D.3).
+## The g-t after a calm (3.D.4) or after a cut cable (5.D.4b): the ship is not in irons, but a
+## course into WF=L still ends there (5.D.3).
 const HEAD_TO_WIND_NOTE := "Head to wind: movement ends here."
 
 
 ## The note under the movement readout: the allowance-change note (may be ""), plus the irons
-## warning whenever the plotted heading's wind-facing code is "L" (head to wind), except in the
-## g-t after a calm (`calm_just_ended`), when no ship is in irons (3.D.4) and only "movement ends
-## here" (5.D.3) is said.
-static func plot_note(allowance_note: String, heading_code: String, calm_just_ended := false) -> String:
+## warning whenever the plotted heading's wind-facing code is "L" (head to wind), except when the
+## ship cannot be in irons this g-t (`irons_excused`, IronsRules.excused: after a calm, 3.D.4; the
+## g-t after a cut cable, 5.D.4b), when only "movement ends here" (5.D.3) is said.
+static func plot_note(allowance_note: String, heading_code: String, irons_excused := false) -> String:
 	if heading_code != "L":
 		return allowance_note
-	var note := HEAD_TO_WIND_NOTE if calm_just_ended else IRONS_NOTE
+	var note := HEAD_TO_WIND_NOTE if irons_excused else IRONS_NOTE
 	return note if allowance_note == "" else allowance_note + "\n" + note
 
 

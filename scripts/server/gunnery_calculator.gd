@@ -120,6 +120,9 @@ func preview(order: GunneryTypes.FireOrder, two_targets: bool = false,
 		_add_modifier(p, "dismantling_shot", tables.flat_modifier("dismantling_shot"))
 	if wind_speed >= 4:
 		_add_modifier(p, "wind_speed_4", tables.flat_modifier("wind_speed_4"))
+	# 7.C.12c: an anchored ship (still anchored on the turn she cuts) fires steadier.
+	if firer.is_anchored():
+		_add_modifier(p, "anchored", tables.flat_modifier("anchored"))
 	_add_modifier(p, "lower_deck_closed", _lower_deck_modifier(firer, order.side))
 	if firer.is_dismasted():
 		_add_modifier(p, "dismasted", -int(game_state.environment.sea_state))

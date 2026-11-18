@@ -271,6 +271,29 @@ func test_undeclared_unpermitted_or_early_never_escapes() -> void:
 	assert_eq(_events(PhaseEvents.Type.ESCAPED).size(), 0)
 
 
+## Ruling 2026-11-18: an anchored ship cannot escape (she must cut her cable first).
+func test_anchored_ship_does_not_escape() -> void:
+	var esc := _escaper()
+	GameState.ship_controller.drop_anchor("esc", {"hex": esc.hex_position, "end": "bow",
+		"springs": false, "cable": 1, "veered": 0, "swing_dir": 0, "wind_dir": 0, "turn": 0})
+	_resolve()
+	assert_eq(esc.status, ShipState.Status.ACTIVE)
+	assert_eq(_events(PhaseEvents.Type.ESCAPED).size(), 0)
+	assert_eq(_events(PhaseEvents.Type.ESCAPE_DECLARED).size(), 1, "still reported as declared")
+
+
+## Ruling 2026-11-18: an anchored enemy cannot chase, like an aground one.
+func test_anchored_enemy_is_not_a_pursuer() -> void:
+	var esc := _escaper()
+	var p := _pursuer("p", 5)
+	GameState.ship_controller.drop_anchor("p", {"hex": p.hex_position, "end": "bow",
+		"springs": false, "cable": 1, "veered": 0, "swing_dir": 0, "wind_dir": 0, "turn": 0})
+	assert_eq(GameState.map_controller.pursuers(esc).size(), 0)
+	_resolve()
+	assert_eq(esc.status, ShipState.Status.ESCAPED)
+	assert_eq(_events(PhaseEvents.Type.ESCAPED)[0].data["range"], -1)
+
+
 func test_linked_ship_does_not_escape() -> void:
 	var esc := _escaper()
 	_make_ship("friend", 1, Vector2i(-20, 1))

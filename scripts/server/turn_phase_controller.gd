@@ -655,6 +655,10 @@ func _enter_movement_resolution_phase() -> void:
 	# clears the plots.
 	if game_state.crew_task_controller:
 		game_state.crew_task_controller.begin_turn_tasks(current_phase)
+	# Spring turns and veering in (13.D.2, 13.E.2) change the board before any ship moves, once:
+	# every resolver pass (bear-off re-runs, rollbacks) starts from the new hexes.
+	if game_state.get("anchor_controller") != null:
+		game_state.anchor_controller.resolve_spring_step(current_phase)
 
 	_bear_off_decisions = {}
 	if game_state.movement_resolver and game_state.environment:
@@ -891,11 +895,14 @@ func on_combat_playback_completed() -> void:
 	advance_phase()
 
 func _enter_drift_calculation_phase() -> void:
-	"""SERVER ONLY: Enter drift calculation phase"""
+	"""SERVER ONLY: Enter drift calculation phase: drift, then the anchoring step (SoP V.A-B:
+	ships ride to their anchors, anchors are dropped and cables cut)."""
 	current_phase = GamePhase.DRIFT_CALCULATION
 	phase_changed.emit(current_phase)
 	Trace.trace_log("TurnPhase", "Phase: DRIFT_CALCULATION")
 	game_state.drift_resolver.resolve(GamePhase.DRIFT_CALCULATION)
+	if game_state.get("anchor_controller") != null:
+		game_state.anchor_controller.resolve_anchoring(GamePhase.DRIFT_CALCULATION)
 	advance_phase()
 
 func _enter_status_adjustment_phase() -> void:

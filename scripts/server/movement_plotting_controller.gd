@@ -52,6 +52,8 @@ func _plot_refusal(ship_state: ShipState) -> Array:
 		return ["SHIP_STRUCK", "Ship %s has struck its colours and cannot move" % ship_id]
 	if ship_state.is_aground():  # 13.G.3
 		return ["SHIP_AGROUND", "Ship %s is aground and cannot move (13.G.3)" % ship_id]
+	if ship_state.is_anchored():  # 13.C.3
+		return ["SHIP_ANCHORED", "Ship %s is anchored: cut the cable (AX) to get under way (13.C.3)" % ship_id]
 	return ["SHIP_DISMASTED", "Ship %s is dismasted and cannot move" % ship_id]
 
 

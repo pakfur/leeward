@@ -50,6 +50,11 @@ enum Type {
 	ESCAPED,  # a ship escapes: {how: edge|distance|speed, edge | range (-1: no enemy on the map)}
 	ARRIVED,  # a reinforcement enters: {hex, facing, sail_state, speed}
 	ARRIVAL_DELAYED,  # a reinforcement cannot enter this turn; target_id: the ship in the way
+	ANCHORED,  # 13.C.2 a ship lets go her anchor: {end: bow/stern, springs, hex}
+	ANCHOR_MOVE,  # 13.C.4-6, 13.E.1 a ship rides to her anchor: {causes, from_facing, to_facing, roll, from, to, cable, blocked, fouled}; target_id: the blocker. On a hold (blocked != "") the ship stays at from/from_facing; to/to_facing are where she would have gone
+	CABLE_CUT,  # 13.F.2 a ship cuts her cable: {hex: the anchor}
+	SPRING_TURN,  # 13.D.2-3 a ship anchored with springs turns 60 degrees: {direction: port/starboard, pivot: bow/stern, from_facing, to_facing, refused}; target_id: the ship holding the hex. Refused (refused != "") she keeps from_facing; to_facing is the facing she would have taken
+	VEER_IN,  # 13.E.2 a ship veers in one hex: {cable, refused}; target_id: the ship in the way. cable is the cable after veering in; refused (refused != "") she keeps her cable
 }
 
 ## Crew task names for the log (crew_tasks.json codes).
@@ -57,6 +62,9 @@ const CREW_TASK_NAMES := {
 	"T": "work the braces", "RO": "reorganize", "FF": "fight the fire",
 	"RR": "repair rigging", "RH": "repair the hull", "RS": "repair the shrouds",
 	"FB": "form boarders", "BR": "stand ready to board", "BA": "board", "BD": "disband the boarders",
+	"PBA": "prepare the bow anchor", "PSA": "prepare the stern anchor", "PBS": "prepare bow springs",
+	"PSS": "prepare stern springs", "A": "anchor", "AX": "cut the cable", "VO": "veer out",
+	"VI": "veer in", "HS": "handle the springs",
 }
 
 ## The same tasks as gerunds, for "finishes …" / "stops …" lines.
@@ -64,6 +72,9 @@ const CREW_TASK_GERUNDS := {
 	"T": "working the braces", "RO": "reorganizing", "FF": "fighting the fire",
 	"RR": "repairing rigging", "RH": "repairing the hull", "RS": "repairing the shrouds",
 	"FB": "forming boarders", "BR": "standing ready to board", "BA": "boarding", "BD": "disbanding the boarders",
+	"PBA": "preparing the bow anchor", "PSA": "preparing the stern anchor", "PBS": "preparing bow springs",
+	"PSS": "preparing stern springs", "A": "anchoring", "AX": "cutting the cable", "VO": "veering out",
+	"VI": "veering in", "HS": "handling the springs",
 }
 
 ## Why a crew task ended early, in plain words (reasons not listed are shown as given).
@@ -90,6 +101,7 @@ const MODIFIER_LABELS := {
 	"plain_sail": "plain sail",
 	"dismantling_shot": "dismantling shot",
 	"wind_speed_4": "wind speed 4",
+	"anchored": "anchored",
 	"dismasted": "dismasted",
 	"lower_deck_closed": "Lower deck guns closed",
 	"broadside_obscured": "broadside obscured",
@@ -489,6 +501,23 @@ class PhaseEvent extends RefCounted:
 				return "%s arrives at %s%s" % [who, _hex_text("hex"), " under %s" % sail if sail != "" else ""]
 			Type.ARRIVAL_DELAYED:
 				return "%s cannot enter: %s holds her entry hex; she will try next turn" % [who, other]
+			Type.ANCHORED:
+				return "%s anchors by the %s%s at %s" % [who, str(data.get("end", "bow")),
+					" with springs" if data.get("springs", false) else "", _hex_text("hex")]
+			Type.ANCHOR_MOVE:
+				return _anchor_move_text(who, other)
+			Type.CABLE_CUT:
+				return "%s cuts her cable" % who
+			Type.SPRING_TURN:
+				var way := str(data.get("direction", ""))
+				if str(data.get("refused", "")) != "":
+					return "%s cannot turn to %s on her springs: %s" % [who, way, str(data["refused"])]
+				return "%s turns to %s on her springs" % [who, way]
+			Type.VEER_IN:
+				if str(data.get("refused", "")) != "":
+					return "%s cannot veer in: %s" % [who, str(data["refused"])]
+				return "%s veers in to %s of cable" % [who,
+					PhaseEvents.plural(int(data.get("cable", 0)), "hex", "hexes")]
 			Type.DESTROYED:
 				if str(data.get("reason", "")) == "no_sea_room":
 					return "%s leaves the map where there is no sea room and is lost" % who
@@ -717,6 +746,38 @@ class PhaseEvent extends RefCounted:
 		var text := "%s %s aground on %s at %s" % [who, how, on, _hex_text("hex")]
 		if on != "land" and data.has("depth"):
 			text += ": %s ft, draws %s ft" % [_val("depth"), _val("draft")]
+		return text
+
+	## 13.C.4-6, 13.E.1: what moved the ship on her cable, or what held her.
+	func _anchor_move_text(who: String, other: String) -> String:
+		match str(data.get("blocked", "")):
+			"ship":
+				var fouled = data.get("fouled", null)
+				var tail := "" if fouled == null else (" (fouled)" if fouled else " (not fouled)")
+				return "%s cannot ride to her anchor: %s is in the way%s" % [who, other, tail]
+			"land":
+				return "%s cannot ride to her anchor: she takes the ground" % who
+			"edge":
+				return "%s cannot ride to her anchor: the map edge is in the way" % who
+			"linked":
+				return "%s cannot ride to her anchor: she is fouled or grappled" % who
+		var parts := PackedStringArray()
+		for cause in data.get("causes", []):
+			match str(cause):
+				"swing":
+					parts.append("swings to her anchor")
+				"wind":
+					parts.append("rides round to the wind")
+				"settle":
+					parts.append("drops back on her cable")
+				"veer_out":
+					var cable := int(data.get("cable", 0))
+					parts.append("veers out to %s of cable" % PhaseEvents.plural(cable, "hex", "hexes"))
+		var text := who + " " + (", ".join(parts.slice(0, parts.size() - 1)) + " and " + parts[-1]
+			if parts.size() > 1 else (parts[0] if parts.size() == 1 else "rides to her anchor"))
+		var to := _hex_text("to")
+		if to != "" and to != _hex_text("from"):
+			text += " to %s" % to
 		return text
 
 	func _lead_text(who: String) -> String:

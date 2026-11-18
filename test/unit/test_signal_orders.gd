@@ -148,3 +148,13 @@ func test_standing_order_round_trips() -> void:
 	_deliver(0, "brit_a1", _fleet(), "CLOSE TO 5")
 	var back := ShipState.deserialize(GameState.ships["brit_a2"].serialize())
 	assert_eq(back.standing_order, {"order": "close", "range": 5})
+
+
+func test_anchor_and_cut_cables() -> void:
+	assert_eq(_parse("ANCHOR"), [{"order": "anchor"}] as Array[Dictionary])
+	assert_eq(_parse("CUT CABLES"), [{"order": "cut"}] as Array[Dictionary])
+	assert_eq(_parse("CUT CABLE"), [{"order": "cut"}] as Array[Dictionary])
+	assert_eq(_parse("CUT"), [] as Array[Dictionary])
+	var both := _parse("ENGAGE ANCHOR")
+	assert_eq(both.size(), 2)
+	assert_eq(both[1], {"order": "anchor"})
