@@ -30,6 +30,13 @@ func test_set_done_ignored_for_locked() -> void:
 	assert_eq(_list.state("a"), "plan")
 
 
+func test_prev_in_plan_cycles_backward_and_skips_done() -> void:
+	_list.begin(["a", "b", "c", "d"], {"a": true, "b": true, "c": true, "d": true})
+	_list.set_done("c", true)
+	assert_eq(_list.prev_in_plan("d"), "b")
+	assert_eq(_list.prev_in_plan("a"), "d")
+
+
 func test_next_in_plan_cycles_and_skips_done() -> void:
 	_list.begin(["a", "b", "c", "d"], {"a": true, "b": true, "c": false, "d": true})
 	_list.set_done("b", true)

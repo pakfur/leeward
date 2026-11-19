@@ -122,9 +122,9 @@ func test_footer_counts_ships_in_plan() -> void:
 	var cl := _bind()
 	var label: Label = ui.still_in_plan_label
 	assert_true(label.visible)
-	assert_eq(label.text, "2 ships still in Plan sail their default course")
+	assert_eq(label.text, "2 ships still in Plan: they sail the course shown")
 	cl.set_done("p1", true)
-	assert_eq(label.text, "1 ship is still in Plan: she sails her default course")
+	assert_eq(label.text, "1 ship is still in Plan: she sails the course shown")
 	cl.set_done("p2", true)
 	assert_false(label.visible, "nothing left in Plan: no note")
 	assert_false(ui.end_planning_button.disabled, "End Planning is always accepted")

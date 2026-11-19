@@ -74,12 +74,14 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 size_flags_horizontal = 3
+focus_mode = 0
 text = "End Planning"
 
 [node name="CancelButton" type="Button" parent="VBoxContainer/FooterRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
+focus_mode = 0
 tooltip_text = "Reset every order this turn to how it was at the start of the turn"
 text = "Cancel"
 

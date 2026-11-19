@@ -587,7 +587,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Board planning: Tab next ship in Plan, Space the selected ship's ring, Enter Done. Only in
 		# PLANNING, so Space / Enter keep their replay and End Turn meanings below.
 		if event.keycode in [KEY_TAB, KEY_SPACE, KEY_ENTER, KEY_KP_ENTER] and _board_keys_live():
-			if board_planning.handle_key(event.keycode):
+			if board_planning.handle_key(event.keycode, event.shift_pressed):
 				get_viewport().set_input_as_handled()
 				return
 		# The resolution panel takes Space / Enter as Next (its own key handling, which runs first);
@@ -1150,8 +1150,8 @@ func _on_end_planning_pressed() -> void:
 	# The AI's plan is in already (TurnPhaseController.ai_player_ids); only the human's is sent.
 	if GameState.is_server and GameState.phase_controller:
 		if not GameState.phase_controller.player_submit_plan(HUMAN_PLAYER_ID):
-			# Refused (a course short of its deceleration limit, 5.E.4): show the first such ship,
-			# whose card names what it must use.
+			# Refused (a course short of its deceleration limit, 5.E.4, a lead or escape error): put
+			# the server's reason in the first such ship's chip box and her back in Move mode.
 			var errors: Dictionary = GameState.phase_controller.plan_errors(HUMAN_PLAYER_ID)
 			if not errors.is_empty():
 				var first: String = errors.keys()[0]
@@ -1159,6 +1159,9 @@ func _on_end_planning_pressed() -> void:
 					"reason": errors[first]})
 				if current_planning_ui and is_instance_valid(current_planning_ui):
 					current_planning_ui.select_ship(first)  # as a card click: expands its card
+				_click_refusals[first] = errors[first]
+				_board().enter_move(first)
+				_refresh_courses()
 	else:
 		push_warning("Client plan submission not yet implemented — needs network layer")
 

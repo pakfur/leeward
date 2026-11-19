@@ -169,6 +169,8 @@ func test_tab_opens_next_ship_in_plan() -> void:
 	watch_signals(bp)
 	_selected = "a"
 	assert_true(bp.handle_key(KEY_TAB))
+	assert_eq(bp.ring_ship_id(), "a", "the first Tab opens the selected ship's ring (she is in Plan)")
+	assert_true(bp.handle_key(KEY_TAB))
 	assert_eq(bp.ring_ship_id(), "c", "b is Done: the next in Plan after a is c")
 	assert_signal_emitted_with_parameters(bp, "ring_opened", ["c"])
 	assert_true(bp.handle_key(KEY_TAB))
@@ -178,6 +180,53 @@ func test_tab_opens_next_ship_in_plan() -> void:
 	bp.close_ring()
 	assert_true(bp.handle_key(KEY_TAB), "taken even when nothing is left in Plan")
 	assert_false(bp.radial_menu().is_open())
+
+
+func test_first_tab_skips_a_done_selected_ship() -> void:
+	var c := _make_ship("c", 0, Vector2i(0, 8))
+	bp.begin_planning(_ships([a, b, c]))
+	bp.checklist().set_done("a", true)
+	_selected = "a"
+	assert_true(bp.handle_key(KEY_TAB))
+	assert_eq(bp.ring_ship_id(), "b", "a is Done: Tab opens the next ship in Plan after her")
+
+
+func test_shift_tab_goes_to_the_previous_ship_in_plan() -> void:
+	var c := _make_ship("c", 0, Vector2i(0, 8))
+	bp.begin_planning(_ships([a, b, c]))
+	bp.checklist().set_done("b", true)
+	bp.open_ring("c")
+	assert_true(bp.handle_key(KEY_TAB, true))
+	assert_eq(bp.ring_ship_id(), "a", "b is Done: before c in Plan is a")
+	assert_true(bp.handle_key(KEY_TAB, true))
+	assert_eq(bp.ring_ship_id(), "c", "wraps backward")
+
+
+func test_space_in_move_mode_leaves_move_mode() -> void:
+	bp.begin_planning(_ships([a, b]))
+	_selected = "a"
+	bp.enter_move("a")
+	assert_true(bp.handle_key(KEY_SPACE))
+	assert_eq(bp.move_ship_id(), "", "the ring and Move mode are never open together")
+	assert_eq(bp.ring_ship_id(), "a")
+	_choose("done")
+	assert_eq(bp.checklist().state("a"), PlanChecklist.DONE)
+	assert_eq(bp.move_ship_id(), "")
+
+
+func test_checklist_change_refreshes_the_open_ring_in_place() -> void:
+	bp.begin_planning(_ships([a, b]))
+	bp.open_ring("a")
+	watch_signals(bp)
+	bp.checklist().set_done("b", true)  # another ship: the ring stays as it was
+	bp.checklist().set_done("a", true)  # her own pill: Done becomes Plan again, ring still open
+	assert_eq(bp.ring_ship_id(), "a")
+	assert_signal_not_emitted(bp, "ring_opened", "no re-open, no reselect")
+	var menu := bp.radial_menu()
+	assert_true(menu.is_open())
+	assert_eq(menu.item_count(), 4)
+	assert_eq(_ids(bp.ring_items(a))[-1], "undo")
+	assert_not_null(menu.find_child("Item_undo", true, false), "the last button is Plan again")
 
 
 func test_space_opens_selected_ship_and_enter_marks_done() -> void:

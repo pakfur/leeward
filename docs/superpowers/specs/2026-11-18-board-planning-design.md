@@ -102,7 +102,7 @@ None. The view keeps using `course_options`, `player_extend_course`, `player_cut
 - **Plan/Done** (`PlanChecklist`, view only): badges over each own ship (PLAN amber, DONE green,
   a lock for a ship that cannot plot), the same pill on the side card (click toggles), Tab and
   Space as above. The side panel footer: End Planning (enabled as today: `plan_errors` empty) and
-  a line "n ships still in Plan sail their default course".
+  a line "n ships still in Plan: they sail the course shown" (singular: "1 ship is still in Plan: she sails the course shown"; wording ruled in the piece-1 final review).
 - Removed: the card's Course block (its line and notes move to the chip box; Reset course moves
   to the ring); `CourseClicks` now routes only the Move-mode ship's clicks. `CourseView` keeps
   drawing every own course.

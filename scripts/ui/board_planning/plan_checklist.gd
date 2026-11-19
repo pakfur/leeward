@@ -2,7 +2,7 @@ class_name PlanChecklist
 extends RefCounted
 ## The per-ship Plan / Done checklist of board planning. View state only: it never reaches the
 ## server (End Planning is still `player_submit_plan`). A ship that cannot plot starts, and stays,
-## Locked; a ship still in Plan at End Planning sails her stored default course.
+## Locked; a ship still in Plan at End Planning sails the course shown.
 
 signal changed()
 
@@ -68,6 +68,21 @@ func next_in_plan(after_id: String) -> String:
 	var start := _order.find(after_id)
 	for step in range(1, n + 1):
 		var id := _order[(start + step) % n]
+		if _states[id] == PLAN:
+			return id
+	return ""
+
+
+## The previous ship still in Plan before `before_id`, wrapping round; "" when none is.
+func prev_in_plan(before_id: String) -> String:
+	var n := _order.size()
+	if n == 0:
+		return ""
+	var start := _order.find(before_id)
+	if start < 0:
+		start = 0
+	for step in range(1, n + 1):
+		var id := _order[((start - step) % n + n) % n]
 		if _states[id] == PLAN:
 			return id
 	return ""

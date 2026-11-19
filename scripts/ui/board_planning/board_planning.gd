@@ -159,13 +159,12 @@ func ring_items(ship: ShipState) -> Array[RadialItem]:
 	return items
 
 
-## Opens `ship_id`'s ring (leaving Move mode for another ship).
+## Opens `ship_id`'s ring (leaving Move mode: a ship is never in Move mode with her ring open).
 func open_ring(ship_id: String) -> void:
 	var ship := GameState.get_ship(ship_id)
 	if ship == null:
 		return
-	if _move_ship != "" and _move_ship != ship_id:
-		leave_move()
+	leave_move()
 	if _safe_rect.is_valid() and is_inside_tree():
 		_radial.set_safe_rect(_safe_rect.call())
 	_radial.set_anchor_provider(_screen_point_of.bind(ship_id))
@@ -219,16 +218,21 @@ func show_course(info: Dictionary, world_end: Variant) -> void:
 
 # --- keys ----------------------------------------------------------------------------------------
 
-## Tab, Space, Enter and Esc while planning; true when the key was taken.
-func handle_key(keycode: int) -> bool:
+## Tab (Shift+Tab: backward), Space, Enter and Esc while planning; true when the key was taken.
+func handle_key(keycode: int, backward := false) -> bool:
 	if not _planning:
 		return false
 	match keycode:
 		KEY_TAB:
 			var after := _move_ship if _move_ship != "" else ring_ship_id()
+			var next := ""
 			if after == "":
+				# The first Tab starts at the selected ship: her own ring when she is in Plan.
 				after = _selected_id()
-			var next := _checklist.next_in_plan(after)
+				if _checklist.state(after) == PlanChecklist.PLAN:
+					next = after
+			if next == "":
+				next = _checklist.prev_in_plan(after) if backward else _checklist.next_in_plan(after)
 			if next != "":
 				leave_move()
 				open_ring(next)
@@ -282,9 +286,11 @@ func _on_item_chosen(item_id: String) -> void:
 			reset_course_requested.emit(id)
 		"done":
 			close_ring()
+			leave_move()
 			_checklist.set_done(id, true)
 		"undo":
 			close_ring()
+			leave_move()
 			_checklist.set_done(id, false)
 
 
@@ -298,7 +304,9 @@ func _on_checklist_changed() -> void:
 	_show_badges()
 	var id := ring_ship_id()
 	if id != "":
-		open_ring(id)  # the Done / Plan again item follows
+		var ship := GameState.get_ship(id)
+		if ship != null:
+			_radial.refresh_items(ring_items(ship))  # the Done / Plan again item follows, in place
 
 
 func _show_badges() -> void:

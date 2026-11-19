@@ -97,6 +97,25 @@ func open(items: Array[RadialItem], title: String, subtitle: String) -> void:
 	_pop_in()
 
 
+## Swaps the items of the open ring in place (a checklist change): the buttons are rebuilt with no
+## pop-in, the title and position stay, and the hovered item is hovered again.
+func refresh_items(items: Array[RadialItem]) -> void:
+	if not _open:
+		return
+	var hovered := _hovered
+	_clear_buttons()
+	_items = items.duplicate()
+	_hovered = -1
+	_focused = clampi(_focused, -1, _items.size() - 1)
+	_layout_frame()
+	for i in _items.size():
+		_add_button(i)
+	_update_caption()
+	_place()
+	if hovered >= 0:
+		hover_item(hovered)
+
+
 func close() -> void:
 	if not _open:
 		return

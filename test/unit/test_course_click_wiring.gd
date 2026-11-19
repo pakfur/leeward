@@ -105,6 +105,19 @@ func test_outside_move_mode_clicks_never_edit_course() -> void:
 	assert_eq(GameState.phase_controller.stored_course(GameState.get_ship("b")).size(), 1)
 
 
+func test_refused_end_planning_shows_the_reason_in_move_mode() -> void:
+	GameState.get_ship("a").speed = 6
+	gc._refresh_courses()
+	var ahead: Vector2i = gc._courses["a"]["next_hexes"][0]
+	assert_eq(GameState.phase_controller.player_extend_course(0, "a", ahead), "")
+	var errors: Dictionary = GameState.phase_controller.plan_errors(0)
+	assert_true(errors.has("a"), "one step at speed 6 is short of the deceleration limit")
+	gc._on_end_planning_pressed()
+	assert_eq(gc._board().move_ship_id(), "a", "the refused ship is back in Move mode")
+	assert_eq(gc._click_refusals.get("a", ""), errors["a"], "the server's reason is held for the chip box")
+	assert_string_contains(str(gc._course_info(GameState.get_ship("a"), GameState.phase_controller.course_options("a"), [GameState.get_ship("a")]).get("collision", "")), "Too slow")
+
+
 func test_move_mode_click_extends_only_that_ship() -> void:
 	gc._board().enter_move("a")
 	assert_eq(gc._courses.keys().size(), 2, "every own course is still drawn")

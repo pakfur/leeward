@@ -131,13 +131,13 @@ func _refresh_plan_state() -> void:
 		still_in_plan_label.visible = text != ""
 
 
-## The footer's note: a ship still in Plan at End Planning sails her stored (default) course.
+## The footer's note: a ship still in Plan at End Planning sails the course shown.
 static func still_in_plan_text(count: int) -> String:
 	if count <= 0:
 		return ""
 	if count == 1:
-		return "1 ship is still in Plan: she sails her default course"
-	return "%d ships still in Plan sail their default course" % count
+		return "1 ship is still in Plan: she sails the course shown"
+	return "%d ships still in Plan: they sail the course shown" % count
 
 
 ## A pill click: Plan <-> Done; a Locked ship stays as she is.
