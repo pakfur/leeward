@@ -1,5 +1,8 @@
 extends Control
-## PlanningPhaseUI - Main planning interface displayed in context panel during PLANNING phase
+## PlanningPhaseUI - the side panel during PLANNING: a FleetPanel (the own ships' cards) with the
+## planning footer in its slot (the instructions, the "still in Plan" line, End Planning and Cancel,
+## and Cancel's confirmation). The footer is one Control (`footer`, built by build_footer) so the
+## whole-turn side panel can take it; this host keeps the planning API GameController uses.
 
 signal ship_selected(ship_id: String)
 signal end_planning_pressed()
@@ -7,40 +10,101 @@ signal crew_overlay_requested(ship_id: String)  ## a card's "Crew & damage" butt
 signal reset_planning_confirmed()  ## Cancel, confirmed: every order back to the start of the turn
 signal card_clicked(ship_id: String)  ## a card was clicked (not set by code): her ring opens on the board
 
-const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
+const RESET_TOOLTIP := "Reset every order this turn to how it was at the start of the turn"
+const RESET_TEXT := "Reset all orders for this turn? Courses, crew, sail and boarding orders go back to how they were at the start of the turn."
 
-@onready var title_label: Label = %TitleLabel
-@onready var ship_list_container: VBoxContainer = %ShipListContainer
-@onready var still_in_plan_label: Label = %StillInPlanLabel
-@onready var instructions_label: Label = %InstructionsLabel
-@onready var end_planning_button: Button = %EndPlanningButton
-@onready var cancel_button: Button = %CancelButton
-@onready var reset_dialog: ConfirmationDialog = %ResetDialog
+var fleet: FleetPanel = null
+var footer: VBoxContainer = null
+var title_label: Label = null
+var still_in_plan_label: Label = null
+var instructions_label: Label = null
+var end_planning_button: Button = null
+var cancel_button: Button = null
+var reset_dialog: ConfirmationDialog = null
 
-# Track state
-var ship_list_items: Dictionary = {}  # ship_id -> ShipListItem
-var selected_ship_id: String = ""
-var ship_states: Dictionary = {}  # ship_id -> ShipState (read-only references)
+## ship_id -> ShipListItem (the fleet panel's cards).
+var ship_list_items: Dictionary:
+	get: return fleet.cards
+var selected_ship_id: String:
+	get: return fleet.selected_ship_id
+
 var _checklist: PlanChecklist = null  # board planning's Plan / Done checklist (view state)
 var crew_overlay_open: bool = false  # the selected card hides its summary line while the overlay is open
 
-func _ready() -> void:
+
+func _init() -> void:
+	fleet = FleetPanel.new()
+	fleet.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(fleet)
+	title_label = fleet.title_label
+	fleet.ship_card_pressed.connect(_on_card_clicked)
+	fleet.crew_overlay_requested.connect(func(id: String): crew_overlay_requested.emit(id))
+	fleet.pill_pressed.connect(_on_pill_pressed)
+	fleet.set_footer(build_footer())
+
+
+## The planning footer: instructions, the "still in Plan" line, End Planning + Cancel (Cancel asks
+## first, in the footer's own dialog).
+func build_footer() -> VBoxContainer:
+	footer = VBoxContainer.new()
+	footer.name = "PlanningFooter"
+	footer.add_theme_constant_override("separation", 8)
+	footer.add_child(HSeparator.new())
+	instructions_label = _note(PlanningText.instructions())
+	instructions_label.name = "InstructionsLabel"
+	footer.add_child(instructions_label)
+	still_in_plan_label = _note("")
+	still_in_plan_label.name = "StillInPlanLabel"
+	still_in_plan_label.visible = false
+	footer.add_child(still_in_plan_label)
+	var row := HBoxContainer.new()
+	row.name = "FooterRow"
+	row.add_theme_constant_override("separation", 6)
+	footer.add_child(row)
+	end_planning_button = _footer_button("EndPlanningButton", "End Planning")
+	end_planning_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(end_planning_button)
+	cancel_button = _footer_button("CancelButton", "Cancel")
+	cancel_button.tooltip_text = RESET_TOOLTIP
+	row.add_child(cancel_button)
+	reset_dialog = ConfirmationDialog.new()
+	reset_dialog.name = "ResetDialog"
+	reset_dialog.title = "Reset orders"
+	reset_dialog.ok_button_text = "Reset"
+	reset_dialog.cancel_button_text = "Keep orders"
+	reset_dialog.dialog_text = RESET_TEXT
+	footer.add_child(reset_dialog)
 	end_planning_button.pressed.connect(func(): end_planning_pressed.emit())
 	cancel_button.pressed.connect(func(): reset_dialog.popup_centered())
 	reset_dialog.confirmed.connect(func(): reset_planning_confirmed.emit())
-	instructions_label.text = PlanningText.instructions()
+	return footer
+
+
+static func _note(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.theme_type_variation = &"SecondaryLabel"
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return label
+
+
+static func _footer_button(node_name: String, text: String) -> Button:
+	var button := Button.new()
+	button.name = node_name
+	button.text = text
+	button.custom_minimum_size = Vector2(0, 44)
+	button.focus_mode = Control.FOCUS_NONE
+	return button
+
 
 func setup_for_player(player_ships: Array[ShipState]) -> void:
-	clear_ships()
-
-	for ship_state in player_ships:
-		_add_ship_to_list(ship_state)
-
-	# Select first ship by default
+	fleet.refresh_ships(player_ships)
+	# The first ship is selected by default.
 	if not player_ships.is_empty():
-		_select_ship(player_ships[0].ship_id)
+		fleet.select_ship(player_ships[0].ship_id)
+	_refresh_plan_state()
 
-	refresh_crew_summaries()
 
 ## The crew plan changed (crew overlay): the cards follow it.
 func refresh_crew_orders() -> void:
@@ -49,68 +113,28 @@ func refresh_crew_orders() -> void:
 ## The status box on every card from the stored crew plan (a read-only query); the cards redraw
 ## their hull, rigging, crew and guns from the ship too.
 func refresh_crew_summaries() -> void:
-	for ship_id in ship_list_items:
-		var ship: ShipState = ship_states.get(ship_id)
-		var item = ship_list_items[ship_id]
-		if ship == null or GameState.crew_task_controller == null:
-			continue
-		item.setup(ship)
-		item.set_crew_plan(GameState.crew_task_controller.current_plan(ship_id))
+	fleet.refresh_cards()
 
 func clear_ships() -> void:
-	for child in ship_list_container.get_children():
-		child.queue_free()
+	var none: Array[ShipState] = []
+	fleet.refresh_ships(none)
 
-	ship_list_items.clear()
-	selected_ship_id = ""
-	ship_states.clear()
-
-func _add_ship_to_list(ship_state: ShipState) -> void:
-	var list_item = ShipListItem.instantiate()
-	ship_list_container.add_child(list_item)
-
-	# Setup the item with ship data
-	list_item.setup(ship_state)
-
-	# Connect signals
-	list_item.selected.connect(func(): _on_card_clicked(ship_state.ship_id))
-	list_item.crew_pressed.connect(func(): crew_overlay_requested.emit(ship_state.ship_id))
-	list_item.pill_pressed.connect(func(): _on_pill_pressed(ship_state.ship_id))
-
-	# Track the item
-	ship_list_items[ship_state.ship_id] = list_item
-
-	ship_states[ship_state.ship_id] = ship_state
-	list_item.set_plan_state(_checklist.state(ship_state.ship_id) if _checklist != null else "")
 
 func _on_card_clicked(ship_id: String) -> void:
-	_on_ship_item_selected(ship_id)
+	ship_selected.emit(ship_id)
 	card_clicked.emit(ship_id)
 
-
-func _on_ship_item_selected(ship_id: String) -> void:
-	_select_ship(ship_id)
-	ship_selected.emit(ship_id)
 
 ## Make `ship_id` the ship whose orders are shown and tell the controller (as a card click does).
 func select_ship(ship_id: String) -> void:
 	if ship_list_items.has(ship_id):
-		_on_ship_item_selected(ship_id)
-
-func _select_ship(ship_id: String) -> void:
-	# Deselect previous
-	if selected_ship_id != "" and ship_list_items.has(selected_ship_id):
-		ship_list_items[selected_ship_id].set_selected_state(false)
-
-	# Select new
-	selected_ship_id = ship_id
-	if ship_list_items.has(ship_id):
-		ship_list_items[ship_id].set_selected_state(true)
-	refresh_crew_summaries()
+		fleet.select_ship(ship_id)
+		ship_selected.emit(ship_id)
 
 func update_ship_display(ship_state: ShipState) -> void:
-	if ship_list_items.has(ship_state.ship_id):
-		ship_list_items[ship_state.ship_id].setup(ship_state)
+	var item: Control = fleet.card(ship_state.ship_id)
+	if item != null:
+		item.setup(ship_state)
 
 ## Follow board planning's checklist: each card's pill and the footer's "still in Plan" line.
 func bind_checklist(checklist: PlanChecklist) -> void:

@@ -902,6 +902,9 @@ func test_fire_step_opens_on_the_board() -> void:
 	var panel: FireStepPanel = gc.fire_step_panel
 	assert_not_null(panel)
 	assert_eq(ctx.contents[-1], panel, "the side panel shows the fire step")
+	assert_eq(panel.footer.get_parent(), panel.fleet.footer_slot, "the fire footer is in the fleet panel's slot")
+	assert_true(panel.footer.is_ancestor_of(panel.fire_button))
+	assert_eq(panel.item("a").get_parent(), panel.fleet.ship_list, "the cards are the fleet panel's")
 	assert_eq(panel.item("a").pill.text, "FIRE")
 	assert_eq(panel.item("b").pill.text, "NO TARGET")
 	assert_true(panel.item("b").pill.disabled, "no shot: nothing to toggle")

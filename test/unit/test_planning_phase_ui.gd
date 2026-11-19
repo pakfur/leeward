@@ -170,3 +170,17 @@ func test_status_box_draws_every_line() -> void:
 	var box: ShipCardStatus = ui.ship_list_items["p1"].status_box
 	for line in ["HullLine", "RiggingLine", "CrewLine", "MarinesLine", "GunsLine"]:
 		assert_not_null(box.find_child(line, true, false), "%s is drawn" % line)
+
+
+func test_cards_and_footer_live_in_the_fleet_panel() -> void:
+	assert_eq(ui.ship_list_items["p1"].get_parent(), ui.fleet.ship_list, "the cards are the fleet panel's")
+	assert_eq(ui.footer.get_parent(), ui.fleet.footer_slot, "the planning footer is in its slot")
+	assert_true(ui.footer.is_ancestor_of(ui.end_planning_button))
+	assert_true(ui.footer.is_ancestor_of(ui.cancel_button))
+	assert_true(ui.footer.is_ancestor_of(ui.reset_dialog), "Cancel's confirmation travels with the footer")
+	assert_true(ui.footer.is_ancestor_of(ui.still_in_plan_label))
+	assert_eq(ui.cancel_button.text, "Cancel")
+	assert_eq(ui.cancel_button.tooltip_text, "Reset every order this turn to how it was at the start of the turn")
+	assert_eq(ui.end_planning_button.focus_mode, Control.FOCUS_NONE, "Space and Enter stay the game's keys")
+	assert_eq(ui.cancel_button.focus_mode, Control.FOCUS_NONE)
+	assert_eq(ui.instructions_label.text, PlanningText.instructions())

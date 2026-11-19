@@ -1,11 +1,12 @@
 class_name FireStepPanel
 extends VBoxContainer
-## The side panel in the fire declaration step (board planning piece 3), view only: the own ships'
-## cards (ShipListItem, as in planning) with their fire pills (FIRE, NO TARGET, "✓ n ORDERS",
+## The side panel in the fire declaration step (board planning piece 3), view only: a FleetPanel
+## (the own ships' cards) with their fire pills (FIRE, NO TARGET, "✓ n ORDERS",
 ## NO FIRE: FireBoard.pill), a line saying how many ships with a shot hold fire, a refusal line and
 ## **Fire**, whose text says what the orders do (FireText.fire_button_text_with_marines). The orders
 ## themselves are given on the board (BoardPlanning's fire ring and option box); GameController
-## sends them on fire_pressed.
+## sends them on fire_pressed. The fire footer is one Control (`footer`, build_footer) in the fleet
+## panel's footer slot, so the whole-turn side panel can take it.
 
 signal fire_pressed()
 ## A card was clicked: her fire ring opens on the board.
@@ -13,47 +14,45 @@ signal card_clicked(ship_id: String)
 ## A card's Crew & damage button.
 signal crew_overlay_requested(ship_id: String)
 
-const ShipListItemScene = preload("res://scenes/ui/ship_list_item.tscn")
 const INSTRUCTIONS := "Click a ship (or Tab) for her fire ring, pick a broadside, a chaser or her marines, then a target."
 
-var ship_list: VBoxContainer = null
+var fleet: FleetPanel = null
+var footer: VBoxContainer = null
 var hold_fire_label: Label = null
 var error_label: Label = null
 var fire_button: Button = null
-var selected_ship_id := ""
+## The selected card's ship (the fleet panel's).
+var selected_ship_id: String:
+	get: return fleet.selected_ship_id
 
-var _items: Dictionary = {}  # ship_id -> ShipListItem
 var _board: FireBoard = null
 
 
 func _init() -> void:
 	name = "FireStepPanel"
-	add_theme_constant_override("separation", 8)
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var title := Label.new()
-	title.theme_type_variation = &"HeaderLabel"
-	title.text = "Your Fleet"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	add_child(title)
-	add_child(HSeparator.new())
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	add_child(scroll)
-	ship_list = VBoxContainer.new()
-	ship_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ship_list.add_theme_constant_override("separation", 6)
-	scroll.add_child(ship_list)
-	add_child(HSeparator.new())
-	var instructions := _note(INSTRUCTIONS)
-	add_child(instructions)
+	fleet = FleetPanel.new()
+	add_child(fleet)
+	fleet.ship_card_pressed.connect(func(id: String): card_clicked.emit(id))
+	fleet.crew_overlay_requested.connect(func(id: String): crew_overlay_requested.emit(id))
+	fleet.pill_pressed.connect(_on_pill_pressed)
+	fleet.set_footer(build_footer())
+
+
+## The fire footer: the instructions, the hold-fire line, the refusal line and **Fire**.
+func build_footer() -> VBoxContainer:
+	footer = VBoxContainer.new()
+	footer.name = "FireFooter"
+	footer.add_theme_constant_override("separation", 8)
+	footer.add_child(HSeparator.new())
+	footer.add_child(_note(INSTRUCTIONS))
 	hold_fire_label = _note("")
 	hold_fire_label.visible = false
-	add_child(hold_fire_label)
+	footer.add_child(hold_fire_label)
 	error_label = _note("")
 	error_label.add_theme_color_override("font_color", Color(1, 0.4, 0.35, 1))
 	error_label.visible = false
-	add_child(error_label)
+	footer.add_child(error_label)
 	fire_button = Button.new()
 	fire_button.name = "FireButton"
 	fire_button.custom_minimum_size = Vector2(0, 44)
@@ -61,7 +60,8 @@ func _init() -> void:
 	fire_button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # a long order list wraps, never widens the panel
 	fire_button.text = FireText.fire_button_text(0)
 	fire_button.pressed.connect(func(): fire_pressed.emit())
-	add_child(fire_button)
+	footer.add_child(fire_button)
+	return footer
 
 
 static func _note(text: String) -> Label:
@@ -76,21 +76,8 @@ static func _note(text: String) -> Label:
 ## The step begins: a card per own ship (card order), following `board` (the fire step's state).
 ## The first ship with a shot is selected.
 func setup(ships: Array[ShipState], board: FireBoard) -> void:
-	for child in ship_list.get_children():
-		child.queue_free()
-	_items.clear()
 	_board = board
-	for ship in ships:
-		var card: Control = ShipListItemScene.instantiate()
-		ship_list.add_child(card)
-		card.setup(ship)
-		if GameState.crew_task_controller:
-			card.set_crew_plan(GameState.crew_task_controller.current_plan(ship.ship_id))
-		var id := ship.ship_id
-		card.selected.connect(func(): _on_card_clicked(id))
-		card.crew_pressed.connect(func(): crew_overlay_requested.emit(id))
-		card.pill_pressed.connect(func(): _on_pill_pressed(id))
-		_items[id] = card
+	fleet.refresh_ships(ships)
 	if not board.changed.is_connected(refresh):
 		board.changed.connect(refresh)
 		board.checklist.changed.connect(refresh)
@@ -113,25 +100,21 @@ func _exit_tree() -> void:
 
 
 func item(ship_id: String) -> Control:
-	return _items.get(ship_id)
+	return fleet.card(ship_id)
 
 
 ## Expands `ship_id`'s card (the others collapse), as in planning.
 func select_ship(ship_id: String) -> void:
-	if selected_ship_id != "" and _items.has(selected_ship_id):
-		_items[selected_ship_id].set_selected_state(false)
-	selected_ship_id = ship_id
-	if _items.has(ship_id):
-		_items[ship_id].set_selected_state(true)
+	fleet.select_ship(ship_id)
 
 
 ## Pills, the hold-fire line and the Fire button from the board's state.
 func refresh() -> void:
 	if _board == null or not _board.is_active():
 		return
-	for id in _items:
+	for id in fleet.cards:
 		var p := _board.pill(id)
-		_items[id].set_plan_state(card_state(str(p["state"])), card_text(p), _board.no_shot_reason(id))
+		fleet.cards[id].set_plan_state(card_state(str(p["state"])), card_text(p), _board.no_shot_reason(id))
 	var text := hold_fire_text(_board.ships_without_orders())
 	hold_fire_label.text = text
 	hold_fire_label.visible = text != ""
@@ -178,11 +161,6 @@ func show_error(reason: String) -> void:
 func set_sending() -> void:
 	error_label.visible = false
 	fire_button.disabled = true
-
-
-func _on_card_clicked(ship_id: String) -> void:
-	select_ship(ship_id)
-	card_clicked.emit(ship_id)
 
 
 ## A pill click: Plan <-> Done (FireBoard.set_done; a ship with no shot stays Done).
