@@ -79,3 +79,11 @@ Parked: a tow astern blocking a stern chaser is refused as "no line of sight" ra
 6. **AI:** surrenders when eligible and a linked enemy has boarders ready or it faces ≥ 2:1 gun-factor odds within range 3; rallies (before plotting) when no enemy is within 5.
 7. **Roadmap closed:** feature_diff §2 is empty; the Scenario Book's scattering, variable reinforcement entry and special victory conditions are recorded as not offered (§4).
 8. **Process:** several small task reviews were folded into the whole-branch review; SCV audit clean; the last parser warning in the project was fixed (an annotation must sit on the line, not the function).
+
+## Board planning, piece 1 (radial menu and planning per ship) — 2026-11-18
+
+- First Tab with no ring open opens the selected ship's ring if she is still in Plan, else the next ship in Plan; Shift+Tab goes back. Cost if wrong: one extra key press.
+- Footer line: "n ships still in Plan: they sail the course shown" (the earlier wording claimed the default course even for plotted ships). Cost if wrong: wording only.
+- A refused End Planning puts the first ship it names into Move mode so the chip box shows the server's reason (the card no longer has a Course block). Cost if wrong: the camera's attention jumps to that ship.
+- Move puts a Done ship back in Plan; Esc in Move mode reopens her ring; Reset course leaves Plan/Done as it was; board keys do nothing while the crew overlay is open. Cost if wrong: small habits to relearn.
+- Parked: Reset course stays enabled on a ship anchored mid-turn by the Developer UI; a ring opened before a window resize keeps its old clamp; Esc with the Cancel confirmation open closes the ring first; in a game with several humans the ring stays live after you submit (the server refuses the edits) — piece 4.
