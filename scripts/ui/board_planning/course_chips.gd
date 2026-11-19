@@ -1,9 +1,9 @@
 class_name CourseChips
 extends PanelContainer
 ## The small box beside the course end of the Move-mode ship (board planning, view only): the
-## course readout ("Course: n of m MP"), the notes the card's Course block shows (tacking,
-## steering, heading), the warning line (a refused click, a collision, a jammed rudder, a course
-## too short), then ✓ Done and Keep planning. Follows the camera every frame like IndicatorOverlay.
+## course readout ("Course: n of m MP"), the course notes (tacking, steering, heading), the
+## warning line (a refused click, a collision, a jammed rudder, a course too short), then ✓ Done
+## and Keep planning. Follows the camera every frame like IndicatorOverlay.
 ## Look: prototypes/planning_radial (`.chipbox`, `.chip`).
 
 signal done_pressed()

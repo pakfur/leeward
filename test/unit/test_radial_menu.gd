@@ -140,10 +140,6 @@ func test_caption_stays_inside_safe_rect_at_the_sides() -> void:
 		var items: Array[RadialItem] = [_item("move", "", long_hint), _item("crew", "", long_hint)]
 		_open_at(items, point)
 		menu.hover_item(0)
-		# The labels' new wrap width reaches the containers' cached sizes a frame later; the menu
-		# places itself every frame.
-		await get_tree().process_frame
-		menu._process(0.016)
 		var r := menu.caption_rect()
 		assert_gt(r.size.x, 0.0, "the caption has a width")
 		assert_true(safe.encloses(r), "caption inside the safe rect at %s (%s)" % [point, r])

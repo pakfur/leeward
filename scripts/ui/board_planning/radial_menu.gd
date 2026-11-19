@@ -455,10 +455,14 @@ func _update_caption() -> void:
 			CrewStyle.MUTED if item.is_enabled() else CrewStyle.WARN)
 	var width := _caption_width()
 	_caption.custom_minimum_size.x = width
-	# The labels autowrap: give them the caption's inner width, or their minimum height is one word
-	# per line and the caption's measured height (the flip above the ring) is far too tall.
+	# The labels autowrap: give them the caption's inner width now (their container sorts a frame
+	# later), or their minimum height is one word per line and the caption's measured height (the
+	# flip above the ring) is far too tall.
+	var inner := maxf(width - 16.0 * ui_scale, 0.0)
 	for l: Label in [_caption_title, _caption_detail]:
-		l.custom_minimum_size.x = maxf(width - 16.0 * ui_scale, 0.0)
+		l.custom_minimum_size.x = inner
+		l.size = Vector2(inner, l.size.y)
+		l.update_minimum_size()  # a resize alone leaves the containers' cached sizes stale
 	_place_caption()
 
 
