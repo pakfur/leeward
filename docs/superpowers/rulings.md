@@ -103,3 +103,11 @@ Parked: a tow astern blocking a stern chaser is refused as "no line of sight" ra
 - A ship still in Plan that has confirmed orders shows "FIRE · n"; she stays in Plan until Done. Cost if wrong: wording.
 - The fire declaration side panel is deleted; its order logic lives in `FireOrdersModel`, its texts in `FireText`; the no-side-panel path uses the same `FireStepPanel`. Cost if wrong: none known.
 - Parked: the option box can cover another target or a ship alongside; unused model queries kept for tests.
+
+## Board planning, piece 4 (side panel as status and players) — 2026-11-19
+
+- One FleetPanel holds the side panel for the whole turn (Players roster, Your ships cards, a footer per phase); PlanningPhaseUI, FireStepPanel and the End Turn box are gone, replaced by PlanningFooter, FireFooter and PhaseFooters. Cost if wrong: none known.
+- A read-only `TurnPhaseController.is_fire_ready(player_id)` was added for the roster (no behaviour change). Cost if wrong: none.
+- Roster states: AI players show "ended turn" in POST_COMBAT (never waited on); "no ships" and the local "resolving" take precedence; dots are green for your side, red for others. The local "resolving" is only shown while the roster is visible, which during your own replay it is not (the replay holds the side panel): accepted. Cost if wrong: add a roster line to the resolution panel.
+- A footer change hides the previous step's card pills (a live bug: FIRE / PLAN pills lingered). Cost if wrong: none.
+- Parked: a ResolutionPanel is rebuilt within one frame between the combat and post-combat replays (invisible); when the selected card's ship leaves, the first card is selected without moving the map selection; the roster's dot colour reuses `ShipView.owner_color`; a prize card sorts first.
