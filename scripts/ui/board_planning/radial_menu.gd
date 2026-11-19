@@ -176,14 +176,12 @@ func hover_item(index: int) -> void:
 	_update_caption()
 
 
-## Give item `index`'s button the keyboard focus.
+## Highlight item `index` as if keyboard-focused (the buttons take no real GUI focus, so Space,
+## Enter and Tab stay with the board).
 func focus_item(index: int) -> void:
 	if index < 0 or index >= _buttons.size():
 		return
-	if _buttons[index].is_inside_tree():
-		_buttons[index].grab_focus()
-	else:
-		_on_focus_entered(index)
+	_on_focus_entered(index)
 
 
 ## Choose item `index` (a click or Enter on its button). A greyed item emits nothing.
@@ -333,7 +331,7 @@ func _add_button(index: int) -> void:
 	var side := BUTTON_SIZE * ui_scale
 	var b := Button.new()
 	b.name = "Item_" + item.id
-	b.focus_mode = FOCUS_ALL
+	b.focus_mode = FOCUS_NONE  # never takes Space / Enter / Tab from the board
 	b.custom_minimum_size = Vector2(side, side)
 	b.size = Vector2(side, side)
 	b.pivot_offset = Vector2(side, side) / 2.0

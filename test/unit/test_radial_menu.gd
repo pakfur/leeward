@@ -87,6 +87,22 @@ func test_caption_shows_reason_on_hover() -> void:
 	assert_eq(menu.caption_text(), "")
 
 
+func test_no_ring_control_takes_keyboard_focus() -> void:
+	var items: Array[RadialItem] = [_item("move", "", "Plot."), _item("done", "", "Done.")]
+	_open_at(items, Vector2(900, 500))
+	var stack: Array = [menu]
+	var seen := 0
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		if n is Control:
+			seen += 1
+			assert_eq(n.focus_mode, Control.FOCUS_NONE, "%s takes no focus" % n.name)
+	assert_gt(seen, 2)
+	menu.focus_item(1)
+	assert_null(menu.get_viewport().gui_get_focus_owner(), "focus_item only highlights")
+
+
 func test_caption_follows_focus() -> void:
 	var items: Array[RadialItem] = [_item("move", "", "Plot her course."), _item("done", "", "Mark her done.")]
 	_open_at(items, Vector2(900, 500))

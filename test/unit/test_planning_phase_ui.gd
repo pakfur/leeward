@@ -71,34 +71,72 @@ func test_keeping_orders_emits_nothing() -> void:
 	assert_signal_not_emitted(ui, "reset_planning_confirmed")
 
 
-func test_course_info_on_the_selected_card() -> void:
-	ui.select_ship("p2")
-	ui.set_course_info("p2", {"used": 3, "allowance": 5, "tacking": "", "steering": "Steering note", "collision": ""})
-	var card = ui.ship_list_items["p2"]
-	assert_eq(card.course_line.text, "Course: 3 of 5 MP")
-	assert_true(card.steering_label.visible)
-	assert_eq(card.steering_label.text, "Steering note")
-	assert_false(card.tacking_label.visible, "an empty note hides its line")
-	assert_false(card.collision_label.visible)
+func _bind() -> PlanChecklist:
+	var cl := PlanChecklist.new()
+	cl.begin(["p1", "p2"], {"p1": true, "p2": true})
+	ui.bind_checklist(cl)
+	return cl
 
 
-func test_course_block_hidden_for_a_ship_that_cannot_plot() -> void:
+func test_card_has_no_course_block() -> void:
 	ui.select_ship("p2")
 	var card = ui.ship_list_items["p2"]
-	assert_true(card.course_box.visible)
+	assert_null(card.find_child("CourseBlock", true, false), "no Course block")
+	assert_null(card.find_child("ResetCourseButton", true, false), "no Reset course button")
+	assert_false(ui.has_signal("reset_course_requested"), "the panel no longer asks for a course reset")
+	assert_false(card.has_signal("reset_course_pressed"))
+
+
+func test_pill_reflects_checklist() -> void:
+	var cl := _bind()
+	var pill: Button = ui.ship_list_items["p1"].pill
+	assert_true(pill.visible)
+	assert_eq(pill.text, "PLAN")
+	cl.set_done("p1", true)
+	assert_eq(pill.text, "✓ DONE")
+	assert_eq(ui.ship_list_items["p2"].pill.text, "PLAN", "the other card is untouched")
 	GameState.get_ship("p2").fouled_with = "p1"
-	card.setup(GameState.get_ship("p2"))
-	assert_false(card.course_box.visible, "a fouled ship has no course")
+	cl.refresh_movable({"p1": true, "p2": false})
+	assert_eq(ui.ship_list_items["p2"].pill.text, "LOCKED")
 	GameState.get_ship("p2").fouled_with = ""
-	card.setup(GameState.get_ship("p2"))
-	assert_true(card.course_box.visible)
 
 
-func test_reset_course_button_asks_for_that_ship() -> void:
-	ui.select_ship("p2")
+func test_pill_toggles_done() -> void:
+	var cl := _bind()
+	ui.ship_list_items["p1"].pill.pressed.emit()
+	assert_eq(cl.state("p1"), PlanChecklist.DONE)
+	ui.ship_list_items["p1"].pill.pressed.emit()
+	assert_eq(cl.state("p1"), PlanChecklist.PLAN)
+
+
+func test_locked_pill_does_not_toggle() -> void:
+	var cl := PlanChecklist.new()
+	cl.begin(["p1", "p2"], {"p1": true, "p2": false})
+	ui.bind_checklist(cl)
+	assert_true(ui.ship_list_items["p2"].pill.disabled)
+	ui.ship_list_items["p2"].pill.pressed.emit()
+	assert_eq(cl.state("p2"), PlanChecklist.LOCKED)
+
+
+func test_footer_counts_ships_in_plan() -> void:
+	var cl := _bind()
+	var label: Label = ui.still_in_plan_label
+	assert_true(label.visible)
+	assert_eq(label.text, "2 ships still in Plan sail their default course")
+	cl.set_done("p1", true)
+	assert_eq(label.text, "1 ship is still in Plan: she sails her default course")
+	cl.set_done("p2", true)
+	assert_false(label.visible, "nothing left in Plan: no note")
+	assert_false(ui.end_planning_button.disabled, "End Planning is always accepted")
+
+
+func test_card_click_asks_for_the_ring_but_code_selection_does_not() -> void:
 	watch_signals(ui)
-	ui.ship_list_items["p2"].reset_course_button.pressed.emit()
-	assert_signal_emitted_with_parameters(ui, "reset_course_requested", ["p2"])
+	ui.select_ship("p2")
+	assert_signal_not_emitted(ui, "card_clicked")
+	ui.ship_list_items["p1"].selected.emit()
+	assert_signal_emitted_with_parameters(ui, "card_clicked", ["p1"])
+	assert_eq(ui.selected_ship_id, "p1")
 
 
 func test_only_the_selected_card_is_expanded() -> void:

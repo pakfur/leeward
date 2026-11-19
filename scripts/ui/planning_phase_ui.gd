@@ -5,12 +5,13 @@ signal ship_selected(ship_id: String)
 signal end_planning_pressed()
 signal crew_overlay_requested(ship_id: String)  ## a card's "Crew & damage" button
 signal reset_planning_confirmed()  ## Cancel, confirmed: every order back to the start of the turn
-signal reset_course_requested(ship_id: String)  ## a card's "Reset course" button
+signal card_clicked(ship_id: String)  ## a card was clicked (not set by code): her ring opens on the board
 
 const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
 
 @onready var title_label: Label = %TitleLabel
 @onready var ship_list_container: VBoxContainer = %ShipListContainer
+@onready var still_in_plan_label: Label = %StillInPlanLabel
 @onready var instructions_label: Label = %InstructionsLabel
 @onready var end_planning_button: Button = %EndPlanningButton
 @onready var cancel_button: Button = %CancelButton
@@ -20,6 +21,7 @@ const ShipListItem = preload("res://scenes/ui/ship_list_item.tscn")
 var ship_list_items: Dictionary = {}  # ship_id -> ShipListItem
 var selected_ship_id: String = ""
 var ship_states: Dictionary = {}  # ship_id -> ShipState (read-only references)
+var _checklist: PlanChecklist = null  # board planning's Plan / Done checklist (view state)
 var crew_overlay_open: bool = false  # the selected card hides its summary line while the overlay is open
 
 func _ready() -> void:
@@ -71,14 +73,20 @@ func _add_ship_to_list(ship_state: ShipState) -> void:
 	list_item.setup(ship_state)
 
 	# Connect signals
-	list_item.selected.connect(func(): _on_ship_item_selected(ship_state.ship_id))
+	list_item.selected.connect(func(): _on_card_clicked(ship_state.ship_id))
 	list_item.crew_pressed.connect(func(): crew_overlay_requested.emit(ship_state.ship_id))
-	list_item.reset_course_pressed.connect(func(): reset_course_requested.emit(ship_state.ship_id))
+	list_item.pill_pressed.connect(func(): _on_pill_pressed(ship_state.ship_id))
 
 	# Track the item
 	ship_list_items[ship_state.ship_id] = list_item
 
 	ship_states[ship_state.ship_id] = ship_state
+	list_item.set_plan_state(_checklist.state(ship_state.ship_id) if _checklist != null else "")
+
+func _on_card_clicked(ship_id: String) -> void:
+	_on_ship_item_selected(ship_id)
+	card_clicked.emit(ship_id)
+
 
 func _on_ship_item_selected(ship_id: String) -> void:
 	_select_ship(ship_id)
@@ -104,7 +112,40 @@ func update_ship_display(ship_state: ShipState) -> void:
 	if ship_list_items.has(ship_state.ship_id):
 		ship_list_items[ship_state.ship_id].setup(ship_state)
 
-## The selected ship's course readout (`info`: used, allowance, tacking, steering, note, collision; "" hides a line).
-func set_course_info(ship_id: String, info: Dictionary) -> void:
-	if ship_list_items.has(ship_id):
-		ship_list_items[ship_id].set_course_info(info)
+## Follow board planning's checklist: each card's pill and the footer's "still in Plan" line.
+func bind_checklist(checklist: PlanChecklist) -> void:
+	if _checklist != null and _checklist.changed.is_connected(_refresh_plan_state):
+		_checklist.changed.disconnect(_refresh_plan_state)
+	_checklist = checklist
+	if _checklist != null:
+		_checklist.changed.connect(_refresh_plan_state)
+	_refresh_plan_state()
+
+
+func _refresh_plan_state() -> void:
+	for id in ship_list_items:
+		ship_list_items[id].set_plan_state(_checklist.state(id) if _checklist != null else "")
+	if still_in_plan_label:
+		var text := still_in_plan_text(_checklist.plan_count() if _checklist != null else 0)
+		still_in_plan_label.text = text
+		still_in_plan_label.visible = text != ""
+
+
+## The footer's note: a ship still in Plan at End Planning sails her stored (default) course.
+static func still_in_plan_text(count: int) -> String:
+	if count <= 0:
+		return ""
+	if count == 1:
+		return "1 ship is still in Plan: she sails her default course"
+	return "%d ships still in Plan sail their default course" % count
+
+
+## A pill click: Plan <-> Done; a Locked ship stays as she is.
+func _on_pill_pressed(ship_id: String) -> void:
+	if _checklist == null:
+		return
+	match _checklist.state(ship_id):
+		PlanChecklist.PLAN:
+			_checklist.set_done(ship_id, true)
+		PlanChecklist.DONE:
+			_checklist.set_done(ship_id, false)

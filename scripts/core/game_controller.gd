@@ -731,14 +731,11 @@ func _refresh_courses() -> void:
 		var options: Dictionary = GameState.phase_controller.course_options(id)  # read-only query
 		if options.is_empty():
 			# Cannot plot (fouled, grappled, struck, dismasted, a prize): no course, no stale readout.
-			if current_planning_ui and is_instance_valid(current_planning_ui):
-				current_planning_ui.set_course_info(id, {})
 			continue
 		var input := CourseView.course_input(options, ship)
 		_courses[id] = input
 		var vnh: MovementTypes.ValidNextHexes = options["valid_next"]
 		_hover_candidates[id] = CourseView.hover_candidates(vnh)
-		var info := _course_info(ship, options, ships)
 		if hex_overlay and grid:
 			if id == moving:
 				var marks: Array[Vector2i] = offered_collisions(vnh, ships, id)["marks"]
@@ -755,9 +752,7 @@ func _refresh_courses() -> void:
 			var end_world: Variant = null
 			if grid:
 				end_world = grid.axial_to_world(end_hex.x, end_hex.y)
-			board_planning.show_course(info, end_world)
-		if current_planning_ui and is_instance_valid(current_planning_ui):
-			current_planning_ui.set_course_info(id, info)
+			board_planning.show_course(_course_info(ship, options, ships), end_world)
 	if board_planning:
 		board_planning.refresh()  # a ship that can no longer plot is Locked (and leaves Move mode)
 		if moving != "" and not moving_drawn:
@@ -1076,7 +1071,7 @@ func _enter_planning_phase() -> void:
 		current_planning_ui.end_planning_pressed.connect(_on_end_planning_pressed)
 		current_planning_ui.crew_overlay_requested.connect(_open_crew_overlay)
 		current_planning_ui.reset_planning_confirmed.connect(_on_reset_planning_confirmed)
-		current_planning_ui.reset_course_requested.connect(_on_reset_course_requested)
+		current_planning_ui.card_clicked.connect(_on_planning_card_clicked)
 
 	# Load into context panel (must be done before setup to ensure @onready nodes are available)
 	if context_panel:
@@ -1085,10 +1080,17 @@ func _enter_planning_phase() -> void:
 
 	# Setup with player ships (after adding to tree so @onready nodes are initialized)
 	current_planning_ui.setup_for_player(player_0_ships)
+	current_planning_ui.bind_checklist(_board().checklist())
 	if crew_client:
 		crew_client.follow_ship(current_planning_ui.selected_ship_id)
 	# Every own ship's default course (stored before the server announced PLANNING) is on the map at once.
 	_refresh_courses()
+
+## A click on a card (not a selection made by code): her ring opens on the board.
+func _on_planning_card_clicked(ship_id: String) -> void:
+	if _board().ring_ship_id() != ship_id:
+		_board().open_ring(ship_id)
+
 
 func _on_planning_ship_selected(ship_id: String) -> void:
 	Trace.trace_log("GameController", "Planning UI: Ship selected - %s" % ship_id)
