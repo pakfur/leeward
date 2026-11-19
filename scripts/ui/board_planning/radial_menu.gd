@@ -54,6 +54,9 @@ var _safe_rect := Rect2()
 var _hovered := -1
 var _focused := -1
 var _open := false
+## A message shown in the caption in place of the item's (a refusal, a die roll's result) until
+## another item is hovered or the ring closes: {"text": String, "warn": bool}, or {}.
+var _note: Dictionary = {}
 
 var _ring: Control
 var _disc: TextureRect
@@ -82,6 +85,7 @@ func open(items: Array[RadialItem], title: String, subtitle: String) -> void:
 	_items = items.duplicate()
 	_hovered = -1
 	_focused = -1
+	_note = {}
 	_title_label.text = title
 	_title_label.visible = title != ""
 	_subtitle_label.text = subtitle
@@ -97,23 +101,29 @@ func open(items: Array[RadialItem], title: String, subtitle: String) -> void:
 	_pop_in()
 
 
-## Swaps the items of the open ring in place (a checklist change): the buttons are rebuilt with no
-## pop-in, the title and position stay, and the hovered item is hovered again.
-func refresh_items(items: Array[RadialItem]) -> void:
+## Swaps the items of the open ring in place (a checklist change, an order given): the buttons are
+## rebuilt with no pop-in, the title, position and any note stay, and the hovered item is hovered
+## again. A new `subtitle` replaces the old one when given.
+func refresh_items(items: Array[RadialItem], subtitle: Variant = null) -> void:
 	if not _open:
 		return
 	var hovered := _hovered
-	_clear_buttons()
+	var note := _note
+	_clear_buttons()  # hiding a hovered button may report a mouse exit
 	_items = items.duplicate()
-	_hovered = -1
+	_hovered = hovered if hovered < _items.size() else -1
+	_note = note
 	_focused = clampi(_focused, -1, _items.size() - 1)
+	if subtitle is String:
+		_subtitle_label.text = subtitle
+		_subtitle_label.visible = subtitle != ""
 	_layout_frame()
 	for i in _items.size():
 		_add_button(i)
 	_update_caption()
 	_place()
-	if hovered >= 0:
-		hover_item(hovered)
+	if _hovered >= 0:
+		hover_item(_hovered)  # the same item: the note stays
 
 
 func close() -> void:
@@ -124,6 +134,7 @@ func close() -> void:
 	_items.clear()
 	_hovered = -1
 	_focused = -1
+	_note = {}
 	visible = false
 	set_process(false)
 	closed.emit()
@@ -152,9 +163,19 @@ func item_count() -> int:
 	return _items.size()
 
 
-## What the caption shows now: the hovered (else focused) item's label, a newline, then its
-## `off_reason` when greyed, else its hint. "" when no item is hovered or focused.
+## Shows `text` in the caption in place of the item's (in the warning colour when `warn`) until
+## another item is hovered, the ring is reopened or it closes. "" clears it.
+func show_note(text: String, warn := false) -> void:
+	_note = {} if text == "" else {"text": text, "warn": warn}
+	if _open:
+		_update_caption()
+
+
+## What the caption shows now: the note when one is set; else the hovered (else focused) item's
+## label, a newline, then its `off_reason` when greyed, else its hint. "" when there is nothing.
 func caption_text() -> String:
+	if not _note.is_empty():
+		return _note["text"]
 	var item := _caption_item()
 	if item == null:
 		return ""
@@ -162,8 +183,10 @@ func caption_text() -> String:
 	return item.label if detail == "" else item.label + "\n" + detail
 
 
-## True when the caption shows a greyed item's reason (drawn in the warning colour).
+## True when the caption shows a greyed item's reason or a warning note (the warning colour).
 func caption_is_reason() -> bool:
+	if not _note.is_empty():
+		return _note["warn"]
 	var item := _caption_item()
 	return item != null and not item.is_enabled()
 
@@ -194,7 +217,10 @@ func item_center(index: int) -> Vector2:
 
 ## Hover item `index` (-1 = none), as the mouse does.
 func hover_item(index: int) -> void:
-	_hovered = index if index >= 0 and index < _items.size() else -1
+	var next := index if index >= 0 and index < _items.size() else -1
+	if next >= 0 and next != _hovered:
+		_note = {}  # another item: its own caption again
+	_hovered = next
 	for i in _buttons.size():
 		var grow := i == _hovered and _items[i].is_enabled()
 		_tween_scale(_buttons[i], HOVER_SCALE if grow else 1.0)
@@ -463,15 +489,23 @@ func _caption_item() -> RadialItem:
 
 func _update_caption() -> void:
 	var item := _caption_item()
-	_caption_box.visible = item != null
-	if item == null:
+	_caption_box.visible = item != null or not _note.is_empty()
+	if not _caption_box.visible:
 		return
-	_caption_title.text = item.label
-	var detail := item.hint if item.is_enabled() else item.off_reason
-	_caption_detail.text = detail
-	_caption_detail.visible = detail != ""
-	_caption_detail.add_theme_color_override("font_color",
-			CrewStyle.MUTED if item.is_enabled() else CrewStyle.WARN)
+	if not _note.is_empty():
+		_caption_title.text = _note["text"]
+		_caption_title.add_theme_color_override("font_color",
+				CrewStyle.WARN if _note["warn"] else CrewStyle.FG)
+		_caption_detail.text = ""
+		_caption_detail.visible = false
+	else:
+		_caption_title.text = item.label
+		_caption_title.add_theme_color_override("font_color", CrewStyle.FG)
+		var detail := item.hint if item.is_enabled() else item.off_reason
+		_caption_detail.text = detail
+		_caption_detail.visible = detail != ""
+		_caption_detail.add_theme_color_override("font_color",
+				CrewStyle.MUTED if item.is_enabled() else CrewStyle.WARN)
 	var width := _caption_width()
 	_caption.custom_minimum_size.x = width
 	# The labels autowrap: give them the caption's inner width now (their container sorts a frame
@@ -520,7 +554,8 @@ func _pop_in() -> void:
 
 
 func _tween_scale(b: Button, target: float) -> void:
-	var previous: Variant = b.get_meta(&"scale_tween", null)
+	# get_meta with a null default still errors on a missing key: ask first.
+	var previous: Variant = b.get_meta(&"scale_tween") if b.has_meta(&"scale_tween") else null
 	if previous is Tween and (previous as Tween).is_valid():
 		(previous as Tween).kill()
 	if not b.is_inside_tree():

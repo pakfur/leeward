@@ -251,6 +251,12 @@ func _fit_crew_overlay() -> void:
 
 ## A Developer UI command changed a ship (e.g. started a fire): redraw what shows it.
 func _on_dev_ship_changed(ship_id: String) -> void:
+	_redraw_ship(ship_id)
+
+
+## A request changed a ship (a Developer UI command, an order, a rally): her card, the crew
+## overlay, the ship views, the courses and board planning (Plan / Locked, badges) follow.
+func _redraw_ship(ship_id: String) -> void:
 	var ship_state: ShipState = GameState.get_ship(ship_id)
 	if ship_state == null:
 		return
@@ -267,6 +273,7 @@ func _on_dev_ship_changed(ship_id: String) -> void:
 func _on_crew_open_changed(on: bool) -> void:
 	if on and board_planning:
 		board_planning.close_ring()
+		board_planning.close_composer()
 		board_planning.leave_move()
 	_on_crew_changed()
 
@@ -286,7 +293,96 @@ func _board() -> BoardPlanning:
 	board_planning.reset_course_requested.connect(_on_reset_course_requested)
 	board_planning.move_mode_changed.connect(_on_move_mode_changed)
 	board_planning.ring_opened.connect(_on_ring_opened)
+	board_planning.order_toggled.connect(_on_order_toggled)
+	board_planning.rally_requested.connect(_on_rally_requested)
+	board_planning.signal_send_requested.connect(_on_signal_send_requested)
+	board_planning.signal_cancel_requested.connect(_on_signal_cancel_requested)
+	board_planning.player_id = HUMAN_PLAYER_ID
 	return board_planning
+
+
+## An Orders-ring toggle (cast the lead, declare escape, surrender): the server's request; a
+## refusal shows in the ring's caption and the ring stays open. The courses are redrawn (an escape
+## declaration changes which edge hexes Move offers; the lead, the chip box's warning), then the
+## ring and the badges re-read the orders.
+func _on_order_toggled(ship_id: String, order: String, on: bool) -> void:
+	var pc := GameState.phase_controller
+	if pc == null:
+		return
+	var reason := ""
+	match order:
+		"lead":
+			reason = pc.player_set_cast_lead(HUMAN_PLAYER_ID, ship_id, on)
+		"escape":
+			reason = pc.player_declare_escape(HUMAN_PLAYER_ID, ship_id, on)
+		"surrender":
+			reason = pc.player_surrender(HUMAN_PLAYER_ID, ship_id, on)
+		_:
+			return
+	if reason != "":
+		Trace.trace_log("GameController", "Order %s=%s for %s refused: %s" % [order, on, ship_id, reason])
+	_redraw_ship(ship_id)
+	board_planning.refresh_ring()
+	board_planning.show_note(reason, true)  # "" clears any earlier note
+
+
+## The ring's Rally (14.B.3): the server rolls the d10 at once; its RALLY event's result shows in
+## the ring's caption. A ship that rallied joins planning (Plan, her default course drawn) and her
+## ring becomes the main one; one that failed stays surrendered.
+func _on_rally_requested(ship_id: String) -> void:
+	var pc := GameState.phase_controller
+	if pc == null:
+		return
+	var first := GameState.turn_log.events.size() if GameState.turn_log else 0
+	var reason: String = pc.player_rally(HUMAN_PLAYER_ID, ship_id)
+	var note := reason
+	var passed := false
+	if reason != "":
+		Trace.trace_log("GameController", "Rally of %s refused: %s" % [ship_id, reason])
+	else:
+		var data := _rally_event_data(ship_id, first)
+		passed = bool(data.get("passed", false))
+		note = BoardPlanning.rally_caption(data) if not data.is_empty() else "Rally: no roll made"
+	_redraw_ship(ship_id)
+	board_planning.refresh_ring()
+	board_planning.show_note(note, not passed)
+
+
+## The composer's Send: the server's request; a refusal shows in the box, a sent signal shows as
+## the pending one (a new signal replaces the earlier one, 11.A.5).
+func _on_signal_send_requested(ship_id: String, address: Dictionary, text: String) -> void:
+	var pc := GameState.phase_controller
+	if pc == null:
+		return
+	var reason: String = pc.player_send_signal(HUMAN_PLAYER_ID, ship_id, address, text)
+	if reason != "":
+		Trace.trace_log("GameController", "Signal from %s refused: %s" % [ship_id, reason])
+		board_planning.show_signal_error(reason)
+		return
+	board_planning.refresh_composer(true)
+
+
+func _on_signal_cancel_requested(_ship_id: String) -> void:
+	var pc := GameState.phase_controller
+	if pc == null:
+		return
+	var reason: String = pc.player_cancel_signal(HUMAN_PLAYER_ID)
+	if reason != "":
+		board_planning.show_signal_error(reason)
+		return
+	board_planning.refresh_composer()
+
+
+## The data of `ship_id`'s RALLY event logged at or after index `first` of this turn's log, or {}.
+func _rally_event_data(ship_id: String, first: int) -> Dictionary:
+	if GameState.turn_log == null:
+		return {}
+	var events: Array = GameState.turn_log.events
+	for i in range(events.size() - 1, first - 1, -1):
+		var ev: PhaseEvents.PhaseEvent = events[i]
+		if ev.type == PhaseEvents.Type.RALLY and ev.ship_id == ship_id:
+			return ev.data
+	return {}
 
 
 ## A ship's centre on the water (from her state, not her bobbing view), or null without a map.
@@ -607,7 +703,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_center_camera_on_all_ships()
 			get_viewport().set_input_as_handled()
 			return
-		elif event.keycode == KEY_F12:
+		elif event.keycode == KEY_F12 and not (board_planning != null and board_planning.signal_composer().is_typing()):
 			_toggle_developer_ui()
 			get_viewport().set_input_as_handled()
 			return
@@ -630,8 +726,10 @@ func _board_keys_live() -> bool:
 ## it (the course wins over ships); any other click leaves Move mode, and one on another own ship
 ## opens that ship's ring. Out of Move mode no click edits a course: an own ship's click opens (or
 ## closes) her ring and selects her, an enemy's shows its status plate, open sea closes the ring.
+## Any map click closes the signal box (a click on the box itself never reaches the map).
 func _handle_planning_click(screen_pos: Vector2) -> void:
 	var board := _board()
+	board.close_composer()
 	var moving := board.move_ship_id()
 	if moving != "" and _handle_course_click(_course_hex_at(screen_pos)):
 		return
@@ -1089,6 +1187,7 @@ func _enter_planning_phase() -> void:
 
 ## A click on a card (not a selection made by code): her ring opens on the board.
 func _on_planning_card_clicked(ship_id: String) -> void:
+	_board().close_composer()
 	if _board().ring_ship_id() != ship_id:
 		_board().open_ring(ship_id)
 

@@ -98,3 +98,19 @@ func test_badge_keep_inside_clamps_to_rect() -> void:
 	var rect := Rect2(0, 0, 400, 300)
 	var p := PlanBadges.keep_inside(Vector2(-50, 500), Vector2(60, 17), rect, 4.0)
 	assert_eq(p, Vector2(4, 279))
+
+
+func test_badges_surrendered_pill_and_marks() -> void:
+	var badges := PlanBadges.new()
+	add_child_autofree(badges)
+	badges.setup(null)
+	badges.show_for({
+		"a": {"world": Vector3.ZERO, "state": PlanBadges.SURRENDERED},
+		"b": {"world": Vector3.ZERO, "state": "plan", "marks": ["surrender", "lead"]},
+	})
+	assert_eq(badges.pill_for("a").text, "SURRENDERED", "a surrendered ship's pill, not LOCKED")
+	assert_eq(badges.marks_for("a"), [] as Array[String])
+	assert_eq(badges.marks_for("b"), ["lead", "surrender"] as Array[String], "in MARK_ORDER")
+	badges.show_for({"b": {"world": Vector3.ZERO, "state": "done"}})
+	assert_eq(badges.marks_for("b"), [] as Array[String], "withdrawn orders leave no mark")
+	assert_null(badges.pill_for("a"))
