@@ -6,8 +6,8 @@ panel). Prototype: `prototypes/planning_radial/planning_radial.html` (commit 2c0
 ## Intent
 
 Planning moves out of the side panel and onto the ships. Clicking one of your ships opens a radial
-menu of what she can be ordered to do; Move lights every hex she can reach, you pick the hex and
-her facing, and a dotted route and a ghost ship show the course. Fire, after movement, works the
+menu of what she can be ordered to do; Move puts her into today's hex-by-hex course plotting on
+the map. Fire, after movement, works the
 same way on the board. The side panel becomes the place for status and the players.
 
 Why: plotting a course hex by hex and declaring fire from a side-panel list put the player's eyes
@@ -19,9 +19,8 @@ does.
 
 - A radial menu on each own ship in PLANNING and in fire declaration. Icons for every choice;
   choices that cannot be made now are greyed and say why (the server's own reasons).
-- **Move:** every reachable end hex lit under the real movement rules; pick a hex, then an arrow
-  for her facing; the route is drawn dotted and a ghost ship stands at the end; alternative routes
-  to the same hex and facing can be cycled.
+- **Move:** the ring's Move enters today's hex-by-hex course plotting for that ship (user
+  decision: no precomputed reachable hexes in this work).
 - **Plan / Done per ship** on the player's screen only (user decision): every movable own ship
   starts in Plan; Done marks her orders given; Tab goes to the next ship still in Plan. A ship
   still in Plan at End Planning sails her default course (6.G.2), and the side panel says so.
@@ -46,14 +45,11 @@ does.
 ## Anti-goals
 
 - A legal course the player could plot today must not become unplottable.
-- Lighting the reachable hexes must not stall the frame (precomputed, see Move).
 - The view never mutates game state (strict server authority); every order is a server request.
 - The greyed reasons must be the server's, never a second copy of a rule in the view.
 
 ## Decisions taken from the prototype (approved 2026-11-18)
 
-- Pick a hex, then an arrow for the facing (the shortest route's facing is chosen on the hex
-  click, so one click already sets a course).
 - An explicit Done (in the ring and in a small chip box beside the chosen hex) rather than
   finishing the move marking Done; End Planning stays a button rather than firing automatically.
 - The ring holds about six icons; rarer orders sit in a second ring under Orders.
@@ -61,9 +57,8 @@ does.
 
 ## Approach (user choice: four pieces, in order, each merged on its own)
 
-1. **Moving on the board** — server reach query and whole-course request, the radial menu,
-   Move, Plan/Done, End Planning; the old step-by-step course editing and the card's course
-   block go.
+1. **The radial menu and planning per ship** — the ring, Move into today's course plotting,
+   Plan/Done, End Planning; the card's course block goes.
 2. **Orders ring** — lead, escape, surrender, rally, signal composer.
 3. **Fire on the board** — fire radial, arcs, targets, option box, order arrows, Fire button;
    the fire declaration panel goes.
@@ -72,57 +67,16 @@ does.
 Rejected: one branch for all of it (nothing playable until the end, one huge review); fire first
 (it only makes sense once planning on the board exists).
 
-## Piece 1: Moving on the board
+## Piece 1: The radial menu and planning per ship
 
-### Server (read-only query and one request)
+**User decision 2026-11-18:** the precomputed reachable hexes, the hex-then-facing pick and the
+route choice are dropped from this work (too many edge cases to settle now). Movement is plotted
+as today, one hex at a time on the map; Move in the ring is the way into it. No server change.
 
-- `TurnPhaseController.course_reach(ship_id: String) -> Dictionary` (read-only, like
-  `course_options`): `{}` when `DefaultCourse.can_move` is false; else
-  `{"ends": Array, "max_ma": int, "min_mp": int}`. Each end is
-  `{"hex": Vector2i, "facing": int, "mp": int, "tacking": bool, "routes": Array}`; each route is
-  the step list as `DefaultCourse.as_dicts` gives it (the format `set_plotted_movement` stores).
-  - Search: depth-first from the ship's position with an empty path, asking
-    `MovementValidator.calculate_valid_moves(ship, hex, facing, path)` for the next steps at each
-    node — the same rules the plotting already uses (turning distances, tacking at MA 0, speed
-    change, blocked wind, critical MP loss, a jammed rudder, terrain and edges, towing).
-  - An end is a node whose `ValidMovesResult.can_submit` is true (no rudder-jam error and a
-    deceleration shortfall of 0; use the result's `mp_spent`, do not re-derive). The search is
-    complete and finite: `calculate_valid_moves` already returns ahead and both pivots with every
-    turn limit, and stops after a luffing end or an MA-0 turn.
-  - Each end carries `stops: String`: `"tacking"` (an MA-0 turn: its Tacking roll may fail,
-    `is_tacking_attempt`), `"irons"` (a pivot into a luffing heading ends her movement in irons),
-    `"stopped"` (a stopped ship's first-step turn ends her movement, 5.E.8), or `""`. The chip box
-    shows the matching warning.
-  - Routes to one end (hex and facing) are keyed by the full step sequence (move types and
-    positions), so two routes that share a bow track but turn at different places, and sweep the
-    stern differently, are both kept; sorted fewest MPs first, then turns as late as possible; at
-    most four kept per end. Different MP counts to the same hex and facing are routes of one end;
-    each route shows its MP count (her speed next turn depends on it).
-  - An end whose last step crosses a permitted escape edge (she leaves the map) is an end like
-    any other, drawn as an arrow over the edge from the hex she leaves; the chip box says she
-    escapes. Ends depend on her escape declaration (`_crossing_allowed`), so piece 2 refreshes
-    her reach when the declaration changes.
-  - The empty course (no move) is not an end; Reset course restores the default course.
-- `TurnPhaseController.player_set_course(player_id, ship_id, steps: Array) -> String`: the same
-  request checks as `player_extend_course` (PLANNING, commander, plan not submitted, ship able to
-  plot); walks the steps in order from the ship's position, carrying the growing path as
-  `player_extend_course` does. A stored step's `hex` is the resulting bow (unchanged for a
-  pivot), while `validate_hex_selection` takes the click hex (for a pivot, the bow's neighbour in
-  the new facing), so each step is matched against `calculate_valid_moves` by resulting hex,
-  facing and move type, and that `ValidMove`'s click hex is validated. Stores the whole course
-  with `set_plotted_movement` only if every step is valid; returns "" or the first refusal (course
-  unchanged). A test plots a course with turns of both directions and an MA-0 turn.
-- `player_extend_course` / `player_cut_course` stay (tests, AI) but the view stops using them.
+### Server
 
-### Precomputing the reachable hexes (user's suggestion)
-
-The ends depend only on the ships' positions and states at the start of PLANNING (other ships'
-plots do not count; a sail change completes later in the turn), so the view asks for every
-movable own ship's `course_reach` as PLANNING begins, one ship per frame (`CourseReachCache`,
-view), and reuses the answer when Move is chosen. A ship whose answer is not ready yet is asked
-at once. The cache is dropped when PLANNING ends and refreshed for a ship whose ability to move
-changes during planning (a rally). Performance target: `course_reach` under 50 ms for the
-largest MA in `test_fleet`; a test measures it.
+None. The view keeps using `course_options`, `player_extend_course`, `player_cut_course`,
+`player_reset_course` and `player_submit_plan` as now.
 
 ### View
 
@@ -130,32 +84,28 @@ largest MA in `test_fleet`; a test measures it.
   screen position (camera `unproject_position`, followed every frame while open), items on a
   circle; hover or focus shows the item's name and either its hint or its greyed reason under the
   ring; keyboard: Tab next ship in Plan, Space opens the ring for the selected ship, Enter Done,
-  Esc steps back (closes the ring, leaves Move, closes the option box). Icons are SVG files in
+  Esc steps back (closes the ring, leaves Move mode, closes the option box). Icons are SVG files in
   `assets/ui/radial/`.
-- Piece 1 ring: **Move**, **Crew & damage** (opens the overlay), **Orders** (greyed "coming
-  soon" until piece 2, or omitted), **Reset course** (`player_reset_course`: back to the default course stored at PLANNING start,
-  which for a stopped ship is to stay where she is; it also clears the cast lead), **Done** /
-  **Plan again**. Move is greyed with `movement_block_reason` for a ship that cannot plot.
-- **Move mode:** reachable end hexes lit on the hex overlay (a new layer), the hovered one brighter
-  with a preview route and ghost; clicking an end sends `player_set_course` with its first route
-  and shows the facing arrows (one per reachable facing at that hex) and a chip box (MP used,
-  speed next turn, "Route n of m ⟳", "another ship lies there now", ✓ Done, Keep planning).
-  Clicking an arrow or cycling the route sends `player_set_course` again. One click on a hex
-  takes the end at that hex with the fewest MPs, ties to the facing nearest her present facing.
-  Her own bow hex is lit when it is an end (a turn on the spot, or out and back): in Move mode a
-  click there picks that end; her stern hex, Esc or Done leaves Move mode.
-  **Cast the lead** (piece 2) only allows a course of 2 MP or less (`plan_errors`): when a longer
-  course is set while the lead is on, the view also sends `player_set_cast_lead(false)` and the
-  chip box says so. The dotted route
-  follows the route's bow track; the ghost is a translucent outline of the ship at the end.
-  A refused request shows its reason in the chip box.
+- Piece 1 ring: **Move**, **Crew & damage** (opens the overlay), **Orders** (omitted until piece
+  2), **Reset course** (`player_reset_course`: back to the default course stored at PLANNING
+  start, which for a stopped ship is to stay where she is; it also clears the cast lead),
+  **Done** / **Plan again**. Move is greyed with `movement_block_reason` for a ship that cannot
+  plot.
+- **Move mode** (one ship at a time): today's course editing for that ship only: her valid next
+  hexes lit (`course_options.valid_next`), a click on one extends the course
+  (`player_extend_course`), a click on her course cuts it back (`player_cut_course`). Clicking any
+  other ship, empty sea away from her course, Esc or Done leaves Move mode. A small chip box at the
+  course end shows "n of m MP", the course notes today's card Course block shows (tacking,
+  steering, collision, deceleration short), a refusal reason when a click is refused, and ✓ Done /
+  Keep planning. Outside Move mode, clicks on the map never edit a course (they select ships and
+  open rings).
 - **Plan/Done** (`PlanChecklist`, view only): badges over each own ship (PLAN amber, DONE green,
   a lock for a ship that cannot plot), the same pill on the side card (click toggles), Tab and
   Space as above. The side panel footer: End Planning (enabled as today: `plan_errors` empty) and
   a line "n ships still in Plan sail their default course".
-- Removed: `CourseClicks` step extension and course cutting by clicking the course; the card's
-  Course block (its notes move to the chip box). `CourseView` keeps drawing every own course
-  (dotted) and the default courses (faint).
+- Removed: the card's Course block (its line and notes move to the chip box; Reset course moves
+  to the ring); `CourseClicks` now routes only the Move-mode ship's clicks. `CourseView` keeps
+  drawing every own course.
 
 ## Piece 2: Orders ring
 
@@ -202,12 +152,13 @@ largest MA in `test_fleet`; a test measures it.
 ## Left to the builder
 
 - Icon art (simple, legible at 26 px, period-flavoured), radial animation and sizes.
-- Whether the facing arrows and chip box are 2D Controls following the camera or 3D overlay
-  meshes (the prototype used 2D).
-- The ghost ship's look.
+- Whether the chip and option boxes are 2D Controls following the camera (the prototype) or 3D.
 - Exact wording of hints and badges (reasons come from the server).
 
 ## Later (not this work)
+
+- Precomputed reachable hexes with a hex-then-facing pick and route choice (prototyped, set
+  aside by the user 2026-11-18).
 
 - Ship-to-ship talk in the Signal composer (11.B.3), once multiplayer exists.
 - Per-ship Done shared with teammates, if multiplayer wants it.
