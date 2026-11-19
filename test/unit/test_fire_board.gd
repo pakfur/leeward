@@ -146,6 +146,9 @@ func test_target_mode_lists_bearing_targets() -> void:
 	assert_false(listed.has("t_p"), "the port target is not in the starboard arc")
 	for t in board.targets():
 		assert_eq(int(t["range"]), int(model.targets("firer", ShipState.STARBOARD)[listed.find(t["target_id"])]["range"]))
+		# The batteries that bear on her, so the map shades only their arcs.
+		assert_eq(t["batteries"], model.battery_options_for("firer", ShipState.STARBOARD, t["target_id"]))
+		assert_false((t["batteries"] as Array).is_empty())
 	var labels := board.range_labels(GameState.fire_geometry.hex_grid)
 	assert_eq(labels.size(), 2)
 	assert_eq(labels[0]["text"], "range %d" % int(board.targets()[0]["range"]))

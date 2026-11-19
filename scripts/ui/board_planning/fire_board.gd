@@ -238,7 +238,8 @@ func targets() -> Array[Dictionary]:
 				"range": int(p.get("range", 1))})
 		return out
 	for row in model.targets(_target_ship, _target_side):
-		out.append({"target_id": row["target_id"], "name": row["name"], "range": int(row["range"])})
+		out.append({"target_id": row["target_id"], "name": row["name"], "range": int(row["range"]),
+			"batteries": model.battery_options_for(_target_ship, _target_side, row["target_id"])})
 	return out
 
 
