@@ -16,6 +16,12 @@ var _old_humans: Array[int]
 var _old_ai: Array[int]
 var _old_stub_ai: Variant
 var _selected := ""
+var _old_scenario: Dictionary
+var _old_players: Dictionary
+var _old_dice: Dice
+var _old_log: PhaseEvents.PhaseLog
+var _old_pc_turn: int
+var _old_turn: int
 
 
 func before_each() -> void:
@@ -29,6 +35,18 @@ func before_each() -> void:
 	_old_stub_ai = GameState.stub_ai
 	_old_env = GameState.environment
 	GameState.stub_ai = null
+	_old_scenario = GameState.active_scenario
+	_old_players = GameState.players
+	_old_dice = GameState.dice
+	_old_log = GameState.turn_log
+	_old_pc_turn = _pc().current_turn
+	_old_turn = GameState.current_turn
+	GameState.active_scenario = {}
+	GameState.players = {0: PlayerState.from_dict({"id": 0, "side": 0}),
+		1: PlayerState.from_dict({"id": 1, "side": 1})}
+	GameState.turn_log = PhaseEvents.PhaseLog.new()
+	_pc().current_turn = 1
+	GameState.current_turn = 1
 	GameState.environment = EnvironmentState.new()
 	GameState.environment.wind_direction = 3
 	GameState.environment.wind_speed = 3
@@ -54,6 +72,12 @@ func after_each() -> void:
 	_pc().ai_player_ids = _old_ai
 	_pc().planning_snapshot = {}
 	GameState.stub_ai = _old_stub_ai
+	GameState.active_scenario = _old_scenario
+	GameState.players = _old_players
+	GameState.dice = _old_dice
+	GameState.turn_log = _old_log
+	_pc().current_turn = _old_pc_turn
+	GameState.current_turn = _old_turn
 	GameState.environment = _old_env
 	GameState.ships.clear()
 	GameState.ships_by_side = {0: [], 1: []}
@@ -112,7 +136,7 @@ func _anchor(ship: ShipState) -> void:
 func _choose(id: String) -> void:
 	var menu := bp.radial_menu()
 	for i in menu.item_count():
-		if bp.ring_items(GameState.get_ship(bp.ring_ship_id()))[i].id == id:
+		if bp._current_items(GameState.get_ship(bp.ring_ship_id()))[i].id == id:
 			menu.choose(i)
 			return
 	fail_test("no ring item " + id)
@@ -122,7 +146,9 @@ func test_ring_items_for_movable_ship() -> void:
 	_pc()._enter_planning_phase()  # stores the default course and the planning snapshot
 	bp.begin_planning(_ships([a, b]))
 	var items := bp.ring_items(a)
-	assert_eq(_ids(items), ["move", "crew", "reset", "done"] as Array[String])
+	assert_eq(_ids(items), ["move", "crew", "orders", "signal", "reset", "done"] as Array[String])
+	assert_true(_item(items, "orders").is_enabled(), "Orders is always there")
+	assert_eq(_item(items, "signal").off_reason, BoardPlanning.SIGNAL_OFF, "the composer comes next")
 	assert_true(_item(items, "move").is_enabled(), "a movable ship may Move")
 	assert_true(_item(items, "crew").is_enabled())
 	assert_eq(_item(items, "reset").off_reason, "No course plotted: she sails her default course.",
@@ -224,7 +250,7 @@ func test_checklist_change_refreshes_the_open_ring_in_place() -> void:
 	assert_signal_not_emitted(bp, "ring_opened", "no re-open, no reselect")
 	var menu := bp.radial_menu()
 	assert_true(menu.is_open())
-	assert_eq(menu.item_count(), 4)
+	assert_eq(menu.item_count(), 6)
 	assert_eq(_ids(bp.ring_items(a))[-1], "undo")
 	assert_not_null(menu.find_child("Item_undo", true, false), "the last button is Plan again")
 
@@ -302,3 +328,205 @@ func test_end_planning_closes_everything() -> void:
 	assert_null(bp.badges().pill_for("a"))
 	assert_eq(bp.checklist().state("a"), "", "no stale checklist entries")
 	assert_false(bp.handle_key(KEY_TAB), "keys are not taken outside planning")
+
+
+# --- piece 2: the Orders ring ----------------------------------------------------------------
+
+const GameControllerScript = preload("res://scripts/core/game_controller.gd")
+const SURRENDER_ON := {"optional_rules": {"voluntary_surrender": true}}
+
+
+func _surrendered(ship: ShipState) -> void:
+	ship.status = ShipState.Status.STRUCK
+	ship.surrendered = true
+	ship.surrenders = 1
+	ship.crew_quality = "D"
+	ship.morale_rating = 4
+
+
+## A GameController (not in the tree: no map, no panel), wired as in the game.
+func _controller() -> Node:
+	var gc: Node = GameControllerScript.new()
+	autofree(gc)
+	gc.ships_container = Node3D.new()  # the ship views a redraw syncs
+	autofree(gc.ships_container)
+	return gc
+
+
+func _escape_scenario(extra := {}) -> Dictionary:
+	var s := {
+		"optional_rules": {"voluntary_surrender": true},
+		"escape": {"0": {"from_turn": 1, "edges": ["W"], "share": 0.5}},
+	}
+	s.merge(extra, true)
+	return s
+
+
+func test_orders_ring_items_follow_options() -> void:
+	GameState.active_scenario = _escape_scenario()
+	bp.begin_planning(_ships([a, b]))
+	var items := bp.orders_items(a)
+	assert_eq(_ids(items), ["lead", "escape", "surrender", "back"] as Array[String],
+		"no Rally: she has not surrendered")
+	var o: Dictionary = _pc().order_options(0, "a")
+	assert_true(_item(items, "lead").is_enabled())
+	assert_false(_item(items, "lead").on)
+	assert_true(_item(items, "escape").is_enabled())
+	var surrender := _item(items, "surrender")
+	assert_ne(surrender.off_reason, "", "crew B, no section lost: not eligible")
+	assert_eq(surrender.off_reason, o["surrender"]["error"], "the server's reason, verbatim")
+	assert_eq(surrender.off_reason, _pc().player_surrender(0, "a", true), "the request agrees")
+	assert_eq(_pc().player_set_cast_lead(0, "a", true), "")
+	var lead := _item(bp.orders_items(a), "lead")
+	assert_true(lead.on, "ordered: drawn on")
+	assert_eq(lead.label, "Cast the lead: on")
+	assert_eq(_pc().player_declare_escape(0, "a", true), "")
+	assert_true(_item(bp.orders_items(a), "escape").on)
+	_pc().players_ready[0] = true  # her plan is in: each toggle greyed with the request's reason
+	var refused := _item(bp.orders_items(a), "lead")
+	assert_ne(refused.off_reason, "")
+	assert_eq(refused.off_reason, _pc().player_set_cast_lead(0, "a", false))
+	_pc().players_ready[0] = false
+	GameState.active_scenario = {}
+	assert_eq(_ids(bp.orders_items(a)), ["lead", "back"] as Array[String],
+		"no escape edge, no 14.B: hidden, not greyed")
+
+
+func test_back_returns_to_main_ring() -> void:
+	bp.begin_planning(_ships([a, b]))
+	watch_signals(bp)
+	bp.open_ring("a")
+	_choose("orders")
+	assert_eq(bp.ring_kind(), BoardPlanning.ORDERS, "Orders opens the second ring")
+	assert_eq(bp.ring_ship_id(), "a", "for the same ship, in place")
+	assert_eq(_ids(bp._current_items(a))[-1], "back")
+	_choose("back")
+	assert_eq(bp.ring_kind(), BoardPlanning.MAIN)
+	assert_eq(bp.radial_menu().item_count(), 6)
+	_choose("orders")
+	assert_true(bp.handle_key(KEY_ESCAPE))
+	assert_eq(bp.ring_kind(), BoardPlanning.MAIN, "Esc steps back to the main ring")
+	assert_true(bp.handle_key(KEY_ESCAPE))
+	assert_false(bp.radial_menu().is_open(), "then closes it")
+	assert_signal_emit_count(bp, "ring_opened", 1, "switching rings opens no new ring")
+
+
+func test_order_items_ask_for_the_requests() -> void:
+	GameState.active_scenario = SURRENDER_ON
+	bp.begin_planning(_ships([a, b]))
+	watch_signals(bp)
+	bp.open_ring("a")
+	_choose("orders")
+	_choose("lead")
+	assert_signal_emitted_with_parameters(bp, "order_toggled", ["a", "lead", true])
+	assert_eq(_pc().player_set_cast_lead(0, "a", true), "")
+	_choose("lead")
+	assert_signal_emitted_with_parameters(bp, "order_toggled", ["a", "lead", false], 1)
+	assert_true(bp.radial_menu().is_open(), "an order keeps the ring open")
+
+
+func test_order_refusal_shows_in_the_caption() -> void:
+	GameState.active_scenario = SURRENDER_ON
+	var gc := _controller()
+	var board: BoardPlanning = gc._board()
+	board.begin_planning(_ships([a, b]))
+	board.open_ring("a")
+	board.open_orders()
+	gc._on_order_toggled("a", "surrender", true)
+	var why: String = _pc().order_options(0, "a")["surrender"]["error"]
+	assert_ne(why, "")
+	assert_eq(board.radial_menu().caption_text(), why, "the server's refusal, in the ring's caption")
+	assert_true(board.radial_menu().caption_is_reason())
+	assert_eq(board.ring_kind(), BoardPlanning.ORDERS, "the ring stays open")
+	assert_false(a.surrender_ordered)
+	board.radial_menu().hover_item(0)
+	assert_eq(board.radial_menu().caption_text().get_slice("\n", 0), "Cast the lead",
+		"hovering another item clears the note")
+
+
+func test_escape_toggle_refreshes_courses() -> void:
+	GameState.active_scenario = _escape_scenario({
+		"map_bounds": {"width": 10, "height": 10}, "terrain": {"edges": {"W": "escape"}},
+	})
+	GameState.environment.wind_direction = 0  # from the east: heading west she runs
+	a.hex_position = Vector2i(-5, 0)
+	a.facing = 3
+	a.speed = 0
+	var gc := _controller()
+	var board: BoardPlanning = gc._board()
+	board.begin_planning(_ships([a, b]))
+	board.enter_move("a")
+	assert_false(gc._courses["a"]["next_hexes"].has(Vector2i(-6, 0)), "undeclared: the edge is closed")
+	board.open_ring("a")
+	board.open_orders()
+	gc._on_order_toggled("a", "escape", true)
+	assert_true(a.escape_declared)
+	assert_true(gc._courses["a"]["next_hexes"].has(Vector2i(-6, 0)), "declared: redrawn at once")
+	assert_true(_item(board.orders_items(a), "escape").on, "the ring re-reads the order")
+	assert_eq(board.radial_menu().caption_text(), "", "no refusal, no note")
+
+
+func test_rally_result_caption() -> void:
+	GameState.active_scenario = SURRENDER_ON
+	var dice := ScriptedDice.new()
+	GameState.dice = dice
+	_surrendered(a)
+	var gc := _controller()
+	var board: BoardPlanning = gc._board()
+	board.begin_planning(_ships([a, b]))
+	assert_eq(board.checklist().state("a"), PlanChecklist.LOCKED)
+	board.open_ring("a")
+	dice.queue([2])
+	board.radial_menu().choose(0)  # Rally, her only item
+	assert_eq(board.radial_menu().caption_text(), "Rally: d10 2 against 4 — failed: crew quality now E")
+	assert_true(board.radial_menu().caption_is_reason())
+	assert_true(a.surrendered, "she stays surrendered")
+	var rally := _item(board.ring_items(a), "rally")
+	assert_ne(rally.off_reason, "")
+	assert_eq(rally.off_reason, _pc().player_rally(0, "a"), "one attempt a g-t: greyed with the reason")
+	_pc().current_turn = 2  # the next g-t
+	board.refresh_ring()
+	dice.queue([7])
+	board.radial_menu().choose(0)
+	assert_eq(board.radial_menu().caption_text(), "Rally: d10 7 against 4 — she is back in play")
+	assert_false(board.radial_menu().caption_is_reason())
+	assert_false(a.surrendered)
+	assert_eq(board.checklist().state("a"), PlanChecklist.PLAN, "she joins planning")
+	assert_true(board.radial_menu().is_open(), "the ring stays open on her")
+	assert_eq(board.ring_kind(), BoardPlanning.MAIN)
+	assert_true(_item(board.ring_items(a), "move").is_enabled(), "her main ring, Move on")
+	assert_true(gc._courses.has("a"), "her default course is drawn")
+	assert_eq(BoardPlanning.rally_caption({"roll": 1, "rating": 4, "passed": false, "breaks": true}),
+		"Rally: d10 1 against 4 — failed: she has struck for good")
+
+
+func test_surrendered_ship_ring_has_rally_only() -> void:
+	GameState.active_scenario = _escape_scenario()
+	_surrendered(a)
+	bp.begin_planning(_ships([a, b]))
+	assert_eq(bp.checklist().state("a"), PlanChecklist.LOCKED)
+	assert_eq(_ids(bp.ring_items(a)), ["rally"] as Array[String], "nothing that needs her in play")
+	assert_eq(_ids(bp.orders_items(a)), ["rally"] as Array[String])
+	assert_true(_item(bp.ring_items(a), "rally").is_enabled())
+	bp.open_ring("a")
+	assert_true(bp.radial_menu().is_open(), "her ring opens")
+	assert_eq(bp.radial_menu().subtitle_text(), "Surrendered")
+	assert_true(bp.handle_key(KEY_ESCAPE))
+	assert_false(bp.radial_menu().is_open(), "Esc closes it: there is no main ring to go back to")
+	assert_eq(bp.badges().pill_for("a").text, "SURRENDERED")
+
+
+func test_badges_show_standing_orders() -> void:
+	GameState.active_scenario = _escape_scenario()
+	bp.begin_planning(_ships([a, b]))
+	assert_eq(bp.badges().marks_for("a"), [] as Array[String])
+	assert_eq(_pc().player_set_cast_lead(0, "a", true), "")
+	assert_eq(_pc().player_declare_escape(0, "a", true), "")
+	a.surrender_ordered = true  # as player_surrender on an eligible ship
+	bp.refresh()
+	assert_eq(bp.badges().marks_for("a"), ["lead", "escape", "surrender"] as Array[String])
+	assert_eq(bp.badges().marks_for("b"), [] as Array[String])
+	assert_eq(bp.badges().pill_for("a").text, "PLAN", "the pill keeps her checklist state")
+	assert_eq(_pc().player_set_cast_lead(0, "a", false), "")
+	bp.refresh()
+	assert_eq(bp.badges().marks_for("a"), ["escape", "surrender"] as Array[String])

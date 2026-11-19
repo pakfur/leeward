@@ -1,12 +1,13 @@
 class_name BoardPlanning
 extends Node
-## Planning on the board, piece 1 (spec docs/superpowers/specs/2026-11-18-board-planning-design.md):
+## Planning on the board, pieces 1 and 2 (spec docs/superpowers/specs/2026-11-18-board-planning-design.md):
 ## the view-side coordinator GameController owns in PLANNING. It holds the local player's Plan /
-## Done checklist, the radial menu of one own ship, the map badges and the chip box of the
-## Move-mode ship, builds the ring items and reads the PLANNING keys. View only: it reads state and
-## queries the server (`course_options`, `start_of_turn_course`), never mutates either; course and
-## crew requests go through GameController (`reset_course_requested`, `crew_overlay_requested`,
-## and the course clicks it routes while `move_ship_id()` is set).
+## Done checklist, the radial menu of one own ship (her main ring, or her Orders ring), the map
+## badges and the chip box of the Move-mode ship, builds the ring items and reads the PLANNING
+## keys. View only: it reads state and queries the server (`course_options`,
+## `start_of_turn_course`, `order_options`), never mutates either; course, crew and order requests
+## go through GameController (`reset_course_requested`, `crew_overlay_requested`, `order_toggled`,
+## `rally_requested`, and the course clicks it routes while `move_ship_id()` is set).
 
 signal crew_overlay_requested(ship_id: String)
 signal reset_course_requested(ship_id: String)
@@ -14,6 +15,10 @@ signal reset_course_requested(ship_id: String)
 signal move_mode_changed(ship_id: String)
 ## A ring opened for `ship_id` (a click, Tab, Space): GameController selects her.
 signal ring_opened(ship_id: String)
+## An Orders-ring toggle: `order` is "lead", "escape" or "surrender", `on` the state asked for.
+signal order_toggled(ship_id: String, order: String, on: bool)
+## The Orders ring's Rally (14.B.3: one d10, rolled at once by the server).
+signal rally_requested(ship_id: String)
 
 const ICONS := {
 	"move": preload("res://assets/ui/radial/move.svg"),
@@ -21,7 +26,20 @@ const ICONS := {
 	"reset": preload("res://assets/ui/radial/reset.svg"),
 	"done": preload("res://assets/ui/radial/done.svg"),
 	"undo": preload("res://assets/ui/radial/undo.svg"),
+	"orders": preload("res://assets/ui/radial/orders.svg"),
+	"signal": preload("res://assets/ui/radial/signal.svg"),
+	"lead": preload("res://assets/ui/radial/lead.svg"),
+	"escape": preload("res://assets/ui/radial/escape.svg"),
+	"surrender": preload("res://assets/ui/radial/surrender.svg"),
+	"rally": preload("res://assets/ui/radial/rally.svg"),
+	"back": preload("res://assets/ui/radial/back.svg"),
 }
+## Which ring is open: the ship's main ring or her Orders ring.
+const MAIN := "main"
+const ORDERS := "orders"
+## The Signal item's greyed reason while the composer is not built yet (and the server has none).
+const SIGNAL_OFF := "Signals: coming next"
+const RALLY_HINT := "One d10 against her morale rating, rolled at once."
 const RESET_OFF := "No course plotted: she sails her default course."
 ## Fallback wording for a locked ship whose lock carries no reason of its own.
 const LOCKED_OFF := "She cannot plot movement this turn."
@@ -40,7 +58,10 @@ var _selected := Callable()  # -> String: the selected own ship (Space, Tab's st
 var _planning := false
 var _own_ids: Array = []  # the own ships in the checklist, in card order
 var _ring_ship := ""
+var _ring_kind := MAIN
 var _move_ship := ""
+## The local player, whose ships these are (the `order_options` query's player).
+var player_id := 0
 
 
 func _init() -> void:
@@ -48,7 +69,7 @@ func _init() -> void:
 	_radial = RadialMenu.new()
 	_radial.ui_scale = CrewStyle.K  # the crew overlay's scaling of prototype pixels
 	_radial.item_chosen.connect(_on_item_chosen)
-	_radial.closed.connect(func(): _ring_ship = "")
+	_radial.closed.connect(_on_ring_closed)
 	_badges = PlanBadges.new()
 	_badges.name = "PlanBadges"
 	_badges.lift = BADGE_LIFT
@@ -136,19 +157,28 @@ func refresh() -> void:
 	_checklist.refresh_movable(movable)
 	if _move_ship != "" and not movable.get(_move_ship, false):
 		leave_move()
+	_show_badges()  # a standing order (lead, escape, surrender) given or withdrawn
 
 
 # --- ring ----------------------------------------------------------------------------------------
 
-## The ring of an own ship: Move, Crew & damage, Reset course, then Done (in Plan) or Plan again
-## (Done or Locked). Greyed items carry the server's reasons.
+## The ring of an own ship: Move, Crew & damage, Orders, Signal, Reset course, then Done (in Plan)
+## or Plan again (Done or Locked). Greyed items carry the server's reasons. A surrendered ship
+## (14.B, struck) has only what does not need her in play: her Orders ring's Rally.
 func ring_items(ship: ShipState) -> Array[RadialItem]:
+	if ship.surrendered:
+		return orders_items(ship)
 	var items: Array[RadialItem] = []
 	var block := "" if PlanningSailUi.can_plot_movement(ship) else _block_reason(ship)
 	items.append(RadialItem.make("move", "Move", ICONS["move"],
 		"Plot her course hex by hex on the map.", block))
 	items.append(RadialItem.make("crew", "Crew & damage", ICONS["crew"],
 		"Crew, sails, fires, repairs and boarding (C)."))
+	items.append(RadialItem.make("orders", "Orders", ICONS["orders"],
+		"Lead, escape, surrender, rally."))
+	var signal_error := str(_order_options(ship.ship_id).get("signal", {}).get("error", ""))
+	items.append(RadialItem.make("signal", "Signal", ICONS["signal"],
+		"Send a flag signal to your squadron.", signal_error if signal_error != "" else SIGNAL_OFF))
 	items.append(RadialItem.make("reset", "Reset course", ICONS["reset"],
 		"Back to her default course.", "" if _has_own_course(ship.ship_id) else RESET_OFF))
 	if _checklist.state(ship.ship_id) == PlanChecklist.PLAN:
@@ -156,6 +186,45 @@ func ring_items(ship: ShipState) -> Array[RadialItem]:
 	else:
 		var off := _block_reason(ship) if _checklist.state(ship.ship_id) == PlanChecklist.LOCKED else ""
 		items.append(RadialItem.make("undo", "Plan again", ICONS["undo"], "Back to Plan.", off))
+	return items
+
+
+## The Orders ring (from `order_options`; items the scenario does not use are left out): Cast the
+## lead, Declare escape and Surrender (toggles, `on` when ordered), Rally, then Back. A
+## surrendered ship has Rally only.
+func orders_items(ship: ShipState) -> Array[RadialItem]:
+	var items: Array[RadialItem] = []
+	var o := _order_options(ship.ship_id)
+	if o.is_empty():
+		return items
+	var rally: Dictionary = o.get("rally", {})
+	var rally_item: RadialItem = null
+	if rally.get("shown", false):
+		rally_item = RadialItem.make("rally", "Rally", ICONS["rally"], RALLY_HINT,
+			str(rally.get("error", "")))
+	if ship.surrendered:
+		if rally_item != null:
+			items.append(rally_item)
+		return items  # nothing else is hers to order while she is struck
+	var lead: Dictionary = o.get("lead", {})
+	var lead_on: bool = lead.get("on", false)
+	items.append(RadialItem.make("lead", "Cast the lead: on" if lead_on else "Cast the lead",
+		ICONS["lead"], "Sound ahead and bear off shoal water.", str(lead.get("error", "")), lead_on))
+	var escape: Dictionary = o.get("escape", {})
+	if escape.get("shown", false):
+		var esc_on: bool = escape.get("on", false)
+		items.append(RadialItem.make("escape", "Escape declared" if esc_on else "Declare escape",
+			ICONS["escape"], "Withdraw the declaration." if esc_on else "Leave the map by an escape edge.",
+			str(escape.get("error", "")), esc_on))
+	var surrender: Dictionary = o.get("surrender", {})
+	if surrender.get("shown", false):
+		var sur_on: bool = surrender.get("on", false)
+		items.append(RadialItem.make("surrender", "Surrender ordered" if sur_on else "Surrender",
+			ICONS["surrender"], "Withdraw the order." if sur_on else "She strikes at the morale check.",
+			str(surrender.get("error", "")), sur_on))
+	if rally_item != null:
+		items.append(rally_item)
+	items.append(RadialItem.make("back", "Back", ICONS["back"], "Back to her main ring (Esc)."))
 	return items
 
 
@@ -168,9 +237,20 @@ func open_ring(ship_id: String) -> void:
 	if _safe_rect.is_valid() and is_inside_tree():
 		_radial.set_safe_rect(_safe_rect.call())
 	_radial.set_anchor_provider(_screen_point_of.bind(ship_id))
+	_ring_kind = MAIN
 	_radial.open(ring_items(ship), ship.ship_name, _subtitle(ship))
 	_ring_ship = ship_id
 	ring_opened.emit(ship_id)
+
+
+## The open ring's ship's Orders ring, in place (same anchor).
+func open_orders() -> void:
+	_switch_ring(ORDERS)
+
+
+## Back from the Orders ring to the main ring, in place.
+func back_to_main() -> void:
+	_switch_ring(MAIN)
 
 
 func close_ring() -> void:
@@ -180,6 +260,35 @@ func close_ring() -> void:
 ## The ship whose ring is open, or "".
 func ring_ship_id() -> String:
 	return _ring_ship if _radial.is_open() else ""
+
+
+## Which ring is open (MAIN or ORDERS), or "" when none is.
+func ring_kind() -> String:
+	return _ring_kind if _radial.is_open() else ""
+
+
+## Re-reads the open ring's items and subtitle in place (an order given, a rally rolled); a note
+## in the caption stays.
+func refresh_ring() -> void:
+	var ship := GameState.get_ship(ring_ship_id())
+	if ship != null:
+		_radial.refresh_items(_current_items(ship), _subtitle(ship))
+
+
+## Shows `text` in the open ring's caption (a refusal when `warn`, a rally's result).
+func show_note(text: String, warn := false) -> void:
+	_radial.show_note(text, warn)
+
+
+## The caption of a rally, from MoraleController.rally's RALLY event data (roll, rating, passed,
+## quality | breaks). Pure.
+static func rally_caption(data: Dictionary) -> String:
+	var head := "Rally: d10 %d against %d — " % [int(data.get("roll", 0)), int(data.get("rating", 0))]
+	if data.get("passed", false):
+		return head + "she is back in play"
+	if data.get("breaks", false):
+		return head + "failed: she has struck for good"
+	return head + "failed: crew quality now %s" % str(data.get("quality", ""))
 
 
 # --- Move mode -----------------------------------------------------------------------------------
@@ -260,6 +369,10 @@ func handle_key(keycode: int, backward := false) -> bool:
 				leave_move()
 				open_ring(id)
 				return true
+			var ring_ship := GameState.get_ship(ring_ship_id())
+			if ring_kind() == ORDERS and ring_ship != null and not ring_ship.surrendered:
+				back_to_main()
+				return true
 			if _radial.is_open():
 				close_ring()
 				return true
@@ -292,6 +405,33 @@ func _on_item_chosen(item_id: String) -> void:
 			close_ring()
 			leave_move()
 			_checklist.set_done(id, false)
+		"orders":
+			open_orders()
+		"back":
+			back_to_main()
+		"lead", "escape", "surrender":
+			var now: bool = _order_options(id).get(item_id, {}).get("on", false)
+			order_toggled.emit(id, item_id, not now)
+		"rally":
+			rally_requested.emit(id)
+		# "signal": the composer comes with piece 2's Task 3.
+
+
+func _on_ring_closed() -> void:
+	_ring_ship = ""
+	_ring_kind = MAIN
+
+
+func _switch_ring(kind: String) -> void:
+	var ship := GameState.get_ship(ring_ship_id())
+	if ship == null:
+		return
+	_ring_kind = kind
+	_radial.open(_current_items(ship), ship.ship_name, _subtitle(ship))
+
+
+func _current_items(ship: ShipState) -> Array[RadialItem]:
+	return orders_items(ship) if _ring_kind == ORDERS else ring_items(ship)
 
 
 func _on_chips_done() -> void:
@@ -306,7 +446,7 @@ func _on_checklist_changed() -> void:
 	if id != "":
 		var ship := GameState.get_ship(id)
 		if ship != null:
-			_radial.refresh_items(ring_items(ship))  # the Done / Plan again item follows, in place
+			_radial.refresh_items(_current_items(ship), _subtitle(ship))  # Done / Plan again follows, in place
 
 
 func _show_badges() -> void:
@@ -316,11 +456,28 @@ func _show_badges() -> void:
 		var world: Variant = _world_of.call(id) if _world_of.is_valid() else null
 		if st == "" or not (world is Vector3):
 			continue
-		entries[id] = {"world": world, "state": st}
+		var ship := GameState.get_ship(id)
+		if ship != null and ship.surrendered:
+			st = PlanBadges.SURRENDERED
+		entries[id] = {"world": world, "state": st, "marks": _standing_marks(ship)}
 	if entries.is_empty():
 		_badges.clear()
 	else:
 		_badges.show_for(entries)
+
+
+## The standing orders shown beside her pill (PlanBadges marks), read from her state.
+func _standing_marks(ship: ShipState) -> Array[String]:
+	var marks: Array[String] = []
+	if ship == null:
+		return marks
+	if ship.casts_lead():
+		marks.append(PlanBadges.MARK_LEAD)
+	if ship.escape_declared:
+		marks.append(PlanBadges.MARK_ESCAPE)
+	if ship.surrender_ordered:
+		marks.append(PlanBadges.MARK_SURRENDER)
+	return marks
 
 
 func _screen_point_of(ship_id: String) -> Variant:
@@ -355,6 +512,12 @@ func _has_own_course(ship_id: String) -> bool:
 		if s.hex != path[i].hex or s.facing != path[i].facing:
 			return true
 	return false
+
+
+func _order_options(ship_id: String) -> Dictionary:
+	if GameState.phase_controller == null:
+		return {}
+	return GameState.phase_controller.order_options(player_id, ship_id)  # read-only query
 
 
 func _course_options(ship_id: String) -> Dictionary:
