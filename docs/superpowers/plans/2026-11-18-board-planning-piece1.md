@@ -14,7 +14,7 @@
 
 - No server change. Requests used, unchanged: `player_extend_course`, `player_cut_course`, `player_reset_course`, `player_submit_plan`, `player_reset_planning`; queries `course_options`, `plan_errors`. `test_server_authority.gd` stays green.
 - Plan/Done is view state only (user decision): it never reaches the server; End Planning is `player_submit_plan` as today.
-- A ship still in Plan at End Planning sails her stored (default) course; the footer says "n ships still in Plan sail their default course" (1 ship: "1 ship is still in Plan: she sails her default course").
+- A ship still in Plan at End Planning sails the course shown (her stored course); the footer says "n ships still in Plan: they sail the course shown" (1 ship: "1 ship is still in Plan: she sails the course shown"). Controller ruling (final review M2): do not bring the old "default course" wording back.
 - Greyed ring items show the server's reason (`PlanningSailUi.movement_block_reason` / `can_plot_movement` for Move); no rule is re-encoded in the view.
 - Outside Move mode, no map click edits a course.
 - Keys in PLANNING: Tab = next own ship still in Plan (opens her ring), Space = open the ring of the selected own ship, Enter = Done for the ring's / Move-mode ship, Esc = step back (option box → Move mode → ring → nothing). C (crew overlay) and Home unchanged. Space/Enter keep their POST_COMBAT and replay meanings outside PLANNING.

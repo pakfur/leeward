@@ -33,7 +33,7 @@ func test_movement_limit_note_only_when_the_table_allows_more() -> void:
 
 func test_instructions_text() -> void:
 	assert_eq(PlanningText.instructions(),
-		"Click a ship's highlighted hexes to plot its course. Click a hex on its course to cut it back.")
+		"Click one of your ships for her orders. Choose Move to plot her course hex by hex. Tab goes to the next ship still in Plan.")
 
 
 func test_occupied_hexes_names_other_ships_only() -> void:

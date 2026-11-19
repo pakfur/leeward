@@ -57,6 +57,14 @@ text = ""
 horizontal_alignment = 1
 autowrap_mode = 2
 
+[node name="StillInPlanLabel" type="Label" parent="VBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"SecondaryLabel"
+horizontal_alignment = 1
+autowrap_mode = 2
+
 [node name="FooterRow" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 6
@@ -66,12 +74,14 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 size_flags_horizontal = 3
+focus_mode = 0
 text = "End Planning"
 
 [node name="CancelButton" type="Button" parent="VBoxContainer/FooterRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
+focus_mode = 0
 tooltip_text = "Reset every order this turn to how it was at the start of the turn"
 text = "Cancel"
 

@@ -2,10 +2,11 @@ extends PanelContainer
 ## ShipListItem - A ship's card in the planning panel. The cards are an accordion (planning panel
 ## rework C2, prototypes/planning_panel/planning_panel.html): the selected card is expanded (title,
 ## Crew & damage, then the ShipCardStatus box: hull, rigging, crew,
-## marines and guns, then the Course block); every other card is one row: health icon, name, badge, speed / MA.
+## marines and guns); every other card is one row: health icon, name, badge, speed / MA. Every card
+## carries the Plan / Done pill of board planning (the course itself is edited on the board).
 
 signal selected()
-signal reset_course_pressed()  ## the "Reset course" button: back to the 6.G.2 default course
+signal pill_pressed()  ## the Plan / Done pill: toggle (a Locked pill does nothing)
 signal crew_pressed()  ## the "Crew & damage" button: open the crew overlay for this ship
 
 @onready var ship_name_label: Label = %ShipNameLabel
@@ -26,14 +27,10 @@ var _plan: Dictionary = {}
 var normal_style: StyleBoxFlat
 var selected_style: StyleBoxFlat
 
-## The Course block under the status box (expanded card only).
-var course_box: VBoxContainer = null
-var course_line: Label = null
-var tacking_label: Label = null
-var steering_label: Label = null
-var collision_label: Label = null
-var note_label: Label = null  ## allowance change on the new heading, head to wind
-var reset_course_button: Button = null
+## The Plan / Done pill (board planning): plan, done or locked; hidden while no checklist runs.
+var pill: Button = null
+
+const PILL_TEXT := {"plan": "PLAN", "done": "✓ DONE", "locked": "LOCKED"}
 
 func _ready() -> void:
 	# Create styles
@@ -81,7 +78,7 @@ func _ready() -> void:
 	action_row = crew_button.get_parent()
 	status_box = ShipCardStatus.new()
 	action_row.add_sibling(status_box)
-	_build_course_block()
+	_build_pill(top_row)
 	if maintenance_button:
 		maintenance_button.pressed.connect(_on_maintenance_pressed)
 
@@ -120,7 +117,6 @@ func _update_display() -> void:
 		var can_move := PlanningSailUi.can_plot_movement(ship_state)
 		speed_label.tooltip_text = "Speed last turn / movement allowance this turn" if can_move \
 			else PlanningSailUi.movement_block_reason(ship_state)
-	_apply_course_visibility()
 
 	if health_icon:
 		health_icon.show_ship(ship_state)
@@ -155,18 +151,10 @@ func _apply_expanded() -> void:
 		crew_button.visible = is_selected
 	if status_box:
 		status_box.visible = is_selected
-	_apply_course_visibility()
 	if chevron_label:
 		chevron_label.visible = not is_selected
 	tooltip_text = "" if is_selected else "Select to show this ship's orders"
 	_render_status()
-
-
-## The Course block shows on the expanded card of a ship that can plot (a fouled, grappled, struck,
-## dismasted or captured ship has no course).
-func _apply_course_visibility() -> void:
-	if course_box:
-		course_box.visible = is_selected and (ship_state == null or PlanningSailUi.can_plot_movement(ship_state))
 
 
 ## The ship's crew plan (CrewTaskController.current_plan): the status box's crew and guns lines read it.
@@ -188,51 +176,48 @@ func _apply_panel_style() -> void:
 	add_theme_stylebox_override("panel", selected_style if is_selected else normal_style)
 
 
-## The Course block: "Course: n of m MP", the tacking / steering / collision notes when there are
-## any, and the Reset course button.
-func _build_course_block() -> void:
-	course_box = VBoxContainer.new()
-	course_box.name = "CourseBlock"
-	course_box.add_theme_constant_override("separation", 3)
-	course_box.mouse_filter = Control.MOUSE_FILTER_PASS
-	course_line = CrewStyle.label("Course: 0 of 0 MP", 13, CrewStyle.FG, true, false, CrewStyle.STRONG)
-	course_line.name = "CourseLine"
-	course_box.add_child(course_line)
-	tacking_label = _course_note("TackingNote", CrewStyle.WARN)
-	steering_label = _course_note("SteeringNote", CrewStyle.WARN)
-	note_label = _course_note("CourseNote", CrewStyle.WARN)
-	collision_label = _course_note("CollisionNote", CrewStyle.FIRE_TEXT)
-	reset_course_button = Button.new()
-	reset_course_button.name = "ResetCourseButton"
-	reset_course_button.text = "Reset course"
-	reset_course_button.focus_mode = Control.FOCUS_NONE
-	reset_course_button.tooltip_text = "Drop this ship's plotted course and go back to the default course"
-	reset_course_button.add_theme_stylebox_override("normal", CrewStyle.box(CrewStyle.BTN, CrewStyle.BTN_EDGE, 1, 4, 6))
-	reset_course_button.add_theme_stylebox_override("hover", CrewStyle.box(CrewStyle.PANEL_2, CrewStyle.BTN_PRIMARY_EDGE, 1, 4, 6))
-	reset_course_button.pressed.connect(func(): reset_course_pressed.emit())
-	course_box.add_child(reset_course_button)
-	status_box.add_sibling(course_box)
-	_apply_course_visibility()
+## The pill's colours follow the prototype (`.pill`): amber Plan, green Done, outlined Locked.
+func _build_pill(top_row: HBoxContainer) -> void:
+	pill = Button.new()
+	pill.name = "PlanPill"
+	pill.focus_mode = Control.FOCUS_NONE
+	pill.custom_minimum_size = Vector2(56, 0)
+	pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	pill.theme_type_variation = &"CounterLabel"
+	pill.add_theme_font_size_override("font_size", 14)
+	pill.pressed.connect(func(): pill_pressed.emit())
+	pill.visible = false
+	top_row.add_child(pill)
 
 
-func _course_note(node_name: String, color: Color) -> Label:
-	var l := CrewStyle.label("", 12, color, false, true)
-	l.name = node_name
-	l.visible = false
-	course_box.add_child(l)
-	return l
-
-
-## `info`: used, allowance, tacking, steering, note, collision; "" hides a line.
-func set_course_info(info: Dictionary) -> void:
-	if course_line == null:
+## Shows `state` (PlanChecklist.PLAN / DONE / LOCKED); "" hides the pill (no checklist running).
+func set_plan_state(state: String) -> void:
+	if pill == null:
 		return
-	course_line.text = "Course: %d of %d MP" % [int(info.get("used", 0)), int(info.get("allowance", 0))]
-	for pair in [[tacking_label, "tacking"], [steering_label, "steering"], [note_label, "note"],
-			[collision_label, "collision"]]:
-		var text := str(info.get(pair[1], ""))
-		pair[0].text = text
-		pair[0].visible = text != ""
+	pill.visible = PILL_TEXT.has(state)
+	if not pill.visible:
+		return
+	pill.text = PILL_TEXT[state]
+	var fill := Color.TRANSPARENT
+	var edge := CrewStyle.LINE
+	var ink := CrewStyle.MUTED
+	match state:
+		PlanChecklist.PLAN:
+			fill = CrewStyle.WARN
+			edge = Color("#f5cd6a")
+			ink = Color("#1b1300")
+		PlanChecklist.DONE:
+			fill = CrewStyle.OK
+			edge = Color("#8fd6a4")
+			ink = Color("#07160c")
+	for sb in ["normal", "hover", "pressed", "disabled"]:
+		pill.add_theme_stylebox_override(sb, CrewStyle.box(fill, edge, 1, 10, 4))
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_disabled_color"]:
+		pill.add_theme_color_override(c, ink)
+	pill.disabled = state == PlanChecklist.LOCKED
+	pill.tooltip_text = PlanningSailUi.movement_block_reason(ship_state) \
+		if state == PlanChecklist.LOCKED and ship_state != null \
+		else "Click to toggle Plan / Done"
 
 
 func _on_gui_input(event: InputEvent) -> void:
