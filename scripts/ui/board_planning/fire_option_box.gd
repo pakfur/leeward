@@ -101,6 +101,7 @@ func show_box(box_content: Dictionary, world: Variant = null) -> void:
 	else:
 		_number.text = ""
 		_text.text = str(box_content.get("text", ""))
+	_order.disabled = guns and not bool(box_content.get("can_fire", false))
 	_number.visible = guns
 	var note_keys := ["aim_note", "dismantling_note", "two_target"]
 	for i in note_keys.size():

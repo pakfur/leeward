@@ -686,8 +686,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# Handle keyboard shortcuts
 	if event is InputEventKey and event.pressed and not event.echo:
-		# Board planning: Tab next ship in Plan, Space the selected ship's ring, Enter Done. Only in
-		# PLANNING, so Space / Enter keep their replay and End Turn meanings below.
+		# Board planning: Tab next ship in Plan, Space the selected ship's ring, Enter Done. Live in
+		# PLANNING and the fire step (_board_keys_live), so Space / Enter keep their replay and End
+		# Turn meanings below.
 		if event.keycode in [KEY_TAB, KEY_SPACE, KEY_ENTER, KEY_KP_ENTER] and _board_keys_live():
 			if board_planning.handle_key(event.keycode, event.shift_pressed):
 				get_viewport().set_input_as_handled()
@@ -1593,6 +1594,7 @@ func _on_fire_declaration_requested() -> void:
 	# planning UI is among the freed nodes, so drop the reference and let the next turn build anew.
 	var board := _board()
 	board.begin_fire(model, player_ships)
+	_close_fire_step_panel()  # an earlier fire step's panel (no side panel frees it for us)
 	var panel := FireStepPanel.new()
 	if context_panel:
 		context_panel.set_context_title("Fire Orders")
@@ -1723,6 +1725,10 @@ func _close_fire_step() -> void:
 		board_planning.end_fire()
 	if hex_overlay:
 		hex_overlay.clear_arcs()
+	_close_fire_step_panel()
+
+
+func _close_fire_step_panel() -> void:
 	if fire_step_panel and is_instance_valid(fire_step_panel):
 		fire_step_panel.queue_free()
 	fire_step_panel = null
@@ -1754,12 +1760,24 @@ func _on_board_fire_overlay_changed(ship_id: String, side: int) -> void:
 	var ship_state := GameState.get_ship(ship_id)
 	if ship_state == null or not GameState.fire_geometry or board_planning == null:
 		return
-	if side in FireOrdersModel.ALL_SIDES:
-		# Both batteries of a broadside; a chase side is drawn from its own end (battery_arc).
-		hex_overlay.show_arc(broadside_arc(GameState.fire_geometry, ship_state, side), side)
 	var target_ids: Array = []
+	var bearing: Array[String] = []  # the batteries that bear on some target
 	for t in board_planning.fire_board().targets():
 		target_ids.append(t["target_id"])
+		for battery: String in t.get("batteries", []):
+			match battery:
+				GunneryTypes.BATTERY_FULL:
+					for b in [GunneryTypes.BATTERY_BOW, GunneryTypes.BATTERY_STERN]:
+						if not bearing.has(b):
+							bearing.append(b)
+				_:
+					if not bearing.has(battery):
+						bearing.append(battery)
+	if side in FireOrdersModel.ALL_SIDES:
+		# Only the arcs of the batteries that bear; a chase side is drawn from its own end.
+		if bearing.is_empty():
+			bearing = [GunneryTypes.BATTERY_BOW, GunneryTypes.BATTERY_STERN] as Array[String]
+		hex_overlay.show_arc(battery_arc(GameState.fire_geometry, ship_state, side, bearing), side)
 	var target_hexes := fire_target_hexes(target_ids)
 	hex_overlay.show_target_highlights(target_hexes)
 	if side >= 0 and not target_hexes.is_empty():

@@ -22,6 +22,7 @@ var _labels: Array[Dictionary] = []
 
 func setup(camera: Camera3D) -> void:
 	_camera = camera
+	set_process(false)  # on only while marks are shown
 	name = "FireMarks"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_preset(Control.PRESET_FULL_RECT)

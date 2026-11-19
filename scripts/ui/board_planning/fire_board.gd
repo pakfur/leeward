@@ -136,9 +136,10 @@ func no_shot_reason(ship_id: String) -> String:
 func pill(ship_id: String) -> Dictionary:
 	if not has_shot(ship_id):
 		return {"state": PlanBadges.NO_TARGET, "text": ""}
-	if state(ship_id) == PlanChecklist.PLAN:
-		return {"state": PlanBadges.FIRE, "text": ""}
 	var n := order_count(ship_id)
+	if state(ship_id) == PlanChecklist.PLAN:
+		# Still in Plan until Done, but confirmed orders show as a count (they are sent).
+		return {"state": PlanBadges.FIRE, "text": "FIRE · %d" % n if n > 0 else ""}
 	if n == 0:
 		return {"state": PlanBadges.NO_FIRE, "text": ""}
 	return {"state": PlanBadges.ORDERS, "text": "✓ %d ORDER%s" % [n, "" if n == 1 else "S"]}

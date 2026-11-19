@@ -13,6 +13,7 @@ extends RefCounted
 ## FireRules.limit_targets / battery_targets keep the ship within two targets. The firing rules
 ## themselves (full vs half, target cap, forced aim, ammunition range) live in FireRules.
 ##
+## (FireBoard clears that default after setup(): on the board ships start with no orders.)
 ## setup() chooses each ship's single best shot (the best broadside row, else the best chaser row;
 ## the other sides hold fire, since firing both costs the two-target modifier on each shot) and the
 ## best marine shot (7.G.2: one target at most). A ship with a marine shot but no gun shot is listed

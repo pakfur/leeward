@@ -181,7 +181,7 @@ func test_option_box_confirm_adds_order() -> void:
 	assert_eq(orders[0].target_id, "t_s")
 	assert_eq(orders[0].aim, "high")
 	assert_eq(orders[0].mgn_reduction, 2)
-	assert_eq(board.pill("firer"), {"state": PlanBadges.FIRE, "text": ""}, "still in Plan")
+	assert_eq(board.pill("firer"), {"state": PlanBadges.FIRE, "text": "FIRE · 1"}, "still in Plan, with her order count")
 	board.set_done("firer", true)
 	assert_eq(board.pill("firer"), {"state": PlanBadges.ORDERS, "text": "✓ 1 ORDER"})
 	var arrows := board.arrows(GameState.fire_geometry.hex_grid, "")
@@ -268,3 +268,14 @@ func test_struck_and_surrendering_ships_start_done() -> void:
 	_begin(["firer"])
 	assert_eq(board.pill("firer")["state"], PlanBadges.NO_TARGET)
 	assert_eq(board.no_shot_reason("firer"), FireOrdersModel.NO_SHOT_SURRENDERING)
+
+
+func test_struck_ship_starts_done_with_struck_reason() -> void:
+	var a := _armed("firer", 0, Vector2i.ZERO, 0)
+	assert_true(_place_target("t_s", ShipState.STARBOARD, range(3, 9)), "fixture")
+	a.status = ShipState.Status.STRUCK
+	_begin(["firer"])
+	assert_false(board.has_shot("firer"))
+	assert_eq(board.state("firer"), PlanChecklist.DONE)
+	assert_eq(board.pill("firer")["state"], PlanBadges.NO_TARGET)
+	assert_eq(board.no_shot_reason("firer"), FireOrdersModel.NO_SHOT_STRUCK)
