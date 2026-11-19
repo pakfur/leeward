@@ -1,7 +1,7 @@
 class_name FireOrdersModel
 extends RefCounted
-## FireOrdersModel - the fire declaration's order logic and per-ship selection state, shared by the
-## fire declaration panel and the board. View state only: it reads the eligible shots
+## FireOrdersModel - the fire declaration's order logic and per-ship selection state, used by the
+## board's fire step (FireBoard). View state only: it reads the eligible shots
 ## (GunneryCalculator.eligible_shots, MarineFireResolver.eligible_marine_shots) and the numbers
 ## (GunneryCalculator.preview_orders) through pure queries and never touches game state; the caller
 ## sends orders() / marine_orders() with player_submit_fire_orders.
@@ -623,7 +623,7 @@ func previews_if_chosen(ship_id: String, side: int, target_id: String, battery: 
 	return _preview_sides(ship_id, _apply_choice(ship_id, side, target_id, battery))
 
 
-## Every gun order, ships in setup order (what the fire panel's get_all_orders gives, as FireOrders).
+## Every gun order, ships in setup order (what the retired fire panel's get_all_orders gave, as FireOrders).
 func orders() -> Array[GunneryTypes.FireOrder]:
 	var out: Array[GunneryTypes.FireOrder] = []
 	for ship_id in _ship_order:

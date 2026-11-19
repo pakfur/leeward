@@ -10,8 +10,6 @@ extends Node
 
 # Planning phase UI
 const PlanningPhaseUI = preload("res://scenes/ui/planning_phase_ui.tscn")
-const FireDeclarationPanelScene = preload("res://scenes/ui/fire_declaration_panel.tscn")
-const FirePanelScript = preload("res://scripts/ui/fire_declaration_panel.gd")
 const CombatLogPanelScene = preload("res://scenes/ui/combat_log_panel.tscn")
 const GameOverPanelScene = preload("res://scenes/ui/game_over_panel.tscn")
 const OceanViewScript = preload("res://scripts/view/ocean_view.gd")
@@ -19,7 +17,7 @@ const PauseMenuScript = preload("res://scripts/ui/pause_menu.gd")
 const CrewOverlayScene = preload("res://scenes/ui/crew_overlay.tscn")
 const ResolutionPanelScene = preload("res://scenes/ui/resolution_panel.tscn")
 var current_planning_ui: Control = null
-var fire_panel: Control = null  # FireDeclarationPanel while fire orders are being declared
+var fire_step_panel: FireStepPanel = null  # the side panel while fire orders are given on the board
 var combat_panel: Control = null  # "Movement" / "Combat" context content while a phase plays back
 ## Movement playback has no skip: the panel must not offer one (combat playback does, in its log).
 const MOVEMENT_PLAYBACK_SKIPPABLE := false
@@ -55,6 +53,8 @@ var _replay_display_phase: int = -1  # the phase whose display copies the map sh
 var _post_events_read: int = 0  # filtered events of the turn the post-combat replay has built steps from
 
 const NO_SHOT_HEADLINE := "No broadside bears on an enemy this turn."
+## The side panel once the player's fire orders are in and other players still declare.
+const ORDERS_IN_TEXT := "Orders in — waiting for the other side"
 
 # Views (presentation layer)
 var ship_views: Dictionary = {}  # ship_id -> ShipView
@@ -406,7 +406,10 @@ func _on_ring_opened(ship_id: String) -> void:
 			and GameState.current_phase == GameState.GamePhase.PLANNING:
 		if current_planning_ui.selected_ship_id != ship_id:
 			current_planning_ui.select_ship(ship_id)
-	elif selected_ship_id != ship_id:
+		return
+	if fire_step_panel and is_instance_valid(fire_step_panel):
+		fire_step_panel.select_ship(ship_id)  # the fire step: her card expands
+	if selected_ship_id != ship_id:
 		_select_ship(ship_id)
 
 
@@ -478,6 +481,7 @@ func _leave_game() -> void:
 	_leaving = true
 	Trace.trace_log("GameController", "Leaving the game in progress")
 	_cancel_resolution_replay()  # no step reaches the server any more
+	_close_fire_step()
 	if board_planning:
 		board_planning.end_planning()
 	if playback_controller:
@@ -594,6 +598,7 @@ func _setup_scenario(scenario: Dictionary) -> void:
 ## A new game (or a Developer UI reset): one ShipView per ship the server built, replacing any old ones.
 func _on_game_started(_scenario: Dictionary) -> void:
 	_cancel_resolution_replay()
+	_close_fire_step()  # a reset mid-fire-step: nothing of it is left on the board
 	if board_planning:
 		board_planning.end_planning()  # a reset mid-ring: PLANNING's entry begins afresh
 	display_states.clear()
@@ -785,6 +790,8 @@ func _course_hex_at(screen_pos: Vector2) -> Vector2i:
 func _course_selected_id() -> String:
 	if current_planning_ui and is_instance_valid(current_planning_ui) and current_planning_ui.selected_ship_id != "":
 		return current_planning_ui.selected_ship_id
+	if fire_step_panel and is_instance_valid(fire_step_panel) and fire_step_panel.selected_ship_id != "":
+		return fire_step_panel.selected_ship_id  # the fire step's selected card (Space opens her ring)
 	return selected_ship_id
 
 ## The courses that take clicks: the Move-mode ship's only ({} out of Move mode, board planning).
@@ -1037,9 +1044,9 @@ func _ship_view_at(screen_pos: Vector2) -> ShipView:
 func _update_status_hover() -> void:
 	if not status_overlay:
 		return
-	# No status on the water while broadside arcs are shown (it would cover those hexes), or while
+	# No status on the water while a fire side's arc is shown (it would cover those hexes), or while
 	# ships are moving (it is placed from where they stand).
-	status_overlay.set_suppressed(fire_panel != null
+	status_overlay.set_suppressed(_fire_targeting()
 		or (crew_client != null and crew_client.is_open)
 		or GameState.current_phase == GameState.GamePhase.MOVEMENT_RESOLUTION)
 	# The plate carries speed and point of sail; the floating label stands in only while it is hidden.
@@ -1140,7 +1147,7 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 			hex_overlay.clear_courses()
 			hex_overlay.clear_blocked_hexes()
 	_clear_hover()
-	_close_fire_panel()
+	_close_fire_step()
 	if phase != GameState.GamePhase.POST_COMBAT:
 		_clear_end_turn_ui()
 	if phase == GameState.GamePhase.PLANNING:
@@ -1573,31 +1580,40 @@ func _on_fire_declaration_requested() -> void:
 	var ship_ids: Array = []
 	for ship in player_ships:
 		ship_ids.append(ship.ship_id)
-
-	var panel: Control = FireDeclarationPanelScene.instantiate()
-	# The context panel parents the new content and frees the old; the cached planning UI is
-	# among the freed nodes, so drop the reference and let the next turn build a fresh one.
+	var model := FireOrdersModel.new()
+	model.setup(ship_ids)
+	if model.ships_with_shots().is_empty():
+		# Nothing to declare (only the enemy has a shot): explain why, then pass.
+		Trace.trace_log("GameController", "No eligible shots for player 0 - submitting empty fire orders")
+		_show_combat_panel(_no_shot_lines(player_ships))
+		_submit_fire_orders([])
+		return
+	# The orders are given on the board (fire ring, target mode, option box); the side panel holds
+	# the cards, the hold-fire line and Fire. The context panel frees the old content; the cached
+	# planning UI is among the freed nodes, so drop the reference and let the next turn build anew.
+	var board := _board()
+	board.begin_fire(model, player_ships)
+	var panel := FireStepPanel.new()
 	if context_panel:
 		context_panel.set_context_title("Fire Orders")
 		context_panel.set_context_content(panel)
 	else:
 		add_child(panel)
 	current_planning_ui = null
-	fire_panel = panel
+	fire_step_panel = panel
 	panel.fire_pressed.connect(_on_fire_pressed)
-	panel.ship_focused.connect(_refresh_fire_overlay)
-	panel.selection_changed.connect(_refresh_fire_overlay)
-
-	if panel.setup(ship_ids) == 0:
-		# Nothing to declare (only the enemy has a shot): explain why, then pass.
-		Trace.trace_log("GameController", "No eligible shots for player 0 - submitting empty fire orders")
-		_close_fire_panel()
-		_show_combat_panel(_no_shot_lines(player_ships))
-		_submit_fire_orders([])
-		return
+	panel.card_clicked.connect(_on_fire_card_clicked)
+	panel.crew_overlay_requested.connect(_open_crew_overlay)
+	panel.setup(player_ships, board.fire_board())
 	if combat_log_panel:
 		combat_log_panel.auto_expand(false)  # keep the arcs and targets visible
-	# setup() focused the first ship, which drew its arcs and framed it with its targets.
+
+
+## A fire-step card click: her fire ring opens on the board (as a click on her ship does).
+func _on_fire_card_clicked(ship_id: String) -> void:
+	if board_planning and board_planning.is_firing() and board_planning.ring_ship_id() != ship_id:
+		board_planning.leave_target_mode()
+		board_planning.open_ring(ship_id)
 
 
 ## "No broadside bears..." plus one no-shot line per own ship (the same wording the fire panel uses
@@ -1606,7 +1622,7 @@ func _no_shot_lines(own_ships: Array) -> Array[String]:
 	var lines: Array[String] = [NO_SHOT_HEADLINE]
 	var grid: HexGrid = GameState.fire_geometry.hex_grid if GameState.fire_geometry else null
 	for ship: ShipState in own_ships:
-		lines.append(FirePanelScript.no_shot_line(ship.ship_name, FireOrdersModel.ship_no_shot_reason(
+		lines.append(FireText.no_shot_line(ship.ship_name, FireOrdersModel.ship_no_shot_reason(
 			ship, GameState.get_all_ships(), GameState.gunnery_calculator, grid)))
 	return lines
 
@@ -1655,48 +1671,67 @@ func _show_phase_panel(title: String, node_name: String, lines: Array[String], h
 	combat_panel = box
 
 
-func _on_fire_pressed(orders: Array) -> void:
-	var panel := fire_panel
-	var marine_orders: Array = []
-	if panel:
-		panel.fire_button.disabled = true  # no double submit while the server decides
-		marine_orders = panel.get_marine_orders()
+## Fire (the fire step's side panel): the board's orders go to the server. An option box still
+## open is confirmed first, as ✓ Order would: its draft is already in the model, so the Fire
+## button's text, the arrows and the number shown all counted it, and what is sent is what was
+## shown. A refusal shows in the footer and the step stays; once accepted the step is over and,
+## while others still declare, the side panel says the orders are in.
+func _on_fire_pressed() -> void:
+	var panel := fire_step_panel
+	if panel == null or board_planning == null or not board_planning.is_firing():
+		return
+	var fire := board_planning.fire_board()
+	if fire.box_open():
+		fire.confirm_box()
+	var orders: Array = fire.model.order_dicts()
+	var marine_orders: Array = fire.model.marine_orders()
+	panel.set_sending()  # no double submit while the server decides
 	var reason := _submit_fire_orders(orders, marine_orders)
 	if reason != "":
-		# Rejected: the panel stays open (re-enabled) with the reason.
-		if is_instance_valid(panel) and panel == fire_panel:
+		if is_instance_valid(panel) and panel == fire_step_panel:
 			panel.show_error(reason)
 		return
-	# Accepted: the declare step is over, so the panel must not stay interactive.
-	_close_fire_panel()
+	# Accepted: the declare step is over (when the submit completed the declarations, combat has
+	# already resolved inside it and closed the step on combat_log_ready).
+	_close_fire_step()
 	_show_orders_while_declaring(orders, marine_orders.size())
 
 
-## "Your orders: ..." in the side panel while the other players still declare. When the submit
-## completed the declarations, combat has already resolved inside it and the resolution replay (or a
-## later phase) holds the side panel: it is not replaced.
+## "Orders in — waiting for the other side" and "Your orders: ..." in the side panel while the other
+## players still declare. When the submit completed the declarations, combat has already resolved
+## inside it and the resolution replay (or a later phase) holds the side panel: it is not replaced.
 func _show_orders_while_declaring(orders: Array, marine_count: int) -> void:
 	var pc := GameState.phase_controller
 	if pc == null or pc.current_phase != TurnPhaseController.GamePhase.COMBAT_RESOLUTION \
 			or pc.combat_step != TurnPhaseController.CombatStep.DECLARE:
 		return
-	var lines: Array[String] = [orders_summary_line(orders, marine_count)]
+	var lines: Array[String] = [ORDERS_IN_TEXT, orders_summary_line(orders, marine_count)]
 	_show_combat_panel(lines)
 
 
 ## "Your orders: Fire 2 half broadsides." for the accepted order dictionaries (a split side is two
 ## half broadsides, not two broadsides).
 static func orders_summary_line(orders: Array, marine_count: int = 0) -> String:
-	return "Your orders: %s." % FirePanelScript.fire_button_text_with_marines(orders, marine_count)
+	return "Your orders: %s." % FireText.fire_button_text_with_marines(orders, marine_count)
 
 
-## Remove the fire panel (if any) and its arcs. Safe to call on any path out of the declare step.
-func _close_fire_panel() -> void:
+## The fire step is over (Fire accepted, the combat replay, a phase change, game over, a new game,
+## leaving): the board's fire ring, option box (its draft put back), target mode, pills and arrows
+## go, then the arcs and the side panel. Safe to call on any path, more than once.
+func _close_fire_step() -> void:
+	if board_planning:
+		board_planning.end_fire()
 	if hex_overlay:
 		hex_overlay.clear_arcs()
-	if fire_panel and is_instance_valid(fire_panel):
-		fire_panel.queue_free()
-	fire_panel = null
+	if fire_step_panel and is_instance_valid(fire_step_panel):
+		fire_step_panel.queue_free()
+	fire_step_panel = null
+
+
+## The board's fire step has a side picking a target (its arc shaded, the targets ringed).
+func _fire_targeting() -> bool:
+	return board_planning != null and board_planning.is_firing() \
+		and board_planning.fire_board().target_ship() != ""
 
 
 ## Returns "" when the server accepted the orders, otherwise its rejection reason.
@@ -1706,35 +1741,6 @@ func _submit_fire_orders(orders: Array, marine_orders: Array = []) -> String:
 		return GameState.phase_controller.player_submit_fire_orders(HUMAN_PLAYER_ID, orders, marine_orders)
 	push_warning("Client fire submission not yet implemented - needs network layer")
 	return "fire orders can only be submitted on the server"
-
-
-func _refresh_fire_overlay(ship_id: String) -> void:
-	if not hex_overlay or not fire_panel or not GameState.fire_geometry:
-		return
-	var ship_state := GameState.get_ship(ship_id)
-	if ship_state == null:
-		return
-	hex_overlay.clear_arcs()
-	var geometry: FireGeometry = GameState.fire_geometry
-	for side in FireOrdersModel.ALL_SIDES:
-		# The chosen batteries' arc is highlighted (rim); the rest of the broadside's arc is faint.
-		# A chaser's arc (sides 2 and 3) is drawn from its own end, rimmed while it fires.
-		var whole := broadside_arc(geometry, ship_state, side)
-		var batteries: Array[String] = fire_panel.get_batteries(ship_id, side)
-		if batteries.is_empty():
-			# A chaser holding fire keeps its arc on the map, faint (fill only); a broadside as before.
-			hex_overlay.show_arc(whole, side, not GunneryTypes.is_chase_side(side))
-			continue
-		var chosen := battery_arc(geometry, ship_state, side, batteries)
-		var rest: Array[Vector2i] = []
-		for h in whole:
-			if not chosen.has(h):
-				rest.append(h)
-		hex_overlay.show_arc(chosen, side)
-		hex_overlay.show_arc(rest, side, false)
-	var target_hexes := fire_target_hexes(fire_panel.get_target_ids(ship_id))
-	hex_overlay.show_target_highlights(target_hexes)
-	_frame_fire_view(ship_state, target_hexes)
 
 
 ## The board's fire step (BoardPlanning.fire_overlay_changed): in target mode the side's arc is
@@ -1754,7 +1760,10 @@ func _on_board_fire_overlay_changed(ship_id: String, side: int) -> void:
 	var target_ids: Array = []
 	for t in board_planning.fire_board().targets():
 		target_ids.append(t["target_id"])
-	hex_overlay.show_target_highlights(fire_target_hexes(target_ids))
+	var target_hexes := fire_target_hexes(target_ids)
+	hex_overlay.show_target_highlights(target_hexes)
+	if side >= 0 and not target_hexes.is_empty():
+		_frame_fire_view(ship_state, target_hexes)  # the ship and the targets she may pick on screen
 
 
 ## The hexes to outline for the chosen fire targets: both the bow and the stern hex of each.
@@ -1821,7 +1830,7 @@ func _map_safe_rect() -> Rect2:
 
 @warning_ignore("shadowed_global_identifier")
 func _on_combat_log_ready(log: PhaseEvents.PhaseLog) -> void:
-	_close_fire_panel()
+	_close_fire_step()
 	if _combat_playback_active:
 		return  # already playing this exchange
 	_combat_playback_active = true
@@ -2246,7 +2255,7 @@ func _on_game_over(result: Dictionary) -> void:
 	_replay_saved_view = {}  # the final position is framed below instead
 	if combat_log_panel:
 		combat_log_panel.clear_reveal_limit()
-	_close_fire_panel()
+	_close_fire_step()
 	_clear_end_turn_ui()
 	_deselect_ship()
 	_sync_all_views()

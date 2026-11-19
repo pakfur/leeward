@@ -33,7 +33,6 @@ const ICONS := {
 	"done": preload("res://assets/ui/radial/done.svg"),
 	"undo": preload("res://assets/ui/radial/undo.svg"),
 }
-const FirePanel = preload("res://scripts/ui/fire_declaration_panel.gd")
 ## The muskets' arrow colour (prototype --marine).
 const MUSKET_COLOR := Color("#e8d27a")
 ## Arrows of ships other than the one whose ring or target mode is open.
@@ -350,7 +349,7 @@ func _restore_box() -> void:
 
 
 ## What the option box shows, from the model (every number from order_previews, every wording from
-## the fire panel's statics). Guns: {kind "guns", title, batteries [{id, label, on}], high,
+## FireText). Guns: {kind "guns", title, batteries [{id, label, on}], high,
 ## low_off, aim_note, dismantling, dismantling_off, dismantling_note, reduction, number, can_fire,
 ## breakdown, modifiers, two_target}; marines: {kind "marines", title, text}. {} when closed.
 func box_content() -> Dictionary:
@@ -366,7 +365,7 @@ func box_content() -> Dictionary:
 	if side == MARINES:
 		var mp := _marine_preview(ship_id, target_id)
 		return {"kind": "marines", "title": "%s → %s · range %d" % [ship_name, target_name, int(mp.get("range", 1))],
-			"text": FirePanel.marine_option_text(_name(target_id), mp)}
+			"text": FireText.marine_option_text(_name(target_id), mp)}
 	var battery := box_battery()
 	var p: GunneryTypes.ShotPreview = model.order_previews().get(
 		FireOrdersModel.order_key(ship_id, side, target_id, battery))
@@ -376,31 +375,31 @@ func box_content() -> Dictionary:
 	var chips: Array[Dictionary] = []
 	if options.size() > 1 or (not options.is_empty() and options[0] not in [GunneryTypes.BATTERY_FULL, GunneryTypes.BATTERY_CHASE]):
 		for b in options:
-			chips.append({"id": b, "label": FirePanel.battery_label(b), "on": b == battery})
+			chips.append({"id": b, "label": FireText.battery_label(b), "on": b == battery})
 	var st := model.side_state(ship_id, side)
 	var high_only := p != null and p.high_only
 	var limits: Array = p.aim_limits if p else []
-	var lines: Array[String] = FirePanel.modifier_lines(p) if p else ([] as Array[String])
+	var lines: Array[String] = FireText.modifier_lines(p) if p else ([] as Array[String])
 	var out := {"kind": "guns", "title": "%s → %s · range %d" % [ship_name, target_name, range_hexes],
 		"batteries": chips,
 		"high": p != null and p.order.aim == GunneryTypes.AIM_HIGH,
 		"low_off": high_only,
-		"aim_note": FirePanel.aim_note(high_only, limits, ship.crew_quality if ship else ""),
+		"aim_note": FireText.aim_note(high_only, limits, ship.crew_quality if ship else ""),
 		"dismantling": p != null and p.order.ammo == GunneryTypes.AMMO_DISMANTLING,
 		"dismantling_off": chase or not FireRules.dismantling_allowed(range_hexes),
-		"dismantling_note": FirePanel.CHASE_AMMO_NOTE if chase
-			else FirePanel.dismantling_note(range_hexes, bool(st.get("want_dismantling", false))),
+		"dismantling_note": FireText.CHASE_AMMO_NOTE if chase
+			else FireText.dismantling_note(range_hexes, bool(st.get("want_dismantling", false))),
 		"reduction": model.reduction(ship_id, side, target_id, battery) if battery != "" else 0,
 		"number": p.mgn if p else 0,
 		"can_fire": p != null and p.can_fire,
-		"breakdown": FirePanel.breakdown_text(p) if p and p.can_fire else (p.reason if p else ""),
+		"breakdown": FireText.breakdown_text(p) if p and p.can_fire else (p.reason if p else ""),
 		"modifiers": lines,
 		"two_target": ""}
 	if model.target_ids(ship_id).size() > 1 and DataManager.combat_tables:
 		var with_chaser := false
 		for o in model.ship_orders(ship_id):
 			with_chaser = with_chaser or o.battery == GunneryTypes.BATTERY_CHASE
-		out["two_target"] = FirePanel.two_target_note(DataManager.combat_tables.flat_modifier("two_targets"),
+		out["two_target"] = FireText.two_target_note(DataManager.combat_tables.flat_modifier("two_targets"),
 			with_chaser)
 	return out
 

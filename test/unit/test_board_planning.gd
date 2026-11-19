@@ -65,6 +65,7 @@ func before_each() -> void:
 
 
 func after_each() -> void:
+	_pc().combat_step = TurnPhaseController.CombatStep.NONE
 	_pc().current_phase = _old_phase
 	GameState.current_phase = _old_gs_phase
 	_pc().players_ready = _old_ready
@@ -839,3 +840,189 @@ func _live(node: Node) -> int:
 		if not c.is_queued_for_deletion():
 			n += 1
 	return n
+
+
+# --- the fire step in the game (piece 3, Task 3) ---------------------------------------------------
+
+## A context panel that keeps what it is given (in the tree, so the fire step's cards are built).
+class StubContextPanel extends Control:
+	var contents: Array = []
+
+	func set_context_title(_t: String) -> void:
+		pass
+
+	func set_context_content(node: Control) -> void:
+		for old in contents:
+			if is_instance_valid(old) and old != node:
+				old.queue_free()
+		contents.append(node)
+		if node.get_parent() == null:
+			add_child(node)
+
+
+## A GameController whose fire submit is recorded and answered with `reply` (the server's part is
+## covered by the phase controller's own tests).
+class RecordingController extends "res://scripts/core/game_controller.gd":
+	var sent: Array = []
+	var reply := ""
+
+	func _submit_fire_orders(orders: Array, marine_orders: Array = []) -> String:
+		sent.append({"orders": orders, "marine_orders": marine_orders})
+		return reply
+
+
+## The fire declaration step as the game opens it: _begin_fire's ships (a: two starboard targets
+## and one to port; b: no shot), the side panel in a stub context panel.
+func _fire_step() -> Array:
+	_pc().current_phase = TurnPhaseController.GamePhase.COMBAT_RESOLUTION
+	_pc().combat_step = TurnPhaseController.CombatStep.DECLARE
+	GameState.current_phase = GameState.GamePhase.COMBAT_RESOLUTION
+	b.hex_position = Vector2i(-12, -10)
+	b.plotted_sections = [0, 1, 2, 3] as Array[int]
+	assert_true(_place_enemy("e0", a, ShipState.STARBOARD, range(3, 9)), "fixture")
+	assert_true(_place_enemy("e1", a, ShipState.STARBOARD, range(3, 9)), "fixture")
+	assert_true(_place_enemy("ep", a, ShipState.PORT, range(-3, -9, -1)), "fixture")
+	var ctx := StubContextPanel.new()
+	add_child_autofree(ctx)
+	var gc: Node = RecordingController.new()
+	autofree(gc)
+	gc.ships_container = Node3D.new()
+	autofree(gc.ships_container)
+	gc.context_panel = ctx
+	gc._on_fire_declaration_requested()
+	bp = gc.board_planning
+	return [gc, ctx]
+
+
+func test_fire_step_opens_on_the_board() -> void:
+	var setup := _fire_step()
+	var gc: Node = setup[0]
+	var ctx: StubContextPanel = setup[1]
+	assert_true(bp.is_firing(), "the board runs the step")
+	var panel: FireStepPanel = gc.fire_step_panel
+	assert_not_null(panel)
+	assert_eq(ctx.contents[-1], panel, "the side panel shows the fire step")
+	assert_eq(panel.item("a").pill.text, "FIRE")
+	assert_eq(panel.item("b").pill.text, "NO TARGET")
+	assert_true(panel.item("b").pill.disabled, "no shot: nothing to toggle")
+	assert_eq(panel.hold_fire_label.text, "1 ship has no fire orders: she holds fire")
+	assert_eq(panel.fire_button.text, "Hold all fire")
+	assert_eq(panel.selected_ship_id, "a", "the first ship with a shot")
+	panel.item("a").pill_pressed.emit()
+	assert_eq(bp.fire_board().state("a"), PlanChecklist.DONE, "the card's pill toggles Plan / Done")
+	assert_eq(panel.item("a").pill.text, "NO FIRE")
+	panel.item("a").selected.emit()
+	assert_eq(bp.ring_ship_id(), "a", "a card click opens her fire ring")
+
+
+func test_fire_button_sends_model_orders() -> void:
+	var setup := _fire_step()
+	var gc: Node = setup[0]
+	var ctx: StubContextPanel = setup[1]
+	var panel: FireStepPanel = gc.fire_step_panel
+	bp.enter_target_mode("a", ShipState.PORT)  # one target: the box opens at once
+	bp.option_box().order_button().pressed.emit()
+	assert_eq(panel.fire_button.text, "Fire 1 broadside", "the button counts the orders")
+	assert_false(panel.hold_fire_label.visible, "no ship with a shot holds fire")
+	bp.enter_target_mode("a", ShipState.STARBOARD)
+	bp.pick_target("e0")  # a draft in an open box: the button already counts it
+	var sent := bp.fire_board().model.order_dicts()
+	assert_eq(sent.size(), 2, "the draft is in the model")
+	assert_eq(panel.fire_button.text, "Fire 2 broadsides")
+	panel.fire_button.pressed.emit()
+	assert_eq(gc.sent.size(), 1)
+	assert_eq(gc.sent[0]["orders"], sent, "what the button said, as dictionaries: the open box is confirmed")
+	assert_eq(gc.sent[0]["orders"][0]["side"], ShipState.PORT)
+	assert_eq(gc.sent[0]["orders"][1]["side"], ShipState.STARBOARD)
+	assert_eq(gc.sent[0]["marine_orders"], [])
+	assert_false(bp.is_firing(), "accepted: the step is over")
+	assert_false(bp.option_box().is_open())
+	assert_null(gc.fire_step_panel)
+	var shown: Control = ctx.contents[-1]
+	assert_eq(shown.name, "CombatPanel", "while others declare")
+	assert_eq((shown.get_child(0) as Label).text, GameControllerScript.ORDERS_IN_TEXT)
+	assert_eq((shown.get_child(1) as Label).text, "Your orders: Fire 2 broadsides.")
+	_pc().combat_step = TurnPhaseController.CombatStep.NONE
+
+
+func test_refusal_keeps_the_step() -> void:
+	var setup := _fire_step()
+	var gc: Node = setup[0]
+	var panel: FireStepPanel = gc.fire_step_panel
+	gc.reply = "more than two targets"
+	bp.enter_target_mode("a", ShipState.PORT)
+	bp.option_box().order_button().pressed.emit()
+	panel.fire_button.pressed.emit()
+	assert_eq(gc.sent.size(), 1)
+	assert_true(bp.is_firing(), "refused: the step stays")
+	assert_eq(gc.fire_step_panel, panel)
+	assert_true(panel.error_label.visible)
+	assert_eq(panel.error_label.text, "more than two targets", "the reason in the footer")
+	assert_false(panel.fire_button.disabled, "Fire again")
+	assert_eq(bp.fire_board().model.orders().size(), 1, "the orders are kept")
+	_pc().combat_step = TurnPhaseController.CombatStep.NONE
+
+
+func test_fire_step_closed_by_replay() -> void:
+	var setup := _fire_step()
+	var gc: Node = setup[0]
+	var ctx: StubContextPanel = setup[1]
+	bp.open_ring("a")
+	bp.enter_target_mode("a", ShipState.PORT)  # the box opens with a draft
+	assert_true(bp.option_box().is_open())
+	var model := bp.fire_board().model
+	var combat_log := PhaseEvents.PhaseLog.new()
+	combat_log.turn = 9999  # never a stored turn: events_for reads this log
+	var events: Array[PhaseEvents.PhaseEvent] = [PhaseEvents.PhaseEvent.new(PhaseEvents.Type.FIRE,
+		TurnPhaseController.GamePhase.COMBAT_RESOLUTION, "a", {}, "ep")]
+	combat_log.events = events
+	GameState.turn_log = combat_log
+	_pc().combat_step = TurnPhaseController.CombatStep.RESOLVE
+	gc._on_combat_log_ready(combat_log)
+	assert_false(bp.is_firing(), "the replay ends the step")
+	assert_false(bp.option_box().is_open())
+	assert_false(bp.radial_menu().is_open())
+	assert_eq(bp.fire_board().target_ship(), "")
+	assert_null(bp.badges().pill_for("a"))
+	assert_eq(bp.fire_marks().arrow_data().size(), 0)
+	assert_eq(model.orders().size(), 0, "the unconfirmed draft is put back")
+	assert_null(gc.fire_step_panel)
+	assert_true(ctx.contents[-1] is ResolutionPanel, "the combat replay holds the side panel")
+	gc._cancel_resolution_replay()
+	_pc().combat_step = TurnPhaseController.CombatStep.NONE
+
+
+func test_fire_step_closed_on_leaving_and_twice() -> void:
+	var setup := _fire_step()
+	var gc: Node = setup[0]
+	gc.back_to_scenarios_requested.connect(func() -> void: pass)
+	bp.enter_target_mode("a", ShipState.PORT)
+	gc._leave_game()
+	assert_false(bp.is_firing(), "leaving ends the step")
+	assert_false(bp.option_box().is_open())
+	assert_null(gc.fire_step_panel)
+	gc._close_fire_step()  # as every other path does: twice is harmless
+	assert_false(bp.is_firing())
+	_pc().combat_step = TurnPhaseController.CombatStep.NONE
+
+
+func test_fire_step_with_no_shot_passes() -> void:
+	_pc().current_phase = TurnPhaseController.GamePhase.COMBAT_RESOLUTION
+	GameState.current_phase = GameState.GamePhase.COMBAT_RESOLUTION
+	var ctx := StubContextPanel.new()
+	add_child_autofree(ctx)
+	var gc: Node = RecordingController.new()
+	autofree(gc)
+	gc.context_panel = ctx
+	gc._on_fire_declaration_requested()  # no enemy: no ship of ours has a shot
+	assert_eq(gc.sent.size(), 1, "empty orders sent at once")
+	assert_eq(gc.sent[0]["orders"], [])
+	assert_null(gc.fire_step_panel)
+	assert_true(gc.board_planning == null or not gc.board_planning.is_firing())
+	assert_eq(ctx.contents[-1].name, "CombatPanel", "the no-shot lines")
+
+
+func test_hold_fire_text() -> void:
+	assert_eq(FireStepPanel.hold_fire_text(0), "")
+	assert_eq(FireStepPanel.hold_fire_text(1), "1 ship has no fire orders: she holds fire")
+	assert_eq(FireStepPanel.hold_fire_text(3), "3 ships have no fire orders: they hold fire")

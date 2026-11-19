@@ -1,8 +1,6 @@
 extends GutTest
 ## Tests for FireOrdersModel: the fire declaration's order logic (moved from the fire panel's tests)
-## and its per-ship selection state, which the fire panel and the board both drive.
-
-const FirePanel = preload("res://scripts/ui/fire_declaration_panel.gd")
+## and its per-ship selection state, which the board's fire step drives.
 
 
 func _preview(range_hexes: int, mgn: int) -> GunneryTypes.ShotPreview:
@@ -522,6 +520,8 @@ func test_marine_only_ship_is_listed_with_its_marine_target() -> void:
 	assert_eq(marine_rows.size(), 1)
 	assert_eq(marine_rows[0]["target_id"], "foe")
 	assert_eq(model.marine_orders(), [{"ship_id": "firer", "target_id": "foe"}])
+	assert_eq(GameState.marine_fire_resolver.validate_orders(0, model.marine_orders()), "",
+		"the marine orders pass the server's validation")
 	assert_true(model.select_marine_target("firer", ""))
 	assert_eq(model.marine_orders(), [])
 	assert_false(model.select_marine_target("firer", "nobody"), "not a marine target")
@@ -584,73 +584,76 @@ func test_ship_orders_and_batteries() -> void:
 	assert_true(model.targets_changed())
 
 
-## Drives the panel and a model through the same choices: their orders and marine orders are equal.
-func _drive(panel: Control, model: FireOrdersModel, steps: Array) -> void:
+## One order dictionary as player_submit_fire_orders takes it (FireOrder.to_dict).
+func _o(side: int, target_id: String, battery: String, aim := "low", ammo := "round", reduction := 0) -> Dictionary:
+	return {"ship_id": "firer", "side": side, "target_id": target_id, "battery": battery, "aim": aim,
+		"ammo": ammo, "mgn_reduction": reduction}
+
+
+## Drives a model through `steps`, each [choice..., expected order_dicts, expected marine_orders].
+func _drive(model: FireOrdersModel, steps: Array) -> void:
 	for step: Array in steps:
 		match str(step[0]):
 			"choose":
-				panel.select_target("firer", step[1], step[2], step[3])
 				model.choose("firer", step[1], step[2], step[3])
 			"high":
-				panel.set_want_high("firer", step[1], step[2])
 				model.set_high("firer", step[1], step[2])
 			"dismantling":
-				panel.set_want_dismantling("firer", step[1], step[2])
 				model.set_dismantling("firer", step[1], step[2])
 			"reduce":
-				panel.step_reduction("firer", step[1], step[2], step[3], step[4])
 				model.set_reduction("firer", step[1], step[2], step[3],
 					model.reduction("firer", step[1], step[2], step[3]) + int(step[4]))
 			"marines":
-				panel.select_marine_target("firer", step[1])
 				model.select_marine_target("firer", step[1])
-		assert_eq(model.order_dicts(), panel.get_all_orders(), "orders after %s" % [step])
-		assert_eq(model.marine_orders(), panel.get_marine_orders(), "marine orders after %s" % [step])
+		assert_eq(model.order_dicts(), step[-2], "orders after %s" % [step.slice(0, -2)])
+		assert_eq(model.marine_orders(), step[-1], "marine orders after %s" % [step.slice(0, -2)])
 
 
-func test_orders_equal_panel_orders() -> void:
+## Review Focus 1: the orders sent for a run of choices are exactly those the fire declaration
+## panel sent before it was retired (recorded from the panel-equality test of Task 1, which drove
+## the panel and the model side by side): split sides, two targets, reductions, high, dismantling,
+## re-picking a chosen row, hold, the preferred battery, a chaser and marines.
+func test_orders_follow_the_choices() -> void:
 	var ids := _double_covered_setup(GameState.gunnery_calculator)
-	assert_eq(ids.size(), 2, "fixture: two double-covered targets")
+	assert_eq(ids, ["t0", "t1"] as Array[String], "fixture: two double-covered targets")
 	if ids.size() < 2:
 		return
-	var a: String = ids[0]
-	var b: String = ids[1]
 	var sb := ShipState.STARBOARD
-	var panel: Control = load("res://scenes/ui/fire_declaration_panel.tscn").instantiate()
-	add_child_autofree(panel)
-	panel.setup(["firer"])
 	var model := FireOrdersModel.new()
 	model.setup(["firer"])
-	assert_eq(model.order_dicts(), panel.get_all_orders(), "the same default choice")
-	_drive(panel, model, [
-		["choose", sb, a, "full"],
-		["choose", sb, b, "bow"],          # split side: two targets
-		["reduce", sb, b, "bow", 2],
-		["reduce", sb, b, "bow", -5],
-		["choose", sb, a, "stern"],
-		["high", sb, true],
-		["dismantling", sb, true],
-		["choose", sb, a, "stern"],        # the chosen row again holds it
-		["choose", sb, "", ""],
-		["choose", sb, b, ""],             # the preferred battery
-		["reduce", sb, b, "full", 1],
+	assert_eq(model.order_dicts(), [_o(sb, "t0", "full")], "the best shot by default")
+	_drive(model, [
+		["choose", sb, "t0", "full", [], []],          # the chosen row again holds it
+		["choose", sb, "t1", "bow", [_o(sb, "t1", "bow")], []],
+		["reduce", sb, "t1", "bow", 2, [_o(sb, "t1", "bow", "low", "round", 2)], []],
+		["reduce", sb, "t1", "bow", -5, [_o(sb, "t1", "bow")], []],
+		["choose", sb, "t0", "stern", [_o(sb, "t1", "bow"), _o(sb, "t0", "stern")], []],  # split: two targets
+		["high", sb, true, [_o(sb, "t1", "bow", "high"), _o(sb, "t0", "stern", "high")], []],
+		["dismantling", sb, true, [_o(sb, "t1", "bow", "high", "dismantling"),
+			_o(sb, "t0", "stern", "high", "dismantling")], []],
+		["choose", sb, "t0", "stern", [_o(sb, "t1", "bow", "high", "dismantling")], []],
+		["choose", sb, "", "", [], []],
+		["choose", sb, "t1", "", [_o(sb, "t1", "full", "high", "dismantling")], []],  # the preferred battery
+		["reduce", sb, "t1", "full", 1, [_o(sb, "t1", "full", "high", "dismantling", 1)], []],
 	])
 	# Chasers and marines: a foe alongside the bow.
 	_alongside_setup()
-	var panel2: Control = load("res://scenes/ui/fire_declaration_panel.tscn").instantiate()
-	add_child_autofree(panel2)
-	panel2.setup(["firer"])
 	var model2 := FireOrdersModel.new()
 	model2.setup(["firer"])
-	assert_eq(model2.order_dicts(), panel2.get_all_orders(), "the same default choice")
-	assert_eq(model2.marine_orders(), panel2.get_marine_orders(), "the same default marine choice")
-	var steps: Array = [["marines", ""], ["marines", "foe"]]
-	for side in model2.sides_bearing("firer"):
-		steps.append(["choose", side, "", ""])
-		steps.append(["choose", side, "foe", ""])
-		steps.append(["high", side, true])
-		steps.append(["dismantling", side, true])
-	_drive(panel2, model2, steps)
+	var bow := GunneryTypes.CHASE_BOW
+	var chase := _o(bow, "foe", "chase")
+	var muskets := [{"ship_id": "firer", "target_id": "foe"}]
+	assert_eq(model2.sides_bearing("firer").keys(), [bow], "fixture: only the bow chaser bears")
+	assert_eq(model2.order_dicts(), [chase], "the best shot by default")
+	assert_eq(model2.marine_orders(), muskets, "the marine shot by default")
+	_drive(model2, [
+		["marines", "", [chase], []],
+		["marines", "foe", [chase], muskets],
+		["choose", bow, "", "", [], muskets],
+		["choose", bow, "foe", "", [chase], muskets],
+		["high", bow, true, [_o(bow, "foe", "chase", "high")], muskets],
+		["dismantling", bow, true, [_o(bow, "foe", "chase", "high")], muskets],  # chasers: round shot only
+	])
 
 
 func test_order_previews_match_preview_orders() -> void:

@@ -3,7 +3,6 @@ extends GutTest
 ## Plan / Done, target mode, the option box's draft (applied to the model, put back on Cancel) and
 ## the arrows, against ships placed on GameState (the real GunneryCalculator and MarineFireResolver).
 
-const FirePanel = preload("res://scripts/ui/fire_declaration_panel.gd")
 
 var _old_env: EnvironmentState
 var board: FireBoard
@@ -125,7 +124,7 @@ func test_marine_only_ship_has_marines_item() -> void:
 	var box := board.box_content()
 	assert_eq(box["kind"], "marines")
 	assert_eq(box["title"], "firer → foe · range 1")
-	assert_eq(box["text"], FirePanel.marine_option_text(PlanningText.name_and_type(GameState.get_ship("foe")),
+	assert_eq(box["text"], FireText.marine_option_text(PlanningText.name_and_type(GameState.get_ship("foe")),
 		model.marine_targets("firer")[0]["preview"]), "the fire panel's wording, the target named with her type")
 	board.confirm_box()
 	assert_eq(model.marine_orders(), [{"ship_id": "firer", "target_id": "foe"}])
@@ -167,7 +166,7 @@ func test_option_box_confirm_adds_order() -> void:
 	var key := FireOrdersModel.order_key("firer", ShipState.STARBOARD, "t_s", board.box_battery())
 	var p: GunneryTypes.ShotPreview = model.order_previews()[key]
 	assert_eq(int(box["number"]), p.mgn)
-	assert_eq(box["breakdown"], FirePanel.breakdown_text(p))
+	assert_eq(box["breakdown"], FireText.breakdown_text(p))
 	var chips: Array = box["batteries"].map(func(c): return c["id"])
 	assert_eq(chips, model.battery_options_for("firer", ShipState.STARBOARD, "t_s"))
 	board.set_box_high(true)
@@ -224,7 +223,7 @@ func test_second_target_changes_number() -> void:
 	assert_eq(int(box["number"]), by_key[p_key].mgn, "the box shows preview_orders over the whole set")
 	var two := DataManager.combat_tables.flat_modifier("two_targets")
 	assert_eq(by_key[s_key].mgn, alone + two, "the first shot loses the two-target modifier too")
-	assert_eq(box["two_target"], FirePanel.two_target_note(two, false))
+	assert_eq(box["two_target"], FireText.two_target_note(two, false))
 	board.cancel_box()
 	assert_eq(model.order_previews()[s_key].mgn, alone, "cancelled: one target again")
 
