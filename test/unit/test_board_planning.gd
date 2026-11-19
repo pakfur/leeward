@@ -148,7 +148,7 @@ func test_ring_items_for_movable_ship() -> void:
 	var items := bp.ring_items(a)
 	assert_eq(_ids(items), ["move", "crew", "orders", "signal", "reset", "done"] as Array[String])
 	assert_true(_item(items, "orders").is_enabled(), "Orders is always there")
-	assert_eq(_item(items, "signal").off_reason, BoardPlanning.SIGNAL_OFF, "the composer comes next")
+	assert_true(_item(items, "signal").is_enabled(), "the composer opens it: greyed only by the server")
 	assert_true(_item(items, "move").is_enabled(), "a movable ship may Move")
 	assert_true(_item(items, "crew").is_enabled())
 	assert_eq(_item(items, "reset").off_reason, "No course plotted: she sails her default course.",
@@ -477,7 +477,7 @@ func test_rally_result_caption() -> void:
 	assert_eq(board.checklist().state("a"), PlanChecklist.LOCKED)
 	board.open_ring("a")
 	dice.queue([2])
-	board.radial_menu().choose(0)  # Rally, her only item
+	board.radial_menu().choose(1)  # Rally (Crew & damage is the first)
 	assert_eq(board.radial_menu().caption_text(), "Rally: d10 2 against 4 — failed: crew quality now E")
 	assert_true(board.radial_menu().caption_is_reason())
 	assert_true(a.surrendered, "she stays surrendered")
@@ -487,7 +487,7 @@ func test_rally_result_caption() -> void:
 	_pc().current_turn = 2  # the next g-t
 	board.refresh_ring()
 	dice.queue([7])
-	board.radial_menu().choose(0)
+	board.radial_menu().choose(1)
 	assert_eq(board.radial_menu().caption_text(), "Rally: d10 7 against 4 — she is back in play")
 	assert_false(board.radial_menu().caption_is_reason())
 	assert_false(a.surrendered)
@@ -505,7 +505,8 @@ func test_surrendered_ship_ring_has_rally_only() -> void:
 	_surrendered(a)
 	bp.begin_planning(_ships([a, b]))
 	assert_eq(bp.checklist().state("a"), PlanChecklist.LOCKED)
-	assert_eq(_ids(bp.ring_items(a)), ["rally"] as Array[String], "nothing that needs her in play")
+	assert_eq(_ids(bp.ring_items(a)), ["crew", "rally"] as Array[String],
+		"Crew & damage (read-only) and Rally: nothing else needs her in play")
 	assert_eq(_ids(bp.orders_items(a)), ["rally"] as Array[String])
 	assert_true(_item(bp.ring_items(a), "rally").is_enabled())
 	bp.open_ring("a")
@@ -530,3 +531,72 @@ func test_badges_show_standing_orders() -> void:
 	assert_eq(_pc().player_set_cast_lead(0, "a", false), "")
 	bp.refresh()
 	assert_eq(bp.badges().marks_for("a"), ["escape", "surrender"] as Array[String])
+
+
+# --- piece 2: the signal composer and the controller's rulings ---------------------------------
+
+func test_signal_item_opens_composer() -> void:
+	bp.begin_planning(_ships([a, b]))
+	var item := _item(bp.ring_items(a), "signal")
+	assert_true(item.is_enabled(), "no client-made 'coming next': greyed only by the server's error")
+	bp.open_ring("a")
+	_choose("signal")
+	assert_false(bp.radial_menu().is_open(), "opening the composer closes the ring")
+	assert_eq(bp.composer_ship_id(), "a")
+	assert_eq(bp.signal_composer().title_text(), "Signal from a")
+	assert_true(bp.handle_key(KEY_ESCAPE), "Esc closes the composer")
+	assert_eq(bp.composer_ship_id(), "")
+	_pc().players_ready[0] = true
+	var off := _item(bp.ring_items(a), "signal")
+	assert_eq(off.off_reason, _pc().order_options(0, "a")["signal"]["error"])
+	assert_ne(off.off_reason, "")
+	bp.open_composer("a")
+	assert_eq(bp.composer_ship_id(), "", "a greyed Signal does not open it")
+
+
+func test_board_keys_ignored_while_typing() -> void:
+	bp.begin_planning(_ships([a, b]))
+	_selected = "a"
+	bp.open_composer("a")
+	bp.signal_composer().field().grab_focus()
+	assert_true(bp.signal_composer().is_typing())
+	assert_false(bp.handle_key(KEY_TAB), "Tab is the field's")
+	assert_false(bp.handle_key(KEY_SPACE))
+	assert_false(bp.handle_key(KEY_ENTER))
+	assert_eq(bp.ring_ship_id(), "", "no ring opened")
+	assert_eq(bp.checklist().state("a"), PlanChecklist.PLAN, "Enter did not mark her Done")
+	assert_true(bp.handle_key(KEY_ESCAPE), "Esc still closes the composer")
+	assert_true(bp.handle_key(KEY_SPACE), "and the board's keys are back")
+
+
+func test_signal_send_and_cancel_through_the_controller() -> void:
+	var gc := _controller()
+	var board: BoardPlanning = gc._board()
+	board.begin_planning(_ships([a, b]))
+	board.open_composer("a")
+	var box := board.signal_composer()
+	box.set_text("engage")
+	box.send_button().pressed.emit()
+	var pending := _pc().pending_signal(0)
+	assert_not_null(pending, "the server holds the signal")
+	assert_eq(pending.words, ["ENGAGE"] as Array[String])
+	assert_eq(box.pending_text(), "To Fleet: ENGAGE", "the box shows it as pending")
+	assert_eq(box.text(), "", "the field is emptied")
+	box.set_text("one two three four four four four four")
+	box.send_button().pressed.emit()
+	assert_ne(box.error_text(), "", "a refusal shows in the box")
+	assert_eq(_pc().pending_signal(0).words, ["ENGAGE"] as Array[String], "and changes nothing")
+	box.cancel_button().pressed.emit()
+	assert_null(_pc().pending_signal(0))
+	assert_eq(box.pending_text(), "")
+
+
+func test_ring_hides_the_ships_pill_and_marks() -> void:
+	bp.begin_planning(_ships([a, b]))
+	assert_eq(bp.badges().hidden_ship(), "")
+	bp.open_ring("a")
+	assert_eq(bp.badges().hidden_ship(), "a", "her pill and marks would draw over the ring")
+	bp.open_ring("b")
+	assert_eq(bp.badges().hidden_ship(), "b", "only the ship whose ring is open")
+	bp.close_ring()
+	assert_eq(bp.badges().hidden_ship(), "", "shown again when the ring closes")

@@ -19,6 +19,9 @@ signal ring_opened(ship_id: String)
 signal order_toggled(ship_id: String, order: String, on: bool)
 ## The Orders ring's Rally (14.B.3: one d10, rolled at once by the server).
 signal rally_requested(ship_id: String)
+## The composer's Send (`address` {kind, name}, `text` as typed) and its Cancel signal.
+signal signal_send_requested(ship_id: String, address: Dictionary, text: String)
+signal signal_cancel_requested(ship_id: String)
 
 const ICONS := {
 	"move": preload("res://assets/ui/radial/move.svg"),
@@ -37,8 +40,6 @@ const ICONS := {
 ## Which ring is open: the ship's main ring or her Orders ring.
 const MAIN := "main"
 const ORDERS := "orders"
-## The Signal item's greyed reason while the composer is not built yet (and the server has none).
-const SIGNAL_OFF := "Signals: coming next"
 const RALLY_HINT := "One d10 against her morale rating, rolled at once."
 const RESET_OFF := "No course plotted: she sails her default course."
 ## Fallback wording for a locked ship whose lock carries no reason of its own.
@@ -51,6 +52,8 @@ var _checklist := PlanChecklist.new()
 var _radial: RadialMenu
 var _badges: PlanBadges
 var _chips: CourseChips
+var _composer: SignalComposer
+var _composer_ship := ""
 var _camera: Camera3D = null
 var _world_of := Callable()  # ship_id -> Vector3 (her centre on the water) or null
 var _safe_rect := Callable()  # -> Rect2 of the map area, clear of the side panel
@@ -77,6 +80,12 @@ func _init() -> void:
 	_chips.ui_scale = CrewStyle.K
 	_chips.done_pressed.connect(_on_chips_done)
 	_chips.keep_pressed.connect(leave_move)
+	_composer = SignalComposer.new()
+	_composer.ui_scale = CrewStyle.K
+	_composer.send_requested.connect(func(address: Dictionary, text: String):
+		signal_send_requested.emit(_composer_ship, address, text))
+	_composer.cancel_pending_requested.connect(func(): signal_cancel_requested.emit(_composer_ship))
+	_composer.closed.connect(func(): _composer_ship = "")
 	_checklist.changed.connect(_on_checklist_changed)
 
 
@@ -93,7 +102,9 @@ func setup(ui_parent: Node, camera: Camera3D, world_of: Callable, safe_rect: Cal
 	if safe_rect.is_valid():
 		_badges.map_rect_provider = safe_rect
 		_chips.map_rect_provider = safe_rect
+		_composer.map_rect_provider = safe_rect
 	_chips.setup(camera)
+	_composer.setup(camera)
 	var parent: Node = ui_parent if ui_parent != null else self
 	for c in controls():
 		if c.get_parent() == null:
@@ -102,7 +113,7 @@ func setup(ui_parent: Node, camera: Camera3D, world_of: Callable, safe_rect: Cal
 
 ## The Controls this node puts over the map (GameController orders them under its overlays).
 func controls() -> Array[Control]:
-	return [_badges, _chips, _radial] as Array[Control]
+	return [_badges, _chips, _composer, _radial] as Array[Control]
 
 
 func checklist() -> PlanChecklist:
@@ -117,6 +128,10 @@ func badges() -> PlanBadges:
 	return _badges
 
 
+func signal_composer() -> SignalComposer:
+	return _composer
+
+
 func course_chips() -> CourseChips:
 	return _chips
 
@@ -128,6 +143,7 @@ func is_planning() -> bool:
 ## PLANNING begins: every own ship that can plot is in Plan, the others Locked.
 func begin_planning(own_ships: Array[ShipState]) -> void:
 	close_ring()
+	close_composer()
 	leave_move()
 	var ids: Array = []
 	for ship in own_ships:
@@ -141,6 +157,7 @@ func begin_planning(own_ships: Array[ShipState]) -> void:
 ## Move mode is left and the checklist is emptied.
 func end_planning() -> void:
 	close_ring()
+	close_composer()
 	leave_move()
 	_planning = false
 	_own_ids = []
@@ -164,21 +181,23 @@ func refresh() -> void:
 
 ## The ring of an own ship: Move, Crew & damage, Orders, Signal, Reset course, then Done (in Plan)
 ## or Plan again (Done or Locked). Greyed items carry the server's reasons. A surrendered ship
-## (14.B, struck) has only what does not need her in play: her Orders ring's Rally.
+## (14.B, struck) has Crew & damage (read-only) and Rally, nothing that needs her in play.
 func ring_items(ship: ShipState) -> Array[RadialItem]:
 	if ship.surrendered:
-		return orders_items(ship)
+		# Crew & damage opens read-only for her; Rally is the one thing she can still do.
+		var own: Array[RadialItem] = [_crew_item()]
+		own.append_array(orders_items(ship))
+		return own
 	var items: Array[RadialItem] = []
 	var block := "" if PlanningSailUi.can_plot_movement(ship) else _block_reason(ship)
 	items.append(RadialItem.make("move", "Move", ICONS["move"],
 		"Plot her course hex by hex on the map.", block))
-	items.append(RadialItem.make("crew", "Crew & damage", ICONS["crew"],
-		"Crew, sails, fires, repairs and boarding (C)."))
+	items.append(_crew_item())
 	items.append(RadialItem.make("orders", "Orders", ICONS["orders"],
 		"Lead, escape, surrender, rally."))
 	var signal_error := str(_order_options(ship.ship_id).get("signal", {}).get("error", ""))
 	items.append(RadialItem.make("signal", "Signal", ICONS["signal"],
-		"Send a flag signal to your squadron.", signal_error if signal_error != "" else SIGNAL_OFF))
+		"Send a flag signal to your squadron.", signal_error))
 	items.append(RadialItem.make("reset", "Reset course", ICONS["reset"],
 		"Back to her default course.", "" if _has_own_course(ship.ship_id) else RESET_OFF))
 	if _checklist.state(ship.ship_id) == PlanChecklist.PLAN:
@@ -187,6 +206,11 @@ func ring_items(ship: ShipState) -> Array[RadialItem]:
 		var off := _block_reason(ship) if _checklist.state(ship.ship_id) == PlanChecklist.LOCKED else ""
 		items.append(RadialItem.make("undo", "Plan again", ICONS["undo"], "Back to Plan.", off))
 	return items
+
+
+func _crew_item() -> RadialItem:
+	return RadialItem.make("crew", "Crew & damage", ICONS["crew"],
+		"Crew, sails, fires, repairs and boarding (C).")
 
 
 ## The Orders ring (from `order_options`; items the scenario does not use are left out): Cast the
@@ -234,12 +258,14 @@ func open_ring(ship_id: String) -> void:
 	if ship == null:
 		return
 	leave_move()
+	close_composer()
 	if _safe_rect.is_valid() and is_inside_tree():
 		_radial.set_safe_rect(_safe_rect.call())
 	_radial.set_anchor_provider(_screen_point_of.bind(ship_id))
 	_ring_kind = MAIN
 	_radial.open(ring_items(ship), ship.ship_name, _subtitle(ship))
 	_ring_ship = ship_id
+	_badges.hide_ship(ship_id)  # her pill and marks would draw over the ring's centre
 	ring_opened.emit(ship_id)
 
 
@@ -255,6 +281,46 @@ func back_to_main() -> void:
 
 func close_ring() -> void:
 	_radial.close()
+
+
+## Opens the signal box by `ship_id` (the ring closes). Greyed with the server's reason: not opened.
+func open_composer(ship_id: String) -> void:
+	var ship := GameState.get_ship(ship_id)
+	if ship == null:
+		return
+	var options: Dictionary = _order_options(ship_id).get("signal", {})
+	if options.is_empty() or str(options.get("error", "")) != "":
+		return
+	close_ring()
+	leave_move()
+	_composer.ship_names = _all_ship_names()
+	_composer_ship = ship_id
+	_composer.open(ship.ship_name, options, _world_of.call(ship_id) if _world_of.is_valid() else null)
+
+
+func close_composer() -> void:
+	_composer.close()
+
+
+## The ship whose signal box is open, or "".
+func composer_ship_id() -> String:
+	return _composer_ship if _composer.is_open() else ""
+
+
+## Re-reads the open box's pending signal (after a send or a cancel); `sent` empties the field.
+func refresh_composer(sent := false) -> void:
+	var ship := GameState.get_ship(composer_ship_id())
+	if ship == null:
+		return
+	if sent:
+		_composer.clear_text()
+	_composer.show_error("")
+	_composer.open(ship.ship_name, _order_options(ship.ship_id).get("signal", {}))
+
+
+## A refusal of the signal request, shown in the box.
+func show_signal_error(reason: String) -> void:
+	_composer.show_error(reason)
 
 
 ## The ship whose ring is open, or "".
@@ -299,6 +365,7 @@ func enter_move(ship_id: String) -> void:
 	if ship == null or not PlanningSailUi.can_plot_movement(ship):
 		return
 	close_ring()
+	close_composer()
 	if _move_ship == ship_id:
 		return
 	_move_ship = ship_id
@@ -331,6 +398,11 @@ func show_course(info: Dictionary, world_end: Variant) -> void:
 func handle_key(keycode: int, backward := false) -> bool:
 	if not _planning:
 		return false
+	if keycode == KEY_ESCAPE and _composer.is_open():
+		close_composer()
+		return true
+	if _composer.is_typing():
+		return false  # the field has the keyboard: Tab, Space and Enter are its own
 	match keycode:
 		KEY_TAB:
 			var after := _move_ship if _move_ship != "" else ring_ship_id()
@@ -414,10 +486,12 @@ func _on_item_chosen(item_id: String) -> void:
 			order_toggled.emit(id, item_id, not now)
 		"rally":
 			rally_requested.emit(id)
-		# "signal": the composer comes with piece 2's Task 3.
+		"signal":
+			open_composer(id)
 
 
 func _on_ring_closed() -> void:
+	_badges.hide_ship("")
 	_ring_ship = ""
 	_ring_kind = MAIN
 
@@ -537,6 +611,13 @@ func _movable(ids: Array) -> Dictionary:
 		var ship := GameState.get_ship(str(id))
 		out[str(id)] = ship != null and PlanningSailUi.can_plot_movement(ship)
 	return out
+
+
+func _all_ship_names() -> Array[String]:
+	var names: Array[String] = []
+	for ship in GameState.ships.values():
+		names.append(ship.ship_name)
+	return names
 
 
 func _ids() -> Array:

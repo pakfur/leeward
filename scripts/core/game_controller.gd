@@ -294,6 +294,8 @@ func _board() -> BoardPlanning:
 	board_planning.ring_opened.connect(_on_ring_opened)
 	board_planning.order_toggled.connect(_on_order_toggled)
 	board_planning.rally_requested.connect(_on_rally_requested)
+	board_planning.signal_send_requested.connect(_on_signal_send_requested)
+	board_planning.signal_cancel_requested.connect(_on_signal_cancel_requested)
 	board_planning.player_id = HUMAN_PLAYER_ID
 	return board_planning
 
@@ -343,6 +345,31 @@ func _on_rally_requested(ship_id: String) -> void:
 	_redraw_ship(ship_id)
 	board_planning.refresh_ring()
 	board_planning.show_note(note, not passed)
+
+
+## The composer's Send: the server's request; a refusal shows in the box, a sent signal shows as
+## the pending one (a new signal replaces the earlier one, 11.A.5).
+func _on_signal_send_requested(ship_id: String, address: Dictionary, text: String) -> void:
+	var pc := GameState.phase_controller
+	if pc == null:
+		return
+	var reason: String = pc.player_send_signal(HUMAN_PLAYER_ID, ship_id, address, text)
+	if reason != "":
+		Trace.trace_log("GameController", "Signal from %s refused: %s" % [ship_id, reason])
+		board_planning.show_signal_error(reason)
+		return
+	board_planning.refresh_composer(true)
+
+
+func _on_signal_cancel_requested(_ship_id: String) -> void:
+	var pc := GameState.phase_controller
+	if pc == null:
+		return
+	var reason: String = pc.player_cancel_signal(HUMAN_PLAYER_ID)
+	if reason != "":
+		board_planning.show_signal_error(reason)
+		return
+	board_planning.refresh_composer()
 
 
 ## The data of `ship_id`'s RALLY event logged at or after index `first` of this turn's log, or {}.

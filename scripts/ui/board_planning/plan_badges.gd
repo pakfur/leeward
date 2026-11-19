@@ -49,6 +49,7 @@ var map_rect_provider: Callable = Callable()
 var lift := 0.0
 
 var _camera: Camera3D = null
+var _hidden := ""  # the ship whose ring is open: her pill and marks are not drawn
 var _entries: Dictionary = {}  # ship_id -> {"world": Vector3, "state": String, "marks": Array}
 var _pills: Dictionary = {}  # ship_id -> Label
 var _marks: Dictionary = {}  # ship_id -> HBoxContainer of her standing-order marks
@@ -82,7 +83,19 @@ func show_for(entries: Dictionary) -> void:
 	_update()
 
 
+## Hides this ship's pill and marks (her ring is open over them); "" shows every ship again.
+func hide_ship(ship_id: String) -> void:
+	_hidden = ship_id
+	_update()
+
+
+## The ship whose pill and marks are hidden, or "" (tests).
+func hidden_ship() -> String:
+	return _hidden
+
+
 func clear() -> void:
+	_hidden = ""
 	_entries.clear()
 	for id in _pills.keys():
 		_drop(id)
@@ -197,7 +210,7 @@ func _update() -> void:
 		var pill: Label = _pills[id]
 		var box: HBoxContainer = _marks.get(id)
 		var has_marks: bool = box != null and box.get_child_count() > 0
-		if _camera == null or _camera.is_position_behind(_entries[id]["world"]):
+		if id == _hidden or _camera == null or _camera.is_position_behind(_entries[id]["world"]):
 			pill.visible = false
 			if box != null:
 				box.visible = false
