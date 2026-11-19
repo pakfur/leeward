@@ -136,3 +136,20 @@ func test_roster_shown() -> void:
 	assert_lt(panel.roster.get_index(), panel.ship_list.get_parent().get_index(), "Players above Your ships")
 	panel.refresh_roster([])
 	assert_false(panel.roster.visible)
+
+
+## The pills belong to the footer's step: a new footer (or none) hides the last step's pills, so the
+## fire step's FIRE / NO TARGET do not stay on the cards into POST_COMBAT.
+func test_footer_change_hides_the_pills() -> void:
+	var a := _make_ship("a", "HMS Lively", Vector2i(0, 0))
+	panel.refresh_ships(_ships([a]))
+	panel.set_footer(Button.new())
+	panel.card("a").set_plan_state(PlanChecklist.PLAN, "FIRE")
+	assert_true(panel.card("a").pill.visible)
+	panel.set_footer(panel.footer())
+	assert_true(panel.card("a").pill.visible, "the same footer again keeps them")
+	panel.set_footer(Label.new())
+	assert_false(panel.card("a").pill.visible, "another footer: hidden until it sets its own")
+	panel.card("a").set_plan_state(PlanChecklist.DONE)
+	panel.set_footer(null)
+	assert_false(panel.card("a").pill.visible, "no footer: no pills")

@@ -155,13 +155,16 @@ func _mark_selected(ship_id: String) -> void:
 		cards[selected_ship_id].set_selected_state(true)
 
 
-## Puts `control` in the footer slot; the previous footer is freed. `null` clears the slot.
+## Puts `control` in the footer slot; the previous footer is freed, and the pills it set are hidden
+## (the new footer sets its own). `null` clears the slot.
 func set_footer(control: Control) -> void:
 	if control == _footer:
 		return
 	if _footer != null and is_instance_valid(_footer):
 		footer_slot.remove_child(_footer)
 		_footer.queue_free()
+	for id in cards:
+		cards[id].set_plan_state("")
 	_footer = control
 	if _footer != null:
 		if _footer.get_parent() != null:
