@@ -264,6 +264,13 @@ func is_player_ready(player_id: int) -> bool:
 	return bool(players_ready.get(player_id, false))
 
 
+## Read-only: the player's fire orders are in for the current declaration step (a player with
+## nothing in play counts as in). False for an unknown player. Meaningful only while the
+## combat step is DECLARE: the flags keep the last step's values until the next declaration.
+func is_fire_ready(player_id: int) -> bool:
+	return bool(_fire_ready.get(player_id, false))
+
+
 ## Readiness read from serialized data: a Dictionary (player id -> bool), or the old [bool, bool]
 ## array (index = player id).
 static func readiness_from(data: Variant) -> Dictionary:

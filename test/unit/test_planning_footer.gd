@@ -1,9 +1,9 @@
 extends GutTest
-## Planning panel: one ship's orders are shown at a time, and every control acts on that ship.
+## The fleet panel in PLANNING (its cards with the planning footer): one ship's card is expanded at
+## a time, the pills follow the Plan / Done checklist, End Planning and Cancel are the footer's.
 
-const PlanningScene = preload("res://scenes/ui/planning_phase_ui.tscn")
-
-var ui: Control
+var fleet: FleetPanel
+var ui: PlanningFooter
 
 
 func _make_ship(id: String, ship_name: String, hex: Vector2i) -> ShipState:
@@ -29,10 +29,13 @@ func before_each() -> void:
 	var b := _make_ship("p2", "HMS Phoebe", Vector2i(3, 0))
 	GameState.add_ship(a)
 	GameState.add_ship(b)
-	ui = PlanningScene.instantiate()
-	add_child_autofree(ui)
+	fleet = FleetPanel.new()
+	add_child_autofree(fleet)
+	fleet.setup(0)
 	var ships: Array[ShipState] = [a, b]
-	ui.setup_for_player(ships)
+	fleet.refresh_ships(ships)
+	ui = PlanningFooter.new()
+	fleet.set_footer(ui)
 
 
 func after_each() -> void:
@@ -41,8 +44,8 @@ func after_each() -> void:
 
 func test_cards_have_no_movement_button() -> void:
 	for id in ["p1", "p2"]:
-		assert_null(ui.ship_list_items[id].find_child("MovementButton", true, false), "no Movement button on %s" % id)
-	assert_null(ui.find_child("PlottingControls", true, false), "no shared plotting box")
+		assert_null(fleet.cards[id].find_child("MovementButton", true, false), "no Movement button on %s" % id)
+	assert_null(fleet.find_child("PlottingControls", true, false), "no shared plotting box")
 
 
 func test_end_planning_is_enabled_with_no_orders_given() -> void:
@@ -74,47 +77,48 @@ func test_keeping_orders_emits_nothing() -> void:
 func _bind() -> PlanChecklist:
 	var cl := PlanChecklist.new()
 	cl.begin(["p1", "p2"], {"p1": true, "p2": true})
-	ui.bind_checklist(cl)
+	ui.bind(fleet, cl)
 	return cl
 
 
 func test_card_has_no_course_block() -> void:
-	ui.select_ship("p2")
-	var card = ui.ship_list_items["p2"]
+	fleet.select_ship("p2")
+	var card = fleet.cards["p2"]
 	assert_null(card.find_child("CourseBlock", true, false), "no Course block")
 	assert_null(card.find_child("ResetCourseButton", true, false), "no Reset course button")
-	assert_false(ui.has_signal("reset_course_requested"), "the panel no longer asks for a course reset")
+	assert_false(ui.has_signal("reset_course_requested"), "the footer never asks for a course reset")
+	assert_false(fleet.has_signal("reset_course_requested"), "nor the panel")
 	assert_false(card.has_signal("reset_course_pressed"))
 
 
 func test_pill_reflects_checklist() -> void:
 	var cl := _bind()
-	var pill: Button = ui.ship_list_items["p1"].pill
+	var pill: Button = fleet.cards["p1"].pill
 	assert_true(pill.visible)
 	assert_eq(pill.text, "PLAN")
 	cl.set_done("p1", true)
 	assert_eq(pill.text, "✓ DONE")
-	assert_eq(ui.ship_list_items["p2"].pill.text, "PLAN", "the other card is untouched")
+	assert_eq(fleet.cards["p2"].pill.text, "PLAN", "the other card is untouched")
 	GameState.get_ship("p2").fouled_with = "p1"
 	cl.refresh_movable({"p1": true, "p2": false})
-	assert_eq(ui.ship_list_items["p2"].pill.text, "LOCKED")
+	assert_eq(fleet.cards["p2"].pill.text, "LOCKED")
 	GameState.get_ship("p2").fouled_with = ""
 
 
 func test_pill_toggles_done() -> void:
 	var cl := _bind()
-	ui.ship_list_items["p1"].pill.pressed.emit()
+	fleet.cards["p1"].pill.pressed.emit()
 	assert_eq(cl.state("p1"), PlanChecklist.DONE)
-	ui.ship_list_items["p1"].pill.pressed.emit()
+	fleet.cards["p1"].pill.pressed.emit()
 	assert_eq(cl.state("p1"), PlanChecklist.PLAN)
 
 
 func test_locked_pill_does_not_toggle() -> void:
 	var cl := PlanChecklist.new()
 	cl.begin(["p1", "p2"], {"p1": true, "p2": false})
-	ui.bind_checklist(cl)
-	assert_true(ui.ship_list_items["p2"].pill.disabled)
-	ui.ship_list_items["p2"].pill.pressed.emit()
+	ui.bind(fleet, cl)
+	assert_true(fleet.cards["p2"].pill.disabled)
+	fleet.cards["p2"].pill.pressed.emit()
 	assert_eq(cl.state("p2"), PlanChecklist.LOCKED)
 
 
@@ -131,32 +135,32 @@ func test_footer_counts_ships_in_plan() -> void:
 
 
 func test_card_click_asks_for_the_ring_but_code_selection_does_not() -> void:
-	watch_signals(ui)
-	ui.select_ship("p2")
-	assert_signal_not_emitted(ui, "card_clicked")
-	ui.ship_list_items["p1"].selected.emit()
-	assert_signal_emitted_with_parameters(ui, "card_clicked", ["p1"])
-	assert_eq(ui.selected_ship_id, "p1")
+	watch_signals(fleet)
+	fleet.select_ship("p2")
+	assert_signal_not_emitted(fleet, "ship_card_pressed")
+	fleet.cards["p1"].selected.emit()
+	assert_signal_emitted_with_parameters(fleet, "ship_card_pressed", ["p1"])
+	assert_eq(fleet.selected_ship_id, "p1")
 
 
 func test_only_the_selected_card_is_expanded() -> void:
-	var open = ui.ship_list_items["p1"]
-	var shut = ui.ship_list_items["p2"]
+	var open = fleet.cards["p1"]
+	var shut = fleet.cards["p2"]
 	assert_true(open.status_box.visible, "the selected card shows hull, rigging, crew and guns")
 	assert_true(open.action_row.visible, "and its buttons")
 	assert_false(shut.status_box.visible, "a collapsed card hides the status box")
 	assert_false(shut.action_row.visible, "and its buttons")
 	assert_true(shut.health_icon.visible, "but keeps the health icon")
 	assert_eq(shut.ship_name_label.text, "HMS Phoebe", "a collapsed card shows the name alone")
-	ui.select_ship("p2")
+	fleet.select_ship("p2")
 	assert_true(shut.status_box.visible, "selecting a card expands it")
 	assert_false(open.status_box.visible, "and collapses the other")
 
 
 func test_card_titles_carry_no_orders_marks() -> void:
-	assert_eq(ui.ship_list_items["p2"].ship_name_label.text, "HMS Phoebe")
-	ui.select_ship("p2")
-	assert_eq(ui.ship_list_items["p2"].ship_name_label.text, "HMS Phoebe — 38-gun Frigate")
+	assert_eq(fleet.cards["p2"].ship_name_label.text, "HMS Phoebe")
+	fleet.select_ship("p2")
+	assert_eq(fleet.cards["p2"].ship_name_label.text, "HMS Phoebe — 38-gun Frigate")
 
 
 func test_card_speed_shows_the_movement_allowance() -> void:
@@ -167,6 +171,37 @@ func test_card_speed_shows_the_movement_allowance() -> void:
 
 
 func test_status_box_draws_every_line() -> void:
-	var box: ShipCardStatus = ui.ship_list_items["p1"].status_box
+	var box: ShipCardStatus = fleet.cards["p1"].status_box
 	for line in ["HullLine", "RiggingLine", "CrewLine", "MarinesLine", "GunsLine"]:
 		assert_not_null(box.find_child(line, true, false), "%s is drawn" % line)
+
+
+func test_footer_is_in_the_fleet_panel_slot() -> void:
+	assert_eq(fleet.cards["p1"].get_parent(), fleet.ship_list, "the cards are the fleet panel's")
+	assert_eq(ui.get_parent(), fleet.footer_slot, "the planning footer is in its slot")
+	assert_true(ui.is_ancestor_of(ui.end_planning_button))
+	assert_true(ui.is_ancestor_of(ui.cancel_button))
+	assert_true(ui.is_ancestor_of(ui.reset_dialog), "Cancel's confirmation travels with the footer")
+	assert_true(ui.is_ancestor_of(ui.still_in_plan_label))
+	assert_eq(ui.cancel_button.text, "Cancel")
+	assert_eq(ui.cancel_button.tooltip_text, "Reset every order this turn to how it was at the start of the turn")
+	assert_eq(ui.end_planning_button.focus_mode, Control.FOCUS_NONE, "Space and Enter stay the game's keys")
+	assert_eq(ui.cancel_button.focus_mode, Control.FOCUS_NONE)
+	assert_eq(ui.instructions_label.text, PlanningText.instructions())
+
+
+## A card that joins later (a prize taken) gets her pill; a footer no longer the fleet's sets none.
+func test_new_card_gets_its_pill_and_old_footer_lets_go() -> void:
+	var cl := PlanChecklist.new()
+	cl.begin(["p1", "p2", "p3"], {"p1": true, "p2": true, "p3": true})
+	ui.bind(fleet, cl)
+	var c := _make_ship("p3", "Le Prize", Vector2i(6, 0))
+	GameState.add_ship(c)
+	var ships: Array[ShipState] = [GameState.get_ship("p1"), GameState.get_ship("p2"), c]
+	fleet.refresh_ships(ships)
+	assert_eq(fleet.cards["p3"].pill.text, "PLAN", "the new card follows the checklist")
+	fleet.set_footer(Label.new())  # the next phase's footer
+	cl.set_done("p1", true)
+	assert_eq(fleet.cards["p1"].pill.text, "PLAN", "the planning footer no longer sets pills")
+	fleet.cards["p2"].pill.pressed.emit()
+	assert_eq(cl.state("p2"), PlanChecklist.PLAN, "nor toggles them")

@@ -8,21 +8,23 @@ extends Node
 @onready var context_panel = $UI/ContextPanel
 @onready var developer_ui: Window = $DeveloperUI
 
-# Planning phase UI
-const PlanningPhaseUI = preload("res://scenes/ui/planning_phase_ui.tscn")
 const CombatLogPanelScene = preload("res://scenes/ui/combat_log_panel.tscn")
 const GameOverPanelScene = preload("res://scenes/ui/game_over_panel.tscn")
 const OceanViewScript = preload("res://scripts/view/ocean_view.gd")
 const PauseMenuScript = preload("res://scripts/ui/pause_menu.gd")
 const CrewOverlayScene = preload("res://scenes/ui/crew_overlay.tscn")
 const ResolutionPanelScene = preload("res://scenes/ui/resolution_panel.tscn")
-var current_planning_ui: Control = null
-var fire_step_panel: FireStepPanel = null  # the side panel while fire orders are given on the board
-var combat_panel: Control = null  # "Movement" / "Combat" context content while a phase plays back
+## The side panel for the whole turn (board planning piece 4): Players, Your ships and a footer
+## that changes with the phase. Put in the context panel once per game; a replay (or game over)
+## takes the context panel and the fleet panel waits under this node until it is handed back.
+var fleet_panel: FleetPanel = null
+var _fleet_on_side: bool = false  # the fleet panel is the side panel's content (not parked)
+var _fleet_title: String = FleetPanel.TITLE  # the context title while the fleet panel is shown
+var combat_panel: Control = null  # the "Movement" / "Combat" status footer while a phase plays back
 ## Movement playback has no skip: the panel must not offer one (combat playback does, in its log).
 const MOVEMENT_PLAYBACK_SKIPPABLE := false
 var combat_log_panel: CombatLogPanel = null
-var end_turn_panel: Control = null  # context-panel content while waiting in POST_COMBAT
+var end_turn_panel: Control = null  # the fleet panel's footer while waiting in POST_COMBAT
 var end_turn_button: Button = null
 var game_over_panel: GameOverPanel = null  # modal result card; non-null once the game has ended
 var _boarding_card: BoardingCard = null  # the boarding rounds of the last combat, over the map (boarding spec §4.5)
@@ -53,6 +55,8 @@ var _replay_display_phase: int = -1  # the phase whose display copies the map sh
 var _post_events_read: int = 0  # filtered events of the turn the post-combat replay has built steps from
 
 const NO_SHOT_HEADLINE := "No broadside bears on an enemy this turn."
+const PLANNING_TITLE := "Planning Phase"
+const FIRE_TITLE := "Fire Orders"
 ## The side panel once the player's fire orders are in and other players still declare.
 const ORDERS_IN_TEXT := "Orders in — waiting for the other side"
 
@@ -260,12 +264,9 @@ func _redraw_ship(ship_id: String) -> void:
 	var ship_state: ShipState = GameState.get_ship(ship_id)
 	if ship_state == null:
 		return
-	if current_planning_ui and is_instance_valid(current_planning_ui):
-		current_planning_ui.update_ship_display(ship_state)
-		current_planning_ui.refresh_crew_orders()
 	if crew_client:
 		crew_client.refresh()
-	_sync_all_views()
+	_sync_all_views()  # her card too (_refresh_fleet)
 	_refresh_courses()  # an anchor or a surrender may lock her (board planning follows), a cut cable unlock her
 
 
@@ -402,21 +403,18 @@ func _on_move_mode_changed(_ship_id: String) -> void:
 
 ## A ring opened (a click, Tab, Space): she is the selected ship everywhere.
 func _on_ring_opened(ship_id: String) -> void:
-	if current_planning_ui and is_instance_valid(current_planning_ui) \
-			and GameState.current_phase == GameState.GamePhase.PLANNING:
-		if current_planning_ui.selected_ship_id != ship_id:
-			current_planning_ui.select_ship(ship_id)
+	if GameState.current_phase == GameState.GamePhase.PLANNING and _has_card(ship_id):
+		if fleet_panel.selected_ship_id != ship_id:
+			_select_card(ship_id)
 		return
-	if fire_step_panel and is_instance_valid(fire_step_panel):
-		fire_step_panel.select_ship(ship_id)  # the fire step: her card expands
+	if _has_card(ship_id):
+		fleet_panel.select_ship(ship_id)  # the fire step: her card expands
 	if selected_ship_id != ship_id:
 		_select_ship(ship_id)
 
 
 func _on_crew_changed() -> void:
-	if current_planning_ui and is_instance_valid(current_planning_ui):
-		current_planning_ui.crew_overlay_open = crew_client.is_open
-		current_planning_ui.refresh_crew_orders()
+	_refresh_cards()  # the cards follow the crew plan
 	_click_refusals.clear()  # the crew or sail change may have made a refused move legal
 	_refresh_courses()  # a sail order can change the movement allowance
 
@@ -429,8 +427,8 @@ func _toggle_crew_overlay() -> void:
 		crew_client.close()
 		return
 	var ship_id := selected_ship_id
-	if current_planning_ui and is_instance_valid(current_planning_ui) and current_planning_ui.selected_ship_id != "":
-		ship_id = current_planning_ui.selected_ship_id
+	if (ship_id == "" or GameState.current_phase == GameState.GamePhase.PLANNING) and _card_selected_id() != "":
+		ship_id = _card_selected_id()  # the selected card's ship
 	if ship_id == "" and crew_client.ship_id != "":
 		ship_id = crew_client.ship_id
 	if ship_id == "":
@@ -603,6 +601,9 @@ func _on_game_started(_scenario: Dictionary) -> void:
 		board_planning.end_planning()  # a reset mid-ring: PLANNING's entry begins afresh
 	display_states.clear()
 	_replay_saved_view = {}
+	# The fleet panel starts over: no footer, the new game's cards (none of the old ones kept).
+	_fleet().setup(HUMAN_PLAYER_ID)
+	_clear_fleet_footer()
 	for id in ship_views.keys():
 		var old_view: Node = ship_views[id]
 		if is_instance_valid(old_view):
@@ -618,6 +619,7 @@ func _on_game_started(_scenario: Dictionary) -> void:
 		hex_map.resize_to(terrain)
 		if hex_overlay:
 			hex_overlay.show_terrain(terrain, hex_map.get_hex_grid())
+	_show_fleet_panel()
 
 
 ## The ids of the ships on the map that have no view yet (reinforcements that have just arrived),
@@ -789,10 +791,9 @@ func _course_hex_at(screen_pos: Vector2) -> Vector2i:
 ## The ship whose course is drawn at full strength and wins overlapping clicks: the planning
 ## panel's selected card, else the map selection.
 func _course_selected_id() -> String:
-	if current_planning_ui and is_instance_valid(current_planning_ui) and current_planning_ui.selected_ship_id != "":
-		return current_planning_ui.selected_ship_id
-	if fire_step_panel and is_instance_valid(fire_step_panel) and fire_step_panel.selected_ship_id != "":
-		return fire_step_panel.selected_ship_id  # the fire step's selected card (Space opens her ring)
+	var planning := GameState.current_phase == GameState.GamePhase.PLANNING
+	if (planning or (board_planning != null and board_planning.is_firing())) and _card_selected_id() != "":
+		return _card_selected_id()  # in the fire step the selected card's ship (Space opens her ring)
 	return selected_ship_id
 
 ## The courses that take clicks: the Move-mode ship's only ({} out of Move mode, board planning).
@@ -825,14 +826,13 @@ func _handle_course_click(hex: Vector2i) -> bool:
 		Trace.trace_log("GameController", "Course %s of %s at %s refused: %s" % [route["kind"], ship_id, hex, reason])
 		_click_refusals[ship_id] = reason
 	# The card shows the course readout (and any refusal) of the selected ship only.
-	if current_planning_ui and is_instance_valid(current_planning_ui) and current_planning_ui.selected_ship_id != ship_id:
-		current_planning_ui.select_ship(ship_id)
+	if _has_card(ship_id) and fleet_panel.selected_ship_id != ship_id:
+		_select_card(ship_id)
 	_last_hover_hex = Vector2i(-99, -99)  # the hovered hex may now mean something else
 	_refresh_courses()
 	if crew_client:
 		crew_client.refresh()  # a turn at MA 0 opens the braces
-	if current_planning_ui and is_instance_valid(current_planning_ui):
-		current_planning_ui.refresh_crew_summaries()
+	_refresh_cards()
 	return true
 
 ## Draw every own ship's stored course, and the hexes it may extend to and the blocked marks for the
@@ -1017,10 +1017,9 @@ func _handle_ship_selection(screen_pos: Vector2) -> void:
 	if GameState.commands(HUMAN_PLAYER_ID, ship_state.ship_id):
 		# Own ship: full selected-ship UI.
 		# The camera does not move: the player clicked what they can already see.
-		# While planning, the orders panel follows (one selected ship everywhere).
-		if current_planning_ui and is_instance_valid(current_planning_ui) \
-				and GameState.current_phase == GameState.GamePhase.PLANNING:
-			current_planning_ui.select_ship(ship_view.state_id)
+		# While planning, the selected card follows (one selected ship everywhere).
+		if GameState.current_phase == GameState.GamePhase.PLANNING and _has_card(ship_view.state_id):
+			_select_card(ship_view.state_id)
 			return
 		_select_ship(ship_view.state_id)
 	else:
@@ -1150,7 +1149,7 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 	_clear_hover()
 	_close_fire_step()
 	if phase != GameState.GamePhase.POST_COMBAT:
-		_clear_end_turn_ui()
+		_clear_fleet_footer()  # the phase sets its own (End Turn waits in POST_COMBAT for its replay)
 	if phase == GameState.GamePhase.PLANNING:
 		_clear_boarding_card()
 		_sync_all_views()  # a recapture at the start of the g-t (10.H.4) changes colours and flags
@@ -1169,6 +1168,11 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 			_resolve_movement()
 		GameState.GamePhase.POST_COMBAT:
 			_enter_post_combat_phase()  # syncs the views, after the replay's display copies are up
+	# Every other phase: the fleet panel with no footer, unless a replay holds the side panel.
+	if not _replay_running() and not _fleet_on_side:
+		_show_fleet_panel()
+	else:
+		_refresh_roster()
 
 func _enter_planning_phase() -> void:
 	Trace.trace_log("GameController", "Entering planning phase for player 0")
@@ -1177,7 +1181,6 @@ func _enter_planning_phase() -> void:
 	if hex_overlay:
 		hex_overlay.clear_everything()
 	_click_refusals.clear()
-	combat_panel = null  # freed below when the planning UI takes the context panel
 	if combat_log_panel:
 		combat_log_panel.auto_expand(false)  # the map is what matters while plotting
 
@@ -1188,39 +1191,48 @@ func _enter_planning_phase() -> void:
 		return
 	_board().begin_planning(player_0_ships)  # every movable own ship in Plan
 
-	# Create planning UI
-	if not current_planning_ui:
-		current_planning_ui = PlanningPhaseUI.instantiate()
-
-		# Connect signals
-		current_planning_ui.ship_selected.connect(_on_planning_ship_selected)
-		current_planning_ui.end_planning_pressed.connect(_on_end_planning_pressed)
-		current_planning_ui.crew_overlay_requested.connect(_open_crew_overlay)
-		current_planning_ui.reset_planning_confirmed.connect(_on_reset_planning_confirmed)
-		current_planning_ui.card_clicked.connect(_on_planning_card_clicked)
-
-	# Load into context panel (must be done before setup to ensure @onready nodes are available)
-	if context_panel:
-		context_panel.set_context_title("Planning Phase")
-		context_panel.set_context_content(current_planning_ui)
-
-	# Setup with player ships (after adding to tree so @onready nodes are initialized)
-	current_planning_ui.setup_for_player(player_0_ships)
-	current_planning_ui.bind_checklist(_board().checklist())
+	# The planning footer in the fleet panel (shown first, so its cards are drawn in the tree).
+	var footer := PlanningFooter.new()
+	footer.end_planning_pressed.connect(_on_end_planning_pressed)
+	footer.reset_planning_confirmed.connect(_on_reset_planning_confirmed)
+	_set_fleet_footer(PLANNING_TITLE, footer)
+	var fleet := _fleet()
+	fleet.select_ship(player_0_ships[0].ship_id)  # the first ship, by default
+	footer.bind(fleet, _board().checklist())
 	if crew_client:
-		crew_client.follow_ship(current_planning_ui.selected_ship_id)
+		crew_client.follow_ship(fleet.selected_ship_id)
 	# Every own ship's default course (stored before the server announced PLANNING) is on the map at once.
 	_refresh_courses()
 
-## A click on a card (not a selection made by code): her ring opens on the board.
+## A click on a card (not a selection made by code): she is selected and the camera pans to her;
+## in PLANNING and the fire step her ring opens on the board.
+func _on_fleet_card_pressed(ship_id: String) -> void:
+	_on_fleet_ship_selected(ship_id)
+	if GameState.current_phase == GameState.GamePhase.PLANNING:
+		_on_planning_card_clicked(ship_id)
+	elif board_planning != null and board_planning.is_firing():
+		_on_fire_card_clicked(ship_id)
+
+
+## A planning card click: her ring opens on the board.
 func _on_planning_card_clicked(ship_id: String) -> void:
 	_board().close_composer()
 	if _board().ring_ship_id() != ship_id:
 		_board().open_ring(ship_id)
 
 
-func _on_planning_ship_selected(ship_id: String) -> void:
-	Trace.trace_log("GameController", "Planning UI: Ship selected - %s" % ship_id)
+## Make `ship_id`'s card the selected one and tell the map (as a card click does).
+func _select_card(ship_id: String) -> void:
+	if not _has_card(ship_id):
+		return
+	fleet_panel.select_ship(ship_id)
+	_on_fleet_ship_selected(ship_id)
+
+
+## A card was selected (clicked, or chosen by a map click or a ring): pan to her, select her on the
+## map; in PLANNING her course is drawn at full strength.
+func _on_fleet_ship_selected(ship_id: String) -> void:
+	Trace.trace_log("GameController", "Fleet panel: Ship selected - %s" % ship_id)
 
 	# Get ship state and view
 	var ship_state = GameState.get_ship(ship_id)
@@ -1253,8 +1265,7 @@ func _on_reset_planning_confirmed() -> void:
 		Trace.trace_log("GameController", "Planning reset refused: %s" % reason)
 	_click_refusals.clear()
 	_refresh_courses()
-	if current_planning_ui and is_instance_valid(current_planning_ui):
-		current_planning_ui.refresh_crew_summaries()
+	_refresh_cards()
 	if crew_client:
 		crew_client.refresh()
 
@@ -1275,7 +1286,9 @@ func _on_end_planning_pressed() -> void:
 
 	# The AI's plan is in already (TurnPhaseController.ai_player_ids); only the human's is sent.
 	if GameState.is_server and GameState.phase_controller:
-		if not GameState.phase_controller.player_submit_plan(HUMAN_PLAYER_ID):
+		var accepted: bool = GameState.phase_controller.player_submit_plan(HUMAN_PLAYER_ID)
+		_refresh_roster()  # "ready" (or, when the plan was the last one in, the next phase's states)
+		if not accepted:
 			# Refused (a course short of its deceleration limit, 5.E.4, a lead or escape error): put
 			# the server's reason in the first such ship's chip box and her back in Move mode.
 			var errors: Dictionary = GameState.phase_controller.plan_errors(HUMAN_PLAYER_ID)
@@ -1283,8 +1296,7 @@ func _on_end_planning_pressed() -> void:
 				var first: String = errors.keys()[0]
 				Trace.trace_log("GameController", "End Planning refused", {"ship_id": first,
 					"reason": errors[first]})
-				if current_planning_ui and is_instance_valid(current_planning_ui):
-					current_planning_ui.select_ship(first)  # as a card click: expands its card
+				_select_card(first)  # as a card click: expands its card
 				_click_refusals[first] = errors[first]
 				_board().enter_move(first)
 				_refresh_courses()
@@ -1458,7 +1470,6 @@ func _on_bear_off_decision_requested(player_id: int, situation: MovementTypes.Be
 		resolution_replay.finish_when_drained(_on_bear_off_replay_drained)
 	else:
 		add_child(panel)
-	current_planning_ui = null
 	if hex_overlay and hex_map:
 		var none: Array[Vector2i] = []
 		for other_id in situation.other_plots:
@@ -1492,6 +1503,8 @@ func _on_bear_off_replay_drained() -> void:
 	if GameState.phase_controller \
 			and GameState.phase_controller.current_phase == TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION:
 		_show_movement_panel()
+	else:
+		_show_fleet_panel()  # handed back with the footer of the phase now current
 
 
 ## Maintenance Phase (8.C, 10.G.6): the server asks for the player's grapple, ungrapple or prize-crew
@@ -1511,12 +1524,7 @@ func _on_maintenance_orders_requested(player_id: int, step: String, options: Arr
 		_sync_all_views()  # drift has moved ships since the last sync
 		panel.setup(step, options, names)
 		panel.orders_submitted.connect(_on_maintenance_orders_submitted.bind(panel, null))
-		if context_panel:
-			context_panel.set_context_title(MaintenanceOrdersPanel.title(step))
-			context_panel.set_context_content(panel)
-		else:
-			add_child(panel)
-		current_planning_ui = null
+		_set_side_content(MaintenanceOrdersPanel.title(step), panel)
 		if combat_log_panel:
 			combat_log_panel.auto_expand(false)  # keep the ships alongside visible
 		return
@@ -1589,24 +1597,15 @@ func _on_fire_declaration_requested() -> void:
 		_show_combat_panel(_no_shot_lines(player_ships))
 		_submit_fire_orders([])
 		return
-	# The orders are given on the board (fire ring, target mode, option box); the side panel holds
-	# the cards, the hold-fire line and Fire. The context panel frees the old content; the cached
-	# planning UI is among the freed nodes, so drop the reference and let the next turn build anew.
+	# The orders are given on the board (fire ring, target mode, option box); the fleet panel's
+	# footer holds the hold-fire line and Fire, and its cards the fire pills.
 	var board := _board()
 	board.begin_fire(model, player_ships)
-	_close_fire_step_panel()  # an earlier fire step's panel (no side panel frees it for us)
-	var panel := FireStepPanel.new()
-	if context_panel:
-		context_panel.set_context_title("Fire Orders")
-		context_panel.set_context_content(panel)
-	else:
-		add_child(panel)
-	current_planning_ui = null
-	fire_step_panel = panel
-	panel.fire_pressed.connect(_on_fire_pressed)
-	panel.card_clicked.connect(_on_fire_card_clicked)
-	panel.crew_overlay_requested.connect(_open_crew_overlay)
-	panel.setup(player_ships, board.fire_board())
+	_close_fire_step_panel()  # an earlier fire step's footer
+	var footer := FireFooter.new()
+	footer.fire_pressed.connect(_on_fire_pressed)
+	_set_fleet_footer(FIRE_TITLE, footer)
+	footer.bind(_fleet(), board.fire_board())
 	if combat_log_panel:
 		combat_log_panel.auto_expand(false)  # keep the arcs and targets visible
 
@@ -1629,7 +1628,7 @@ func _no_shot_lines(own_ships: Array) -> Array[String]:
 	return lines
 
 
-## Context-panel content titled "Combat" while the exchange resolves and plays back.
+## The fleet panel's status footer, titled "Combat", while the exchange resolves and plays back.
 func _show_combat_panel(lines: Array[String]) -> void:
 	_show_phase_panel("Combat", "CombatPanel", lines, "The combat log below shows each shot.")
 
@@ -1642,34 +1641,15 @@ static func movement_panel_lines(skippable: bool) -> Array[String]:
 	return lines
 
 
-## Context-panel content titled "Movement" while movement plays back: no planning controls.
+## The fleet panel's status footer, titled "Movement", while movement plays back: no planning controls.
 func _show_movement_panel() -> void:
 	_show_phase_panel("Movement", "MovementPanel", movement_panel_lines(MOVEMENT_PLAYBACK_SKIPPABLE), "")
 
 
-## Replace the context panel's content with read-only lines (plus an optional secondary hint).
-## The planning UI it held is freed with it, so the next planning phase builds a fresh one.
+## The fleet panel's footer becomes read-only lines (plus an optional secondary hint), no buttons.
 func _show_phase_panel(title: String, node_name: String, lines: Array[String], hint_text: String) -> void:
-	var box := VBoxContainer.new()
-	box.name = node_name
-	box.add_theme_constant_override("separation", 8)
-	for i in range(lines.size()):
-		var label := Label.new()
-		label.text = lines[i]
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		box.add_child(label)
-	if hint_text != "":
-		var hint := Label.new()
-		hint.text = hint_text
-		hint.theme_type_variation = &"SecondaryLabel"
-		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		box.add_child(hint)
-	if context_panel:
-		context_panel.set_context_title(title)
-		context_panel.set_context_content(box)
-	else:
-		add_child(box)
-	current_planning_ui = null
+	var box := PhaseFooters.status(node_name, lines, hint_text)
+	_set_fleet_footer(title, box)
 	combat_panel = box
 
 
@@ -1679,7 +1659,7 @@ func _show_phase_panel(title: String, node_name: String, lines: Array[String], h
 ## shown. A refusal shows in the footer and the step stays; once accepted the step is over and,
 ## while others still declare, the side panel says the orders are in.
 func _on_fire_pressed() -> void:
-	var panel := fire_step_panel
+	var panel := _fire_footer()
 	if panel == null or board_planning == null or not board_planning.is_firing():
 		return
 	var fire := board_planning.fire_board()
@@ -1689,8 +1669,9 @@ func _on_fire_pressed() -> void:
 	var marine_orders: Array = fire.model.marine_orders()
 	panel.set_sending()  # no double submit while the server decides
 	var reason := _submit_fire_orders(orders, marine_orders)
+	_refresh_roster()  # "ready" while others declare
 	if reason != "":
-		if is_instance_valid(panel) and panel == fire_step_panel:
+		if is_instance_valid(panel) and panel == _fire_footer():
 			panel.show_error(reason)
 		return
 	# Accepted: the declare step is over (when the submit completed the declarations, combat has
@@ -1719,7 +1700,7 @@ static func orders_summary_line(orders: Array, marine_count: int = 0) -> String:
 
 ## The fire step is over (Fire accepted, the combat replay, a phase change, game over, a new game,
 ## leaving): the board's fire ring, option box (its draft put back), target mode, pills and arrows
-## go, then the arcs and the side panel. Safe to call on any path, more than once.
+## go, then the arcs and the fire footer. Safe to call on any path, more than once.
 func _close_fire_step() -> void:
 	if board_planning:
 		board_planning.end_fire()
@@ -1729,9 +1710,15 @@ func _close_fire_step() -> void:
 
 
 func _close_fire_step_panel() -> void:
-	if fire_step_panel and is_instance_valid(fire_step_panel):
-		fire_step_panel.queue_free()
-	fire_step_panel = null
+	if _fire_footer() != null:
+		_clear_fleet_footer()
+
+
+## The fire step's footer while it is the fleet panel's, else null.
+func _fire_footer() -> FireFooter:
+	if fleet_panel == null or not is_instance_valid(fleet_panel):
+		return null
+	return fleet_panel.footer() as FireFooter
 
 
 ## The board's fire step has a side picking a target (its arc shaded, the targets ringed).
@@ -2001,6 +1988,7 @@ func _cancel_resolution_replay() -> void:
 	_combat_playback_active = false
 	if resolution_replay:
 		resolution_replay.cancel()
+	_refresh_roster()  # no longer "resolving"
 
 
 func _replay_running() -> bool:
@@ -2032,6 +2020,7 @@ func _start_resolution_replay(kind: String, phases: Array[int]) -> void:
 	if _replay_saved_view.is_empty() and camera and camera.has_method("save_view"):
 		_replay_saved_view = camera.save_view()
 	_replay().start(kind, phases)
+	_refresh_roster()  # the local player is "resolving"
 	if kind == "bear_off":
 		return  # movement playback owns the ship views: no display copies, no sync
 	display_states.begin(phases)
@@ -2046,13 +2035,7 @@ func _ensure_resolution_panel() -> void:
 	if resolution_panel == null or not is_instance_valid(resolution_panel) \
 			or resolution_panel.is_queued_for_deletion():
 		resolution_panel = ResolutionPanelScene.instantiate()
-	if context_panel:
-		context_panel.set_context_title("Resolution")
-		context_panel.set_context_content(resolution_panel)
-	elif resolution_panel.get_parent() == null:
-		add_child(resolution_panel)
-	current_planning_ui = null  # freed by the context panel
-	combat_panel = null
+	_set_side_content("Resolution", resolution_panel)  # the fleet panel waits to be handed back
 	_replay().attach_panel(resolution_panel)
 
 
@@ -2127,8 +2110,9 @@ static func step_frame_distance(span: float, base: float, fov_deg: float, viewpo
 	return maxf(base, needed)
 
 
-## The replay is over (or dropped): the camera goes back, the map and log show live state again.
-## What the side panel shows next is the caller's (End Turn in POST_COMBAT, the next phase's UI).
+## The replay is over (or dropped): the camera goes back, the map and log show live state again,
+## and the fleet panel is handed back with its footer; the caller may then set the footer of the
+## phase now current (End Turn in POST_COMBAT, the next phase's).
 func _end_resolution_display() -> void:
 	if camera and not _replay_saved_view.is_empty() and camera.has_method("restore_view"):
 		camera.restore_view(_replay_saved_view)
@@ -2138,6 +2122,7 @@ func _end_resolution_display() -> void:
 	if combat_log_panel:
 		combat_log_panel.clear_reveal_limit()
 	_sync_all_views()
+	_show_fleet_panel()
 
 
 ## Whether the phase `phase` has moved past a replay of `phases`: before them, or after them (the
@@ -2198,45 +2183,129 @@ func _drawn_ships() -> Array:
 	return out
 
 
-func _show_end_turn_ui() -> void:
-	var box := VBoxContainer.new()
-	box.name = "EndTurnPanel"
-	box.add_theme_constant_override("separation", 12)
-	var hint := Label.new()
-	hint.text = "Review the combat log, then end the turn."
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	box.add_child(hint)
-	# Every phase keeps its main button pinned at the bottom of the side panel.
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	box.add_child(spacer)
-	box.add_child(HSeparator.new())
-	var key_hint := Label.new()
-	key_hint.text = "Space or Enter also ends the turn."
-	key_hint.theme_type_variation = &"SecondaryLabel"
-	key_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(key_hint)
-	var button := Button.new()
-	button.name = "EndTurnButton"
-	button.text = "End Turn"
-	button.custom_minimum_size = Vector2(0, 44)
-	button.focus_mode = Control.FOCUS_NONE  # Space/Enter are handled once, in _unhandled_input
-	button.pressed.connect(_on_end_turn_pressed)
-	box.add_child(button)
+# --- The fleet panel (the side panel for the whole turn) -------------------------------------
+
+## The fleet panel, made on first use (and again after a context panel freed it).
+func _fleet() -> FleetPanel:
+	if fleet_panel == null or not is_instance_valid(fleet_panel) or fleet_panel.is_queued_for_deletion():
+		fleet_panel = FleetPanel.new()
+		fleet_panel.ship_card_pressed.connect(_on_fleet_card_pressed)
+		fleet_panel.crew_overlay_requested.connect(_open_crew_overlay)
+		fleet_panel.setup(HUMAN_PLAYER_ID)
+		_fleet_on_side = false
+	return fleet_panel
+
+
+func _has_card(ship_id: String) -> bool:
+	return fleet_panel != null and is_instance_valid(fleet_panel) and fleet_panel.cards.has(ship_id)
+
+
+## The selected card's ship, or "".
+func _card_selected_id() -> String:
+	if fleet_panel == null or not is_instance_valid(fleet_panel):
+		return ""
+	return fleet_panel.selected_ship_id
+
+
+## Every card redrawn from her ship and crew plan (a crew order, a reset, a course edit).
+func _refresh_cards() -> void:
+	if fleet_panel != null and is_instance_valid(fleet_panel):
+		fleet_panel.refresh_cards()
+
+
+## The fleet panel in the side panel, titled for the phase, with its cards and roster refreshed.
+## Without a side panel (tests, AI-only runs) it is this node's child.
+func _show_fleet_panel() -> void:
+	var fleet := _fleet()
+	fleet.visible = true
 	if context_panel:
-		context_panel.set_context_title("Turn %d complete" % GameState.phase_controller.current_turn)
-		context_panel.set_context_content(box)
-	else:
-		add_child(box)
-	current_planning_ui = null  # freed by the context panel; the next turn builds a fresh one
+		context_panel.set_context_title(_fleet_title)
+		context_panel.set_context_content(fleet)
+	elif fleet.get_parent() != self:
+		if fleet.get_parent() != null:
+			fleet.get_parent().remove_child(fleet)
+		add_child(fleet)
+	_fleet_on_side = true
+	_refresh_fleet()
+
+
+## Any other side-panel content (the resolution panel, a maintenance panel, game over): the fleet
+## panel is taken out first and waits, hidden, under this node, so the context panel does not free it.
+func _set_side_content(title: String, node: Control) -> void:
+	_park_fleet_panel()
+	if context_panel:
+		context_panel.set_context_title(title)
+		context_panel.set_context_content(node)
+	elif node.get_parent() == null:
+		add_child(node)
+
+
+func _park_fleet_panel() -> void:
+	_fleet_on_side = false
+	if fleet_panel == null or not is_instance_valid(fleet_panel):
+		return
+	if fleet_panel.get_parent() != self:
+		if fleet_panel.get_parent() != null:
+			fleet_panel.get_parent().remove_child(fleet_panel)
+		add_child(fleet_panel)
+	fleet_panel.visible = false
+
+
+## "Your ships" (own ships on the map, prizes taken included, live state) and the roster, while the
+## fleet panel is shown; a card needs the tree to draw.
+func _refresh_fleet() -> void:
+	if not _fleet_on_side or fleet_panel == null or not is_instance_valid(fleet_panel) \
+			or not fleet_panel.is_inside_tree():
+		return
+	fleet_panel.refresh_ships(planning_ships(GameState.ships_of_player(HUMAN_PLAYER_ID)))
+	_refresh_roster()
+
+
+## The Players section: what every player is doing, as the local client knows it.
+func _refresh_roster() -> void:
+	if fleet_panel == null or not is_instance_valid(fleet_panel) or GameState.phase_controller == null:
+		return
+	fleet_panel.refresh_roster(RosterRows.rows(GameState, HUMAN_PLAYER_ID, _replay_running()))
+
+
+## The phase's footer (and title) in the fleet panel, which is then shown: the previous footer is
+## freed with the references to it.
+func _set_fleet_footer(title: String, footer: Control) -> void:
+	combat_panel = null
+	end_turn_panel = null
+	end_turn_button = null
+	_fleet_title = title
+	_fleet().set_footer(footer)
+	_show_fleet_panel()
+
+
+## No footer (a phase change; the fire step over; game over), and the neutral title, so a phase
+## with no footer of its own is not titled for the last one. The panel stays where it is.
+func _clear_fleet_footer() -> void:
+	combat_panel = null
+	end_turn_panel = null
+	end_turn_button = null
+	_fleet_title = FleetPanel.TITLE
+	if fleet_panel != null and is_instance_valid(fleet_panel):
+		fleet_panel.set_footer(null)
+	if _fleet_on_side and context_panel:
+		context_panel.set_context_title(_fleet_title)
+
+
+## POST_COMBAT: the fleet panel's footer is End Turn (Space and Enter press it, _unhandled_input).
+func _show_end_turn_ui() -> void:
+	var box := PhaseFooters.end_turn()
+	var button := PhaseFooters.end_turn_button(box)
+	button.pressed.connect(_on_end_turn_pressed)
+	_set_fleet_footer("Turn %d complete" % GameState.phase_controller.current_turn, box)
 	end_turn_panel = box
 	end_turn_button = button
-	combat_panel = null  # freed by the context panel
 
 
 func _clear_end_turn_ui() -> void:
-	if end_turn_panel and is_instance_valid(end_turn_panel):
-		end_turn_panel.queue_free()
+	if end_turn_panel != null and is_instance_valid(end_turn_panel) and fleet_panel != null \
+			and is_instance_valid(fleet_panel) and fleet_panel.footer() == end_turn_panel:
+		_clear_fleet_footer()
 	end_turn_panel = null
 	end_turn_button = null
 
@@ -2258,6 +2327,7 @@ func _request_end_turn() -> void:
 	# Single-player shortcut: end the turn under server guard  SCV:ALLOW
 	if GameState.is_server and GameState.phase_controller:
 		GameState.phase_controller.player_end_turn(HUMAN_PLAYER_ID)
+		_refresh_roster()  # "ended turn" while others review (or the next turn's states)
 	else:
 		push_warning("Client phase advance not yet implemented - needs network layer")
 
@@ -2280,12 +2350,11 @@ func _on_game_over(result: Dictionary) -> void:
 	_courses.clear()
 	if hex_overlay:
 		hex_overlay.clear_everything()
-	current_planning_ui = null
+	_clear_fleet_footer()
 	if context_panel:
 		var done := Label.new()
 		done.text = "The battle is over."
-		context_panel.set_context_title("Game over")
-		context_panel.set_context_content(done)  # also frees any leftover planning controls
+		_set_side_content("Game over", done)  # the fleet panel waits for a reset
 	_clear_boarding_card()
 	game_over_panel = GameOverPanelScene.instantiate()
 	if ui:
@@ -2352,6 +2421,7 @@ func _sync_all_views() -> void:
 			tow_lines = TowLines.new()
 			add_child(tow_lines)
 		tow_lines.refresh(drawn, hex_map.get_hex_grid())
+	_refresh_fleet()  # damage, a capture, an escape or a wreck: the cards follow (live state)
 
 ## The hawsers ride on the drawn ships every frame (view only): movement playback glides the views
 ## between hexes, and a hawser drawn from the hexes alone would hang still until the next sync.
