@@ -115,3 +115,16 @@ func test_move_mode_click_extends_only_that_ship() -> void:
 	assert_eq(GameState.phase_controller.stored_course(GameState.get_ship("b")).size(), 0)
 	gc._board().leave_move()
 	assert_true(gc._routable_courses().is_empty(), "out of Move mode no course takes clicks")
+
+
+func test_a_developer_ui_change_relocks_the_board() -> void:
+	gc.ships_container = Node3D.new()  # the ship views the handler redraws
+	autofree(gc.ships_container)
+	var board: BoardPlanning = gc._board()
+	board.begin_planning([GameState.get_ship("a"), GameState.get_ship("b")] as Array[ShipState])
+	board.enter_move("a")
+	GameState.get_ship("a").anchor = {"hex": Vector2i(0, 0), "end": "bow", "cable": 0}  # as anchor_ship
+	gc._on_dev_ship_changed("a")
+	assert_eq(board.checklist().state("a"), PlanChecklist.LOCKED, "an anchored ship is Locked at once")
+	assert_eq(board.move_ship_id(), "", "and leaves Move mode")
+	assert_eq(board.checklist().state("b"), PlanChecklist.PLAN)

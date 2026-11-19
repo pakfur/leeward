@@ -260,6 +260,7 @@ func _on_dev_ship_changed(ship_id: String) -> void:
 	if crew_client:
 		crew_client.refresh()
 	_sync_all_views()
+	_refresh_courses()  # an anchor or a surrender may lock her (board planning follows), a cut cable unlock her
 
 
 ## The overlay opening (C or the ring's Crew & damage) closes the ring and leaves Move mode.
