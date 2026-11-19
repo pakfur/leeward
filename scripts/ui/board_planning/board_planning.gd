@@ -295,7 +295,24 @@ func open_composer(ship_id: String) -> void:
 	leave_move()
 	_composer.ship_names = _all_ship_names()
 	_composer_ship = ship_id
-	_composer.open(ship.ship_name, options, _world_of.call(ship_id) if _world_of.is_valid() else null)
+	_composer.open(ship.ship_name, _composer_options(ship_id), _world_of.call(ship_id) if _world_of.is_valid() else null, ship_id)
+
+
+## The `signal` entry of `order_options` with names for the pending line (view lookups only).
+func _composer_options(ship_id: String) -> Dictionary:
+	var options: Dictionary = _order_options(ship_id).get("signal", {}).duplicate(true)
+	var pending: Dictionary = options.get("pending", {})
+	if not pending.is_empty():
+		var from := GameState.get_ship(str(pending.get("from_ship", "")))
+		if from != null:
+			pending["from_name"] = from.ship_name
+		var addr: Dictionary = pending.get("address", {})
+		if addr.get("kind", "") == "ship":
+			var to := GameState.get_ship(str(addr.get("name", "")))
+			if to != null:
+				pending["to_label"] = to.ship_name
+		options["pending"] = pending
+	return options
 
 
 func close_composer() -> void:
@@ -315,7 +332,7 @@ func refresh_composer(sent := false) -> void:
 	if sent:
 		_composer.clear_text()
 	_composer.show_error("")
-	_composer.open(ship.ship_name, _order_options(ship.ship_id).get("signal", {}))
+	_composer.open(ship.ship_name, _composer_options(ship.ship_id), null, ship.ship_id)
 
 
 ## A refusal of the signal request, shown in the box.

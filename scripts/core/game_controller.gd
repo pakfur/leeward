@@ -273,6 +273,7 @@ func _redraw_ship(ship_id: String) -> void:
 func _on_crew_open_changed(on: bool) -> void:
 	if on and board_planning:
 		board_planning.close_ring()
+		board_planning.close_composer()
 		board_planning.leave_move()
 	_on_crew_changed()
 
@@ -702,7 +703,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_center_camera_on_all_ships()
 			get_viewport().set_input_as_handled()
 			return
-		elif event.keycode == KEY_F12:
+		elif event.keycode == KEY_F12 and not (board_planning != null and board_planning.signal_composer().is_typing()):
 			_toggle_developer_ui()
 			get_viewport().set_input_as_handled()
 			return
@@ -1186,6 +1187,7 @@ func _enter_planning_phase() -> void:
 
 ## A click on a card (not a selection made by code): her ring opens on the board.
 func _on_planning_card_clicked(ship_id: String) -> void:
+	_board().close_composer()
 	if _board().ring_ship_id() != ship_id:
 		_board().open_ring(ship_id)
 

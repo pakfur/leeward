@@ -209,7 +209,7 @@ func _update() -> void:
 	for id in _pills:
 		var pill: Label = _pills[id]
 		var box: HBoxContainer = _marks.get(id)
-		var has_marks: bool = box != null and box.get_child_count() > 0
+		var has_marks: bool = box != null and not _mark_ids.get(id, []).is_empty()
 		if id == _hidden or _camera == null or _camera.is_position_behind(_entries[id]["world"]):
 			pill.visible = false
 			if box != null:

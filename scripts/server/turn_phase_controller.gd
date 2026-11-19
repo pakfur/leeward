@@ -1502,7 +1502,7 @@ func order_options(player_id: int, ship_id: String) -> Dictionary:
 	for group_name in game_state.groups.get(side, {}):
 		addresses.append({"kind": "group", "name": str(group_name), "label": str(group_name)})
 	for other in game_state.ships_on_map():
-		if other.side == side and not other.is_out_of_play():
+		if other.side == side and not other.is_out_of_play() and other.ship_id != ship_id:
 			addresses.append({"kind": "ship", "name": other.ship_id, "label": other.ship_name})
 	return {
 		"lead": {"on": ship.casts_lead(), "error": lead_error},

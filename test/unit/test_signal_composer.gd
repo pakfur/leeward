@@ -57,12 +57,12 @@ func test_send_emits_address_and_text() -> void:
 	assert_eq(get_signal_parameters(box, "send_requested", 1)[0], {"kind": "fleet", "name": ""})
 
 
-func test_empty_text_is_not_sent() -> void:
+func test_empty_text_goes_to_the_server() -> void:
 	box.open("Agamemnon", _options())
 	watch_signals(box)
 	box.send_button().pressed.emit()
-	assert_signal_not_emitted(box, "send_requested")
-	assert_ne(box.error_text(), "")
+	assert_signal_emit_count(box, "send_requested", 1)  # the server answers "Empty signal"
+	assert_eq(get_signal_parameters(box, "send_requested", 0)[1], "")
 
 
 func test_pending_signal_shown_with_cancel() -> void:
@@ -71,7 +71,13 @@ func test_pending_signal_shown_with_cancel() -> void:
 	assert_false(box.cancel_button().is_visible_in_tree())
 	box.open("Agamemnon", _options({"pending": {
 		"address": {"kind": "ship", "name": "b_id"}, "words": ["FOLLOW", "ME"]}}))
-	assert_eq(box.pending_text(), "To Bellona: FOLLOW ME")
+	assert_eq(box.pending_text(), "From \nTo Bellona: FOLLOW ME")
+	box.open("Agamemnon", _options({"pending": {
+		"address": {"kind": "ship", "name": "gone_id"}, "words": ["GO"], "from_ship": "x", "from_name": "Ajax"}}),
+		null, "y")
+	assert_eq(box.pending_text(),
+		"From Ajax\nTo gone_id: GO\nSending replaces it (one signal a turn).",
+		"an address not listed shows its name; another sender gets the note")
 	assert_true(box.cancel_button().is_visible_in_tree())
 	watch_signals(box)
 	box.cancel_button().pressed.emit()

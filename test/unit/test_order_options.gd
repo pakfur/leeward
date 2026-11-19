@@ -300,12 +300,12 @@ func test_signal_addresses_and_limit() -> void:
 	assert_eq(addresses[0], {"kind": "fleet", "name": "", "label": "Fleet"})
 	assert_eq(addresses[1], {"kind": "group", "name": "van", "label": "van"})
 	var ships := addresses.filter(func(x): return x["kind"] == "ship")
-	assert_eq(ships.size(), 2)  # own side only: a_id and c_id
-	assert_eq(ships.map(func(x): return x["name"]), ["a_id", "c_id"])
-	assert_eq(ships[1]["label"], "Cee")
+	assert_eq(ships.size(), 1)  # own side only, and not the sender herself: c_id
+	assert_eq(ships.map(func(x): return x["name"]), ["c_id"])
+	assert_eq(ships[0]["label"], "Cee")
 	c.status = ShipState.Status.STRUCK
 	var after: Array = _opts()["signal"]["addresses"].filter(func(x): return x["kind"] == "ship")
-	assert_eq(after.size(), 1)
+	assert_eq(after.size(), 0)
 
 
 # --- read only ---

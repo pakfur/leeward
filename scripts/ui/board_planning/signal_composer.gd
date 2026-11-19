@@ -26,6 +26,7 @@ var ship_names: Array[String] = []
 var _camera: Camera3D = null
 var _world: Variant = null
 var _limit := 0
+var _ship_id := ""
 var _addresses: Array = []
 var _title: Label
 var _picker: OptionButton
@@ -54,9 +55,10 @@ func setup(camera: Camera3D) -> void:
 ## Opens the box for `ship_name` with `options`, the `signal` entry of `order_options`
 ## ({error, pending, limit, addresses}). Reopening while open keeps what was typed and the
 ## address picked (a sent or cancelled signal re-reads the pending line).
-func open(ship_name: String, options: Dictionary, world: Variant = null) -> void:
+func open(ship_name: String, options: Dictionary, world: Variant = null, ship_id := "") -> void:
 	if _title == null:
 		_build()
+	_ship_id = ship_id
 	var keep_text := visible
 	var keep_address := selected_address() if visible else {}
 	_title.text = "Signal from %s" % ship_name
@@ -199,11 +201,8 @@ func _place() -> void:
 
 
 func _submit() -> void:
-	var t := _field.text.strip_edges()
-	if t == "":
-		show_error("Type the signal first.")
-		return
-	send_requested.emit(selected_address(), t)
+	# An empty text goes to the server too: its refusal ("Empty signal") comes back through show_error.
+	send_requested.emit(selected_address(), _field.text.strip_edges())
 
 
 func _show_pending(pending: Dictionary) -> void:
@@ -212,11 +211,17 @@ func _show_pending(pending: Dictionary) -> void:
 		_pending_label.text = ""
 		return
 	var addr: Dictionary = pending.get("address", {})
-	var to := "Fleet"
+	var to := "Fleet" if addr.get("kind", "fleet") == "fleet" else str(addr.get("name", "Fleet"))
+	if pending.has("to_label"):
+		to = str(pending["to_label"])
 	for a in _addresses:
 		if a.get("kind", "") == addr.get("kind", "") and a.get("name", "") == addr.get("name", ""):
 			to = str(a.get("label", to))
-	_pending_label.text = "To %s: %s" % [to, " ".join(PackedStringArray(pending.get("words", [])))]
+	var text := "From %s\nTo %s: %s" % [str(pending.get("from_name", pending.get("from_ship", ""))), to,
+			" ".join(PackedStringArray(pending.get("words", [])))]
+	if _ship_id != "" and str(pending.get("from_ship", _ship_id)) != _ship_id:
+		text += "\nSending replaces it (one signal a turn)."
+	_pending_label.text = text
 	_pending_box.visible = true
 
 

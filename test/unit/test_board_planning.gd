@@ -580,8 +580,14 @@ func test_signal_send_and_cancel_through_the_controller() -> void:
 	var pending := _pc().pending_signal(0)
 	assert_not_null(pending, "the server holds the signal")
 	assert_eq(pending.words, ["ENGAGE"] as Array[String])
-	assert_eq(box.pending_text(), "To Fleet: ENGAGE", "the box shows it as pending")
+	assert_true(box.pending_text().contains("To Fleet: ENGAGE"), "the box shows it as pending")
+	assert_true(box.pending_text().begins_with("From "), "and which ship sent it")
+	assert_false(box.pending_text().contains("replaces"), "no note when opened from the sender")
 	assert_eq(box.text(), "", "the field is emptied")
+	box.set_text("")
+	box.send_button().pressed.emit()
+	assert_eq(box.error_text(), "Empty signal", "an empty send is the server's refusal, verbatim")
+	assert_eq(_pc().pending_signal(0).words, ["ENGAGE"] as Array[String])
 	box.set_text("one two three four four four four four")
 	box.send_button().pressed.emit()
 	assert_ne(box.error_text(), "", "a refusal shows in the box")
@@ -589,6 +595,29 @@ func test_signal_send_and_cancel_through_the_controller() -> void:
 	box.cancel_button().pressed.emit()
 	assert_null(_pc().pending_signal(0))
 	assert_eq(box.pending_text(), "")
+
+
+func test_signal_box_from_another_ship_notes_replacement() -> void:
+	var gc := _controller()
+	var board: BoardPlanning = gc._board()
+	board.begin_planning(_ships([a, b]))
+	board.open_composer("a")
+	board.signal_composer().set_text("engage")
+	board.signal_composer().send_button().pressed.emit()
+	board.close_composer()
+	board.open_composer("b")
+	var line := board.signal_composer().pending_text()
+	assert_true(line.contains("From %s" % a.ship_name))
+	assert_true(line.contains("Sending replaces it (one signal a turn)"))
+
+
+func test_crew_overlay_open_closes_the_signal_box() -> void:
+	var gc := _controller()
+	var board: BoardPlanning = gc._board()
+	board.begin_planning(_ships([a, b]))
+	board.open_composer("a")
+	gc._on_crew_open_changed(true)
+	assert_eq(board.composer_ship_id(), "")
 
 
 func test_ring_hides_the_ships_pill_and_marks() -> void:
