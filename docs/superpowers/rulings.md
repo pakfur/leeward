@@ -95,3 +95,11 @@ Parked: a tow astern blocking a stern chaser is refused as "no line of sight" ra
 - An open ring hides its ship's pill and order marks. Cost if wrong: the state is one glance away on the card.
 - Any map click closes the signal box; Tab stays in its text field; Enter sends and keeps the field editing. Cost if wrong: small habits.
 - The signal box names the sender of a pending signal and warns that a new one (from any ship) replaces it: signals are one per player a turn. A ship is not offered herself as an address. Cost if wrong: none known.
+
+## Board planning, piece 3 (fire on the board) — 2026-11-19
+
+- The fire step starts every ship with no orders (as in the prototype: unordered guns hold fire), where the old panel pre-selected each ship's best shot. Cost if wrong: a hurried player fires nothing; a "best shot" button could be added.
+- Pressing Fire with an option box open confirms that box (its draft is already counted on the Fire button and drawn as an arrow). Cost if wrong: an order the player meant to drop is sent.
+- A ship still in Plan that has confirmed orders shows "FIRE · n"; she stays in Plan until Done. Cost if wrong: wording.
+- The fire declaration side panel is deleted; its order logic lives in `FireOrdersModel`, its texts in `FireText`; the no-side-panel path uses the same `FireStepPanel`. Cost if wrong: none known.
+- Parked: the option box can cover another target or a ship alongside; unused model queries kept for tests.
