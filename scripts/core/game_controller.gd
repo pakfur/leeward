@@ -37,6 +37,8 @@ var _leaving: bool = false  # Leave game confirmed: playback is abandoned, nothi
 ## planning panel's crew block. View code; changes go through the server's crew requests.
 var crew_client: CrewOverlayClient = null
 var crew_overlay: CrewOverlay = null
+## Planning on the board (ring, Plan / Done, Move mode, chip box); made on first use (_board()).
+var board_planning: BoardPlanning = null
 
 # The resolution replay (resolution panel spec): the combat steps on combat_log_ready, the
 # post-combat phases' steps before End Turn. View only; the map draws `display_states` meanwhile.
@@ -140,6 +142,7 @@ func _ready() -> void:
 
 	_setup_pause_menu()
 	_setup_crew_overlay()
+	_board()  # the ring, badges and chip box, under the crew overlay and the pause menu
 
 	# Setup debug hex coordinate label
 	_setup_hex_coord_label()
@@ -231,7 +234,7 @@ func _setup_crew_overlay() -> void:
 		add_child(crew_overlay)
 	crew_overlay.setup(crew_client)
 	crew_client.changed.connect(_on_crew_changed)
-	crew_client.open_changed.connect(func(_on): _on_crew_changed())
+	crew_client.open_changed.connect(_on_crew_open_changed)
 	_fit_crew_overlay()
 
 
@@ -257,6 +260,56 @@ func _on_dev_ship_changed(ship_id: String) -> void:
 	if crew_client:
 		crew_client.refresh()
 	_sync_all_views()
+
+
+## The overlay opening (C or the ring's Crew & damage) closes the ring and leaves Move mode.
+func _on_crew_open_changed(on: bool) -> void:
+	if on and board_planning:
+		board_planning.close_ring()
+		board_planning.leave_move()
+	_on_crew_changed()
+
+
+## The board-planning coordinator, made on first use: its Controls go over the map, under the
+## crew overlay and the pause menu (under this node when there is no UI, as in headless tests).
+func _board() -> BoardPlanning:
+	if board_planning != null:
+		return board_planning
+	board_planning = BoardPlanning.new()
+	add_child(board_planning)
+	board_planning.setup(ui, camera, _ship_world_centre, _map_safe_rect, _course_selected_id)
+	if ui and crew_overlay and crew_overlay.get_parent() == ui:
+		for c in board_planning.controls():
+			ui.move_child(c, crew_overlay.get_index())
+	board_planning.crew_overlay_requested.connect(_open_crew_overlay)
+	board_planning.reset_course_requested.connect(_on_reset_course_requested)
+	board_planning.move_mode_changed.connect(_on_move_mode_changed)
+	board_planning.ring_opened.connect(_on_ring_opened)
+	return board_planning
+
+
+## A ship's centre on the water (from her state, not her bobbing view), or null without a map.
+func _ship_world_centre(ship_id: String) -> Variant:
+	var ship := GameState.get_ship(ship_id)
+	if ship == null or not hex_map:
+		return null
+	return hex_map.get_hex_grid().ship_center_world(ship.hex_position, ship.facing)
+
+
+## Move mode entered or left: only that ship's course takes clicks and shows its next hexes.
+func _on_move_mode_changed(_ship_id: String) -> void:
+	_clear_hover()
+	_refresh_courses()
+
+
+## A ring opened (a click, Tab, Space): she is the selected ship everywhere.
+func _on_ring_opened(ship_id: String) -> void:
+	if current_planning_ui and is_instance_valid(current_planning_ui) \
+			and GameState.current_phase == GameState.GamePhase.PLANNING:
+		if current_planning_ui.selected_ship_id != ship_id:
+			current_planning_ui.select_ship(ship_id)
+	elif selected_ship_id != ship_id:
+		_select_ship(ship_id)
 
 
 func _on_crew_changed() -> void:
@@ -327,6 +380,8 @@ func _leave_game() -> void:
 	_leaving = true
 	Trace.trace_log("GameController", "Leaving the game in progress")
 	_cancel_resolution_replay()  # no step reaches the server any more
+	if board_planning:
+		board_planning.end_planning()
 	if playback_controller:
 		if playback_controller.playback_completed.is_connected(_on_playback_completed):
 			playback_controller.playback_completed.disconnect(_on_playback_completed)
@@ -349,6 +404,11 @@ func _input(event: InputEvent) -> void:
 	# Esc in the crew overlay drops a picked-up counter, then closes it (spec §4.1).
 	if not pause_menu.is_open() and crew_overlay and crew_overlay.visible and game_over_panel == null:
 		if crew_overlay.handle_escape():
+			get_viewport().set_input_as_handled()
+			return
+	# Board planning steps back (Move mode, then the ring) before Esc opens the pause menu.
+	if not pause_menu.is_open() and game_over_panel == null and _board_keys_live():
+		if board_planning.handle_key(KEY_ESCAPE):
 			get_viewport().set_input_as_handled()
 			return
 	match PauseMenuScript.escape_action(pause_menu.is_open(), game_over_panel != null):
@@ -436,6 +496,8 @@ func _setup_scenario(scenario: Dictionary) -> void:
 ## A new game (or a Developer UI reset): one ShipView per ship the server built, replacing any old ones.
 func _on_game_started(_scenario: Dictionary) -> void:
 	_cancel_resolution_replay()
+	if board_planning:
+		board_planning.end_planning()  # a reset mid-ring: PLANNING's entry begins afresh
 	display_states.clear()
 	_replay_saved_view = {}
 	for id in ship_views.keys():
@@ -521,6 +583,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# Handle keyboard shortcuts
 	if event is InputEventKey and event.pressed and not event.echo:
+		# Board planning: Tab next ship in Plan, Space the selected ship's ring, Enter Done. Only in
+		# PLANNING, so Space / Enter keep their replay and End Turn meanings below.
+		if event.keycode in [KEY_TAB, KEY_SPACE, KEY_ENTER, KEY_KP_ENTER] and _board_keys_live():
+			if board_planning.handle_key(event.keycode):
+				get_viewport().set_input_as_handled()
+				return
 		# The resolution panel takes Space / Enter as Next (its own key handling, which runs first);
 		# while its dice tumble they must not reach End Turn or anything else.
 		if _replay_running() and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
@@ -545,13 +613,45 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# Handle mouse click
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		# A hex some own ship's course claims goes to that course, even over a ship (spec: course
-		# wins over ships); anything else selects as usual.
-		if _handle_course_click(_course_hex_at(event.position)):
-			get_viewport().set_input_as_handled()
-			return
-		_handle_ship_selection(event.position)
+		if GameState.current_phase == GameState.GamePhase.PLANNING:
+			_handle_planning_click(event.position)
+		else:
+			_handle_ship_selection(event.position)
 		get_viewport().set_input_as_handled()
+
+## Board planning's keys are live: PLANNING, with the crew overlay closed (its keys are its own).
+func _board_keys_live() -> bool:
+	return board_planning != null and board_planning.is_planning() \
+		and GameState.current_phase == GameState.GamePhase.PLANNING \
+		and not (crew_client != null and crew_client.is_open)
+
+## A map click in PLANNING (board planning). In Move mode a hex her course claims extends or cuts
+## it (the course wins over ships); any other click leaves Move mode, and one on another own ship
+## opens that ship's ring. Out of Move mode no click edits a course: an own ship's click opens (or
+## closes) her ring and selects her, an enemy's shows its status plate, open sea closes the ring.
+func _handle_planning_click(screen_pos: Vector2) -> void:
+	var board := _board()
+	var moving := board.move_ship_id()
+	if moving != "" and _handle_course_click(_course_hex_at(screen_pos)):
+		return
+	var view := _ship_view_under(screen_pos)
+	var ship_id: String = view.state_id if view else ""
+	var own := ship_id != "" and GameState.commands(HUMAN_PLAYER_ID, ship_id)
+	if moving != "":
+		board.leave_move()
+		if own and ship_id != moving:
+			board.open_ring(ship_id)
+		elif ship_id != "" and not own:
+			_handle_ship_selection(screen_pos)  # the enemy's status plate, as today
+		return
+	if own:
+		if board.ring_ship_id() == ship_id:
+			board.close_ring()
+		else:
+			board.open_ring(ship_id)
+		return
+	board.close_ring()
+	_handle_ship_selection(screen_pos)
 
 ## The hex under `screen_pos` for course routing, or (-99, -99).
 func _course_hex_at(screen_pos: Vector2) -> Vector2i:
@@ -569,14 +669,22 @@ func _course_selected_id() -> String:
 		return current_planning_ui.selected_ship_id
 	return selected_ship_id
 
-## A click on `hex` in PLANNING: when a course claims it (CourseClicks.route), extend or cut that
-## ship's course through the server, select the ship and redraw. False when no course claims it.
+## The courses that take clicks: the Move-mode ship's only ({} out of Move mode, board planning).
+func _routable_courses() -> Dictionary:
+	var moving := board_planning.move_ship_id() if board_planning else ""
+	if moving == "" or not _courses.has(moving):
+		return {}
+	return {moving: _courses[moving]}
+
+## A click on `hex` in PLANNING: when the Move-mode ship's course claims it (CourseClicks.route),
+## extend or cut her course through the server, select her and redraw. False when it does not.
 func _handle_course_click(hex: Vector2i) -> bool:
-	if GameState.current_phase != GameState.GamePhase.PLANNING or _courses.is_empty():
+	var courses := _routable_courses()
+	if GameState.current_phase != GameState.GamePhase.PLANNING or courses.is_empty():
 		return false
 	if hex == Vector2i(-99, -99) or GameState.phase_controller == null:
 		return false
-	var route := CourseClicks.route(hex, _courses, _course_selected_id())
+	var route := CourseClicks.route(hex, courses, board_planning.move_ship_id())
 	if route.is_empty():
 		return false
 	var ship_id: String = route["ship_id"]
@@ -601,8 +709,9 @@ func _handle_course_click(hex: Vector2i) -> bool:
 		current_planning_ui.refresh_crew_summaries()
 	return true
 
-## Draw every own ship's stored course and the hexes it may extend to (the panel's selected ship at
-## full strength), and rebuild the click routing, the hover candidates and each card's course readout.
+## Draw every own ship's stored course, and the hexes it may extend to and the blocked marks for the
+## Move-mode ship only (her course, else the panel's selected ship's, at full strength); rebuild the
+## click routing, the hover candidates, each card's course readout and the chip box.
 func _refresh_courses() -> void:
 	# Outside PLANNING the overlay is not ours to clear (a bear-off pause draws the other plots).
 	if GameState.current_phase != GameState.GamePhase.PLANNING or GameState.phase_controller == null:
@@ -612,9 +721,11 @@ func _refresh_courses() -> void:
 	if hex_overlay:
 		hex_overlay.clear_courses()
 		hex_overlay.clear_blocked_hexes()
-	var selected := _course_selected_id()
+	var moving := board_planning.move_ship_id() if board_planning else ""
+	var selected := moving if moving != "" else _course_selected_id()
 	var grid: HexGrid = hex_map.get_hex_grid() if hex_map else null
 	var ships: Array = GameState.ships_on_map()
+	var moving_drawn := false
 	for ship: ShipState in GameState.ships_of_player(HUMAN_PLAYER_ID):
 		var id := ship.ship_id
 		var options: Dictionary = GameState.phase_controller.course_options(id)  # read-only query
@@ -627,15 +738,30 @@ func _refresh_courses() -> void:
 		_courses[id] = input
 		var vnh: MovementTypes.ValidNextHexes = options["valid_next"]
 		_hover_candidates[id] = CourseView.hover_candidates(vnh)
-		var marks: Array[Vector2i] = offered_collisions(vnh, ships, id)["marks"]
+		var info := _course_info(ship, options, ships)
 		if hex_overlay and grid:
-			hex_overlay.show_course(id, input["path_hexes"], input["next_hexes"], marks, grid, id == selected)
-			if id == selected:
+			if id == moving:
+				var marks: Array[Vector2i] = offered_collisions(vnh, ships, id)["marks"]
+				hex_overlay.show_course(id, input["path_hexes"], input["next_hexes"], marks, grid, true)
 				var path: Array = options["path"]
 				var end_facing: int = path[-1].facing if not path.is_empty() else ship.facing
 				hex_overlay.show_blocked_hexes(blocked_hexes_for(vnh, input["end_hex"], end_facing, grid), grid)
+			else:
+				var none: Array[Vector2i] = []
+				hex_overlay.show_course(id, input["path_hexes"], none, none, grid, id == selected)
+		if id == moving:
+			moving_drawn = true
+			var end_hex: Vector2i = input["end_hex"]
+			var end_world: Variant = null
+			if grid:
+				end_world = grid.axial_to_world(end_hex.x, end_hex.y)
+			board_planning.show_course(info, end_world)
 		if current_planning_ui and is_instance_valid(current_planning_ui):
-			current_planning_ui.set_course_info(id, _course_info(ship, options, ships))
+			current_planning_ui.set_course_info(id, info)
+	if board_planning:
+		board_planning.refresh()  # a ship that can no longer plot is Locked (and leaves Move mode)
+		if moving != "" and not moving_drawn:
+			board_planning.leave_move()
 
 ## The card's course readout for `ship`: MP used of the allowance (the server's count), the tacking
 ## and steering notes, the heading note (allowance change, irons) and the warning line (a refused
@@ -715,7 +841,7 @@ func _update_plotting_hover(screen_pos: Vector2) -> void:
 	if hex == _last_hover_hex:
 		return  # same hex — nothing to update
 	_last_hover_hex = hex
-	var route := CourseClicks.route(hex, _courses, _course_selected_id()) if hex != Vector2i(-99, -99) else {}
+	var route := CourseClicks.route(hex, _routable_courses(), _course_selected_id()) if hex != Vector2i(-99, -99) else {}
 	var ship_id: String = route.get("ship_id", "")
 	var cands: Dictionary = _hover_candidates.get(ship_id, {})
 	var ship_state: ShipState = GameState.get_ship(ship_id)
@@ -745,23 +871,21 @@ func _hide_hover() -> void:
 	if indicator_overlay:
 		indicator_overlay.clear_hover()
 
+## The ship clicked at `screen_pos`: the model's click box, else the ship lying on the clicked hex
+## (bow or stern); null for open water.
+func _ship_view_under(screen_pos: Vector2) -> ShipView:
+	if not camera or not hex_map:
+		return null
+	var ship_view: ShipView = _ship_view_at(screen_pos)
+	if not ship_view:
+		ship_view = ship_views.get(ship_at_hex(_water_hex_at(screen_pos), GameState.get_all_ships()))
+	return ship_view
+
 func _handle_ship_selection(screen_pos: Vector2) -> void:
 	if not camera:
 		return
 
-	var from = camera.project_ray_origin(screen_pos)
-	var to = from + camera.project_ray_normal(screen_pos) * 1000.0
-
-	var space_state = hex_map.get_world_3d().direct_space_state
-	var query = PhysicsRayQueryParameters3D.create(from, to)
-	var result = space_state.intersect_ray(query)
-
-	# The model's click box, else the ship lying on the clicked hex (bow or stern)
-	var ship_view: ShipView = null
-	if not result.is_empty():
-		ship_view = _find_ship_view_from_collider(result.collider)
-	if not ship_view:
-		ship_view = ship_views.get(ship_at_hex(_water_hex_at(screen_pos), GameState.get_all_ships()))
+	var ship_view: ShipView = _ship_view_under(screen_pos)
 	if not ship_view:
 		_deselect_ship()
 		return
@@ -895,6 +1019,8 @@ func _on_phase_changed(phase: GameState.GamePhase) -> void:
 	# so the one-shot indicator snapshot can't go stale across resolution/turn boundaries.
 	_deselect_ship()
 	if phase != GameState.GamePhase.PLANNING:
+		if board_planning:
+			board_planning.end_planning()  # ring, chip box and badges closed; Move mode left
 		_courses.clear()
 		_hover_candidates.clear()
 		if hex_overlay:
@@ -939,6 +1065,7 @@ func _enter_planning_phase() -> void:
 	if player_0_ships.is_empty():
 		Trace.trace_log("GameController", "No ships for player %d" % HUMAN_PLAYER_ID)
 		return
+	_board().begin_planning(player_0_ships)  # every movable own ship in Plan
 
 	# Create planning UI
 	if not current_planning_ui:
@@ -979,6 +1106,9 @@ func _on_planning_ship_selected(ship_id: String) -> void:
 	if camera and camera.has_method("pan_to_if_needed"):
 		camera.pan_to_if_needed(ship_view.global_position)
 
+	# Another ship chosen on the card list: Move mode was for a different ship.
+	if board_planning and board_planning.move_ship_id() not in ["", ship_id]:
+		board_planning.leave_move()
 	# Select ship on map (highlight)
 	_select_ship(ship_id)
 	if crew_client:

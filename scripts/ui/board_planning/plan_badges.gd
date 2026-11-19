@@ -24,6 +24,9 @@ const EDGE_GAP_PX := 4.0
 
 ## Screen rect of the map area (clear of the side panel); pills stay inside it. Unset: this Control.
 var map_rect_provider: Callable = Callable()
+## How far above its point a pill sits, in world units measured on screen (screen-up, so it clears
+## the hull under a top-down camera too, and keeps its distance at every zoom). 0 = on the point.
+var lift := 0.0
 
 var _camera: Camera3D = null
 var _entries: Dictionary = {}  # ship_id -> {"world": Vector3, "state": String}
@@ -104,7 +107,11 @@ func _update() -> void:
 		if _camera == null or _camera.is_position_behind(_entries[id]["world"]):
 			pill.visible = false
 			continue
-		var p := _camera.unproject_position(_entries[id]["world"])
+		var world: Vector3 = _entries[id]["world"]
+		var p := _camera.unproject_position(world)
+		if lift != 0.0:
+			var unit_px := (_camera.unproject_position(world + _camera.global_basis.x) - p).length()
+			p.y -= unit_px * lift
 		pill.reset_size()
 		pill.position = keep_inside(p - Vector2(pill.size.x * 0.5, PILL_HEIGHT * 0.5), pill.size, _map_rect(), EDGE_GAP_PX)
 		pill.visible = true

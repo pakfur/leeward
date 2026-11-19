@@ -309,10 +309,15 @@ func _layout_frame() -> void:
 	_disc.position = Vector2(-disc, -disc)
 	_disc.size = Vector2(disc, disc) * 2.0
 	var text_width := DISC_TEXT_WIDTH * s
-	_centre_box.position = Vector2(-text_width / 2.0, -disc)
-	_centre_box.size = Vector2(text_width, disc * 2.0)
 	_title_label.add_theme_font_size_override("font_size", roundi(17.0 * s))
 	_subtitle_label.add_theme_font_size_override("font_size", roundi(14.0 * s))
+	# Autowrapped labels need a width of their own, or they wrap at every word and the box grows
+	# far past the disc; then the box is centred on the ring at its real height.
+	_title_label.custom_minimum_size.x = text_width
+	_subtitle_label.custom_minimum_size.x = text_width
+	var text_height := _centre_box.get_combined_minimum_size().y
+	_centre_box.position = Vector2(-text_width / 2.0, -text_height / 2.0)
+	_centre_box.size = Vector2(text_width, text_height)
 	_caption_title.add_theme_font_size_override("font_size", roundi(16.0 * s))
 	_caption_detail.add_theme_font_size_override("font_size", roundi(14.0 * s))
 	var bg := CrewStyle.box(Color(SHADE, 0.86), Color.TRANSPARENT, 0, roundi(6.0 * s))

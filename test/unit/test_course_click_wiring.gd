@@ -1,6 +1,7 @@
 extends GutTest
 ## GameController's course wiring, headless: planning draws (routes) every own ship's course, and a
-## map click that a course claims goes to the server's extend / cut request instead of selecting.
+## map click that the Move-mode ship's course claims goes to the server's extend / cut request
+## instead of selecting (board planning: outside Move mode no click edits a course).
 
 const GameControllerScript = preload("res://scripts/core/game_controller.gd")
 const PLANNING := TurnPhaseController.GamePhase.PLANNING
@@ -71,7 +72,7 @@ func test_planning_routes_every_own_course() -> void:
 
 
 func test_a_routed_click_extends_then_cuts_through_the_server() -> void:
-	gc._refresh_courses()
+	gc._board().enter_move("b")  # board planning: only the Move-mode ship's course takes clicks
 	var ahead: Vector2i = gc._courses["b"]["next_hexes"][0]
 	assert_true(gc._handle_course_click(ahead), "the click is taken: no ship selection after it")
 	var course := GameState.phase_controller.stored_course(GameState.get_ship("b"))
@@ -88,3 +89,29 @@ func test_a_click_no_course_claims_falls_through() -> void:
 	GameState.current_phase = GameState.GamePhase.COMBAT_RESOLUTION
 	var ahead: Vector2i = gc._courses["a"]["next_hexes"][0]
 	assert_false(gc._handle_course_click(ahead), "outside planning no course takes clicks")
+
+
+func test_outside_move_mode_clicks_never_edit_course() -> void:
+	gc._refresh_courses()
+	var ahead: Vector2i = gc._courses["b"]["next_hexes"][0]
+	assert_false(gc._handle_course_click(ahead), "no Move-mode ship: the click selects, never extends")
+	assert_eq(GameState.phase_controller.stored_course(GameState.get_ship("b")).size(), 0)
+	assert_eq(GameState.phase_controller.player_extend_course(0, "b", ahead), "")
+	gc._refresh_courses()
+	assert_false(gc._handle_course_click(ahead), "nor cuts a drawn course")
+	assert_eq(GameState.phase_controller.stored_course(GameState.get_ship("b")).size(), 1)
+	gc._board().enter_move("a")
+	assert_false(gc._handle_course_click(ahead), "another ship in Move mode: b's course stays")
+	assert_eq(GameState.phase_controller.stored_course(GameState.get_ship("b")).size(), 1)
+
+
+func test_move_mode_click_extends_only_that_ship() -> void:
+	gc._board().enter_move("a")
+	assert_eq(gc._courses.keys().size(), 2, "every own course is still drawn")
+	assert_eq(gc._routable_courses().keys(), ["a"], "but only the Move-mode ship's course takes clicks")
+	var ahead: Vector2i = gc._courses["a"]["next_hexes"][0]
+	assert_true(gc._handle_course_click(ahead))
+	assert_eq(GameState.phase_controller.stored_course(GameState.get_ship("a")).size(), 1)
+	assert_eq(GameState.phase_controller.stored_course(GameState.get_ship("b")).size(), 0)
+	gc._board().leave_move()
+	assert_true(gc._routable_courses().is_empty(), "out of Move mode no course takes clicks")
