@@ -565,24 +565,24 @@ func _confirm_box() -> void:
 ## Enter confirms the option box, else Done for the ring's ship, Esc steps back (box, target mode
 ## to her ring, the ring).
 func _handle_fire_key(keycode: int, backward: bool) -> bool:
-	var checklist := _fire.checklist
+	var list := _fire.checklist
 	match keycode:
 		KEY_TAB:
 			var after := _fire.target_ship() if _fire.target_ship() != "" else ring_ship_id()
 			var next := ""
 			if after == "":
 				after = _selected_id()
-				if checklist.state(after) == PlanChecklist.PLAN:
+				if list.state(after) == PlanChecklist.PLAN:
 					next = after
 			if next == "":
-				next = checklist.prev_in_plan(after) if backward else checklist.next_in_plan(after)
+				next = list.prev_in_plan(after) if backward else list.next_in_plan(after)
 			if next != "":
 				_fire.leave_target()
 				open_ring(next)
 			return true
 		KEY_SPACE:
 			var id := _selected_id()
-			if checklist.state(id) == "":
+			if list.state(id) == "":
 				return false
 			_fire.leave_target()
 			if ring_ship_id() != id:

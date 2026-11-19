@@ -217,11 +217,11 @@ func _show_pending(pending: Dictionary) -> void:
 	for a in _addresses:
 		if a.get("kind", "") == addr.get("kind", "") and a.get("name", "") == addr.get("name", ""):
 			to = str(a.get("label", to))
-	var text := "From %s\nTo %s: %s" % [str(pending.get("from_name", pending.get("from_ship", ""))), to,
+	var shown := "From %s\nTo %s: %s" % [str(pending.get("from_name", pending.get("from_ship", ""))), to,
 			" ".join(PackedStringArray(pending.get("words", [])))]
 	if _ship_id != "" and str(pending.get("from_ship", _ship_id)) != _ship_id:
-		text += "\nSending replaces it (one signal a turn)."
-	_pending_label.text = text
+		shown += "\nSending replaces it (one signal a turn)."
+	_pending_label.text = shown
 	_pending_box.visible = true
 
 

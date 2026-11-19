@@ -68,11 +68,11 @@ static func target_names(ships: Array) -> Dictionary:
 	return names
 
 
-## The default marine target among previews: the best chance of a hit, then the lower DRM total,
+## The default marine target among `shot_previews`: the best chance of a hit, then the lower DRM total,
 ## then the target id; "" when no shot can hit.
-static func default_marine_target(previews: Array) -> String:
+static func default_marine_target(shot_previews: Array) -> String:
 	var best: Dictionary = {}
-	for p: Dictionary in previews:
+	for p: Dictionary in shot_previews:
 		if int(p.get("hit_max", 0)) <= 0:
 			continue
 		if best.is_empty() or int(p["hit_max"]) > int(best["hit_max"]) \
@@ -87,9 +87,9 @@ static func default_marine_target(previews: Array) -> String:
 ## GunneryTypes.BATTERIES order: "full" only when both batteries bear, and each single battery
 ## that bears (each gets its own row, so a side can split or fire a half broadside); then "chase"
 ## (a chase side's only battery).
-static func battery_options(previews: Array) -> Array[String]:
+static func battery_options(shot_previews: Array) -> Array[String]:
 	var can := {}
-	for p: GunneryTypes.ShotPreview in previews:
+	for p: GunneryTypes.ShotPreview in shot_previews:
 		if p.can_fire and p.order != null:
 			can[p.order.battery] = true
 	var options: Array[String] = []
@@ -188,20 +188,20 @@ static func reduction_of(state: Dictionary, target_id: String, battery: String) 
 ## = full broadside, forced aim, ammunition range). A chase side's shot (its target under "bow") is a
 ## GunneryTypes.BATTERY_CHASE order (round shot, FireRules.make_order). `ranges` is target_id -> range
 ## in hexes. Sides in ascending order.
-static func orders_for_sides(ship_id: String, sides: Dictionary, ranges: Dictionary) -> Array[GunneryTypes.FireOrder]:
-	var orders: Array[GunneryTypes.FireOrder] = []
-	var keys := sides.keys()
+static func orders_for_sides(ship_id: String, side_states: Dictionary, ranges: Dictionary) -> Array[GunneryTypes.FireOrder]:
+	var out: Array[GunneryTypes.FireOrder] = []
+	var keys := side_states.keys()
 	keys.sort()
 	for side in keys:
-		var state: Dictionary = sides[side]
+		var state: Dictionary = side_states[side]
 		var chase := GunneryTypes.is_chase_side(int(side))
 		for shot: Dictionary in FireRules.side_shots(state["bow"], "" if chase else state["stern"]):
 			var battery: String = GunneryTypes.BATTERY_CHASE if chase else str(shot["battery"])
-			orders.append(FireRules.make_order(ship_id, int(side), shot["target_id"], battery,
+			out.append(FireRules.make_order(ship_id, int(side), shot["target_id"], battery,
 				bool(state.get("want_high", false)), bool(state.get("want_dismantling", false)),
 				int(ranges.get(shot["target_id"], 0)),
 				reduction_of(state, shot["target_id"], battery)))
-	return orders
+	return out
 
 
 ## Target rows ranked for the default choice: highest modified gunfire number first, then nearest,
@@ -246,9 +246,9 @@ static func default_side(ranked_by_side: Dictionary) -> int:
 static func _best_side(ranked_by_side: Dictionary) -> int:
 	var best_side := -1
 	var best: Dictionary = {}
-	var sides := ranked_by_side.keys()
-	sides.sort()
-	for side in sides:
+	var side_keys := ranked_by_side.keys()
+	side_keys.sort()
+	for side in side_keys:
 		var rows: Array = ranked_by_side[side]
 		if rows.is_empty():
 			continue
@@ -365,10 +365,10 @@ static func _no_shot_preview(calculator, ship_id: String, side: int, target_id: 
 	return str(calculator.preview(order).reason)
 
 
-## The preview of order (side, target_id, battery) among `previews`, null when absent.
-static func find_preview(previews: Array[GunneryTypes.ShotPreview], side: int, target_id: String,
+## The preview of order (side, target_id, battery) among `shot_previews`, null when absent.
+static func find_preview(shot_previews: Array[GunneryTypes.ShotPreview], side: int, target_id: String,
 		battery: String) -> GunneryTypes.ShotPreview:
-	for p in previews:
+	for p in shot_previews:
 		if p.order.side == side and p.order.target_id == target_id and p.order.battery == battery:
 			return p
 	return null
@@ -542,10 +542,10 @@ func targets(ship_id: String, side: int) -> Array[Dictionary]:
 		return out
 	for row: Dictionary in _ships[ship_id]["rows"][side]:
 		var target_id := str(row["target_id"])
-		var batteries := battery_options_for(ship_id, side, target_id)
+		var options := battery_options_for(ship_id, side, target_id)
 		out.append({"target_id": target_id, "name": row["name"], "range": int(row["range"]),
-			"batteries": batteries,
-			"preview": _ships[ship_id]["options"][side][target_id][batteries[0]]})
+			"batteries": options,
+			"preview": _ships[ship_id]["options"][side][target_id][options[0]]})
 	return out
 
 

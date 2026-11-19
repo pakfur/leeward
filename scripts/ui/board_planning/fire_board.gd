@@ -48,13 +48,13 @@ var _target_side := -1
 var _box: Dictionary = {}
 
 
-## The step begins for `ship_ids` (the local player's ships, card order): every order is cleared,
+## The step begins for `listed_ids` (the local player's ships, card order): every order is cleared,
 ## ships with a shot are in Plan, the rest Done.
-func begin(fire_model: FireOrdersModel, ship_ids: Array) -> void:
+func begin(fire_model: FireOrdersModel, listed_ids: Array) -> void:
 	end()
 	model = fire_model
 	_ids.clear()
-	for id in ship_ids:
+	for id in listed_ids:
 		_ids.append(str(id))
 	_names = FireOrdersModel.target_names(GameState.get_all_ships())
 	for id in _ids:
@@ -182,10 +182,10 @@ func subtitle(ship_id: String) -> String:
 	return "Holds fire" if n == 0 else "%d fire order%s" % [n, "" if n == 1 else "s"]
 
 
-static func _side_hint(on: bool, targets: int) -> String:
+static func _side_hint(on: bool, target_count: int) -> String:
 	if on:
 		return "Ordered. Pick again to change it."
-	return "%d target%s." % [targets, " bears" if targets == 1 else "s bear"]
+	return "%d target%s." % [target_count, " bears" if target_count == 1 else "s bear"]
 
 
 # --- target mode ---------------------------------------------------------------------------------

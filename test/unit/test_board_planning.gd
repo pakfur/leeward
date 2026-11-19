@@ -1026,3 +1026,12 @@ func test_hold_fire_text() -> void:
 	assert_eq(FireStepPanel.hold_fire_text(0), "")
 	assert_eq(FireStepPanel.hold_fire_text(1), "1 ship has no fire orders: she holds fire")
 	assert_eq(FireStepPanel.hold_fire_text(3), "3 ships have no fire orders: they hold fire")
+
+
+## A long Fire text ("Fire 1 broadside and 2 half broadsides and 1 chaser and muskets") wraps
+## instead of widening the side panel.
+func test_long_fire_text_wraps() -> void:
+	var panel := FireStepPanel.new()
+	add_child_autofree(panel)
+	panel.fire_button.text = "Fire 1 broadside and 2 half broadsides and 1 chaser and muskets"
+	assert_lt(panel.fire_button.get_combined_minimum_size().x, 200.0, "the button does not ask for the whole line")

@@ -58,6 +58,7 @@ func _init() -> void:
 	fire_button.name = "FireButton"
 	fire_button.custom_minimum_size = Vector2(0, 44)
 	fire_button.focus_mode = Control.FOCUS_NONE
+	fire_button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # a long order list wraps, never widens the panel
 	fire_button.text = FireText.fire_button_text(0)
 	fire_button.pressed.connect(func(): fire_pressed.emit())
 	add_child(fire_button)

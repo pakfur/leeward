@@ -63,17 +63,17 @@ func setup(camera: Camera3D) -> void:
 		_build()
 
 
-## Shows `content` (FireBoard.box_content) beside the target at `world` (null: stays where it is).
-func show_box(content: Dictionary, world: Variant = null) -> void:
+## Shows `box_content` (FireBoard.box_content) beside the target at `world` (null: stays where it is).
+func show_box(box_content: Dictionary, world: Variant = null) -> void:
 	if _title == null:
 		_build()
-	_content = content
-	var guns: bool = content.get("kind", "") == "guns"
-	_title.text = str(content.get("title", ""))
+	_content = box_content
+	var guns: bool = box_content.get("kind", "") == "guns"
+	_title.text = str(box_content.get("title", ""))
 	for child in _battery_row.get_children():
 		child.hide()
 		child.queue_free()
-	var chips: Array = content.get("batteries", [])
+	var chips: Array = box_content.get("batteries", [])
 	for chip: Dictionary in chips:
 		var b := _chip(str(chip["label"]), bool(chip.get("on", false)))
 		var battery := str(chip["id"])
@@ -83,28 +83,28 @@ func show_box(content: Dictionary, world: Variant = null) -> void:
 	_battery_row.visible = guns and not chips.is_empty()
 	_aim_row.visible = guns
 	_ammo_row.visible = guns
-	_reduce_row.visible = guns and bool(content.get("can_fire", false))
+	_reduce_row.visible = guns and bool(box_content.get("can_fire", false))
 	if guns:
-		var high: bool = content.get("high", false)
+		var high: bool = box_content.get("high", false)
 		_restyle(_low, not high)
 		_restyle(_high, high)
-		_low.disabled = bool(content.get("low_off", false))
-		var dis: bool = content.get("dismantling", false)
+		_low.disabled = bool(box_content.get("low_off", false))
+		var dis: bool = box_content.get("dismantling", false)
 		_restyle(_round, not dis)
 		_restyle(_dismantling, dis)
-		_dismantling.disabled = bool(content.get("dismantling_off", false))
-		var n := int(content.get("reduction", 0))
+		_dismantling.disabled = bool(box_content.get("dismantling_off", false))
+		var n := int(box_content.get("reduction", 0))
 		_reduce_value.text = str(n)
 		_minus.disabled = n <= 0
-		_number.text = "Gunfire %d" % int(content.get("number", 0)) if content.get("can_fire", false) else "Cannot fire"
-		_text.text = str(content.get("breakdown", ""))
+		_number.text = "Gunfire %d" % int(box_content.get("number", 0)) if box_content.get("can_fire", false) else "Cannot fire"
+		_text.text = str(box_content.get("breakdown", ""))
 	else:
 		_number.text = ""
-		_text.text = str(content.get("text", ""))
+		_text.text = str(box_content.get("text", ""))
 	_number.visible = guns
 	var note_keys := ["aim_note", "dismantling_note", "two_target"]
 	for i in note_keys.size():
-		var note := str(content.get(note_keys[i], "")) if guns else ""
+		var note := str(box_content.get(note_keys[i], "")) if guns else ""
 		_notes[i].text = note
 		_notes[i].visible = note != ""
 	if world != null:
