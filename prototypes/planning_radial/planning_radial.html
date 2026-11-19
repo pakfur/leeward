@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Board Planning Prototype</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Source+Sans+3:wght@400;600&family=Barlow+Condensed:wght@500;600&display=swap">
+<style>
+/* Throwaway prototype: planning by clicking ships on the board (radial menus).
+   Simplified rules: see the "Prototype rules" box in the side panel. */
+:root {
+  --ink: #0e151d; --panel: #1a232e; --panel-2: #222d3a; --line: #354252;
+  --fg: #e6ebf1; --muted: #98a5b4; --sea: #2a5680; --sea-hex: #35648f;
+  --land: #8a7a55; --deck: #c8a26a; --sail: #e4dbc4;
+  --ok: #62b47d; --bad: #e0574d; --warn: #e3b344; --accent: #79b7dc; --brass: #d8b45a;
+  --port: #ef6a5f; --stbd: #5fd08a; --chase: #6aa8ff; --marine: #e8d27a;
+  --btn: #2b3a4b; --btn-edge: #4a5d72; --btn-primary: #2f5f80; --btn-primary-edge: #4f86ad;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--ink); color: var(--fg);
+  font: 15px/1.35 "Source Sans 3", system-ui, sans-serif; }
+#app { display: flex; height: 100vh; min-height: 560px; }
+#side { width: 320px; flex: none; background: var(--panel); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; overflow: hidden; }
+#side .scroll { flex: 1; overflow-y: auto; padding: 14px 16px; }
+#side .foot { padding: 12px 16px; border-top: 1px solid var(--line); background: var(--panel-2); }
+h1 { font: 22px "IM Fell English SC", serif; margin: 0 0 2px; letter-spacing: .5px; }
+h2 { font: 600 13px "Barlow Condensed", sans-serif; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--muted); margin: 16px 0 6px; }
+.sub { color: var(--muted); font-size: 13px; }
+.phases { display: flex; gap: 4px; margin-top: 8px; }
+.phases span { font: 500 13px "Barlow Condensed", sans-serif; padding: 2px 7px; border-radius: 9px;
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+.phases span.on { background: var(--btn-primary); color: #fff; border-color: var(--btn-primary-edge); }
+.row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid transparent; cursor: pointer; }
+.row:hover { background: var(--panel-2); }
+.row.sel { border-color: var(--brass); background: var(--panel-2); }
+.row .nm { flex: 1; }
+.row .meta { font: 500 13px "Barlow Condensed", sans-serif; color: var(--muted); }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.pill { font: 600 12px "Barlow Condensed", sans-serif; letter-spacing: .8px; padding: 2px 8px;
+  border-radius: 10px; border: 1px solid; min-width: 52px; text-align: center; cursor: pointer;
+  user-select: none; }
+.pill.plan { color: #1b1300; background: var(--warn); border-color: #f5cd6a; }
+.pill.done { color: #07160c; background: var(--ok); border-color: #8fd6a4; }
+.pill.locked { color: var(--muted); background: transparent; border-color: var(--line); cursor: default; }
+.pill.fire { color: #1b1300; background: var(--warn); border-color: #f5cd6a; }
+.pill.none { color: var(--muted); background: transparent; border-color: var(--line); }
+.roster .row { cursor: default; }
+.note { font-size: 13px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
+.note b { color: var(--fg); font-weight: 600; }
+.note ul { margin: 4px 0 0; padding-left: 18px; }
+kbd { font: 12px ui-monospace, monospace; background: #0b1118; border: 1px solid var(--line);
+  border-radius: 3px; padding: 0 4px; }
+button.big { width: 100%; height: 42px; font: 600 16px "Source Sans 3", sans-serif; color: #fff;
+  background: var(--btn-primary); border: 1px solid var(--btn-primary-edge); border-radius: 6px;
+  cursor: pointer; }
+button.big:hover { filter: brightness(1.12); }
+button.big.alt { background: var(--btn); border-color: var(--btn-edge); }
+.warnline { font-size: 13px; color: var(--warn); margin-bottom: 8px; min-height: 18px; }
+.log { font-size: 13px; }
+.log div { padding: 3px 0; border-bottom: 1px dashed var(--line); }
+
+#mapwrap { position: relative; flex: 1; overflow: hidden; background: var(--ink); }
+#map { width: 100%; height: 100%; display: block; }
+.hex { stroke: rgba(255,255,255,.13); stroke-width: 1; fill: var(--sea); }
+.hex.land { fill: var(--land); stroke: rgba(0,0,0,.25); }
+.hex.reach { fill: #3f7cb3; }
+.hex.reachhover { fill: #5b9bd4; }
+.hex.reachsel { fill: #e0b84f; stroke: #fff2c4; stroke-width: 2; }
+.hex.arc-port { fill: #6b4b5c; }
+.hex.arc-starboard { fill: #3f6b5d; }
+.hex.arc-chase { fill: #3d5a8a; }
+.route { fill: none; stroke: #fff4d0; stroke-width: 2.5; stroke-dasharray: 2 7; stroke-linecap: round;
+  animation: march 0.9s linear infinite; }
+.route.preview { stroke: #cfe4ff; opacity: .75; }
+.route.default { stroke: #fff; opacity: .35; animation: none; }
+@keyframes march { to { stroke-dashoffset: -18; } }
+.order { stroke-width: 3; fill: none; }
+.lbl { font: 600 12px "Barlow Condensed", sans-serif; fill: var(--fg); paint-order: stroke;
+  stroke: rgba(10,16,24,.85); stroke-width: 3px; }
+.badge text { font: 600 11px "Barlow Condensed", sans-serif; letter-spacing: .8px; }
+.target-ring { fill: none; stroke: var(--warn); stroke-width: 2.5; stroke-dasharray: 5 4;
+  animation: march 0.9s linear infinite; }
+
+#radial { position: absolute; left: 0; top: 0; pointer-events: none; }
+.rad { position: absolute; width: 0; height: 0; }
+.rad .disc { position: absolute; left: -58px; top: -58px; width: 116px; height: 116px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(14,21,29,.72) 55%, rgba(14,21,29,0) 72%); pointer-events: none; }
+.rad .item { position: absolute; width: 48px; height: 48px; margin: -24px 0 0 -24px; border-radius: 50%;
+  background: #1f2b39; border: 2px solid var(--btn-edge); display: grid; place-items: center;
+  cursor: pointer; pointer-events: auto; transition: transform .12s, background .12s;
+  box-shadow: 0 3px 10px rgba(0,0,0,.5); animation: pop .16s ease-out both; }
+.rad .item:hover { transform: scale(1.12); background: #2c4157; border-color: var(--brass); }
+.rad .item.off { opacity: .38; cursor: not-allowed; filter: grayscale(1); }
+.rad .item.off:hover { transform: none; background: #1f2b39; border-color: var(--btn-edge); }
+.rad .item.on { border-color: var(--ok); background: #1f3a2a; }
+.rad .item svg { width: 26px; height: 26px; }
+@keyframes pop { from { transform: scale(.4); opacity: 0; } }
+.rad .cap { position: absolute; left: -120px; width: 240px; text-align: center; pointer-events: none;
+  font-size: 13px; line-height: 1.25; }
+.rad .cap .t { font: 600 15px "Source Sans 3", sans-serif; }
+.rad .cap .r { color: #ffcf8a; }
+.rad .cap .h { color: var(--muted); }
+.rad .cap > div { background: rgba(14,21,29,.86); border-radius: 6px; padding: 4px 8px; display: inline-block; }
+
+#chips { position: absolute; left: 0; top: 0; pointer-events: none; }
+.chipbox { position: absolute; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: auto;
+  background: rgba(20,29,40,.94); border: 1px solid var(--line); border-radius: 8px; padding: 7px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.5); width: max-content; max-width: 340px; }
+.chipbox .ttl { width: 100%; font: 600 13px "Barlow Condensed", sans-serif; letter-spacing: .6px;
+  color: var(--muted); text-transform: uppercase; }
+
+.chip { white-space: nowrap; font: 600 13px "Source Sans 3", sans-serif; color: var(--fg); background: var(--btn);
+  border: 1px solid var(--btn-edge); border-radius: 14px; padding: 3px 10px; cursor: pointer; }
+.chip:hover { border-color: var(--brass); }
+.chip.on { background: var(--btn-primary); border-color: var(--btn-primary-edge); }
+.chip.ok { background: #2f6a45; border-color: #4f9a6a; }
+.chip.off { opacity: .4; cursor: not-allowed; }
+.chip.info { background: transparent; border-color: transparent; cursor: default; color: var(--muted); }
+
+#banner { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); pointer-events: none;
+  background: rgba(14,21,29,.88); border: 1px solid var(--line); border-radius: 18px; padding: 6px 16px;
+  font-size: 14px; white-space: nowrap; }
+#banner b { font-family: "IM Fell English SC", serif; font-weight: 400; font-size: 17px; margin-right: 8px; }
+#toast { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); pointer-events: none;
+  background: #2a3646; border: 1px solid var(--btn-edge); border-radius: 8px; padding: 8px 14px;
+  max-width: 560px; text-align: center; opacity: 0; transition: opacity .2s; }
+#toast.show { opacity: 1; }
+#plate { position: absolute; pointer-events: none; background: rgba(20,29,40,.94); border: 1px solid var(--bad);
+  border-radius: 8px; padding: 6px 10px; font-size: 13px; display: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side"><div class="scroll" id="sideScroll"></div><div class="foot" id="sideFoot"></div></aside>
+  <main id="mapwrap">
+    <svg id="map"></svg>
+    <div id="radial"></div>
+    <div id="chips"></div>
+    <div id="plate"></div>
+    <div id="banner"></div>
+    <div id="toast"></div>
+  </main>
+</div>
+<script>
+"use strict";
+// ---------------------------------------------------------------- board -----
+const S = 30, SQ3 = Math.sqrt(3), W = 20, H = 13;
+const DIRS = [[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]];   // 0=E 1=SE 2=SW 3=W 4=NW 5=NE
+const DIRNAME = ["east","south-east","south-west","west","north-west","north-east"];
+const WIND_FROM = 4;   // wind from the north-west: a ship heading NW cannot sail ahead
+const OX = S * SQ3 / 2 + 14, OY = S + 14;
+const BOARD_W = S * SQ3 * (W + 0.5) + 28, BOARD_H = S * 1.5 * (H - 1) + 2 * S + 28;
+const key = (h) => h[0] + "," + h[1];
+const add = (h, d) => [h[0] + d[0], h[1] + d[1]];
+const colOf = (h) => h[0] + (h[1] - (h[1] & 1)) / 2;
+const inBounds = (h) => h[1] >= 0 && h[1] < H && colOf(h) >= 0 && colOf(h) < W;
+const LAND = new Set(["8,10", "9,10", "9,9", "10,9", "8,11", "10,10", "7,11"]);
+const HEXES = [];
+for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) HEXES.push([c - (r - (r & 1)) / 2, r]);
+const px = (h) => [OX + S * SQ3 * (h[0] + h[1] / 2), OY + S * 1.5 * h[1]];
+const hexDist = (a, b) => { const dq = a[0] - b[0], dr = a[1] - b[1]; return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2; };
+const sternOf = (bow, f) => add(bow, DIRS[(f + 3) % 6]);
+const hexOk = (h) => inBounds(h) && !LAND.has(key(h));
+const poseOk = (bow, f) => hexOk(bow) && hexOk(sternOf(bow, f));
+function pixelToHex(x, y) {
+  x -= OX; y -= OY;
+  let q = (SQ3 / 3 * x - y / 3) / S, r = (2 / 3 * y) / S, s = -q - r;
+  let rq = Math.round(q), rr = Math.round(r), rs = Math.round(s);
+  const dq = Math.abs(rq - q), dr = Math.abs(rr - r), ds = Math.abs(rs - s);
+  if (dq > dr && dq > ds) rq = -rr - rs; else if (dr > ds) rr = -rq - rs;
+  return [rq, rr];
+}
+const corners = (h) => { const [cx, cy] = px(h); let p = [];
+  for (let i = 0; i < 6; i++) { const a = Math.PI / 180 * (60 * i - 30); p.push((cx + S * Math.cos(a)).toFixed(1) + "," + (cy + S * Math.sin(a)).toFixed(1)); }
+  return p.join(" "); };
+const dirVec = (f) => { const a = f * Math.PI / 3; return [Math.cos(a), Math.sin(a)]; };
+
+// ---------------------------------------------------------------- ships -----
+const ships = [
+  { id: "lively", name: "HMS Lively", rate: "38", side: 0, bow: [4,6], facing: 0, speed: 3, ma: 5 },
+  { id: "amazon", name: "HMS Amazon", rate: "36", side: 0, bow: [3,9], facing: 0, speed: 2, ma: 4 },
+  { id: "constance", name: "HMS Constance", rate: "20", side: 0, bow: [3,2], facing: 1, speed: 0, ma: 0,
+    locked: "Anchored. Cut the cable in the Crew & damage overlay to get under way." },
+  { id: "topaze", name: "Topaze", rate: "38", side: 1, bow: [12,4], facing: 3, speed: 3, ma: 5 },
+  { id: "serieuse", name: "Sérieuse", rate: "36", side: 1, bow: [12,8], facing: 3, speed: 3, ma: 4 },
+];
+const byId = (id) => ships.find((s) => s.id === id);
+const own = () => ships.filter((s) => s.side === 0);
+const enemies = () => ships.filter((s) => s.side === 1);
+for (const s of ships) { s.status = s.side === 1 || s.locked ? "done" : "plan"; s.plan = null; s.orders = []; s.lead = false; }
+
+// Simplified movement: each step is ahead (1 MP) or a 60-degree turn on the bow (1 MP); at least one hex
+// ahead between turns; no ahead step heading into the wind; at most MA steps; at least speed - 2 steps.
+function simulate(ship, moves) {
+  let bow = ship.bow, f = ship.facing; const out = [{ bow, f }];
+  for (const m of moves) {
+    if (m === "A") bow = add(bow, DIRS[f]); else f = (f + (m === "P" ? 5 : 1)) % 6;
+    out.push({ bow, f });
+  }
+  return out;
+}
+function reach(ship) {
+  const min = Math.max(0, ship.speed - 2), ends = new Map(), moves = [];
+  (function rec(bow, f, since) {
+    if (moves.length > 0 && moves.length >= min) {
+      const k = key(bow) + "|" + f;
+      if (!ends.has(k)) ends.set(k, { hex: bow, f, paths: [] });
+      ends.get(k).paths.push(moves.slice());
+    }
+    if (moves.length >= ship.ma) return;
+    if (f !== WIND_FROM) { const nb = add(bow, DIRS[f]); if (poseOk(nb, f)) { moves.push("A"); rec(nb, f, true); moves.pop(); } }
+    if (since || moves.length === 0) for (const [m, nf] of [["P", (f + 5) % 6], ["S", (f + 1) % 6]])
+      if (poseOk(bow, nf)) { moves.push(m); rec(bow, nf, false); moves.pop(); }
+  })(ship.bow, ship.facing, ship.speed > 0);
+  for (const e of ends.values()) {
+    // Fewest MPs first; among equals, turn as late as possible. Alternatives = other bow tracks.
+    e.paths.sort((a, b) => a.length - b.length || a.join("").localeCompare(b.join("")));
+    const seen = new Set(); e.routes = [];
+    for (const p of e.paths) { const t = simulate(ship, p).map((s) => key(s.bow)).join(">") + "#" + p.length;
+      if (!seen.has(t)) { seen.add(t); e.routes.push(p); } }
+    e.routes = e.routes.slice(0, 4);
+  }
+  return ends;
+}
+function defaultMoves(ship) {
+  if (ship.locked || ship.facing === WIND_FROM) return [];
+  const m = []; let bow = ship.bow;
+  for (let i = 0; i < Math.min(ship.speed, ship.ma); i++) {
+    if (ship.facing === WIND_FROM) break; const nb = add(bow, DIRS[ship.facing]);
+    if (!poseOk(nb, ship.facing)) break; m.push("A"); bow = nb; }
+  return m;
+}
+const movesOf = (s) => s.plan ? s.plan.moves : defaultMoves(s);
+function enemyPlan(s) {
+  const ends = [...reach(s).values()]; if (!ends.length) return [];
+  const target = own().filter((o) => !o.locked)[0] || own()[0];
+  ends.sort((a, b) => hexDist(a.hex, target.bow) - hexDist(b.hex, target.bow));
+  const pick = ends[Math.floor(Math.random() * Math.min(4, ends.length))];
+  return pick.routes[0];
+}
+
+// ---------------------------------------------------------------- arcs ------
+// A broadside bears 60-120 degrees off the bow, to range 10; chasers within 30 degrees of the keel line, to 7.
+function bearing(fromHex, facing, toHex) {
+  const [ax, ay] = px(fromHex), [bx, by] = px(toHex), [hx, hy] = dirVec(facing);
+  const vx = bx - ax, vy = by - ay;
+  return Math.atan2(hx * vy - hy * vx, hx * vx + hy * vy) * 180 / Math.PI;
+}
+const shipHexes = (s) => [s.bow, sternOf(s.bow, s.facing)];
+function arcHas(ship, kind, battery, hex) {
+  const from = battery === "stern" ? sternOf(ship.bow, ship.facing) : ship.bow;
+  const d = hexDist(from, hex); if (d === 0) return false;
+  const a = bearing(from, ship.facing, hex);
+  if (kind === "port") return d <= 10 && a <= -59.5 && a >= -120.5;
+  if (kind === "starboard") return d <= 10 && a >= 59.5 && a <= 120.5;
+  if (kind === "bowchase") return d <= 7 && Math.abs(a) <= 30.5;
+  if (kind === "sternchase") return d <= 7 && Math.abs(a) >= 149.5;
+  return false;
+}
+function shot(ship, kind, target) {
+  const th = shipHexes(target);
+  const range = Math.min(...shipHexes(ship).flatMap((a) => th.map((b) => hexDist(a, b))));
+  if (kind === "marines") return range === 1 ? { range, batteries: ["marines"] } : null;
+  if (kind === "bowchase" || kind === "sternchase") {
+    const b = kind === "bowchase" ? "bow" : "stern";
+    return th.some((h) => arcHas(ship, kind, b, h)) ? { range, batteries: ["chase"] } : null;
+  }
+  const bow = th.some((h) => arcHas(ship, kind, "bow", h)), stern = th.some((h) => arcHas(ship, kind, "stern", h));
+  if (!bow && !stern) return null;
+  const batteries = []; if (bow && stern) batteries.push("full"); if (bow) batteries.push("bow"); if (stern) batteries.push("stern");
+  return { range, batteries };
+}
+const targetsFor = (ship, kind) => enemies().map((e) => ({ e, s: shot(ship, kind, e) })).filter((x) => x.s);
+function gunNumber(ship, kind, battery, range, aim) {   // prototype stand-in for the modified gunfire number
+  let n = (kind === "bowchase" || kind === "sternchase") ? 9 - range : 34 - 2 * range;
+  if (battery === "bow" || battery === "stern") n -= 8;
+  if (aim === "high") n -= 2;
+  return Math.max(1, n);
+}
+
+// ---------------------------------------------------------------- state -----
+const ui = { phase: "planning", turn: 1, sel: null, radial: null, mode: null, hover: null, log: [], anim: null,
+  pending: null, plate: null };
+// radial: {ship, ring: "main"|"orders"|"fire", hover}
+// mode: {kind: "move", ship, ends, hexes, endHex} | {kind: "target", ship, fire}
+
+function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 2600); }
+
+// ---------------------------------------------------------------- icons -----
+const I = {
+  move: '<path d="M4 20c3-9 8-13 15-14" fill="none" stroke="#e6ebf1" stroke-width="2" stroke-dasharray="2 3"/><path d="M15 3l6 3-4 5" fill="none" stroke="#e6ebf1" stroke-width="2.2"/>',
+  crew: '<rect x="3" y="5" width="18" height="3" rx="1" fill="#c8a26a"/><rect x="3" y="11" width="18" height="3" rx="1" fill="#c8a26a"/><rect x="3" y="17" width="18" height="3" rx="1" fill="#c8a26a"/><circle cx="8" cy="12.5" r="2.3" fill="#62b47d"/><circle cx="15" cy="6.5" r="2.3" fill="#e3b344"/>',
+  orders: '<path d="M6 21V3" stroke="#e6ebf1" stroke-width="2"/><path d="M6 4h12l-3 4 3 4H6" fill="#79b7dc"/>',
+  signal: '<path d="M5 21V3" stroke="#e6ebf1" stroke-width="2"/><path d="M5 4l12 3-12 3z" fill="#e0574d"/><path d="M5 11l10 2.5L5 16z" fill="#e3b344"/>',
+  reset: '<path d="M19 12a7 7 0 1 1-2.1-5" fill="none" stroke="#e6ebf1" stroke-width="2.2"/><path d="M18 3v5h-5" fill="none" stroke="#e6ebf1" stroke-width="2.2"/>',
+  done: '<path d="M4 12.5l5 5L20 6" fill="none" stroke="#62b47d" stroke-width="3"/>',
+  undo: '<path d="M4 12.5l5 5L20 6" fill="none" stroke="#98a5b4" stroke-width="3"/><path d="M3 21L21 3" stroke="#e3b344" stroke-width="2"/>',
+  lead: '<path d="M12 3v10" stroke="#e6ebf1" stroke-width="2"/><path d="M8 13h8l-1 7H9z" fill="#98a5b4"/><path d="M3 9h5M16 9h5" stroke="#79b7dc" stroke-width="2"/>',
+  escape: '<path d="M3 12h13" stroke="#e6ebf1" stroke-width="2.2"/><path d="M12 7l5 5-5 5" fill="none" stroke="#e6ebf1" stroke-width="2.2"/><path d="M20 3v18" stroke="#e3b344" stroke-width="2" stroke-dasharray="2 2"/>',
+  surrender: '<path d="M6 21V3" stroke="#e6ebf1" stroke-width="2"/><path d="M6 4h13v8H6" fill="#f0f0f0"/>',
+  rally: '<path d="M6 21V3" stroke="#e6ebf1" stroke-width="2"/><path d="M6 4h13v8H6" fill="#e0574d"/><path d="M9 8h7" stroke="#fff" stroke-width="2"/>',
+  back: '<path d="M15 5l-7 7 7 7" fill="none" stroke="#e6ebf1" stroke-width="2.6"/>',
+  port: '<path d="M3 15h15l3-3-3-3H3z" fill="#5b4330"/><circle cx="7" cy="9" r="1.8" fill="#ef6a5f"/><circle cx="12" cy="9" r="1.8" fill="#ef6a5f"/><circle cx="17" cy="9" r="1.8" fill="#ef6a5f"/><path d="M5 5l2 2M11 4v2M17 5l-1 2" stroke="#ef6a5f" stroke-width="1.6"/>',
+  stbd: '<path d="M3 9h15l3 3-3 3H3z" fill="#5b4330"/><circle cx="7" cy="15" r="1.8" fill="#5fd08a"/><circle cx="12" cy="15" r="1.8" fill="#5fd08a"/><circle cx="17" cy="15" r="1.8" fill="#5fd08a"/><path d="M5 19l2-2M11 20v-2M17 19l-1-2" stroke="#5fd08a" stroke-width="1.6"/>',
+  bowchase: '<path d="M3 9h12l4 3-4 3H3z" fill="#5b4330"/><path d="M19 12h3" stroke="#6aa8ff" stroke-width="2.4"/><circle cx="16" cy="12" r="1.8" fill="#6aa8ff"/>',
+  sternchase: '<path d="M21 9H9l-4 3 4 3h12z" fill="#5b4330"/><path d="M5 12H2" stroke="#6aa8ff" stroke-width="2.4"/><circle cx="8" cy="12" r="1.8" fill="#6aa8ff"/>',
+  marines: '<path d="M4 20L18 6" stroke="#c8a26a" stroke-width="2.4"/><path d="M18 6l2-2" stroke="#e6ebf1" stroke-width="2"/><circle cx="7" cy="7" r="3" fill="#e8d27a"/><path d="M15 16l4 4" stroke="#e8d27a" stroke-width="2"/>',
+  hold: '<circle cx="12" cy="12" r="8" fill="none" stroke="#98a5b4" stroke-width="2.2"/><path d="M6.5 17.5l11-11" stroke="#98a5b4" stroke-width="2.2"/>',
+};
+const icon = (n) => '<svg viewBox="0 0 24 24">' + I[n] + "</svg>";
+
+// ---------------------------------------------------------------- radial menus --
+function planItems(s) {
+  const isPlan = s.status === "plan";
+  const moveReason = s.locked ? s.locked : s.ma === 0 ? "No movement allowance this turn." : "";
+  return [
+    { id: "move", label: "Move", icon: "move", off: moveReason, hint: "Pick the hex and facing to sail to.",
+      act: () => startMove(s) },
+    { id: "crew", label: "Crew & damage", icon: "crew", hint: "Opens the ship overlay: crew, sails, fires, repairs, boarding.",
+      act: () => { closeRadial(); toast("Opens the Crew & damage overlay for " + s.name + " (unchanged; not in this prototype)."); } },
+    { id: "orders", label: "Orders", icon: "orders", hint: "Lead, escape, surrender, rally.", act: () => { ui.radial.ring = "orders"; render(); } },
+    { id: "signal", label: "Signal", icon: "signal", hint: "Send a flag signal to your squadron.",
+      act: () => { closeRadial(); toast("Opens the signal composer (not in this prototype)."); } },
+    { id: "reset", label: "Reset course", icon: "reset", off: s.plan ? "" : "No course plotted: she sails her default course.",
+      hint: "Back to the default course.", act: () => { s.plan = null; s.lead = false; s.status = s.locked ? "done" : "plan"; closeRadial(); } },
+    isPlan
+      ? { id: "done", label: "Done", icon: "done", hint: s.plan ? "Orders given." : "Done: she sails her default course.",
+          act: () => { s.status = "done"; closeRadial(); nextShip(s); } }
+      : { id: "undo", label: "Plan again", icon: "undo", off: s.locked ? "She is anchored: nothing to plan." : "",
+          hint: "Back to Plan.", act: () => { s.status = "plan"; closeRadial(); } },
+  ];
+}
+function orderItems(s) {
+  const mp = movesOf(s).length;
+  return [
+    { id: "lead", label: s.lead ? "Cast the lead: on" : "Cast the lead", icon: "lead", on: s.lead,
+      off: s.locked ? "Anchored." : mp > 2 ? "Only with a course of 2 MP or less (this one is " + mp + ")." : "",
+      hint: "Sound ahead and bear off shoal water.", act: () => { s.lead = !s.lead; render(); } },
+    { id: "escape", label: "Declare escape", icon: "escape", off: "No escape edge in this scenario.", act: () => {} },
+    { id: "surrender", label: "Surrender", icon: "surrender",
+      off: "Not eligible: crew quality above F and fewer than five sections lost.", act: () => {} },
+    { id: "rally", label: "Rally", icon: "rally", off: "She has not surrendered.", act: () => {} },
+    { id: "back", label: "Back", icon: "back", act: () => { ui.radial.ring = "main"; render(); } },
+  ];
+}
+function fireItems(s) {
+  const kinds = [["port", "Port broadside", "port", "No enemy in the port arc (60–120° off the bow, range 10)."],
+    ["starboard", "Starboard broadside", "stbd", "No enemy in the starboard arc (60–120° off the bow, range 10)."],
+    ["bowchase", "Bow chaser", "bowchase", "No enemy within 30° of the bow, range 7."],
+    ["sternchase", "Stern chaser", "sternchase", "No enemy within 30° of the stern, range 7."],
+    ["marines", "Marines (muskets)", "marines", "No enemy alongside."]];
+  const items = kinds.map(([k, label, ic, why]) => {
+    const n = targetsFor(s, k).length, has = s.orders.some((o) => o.kind === k);
+    return { id: k, label, icon: ic, off: n ? "" : why, on: has,
+      hint: has ? "Ordered. Pick again to change it." : n + (n === 1 ? " target bears." : " targets bear."),
+      act: () => startTarget(s, k) };
+  });
+  items.push({ id: "hold", label: s.orders.length ? "Clear orders" : "Hold fire", icon: "hold",
+    hint: s.orders.length ? "Remove this ship's fire orders." : "She holds her fire this turn.",
+    act: () => { s.orders = []; s.status = "done"; closeRadial(); } });
+  items.push(s.status === "plan"
+    ? { id: "done", label: "Done", icon: "done", hint: s.orders.length ? "Fire orders given." : "Done: she holds her fire.",
+        act: () => { s.status = "done"; closeRadial(); nextShip(s); } }
+    : { id: "undo", label: "Change orders", icon: "undo", hint: "Back to choosing.", act: () => { s.status = "plan"; closeRadial(); } });
+  return items;
+}
+function openRadial(s) {
+  ui.sel = s.id; ui.plate = null;
+  if (ui.mode && ui.mode.ship !== s) ui.mode = null;
+  ui.radial = { ship: s, ring: ui.phase === "fire" ? "fire" : "main", hover: null };
+  ui.pending = null; render();
+}
+function closeRadial() { ui.radial = null; render(); }
+function nextShip(s) {
+  const list = own().filter((o) => o.status === "plan");
+  if (!list.length) toast(ui.phase === "fire" ? "Every ship has her orders: press Fire." : "Every ship is Done: press End Planning.");
+}
+
+// ---------------------------------------------------------------- movement mode --
+function startMove(s) {
+  const ends = reach(s), hexes = new Map();
+  for (const e of ends.values()) { const k = key(e.hex); if (!hexes.has(k)) hexes.set(k, []); hexes.get(k).push(e); }
+  for (const list of hexes.values()) list.sort((a, b) => a.routes[0].length - b.routes[0].length);
+  ui.radial = null; ui.mode = { kind: "move", ship: s, ends, hexes, endHex: s.plan ? key(s.plan.hex) : null };
+  s.status = "plan"; render();
+}
+function setCourse(s, end, routeIdx) {
+  s.plan = { hex: end.hex, f: end.f, moves: end.routes[routeIdx], routeIdx, routes: end.routes };
+  if (s.plan.moves.length > 2) s.lead = false;
+}
+function finishMove(markDone) {
+  const s = ui.mode.ship; ui.mode = null;
+  if (markDone && s.plan) { s.status = "done"; nextShip(s); }
+  render();
+}
+
+// ---------------------------------------------------------------- fire mode -----
+function startTarget(s, kind) {
+  ui.radial = null; ui.mode = { kind: "target", ship: s, fire: kind }; ui.pending = null;
+  const t = targetsFor(s, kind); if (t.length === 1) pickTarget(t[0].e); else render();
+}
+function pickTarget(e) {
+  const m = ui.mode, s = m.ship, sh = shot(s, m.fire, e); if (!sh) return;
+  const old = s.orders.find((o) => o.kind === m.fire && o.target === e.id);
+  ui.pending = { ship: s, kind: m.fire, target: e, range: sh.range, batteries: sh.batteries,
+    battery: old ? old.battery : sh.batteries[0], aim: old ? old.aim : sh.range >= 10 ? "high" : "low" };
+  render();
+}
+function confirmOrder() {
+  const p = ui.pending, s = p.ship;
+  let orders = s.orders.filter((o) => !(o.kind === p.kind && (o.battery === "full" || p.battery === "full" || o.battery === p.battery || o.battery === "chase" || o.battery === "marines")));
+  const targets = new Set(orders.filter((o) => o.kind !== "marines").map((o) => o.target));
+  if (p.kind !== "marines") targets.add(p.target.id);
+  if (targets.size > 2) { toast("At most two targets a ship (the −12 for two targets applies to each)."); return; }
+  orders.push({ kind: p.kind, battery: p.battery, target: p.target.id, aim: p.aim, range: p.range });
+  s.orders = orders; ui.pending = null; ui.mode = null; render();
+}
+
+// ---------------------------------------------------------------- phases ---------
+function endPlanning() {
+  for (const e of enemies()) e.plan = { moves: enemyPlan(e) };
+  ui.radial = null; ui.mode = null; ui.sel = null; ui.phase = "moving";
+  const tracks = ships.map((s) => ({ s, states: simulate(s, movesOf(s)) }));
+  const t0 = performance.now(), dur = 2600;
+  ui.anim = { tracks, t: 0 };
+  (function frame(now) {
+    ui.anim.t = Math.max(0, Math.min(1, (now - t0) / dur)); renderSvg();
+    if (ui.anim.t < 1) return requestAnimationFrame(frame);
+    for (const { s, states } of tracks) { const last = states[states.length - 1];
+      const n = states.length - 1, moved = movesOf(s).includes("A");
+      s.bow = last.bow; s.facing = last.f; s.speed = moved ? n : 0; s.plan = null; s.lead = false; }
+    ui.anim = null; ui.phase = "fire";
+    for (const s of own()) { s.orders = []; s.status = ["port","starboard","bowchase","sternchase","marines"].some((k) => targetsFor(s, k).length) ? "plan" : "done"; }
+    render();
+  })(t0);
+  render();
+}
+function fireAll() {
+  const res = ["no effect", "1 rigging", "2 rigging, 1 hull", "1 hull, 1 crew", "3 rigging", "2 hull, 1 crew"];
+  ui.log = [];
+  const line = (s, o) => { const t = byId(o.target), d6 = 1 + Math.floor(Math.random() * 6);
+    if (o.kind === "marines") return s.name + " marines at " + t.name + ": d6 " + d6 + (d6 >= 4 ? " — 1 crew" : " — miss");
+    const n = gunNumber(s, o.kind, o.battery, o.range, o.aim), lbl = { full: "full broadside", bow: "bow battery", stern: "stern battery", chase: "chaser" }[o.battery];
+    return s.name + " " + (o.kind === "port" ? "port " : o.kind === "starboard" ? "starboard " : "") + lbl + " at " + t.name + ", " + o.aim + ": " + n + " + d6 " + d6 + " = " + (n + d6) + " → " + res[Math.min(5, Math.floor((n + d6) / 8))]; };
+  for (const s of own()) for (const o of s.orders) ui.log.push(line(s, o));
+  for (const e of enemies()) { for (const k of ["port", "starboard"]) { const t = own().map((o) => ({ o, sh: shot(e, k, o) })).find((x) => x.sh);
+    if (t) { ui.log.push(line(e, { kind: k, battery: t.sh.batteries[0], target: t.o.id, aim: t.sh.range >= 10 ? "high" : "low", range: t.sh.range })); break; } } }
+  if (!ui.log.length) ui.log.push("No guns fired.");
+  ui.radial = null; ui.mode = null; ui.pending = null; ui.phase = "result"; render();
+}
+function nextTurn() {
+  ui.turn++; ui.phase = "planning"; ui.log = [];
+  for (const s of ships) { s.orders = []; s.plan = null; s.status = s.side === 1 || s.locked ? "done" : "plan"; }
+  render();
+}
+
+// ---------------------------------------------------------------- rendering -----
+const svg = document.getElementById("map");
+svg.setAttribute("viewBox", "0 0 " + BOARD_W.toFixed(0) + " " + BOARD_H.toFixed(0));
+function shipPose(bow, f) { const [a, b] = [px(bow), px(sternOf(bow, f))]; return { x: (a[0] + b[0]) / 2, y: (a[1] + b[1]) / 2, a: f * 60 }; }
+function animPose(states, t) {
+  const n = states.length - 1; if (n <= 0) return shipPose(states[0].bow, states[0].f);
+  const x = t * n, i = Math.min(n - 1, Math.floor(x)), k = x - i, e = k * k * (3 - 2 * k);
+  const p = shipPose(states[i].bow, states[i].f), q = shipPose(states[i + 1].bow, states[i + 1].f);
+  let da = ((q.a - p.a + 540) % 360) - 180;
+  return { x: p.x + (q.x - p.x) * e, y: p.y + (q.y - p.y) * e, a: p.a + da * e };
+}
+function shipSvg(s, pose, opt = {}) {
+  const L = S * SQ3 + S * 0.8, w = S * 0.36, tip = S * 0.5, x0 = -L / 2, x1 = L / 2;
+  const col = s.side === 0 ? "var(--ok)" : "var(--bad)";
+  const hull = `M${x0 + 4},${-w} L${x1 - tip},${-w} L${x1},0 L${x1 - tip},${w} L${x0 + 4},${w} Q${x0 - 3},0 ${x0 + 4},${-w} Z`;
+  const sel = !opt.ghost && ui.sel === s.id;
+  let g = `<g transform="translate(${pose.x.toFixed(1)},${pose.y.toFixed(1)}) rotate(${pose.a.toFixed(1)})" opacity="${opt.ghost ? 0.85 : 1}">`;
+  if (sel) g += `<path d="${hull}" fill="none" stroke="var(--brass)" stroke-width="7" opacity=".55"/>`;
+  g += `<path d="${hull}" fill="${opt.ghost ? "rgba(255,242,196,.28)" : "#4a3424"}" stroke="${opt.ghost ? "#fff2c4" : col}" stroke-width="2.5" ${opt.ghost ? 'stroke-dasharray="5 4"' : ""}/>`;
+  for (const mx of [-L * 0.26, 0, L * 0.24]) g += `<rect x="${mx - 2.5}" y="${-w * 1.5}" width="5" height="${w * 3}" rx="2" fill="var(--sail)" opacity="${opt.ghost ? 0.6 : 0.95}"/>`;
+  return g + "</g>";
+}
+function badgeSvg(x, y, text, cls) {
+  const colors = { plan: ["#e3b344", "#1b1300"], done: ["#62b47d", "#07160c"], locked: ["#3a4655", "#c3ccd6"],
+    fire: ["#e3b344", "#1b1300"], none: ["#3a4655", "#c3ccd6"] }[cls];
+  const w = text.length * 6.4 + 14;
+  return `<g class="badge" transform="translate(${(x - w / 2).toFixed(1)},${(y - 9).toFixed(1)})"><rect width="${w}" height="17" rx="8.5" fill="${colors[0]}"/><text x="${w / 2}" y="12.5" text-anchor="middle" fill="${colors[1]}">${text}</text></g>`;
+}
+function statusOf(s) {
+  if (s.side === 1) return null;
+  if (ui.phase === "planning") return s.locked ? ["⚓ DONE", "locked"] : s.status === "plan" ? ["PLAN", "plan"] : ["✓ DONE", "done"];
+  if (ui.phase === "fire") {
+    if (s.status === "plan") return ["FIRE", "fire"];
+    return s.orders.length ? ["✓ " + s.orders.length + (s.orders.length === 1 ? " ORDER" : " ORDERS"), "done"] : ["NO FIRE", "none"];
+  }
+  return null;
+}
+function routePoints(s, moves) {
+  const st = simulate(s, moves); const pts = [px(s.bow)];
+  for (const x of st.slice(1)) { const p = px(x.bow); const l = pts[pts.length - 1]; if (l[0] !== p[0] || l[1] !== p[1]) pts.push(p); }
+  return pts.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
+}
+function renderSvg() {
+  const m = ui.mode, out = [];
+  // hexes
+  let arc = null;
+  if (m && m.kind === "target") {
+    arc = new Set(); const s = m.ship;
+    const bats = (m.fire === "bowchase") ? ["bow"] : (m.fire === "sternchase") ? ["stern"] : ["bow", "stern"];
+    if (m.fire !== "marines") for (const h of HEXES) if (bats.some((b) => arcHas(s, m.fire, b, h))) arc.add(key(h));
+  }
+  for (const h of HEXES) {
+    const k = key(h); let cls = "hex" + (LAND.has(k) ? " land" : "");
+    if (m && m.kind === "move" && m.hexes.has(k)) cls += k === m.endHex ? " reachsel" : k === ui.hover ? " reachhover" : " reach";
+    if (arc && arc.has(k)) cls += " arc-" + (m.fire === "port" ? "port" : m.fire === "starboard" ? "starboard" : "chase");
+    out.push(`<polygon class="${cls}" points="${corners(h)}"/>`);
+  }
+  // wind
+  const wx = BOARD_W - 120, wy = 34, [dx, dy] = dirVec((WIND_FROM + 3) % 6);
+  out.push(`<g><circle cx="${wx}" cy="${wy}" r="18" fill="rgba(14,21,29,.7)" stroke="var(--line)"/><path d="M${wx - dx * 12},${wy - dy * 12} L${wx + dx * 10},${wy + dy * 10}" stroke="#cfe4ff" stroke-width="3"/><circle cx="${wx + dx * 11}" cy="${wy + dy * 11}" r="3.5" fill="#cfe4ff"/><text class="lbl" x="${wx + 26}" y="${wy + 4}">Wind from NW</text></g>`);
+  // routes
+  if (ui.phase === "planning") for (const s of own()) {
+    if (s.locked) continue;
+    if (s.plan) out.push(`<polyline class="route" points="${routePoints(s, s.plan.moves)}"/>`);
+    else { const dm = defaultMoves(s); if (dm.length) out.push(`<polyline class="route default" points="${routePoints(s, dm)}"/>`); }
+  }
+  // hover preview
+  if (m && m.kind === "move" && ui.hover && m.hexes.has(ui.hover) && ui.hover !== m.endHex) {
+    const e = m.hexes.get(ui.hover)[0];
+    out.push(`<polyline class="route preview" points="${routePoints(m.ship, e.routes[0])}"/>`);
+    out.push(shipSvg(m.ship, shipPose(e.hex, e.f), { ghost: true }));
+  }
+  // ghosts of plotted courses
+  if (ui.phase === "planning") for (const s of own()) if (s.plan) out.push(shipSvg(s, shipPose(s.plan.hex, s.plan.f), { ghost: true }));
+  // ships
+  for (const s of ships) {
+    let pose; if (ui.anim) pose = animPose(ui.anim.tracks.find((t) => t.s === s).states, ui.anim.t); else pose = shipPose(s.bow, s.facing);
+    out.push(shipSvg(s, pose));
+  }
+  // facing arrows on the chosen hex
+  if (m && m.kind === "move" && m.endHex) {
+    const [cx, cy] = px(m.hexes.get(m.endHex)[0].hex);
+    for (const e of m.hexes.get(m.endHex)) {
+      const [ux, uy] = dirVec(e.f), on = m.ship.plan && m.ship.plan.f === e.f && key(m.ship.plan.hex) === m.endHex;
+      const tx = cx + ux * S * 1.02, ty = cy + uy * S * 1.02, bx = cx + ux * S * 0.62, by = cy + uy * S * 0.62;
+      out.push(`<path d="M${tx},${ty} L${bx - uy * 8},${by + ux * 8} L${bx + uy * 8},${by - ux * 8} Z" fill="${on ? "#fff2c4" : "rgba(255,242,196,.45)"}" stroke="#2a1d05" stroke-width="1"/>`);
+    }
+  }
+  // fire orders
+  if (ui.phase === "fire" || ui.phase === "result") for (const s of own()) for (const o of s.orders) {
+    const t = byId(o.target), from = o.battery === "stern" ? px(sternOf(s.bow, s.facing)) : o.battery === "bow" || o.kind === "bowchase" ? px(s.bow)
+      : o.kind === "sternchase" ? px(sternOf(s.bow, s.facing)) : (() => { const p = shipPose(s.bow, s.facing); return [p.x, p.y]; })();
+    const tp = shipPose(t.bow, t.facing), col = { port: "var(--port)", starboard: "var(--stbd)", bowchase: "var(--chase)", sternchase: "var(--chase)", marines: "var(--marine)" }[o.kind];
+    out.push(`<line class="order" x1="${from[0]}" y1="${from[1]}" x2="${tp.x}" y2="${tp.y}" stroke="${col}" marker-end="url(#arr)"/>`);
+    const n = o.kind === "marines" ? "muskets" : o.aim + " · ≈" + gunNumber(s, o.kind, o.battery, o.range, o.aim);
+    out.push(`<text class="lbl" x="${((from[0] + tp.x) / 2).toFixed(1)}" y="${((from[1] + tp.y) / 2 - 6).toFixed(1)}" text-anchor="middle">${n}</text>`);
+  }
+  // targets in target mode
+  if (m && m.kind === "target") for (const { e, s: sh } of targetsFor(m.ship, m.fire)) {
+    const p = shipPose(e.bow, e.facing);
+    out.push(`<ellipse class="target-ring" cx="${p.x}" cy="${p.y}" rx="${S * 1.55}" ry="${S * 0.95}" transform="rotate(${p.a} ${p.x} ${p.y})"/>`);
+    out.push(`<text class="lbl" x="${p.x}" y="${p.y + S * 1.35}" text-anchor="middle">range ${sh.range}</text>`);
+  }
+  // labels and badges
+  if (!ui.anim) for (const s of ships) {
+    const p = shipPose(s.bow, s.facing);
+    out.push(`<text class="lbl" x="${p.x}" y="${p.y + S * 0.95}" text-anchor="middle">${s.name}</text>`);
+    const st = statusOf(s); if (st) out.push(badgeSvg(p.x, p.y - S * 0.95, st[0], st[1]));
+  }
+  svg.innerHTML = `<defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#fff"/></marker></defs>` + out.join("");
+}
+function toClient(x, y) {
+  const pt = svg.createSVGPoint(); pt.x = x; pt.y = y; const c = pt.matrixTransform(svg.getScreenCTM());
+  const r = document.getElementById("mapwrap").getBoundingClientRect(); return [c.x - r.left, c.y - r.top];
+}
+function renderRadial() {
+  const box = document.getElementById("radial"); box.innerHTML = "";
+  const R = ui.radial; if (!R) return;
+  const s = R.ship, p = shipPose(s.bow, s.facing), [cx, cy] = toClient(p.x, p.y);
+  const items = R.ring === "orders" ? orderItems(s) : R.ring === "fire" ? fireItems(s) : planItems(s);
+  const rad = 78, wrap = document.createElement("div"); wrap.className = "rad"; wrap.style.left = cx + "px"; wrap.style.top = cy + "px";
+  wrap.innerHTML = '<div class="disc"></div>';
+  items.forEach((it, i) => {
+    const a = -Math.PI / 2 + i * 2 * Math.PI / items.length;
+    const b = document.createElement("div"); b.className = "item" + (it.off ? " off" : "") + (it.on ? " on" : "");
+    b.style.left = (Math.cos(a) * rad) + "px"; b.style.top = (Math.sin(a) * rad) + "px"; b.style.animationDelay = (i * 18) + "ms";
+    b.innerHTML = icon(it.icon); b.title = it.label + (it.off ? " — " + it.off : "");
+    b.onmouseenter = () => { R.hover = it; drawCap(); };
+    b.onmouseleave = () => { R.hover = null; drawCap(); };
+    b.onclick = (ev) => { ev.stopPropagation(); if (!it.off) it.act(); };
+    wrap.appendChild(b);
+  });
+  const cap = document.createElement("div"); cap.className = "cap"; cap.style.top = (rad + 34) + "px";
+  wrap.appendChild(cap);
+  function drawCap() {
+    const h = R.hover;
+    const sub = ui.phase === "fire" ? "Fire orders" : s.locked ? "Anchored" : "Speed " + s.speed + " · MA " + s.ma + (s.plan ? " · course " + s.plan.moves.length + " MP" : " · default course");
+    cap.innerHTML = h ? `<div><div class="t">${h.label}</div>${h.off ? `<div class="r">${h.off}</div>` : `<div class="h">${h.hint || ""}</div>`}</div>`
+      : `<div><div class="t">${s.name}</div><div class="h">${sub}</div></div>`;
+  }
+  drawCap(); box.appendChild(wrap);
+}
+function renderChips() {
+  const box = document.getElementById("chips"); box.innerHTML = ""; const m = ui.mode;
+  const place = (el, x, y) => { const [cx, cy] = toClient(x, y); el.style.left = (cx + 44) + "px"; el.style.top = (cy - 16) + "px"; box.appendChild(el); };
+  if (m && m.kind === "move" && m.ship.plan) {
+    const s = m.ship, pl = s.plan, el = document.createElement("div"); el.className = "chipbox";
+    const n = pl.routes.length, mp = pl.moves.length;
+    el.innerHTML = `<span class="chip info">${mp} MP · facing ${DIRNAME[pl.f]}</span>` +
+      (n > 1 ? `<span class="chip" data-a="route">Route ${pl.routeIdx + 1} of ${n} ⟳</span>` : "") +
+      (byOtherShip(pl.hex, s) ? `<span class="chip info" style="color:var(--warn)">another ship lies there now</span>` : "") +
+      `<span class="chip ok" data-a="done">✓ Done</span><span class="chip" data-a="keep">Keep planning</span>`;
+    el.onclick = (ev) => { const a = ev.target.dataset.a; ev.stopPropagation();
+      if (a === "route") { const e = [...m.ends.values()].find((x) => key(x.hex) === key(pl.hex) && x.f === pl.f); setCourse(s, e, (pl.routeIdx + 1) % n); render(); }
+      if (a === "done") finishMove(true);
+      if (a === "keep") finishMove(false); };
+    const p = px(pl.hex); place(el, p[0], p[1]);
+  }
+  if (ui.pending) {
+    const P = ui.pending, el = document.createElement("div"); el.className = "chipbox";
+    const names = { full: "Full broadside", bow: "Bow battery", stern: "Stern battery", chase: "Chaser", marines: "Muskets" };
+    let h = `<div class="ttl">${P.ship.name} → ${P.target.name} · range ${P.range}</div>`;
+    if (P.batteries.length > 1 || P.batteries[0] !== "full") for (const b of P.batteries) h += `<span class="chip ${P.battery === b ? "on" : ""}" data-b="${b}">${names[b]}</span>`;
+    if (P.kind !== "marines") {
+      h += `<span class="chip ${P.aim === "low" ? "on" : ""} ${P.range >= 10 ? "off" : ""}" data-aim="low" title="${P.range >= 10 ? "Ranges 10–15 are high only" : "Aim at the hull"}">Low</span>`;
+      h += `<span class="chip ${P.aim === "high" ? "on" : ""}" data-aim="high" title="Aim at the rigging">High</span>`;
+      h += `<span class="chip info">≈ ${gunNumber(P.ship, P.kind, P.battery, P.range, P.aim)} before the die</span>`;
+    }
+    h += `<span class="chip ok" data-a="ok">✓ Order</span><span class="chip" data-a="cancel">Cancel</span>`;
+    el.innerHTML = h;
+    el.onclick = (ev) => { const d = ev.target.dataset; ev.stopPropagation();
+      if (d.b) P.battery = d.b; if (d.aim && !(d.aim === "low" && P.range >= 10)) P.aim = d.aim;
+      if (d.a === "ok") return confirmOrder(); if (d.a === "cancel") { ui.pending = null; ui.mode = null; }
+      render(); };
+    const tp = shipPose(P.target.bow, P.target.facing); place(el, tp.x + S, tp.y);
+  }
+  const plate = document.getElementById("plate");
+  if (ui.plate) { const e = ui.plate, p = shipPose(e.bow, e.facing), [cx, cy] = toClient(p.x, p.y);
+    plate.style.display = "block"; plate.style.left = (cx + 40) + "px"; plate.style.top = (cy - 50) + "px";
+    plate.innerHTML = `<b>${e.name}</b> (enemy) · ${e.rate} guns<br>Speed ${e.speed} · heading ${DIRNAME[e.facing]}<br><span class="sub">Her plot is hidden from you.</span>`;
+  } else plate.style.display = "none";
+}
+const byOtherShip = (hex, s) => ships.some((o) => o !== s && shipHexes(o).some((h) => key(h) === key(hex)));
+function renderBanner() {
+  const b = document.getElementById("banner"), m = ui.mode;
+  let t = "";
+  if (ui.phase === "planning") t = m && m.kind === "move"
+    ? `<b>Move · ${m.ship.name}</b>Click a lit hex, then an arrow for her facing. <kbd>Enter</kbd> done · <kbd>Esc</kbd> back`
+    : `<b>Planning · turn ${ui.turn}</b>Click a ship marked PLAN · <kbd>Tab</kbd> next ship`;
+  if (ui.phase === "moving") t = `<b>Movement</b>All ships sail together, each at her own pace`;
+  if (ui.phase === "fire") t = m && m.kind === "target" ? `<b>Fire · ${m.ship.name}</b>Click a ringed enemy · <kbd>Esc</kbd> back`
+    : `<b>Fire orders</b>Guns are aimed now that the ships have moved · click a ship marked FIRE`;
+  if (ui.phase === "result") t = `<b>Results</b>See the side panel`;
+  b.innerHTML = t;
+}
+function renderSide() {
+  const ph = { planning: 0, moving: 1, fire: 2, result: 3 }[ui.phase];
+  let h = `<h1>Leeward</h1><div class="sub">Prototype: planning on the board · turn ${ui.turn}</div>
+    <div class="phases">${["Plan", "Move", "Fire", "Results"].map((x, i) => `<span class="${i === ph ? "on" : ""}">${x}</span>`).join("")}</div>`;
+  const ready = own().every((s) => s.status === "done");
+  h += `<h2>Players</h2><div class="roster">
+    <div class="row"><span class="dot" style="background:var(--ok)"></span><span class="nm">You · British</span><span class="meta">${ui.phase === "planning" || ui.phase === "fire" ? (ready ? "ready" : "planning") : ui.phase === "moving" ? "resolving" : "reviewing"}</span></div>
+    <div class="row"><span class="dot" style="background:var(--bad)"></span><span class="nm">AI · French</span><span class="meta">ready</span></div></div>`;
+  h += `<h2>Your ships</h2>`;
+  for (const s of own()) {
+    const st = statusOf(s); let pill = "";
+    if (st) pill = `<span class="pill ${st[1]}" data-toggle="${s.id}" title="${s.locked ? s.locked : "Click to toggle Plan / Done"}">${st[0]}</span>`;
+    const meta = ui.phase === "fire" ? (targetsFor(s, "port").length + targetsFor(s, "starboard").length ? "guns bear" : "no target")
+      : s.locked ? "anchored" : "speed " + s.speed + "/" + s.ma + (s.plan ? " · " + s.plan.moves.length + " MP" : "");
+    h += `<div class="row ${ui.sel === s.id ? "sel" : ""}" data-ship="${s.id}"><span class="dot" style="background:var(--ok)"></span><span class="nm">${s.name}</span><span class="meta">${meta}</span>${pill}</div>`;
+  }
+  h += `<h2>Enemy</h2>`;
+  for (const s of enemies()) h += `<div class="row" data-ship="${s.id}"><span class="dot" style="background:var(--bad)"></span><span class="nm">${s.name}</span><span class="meta">speed ${s.speed}</span></div>`;
+  if (ui.phase === "result") h += `<h2>Gunfire</h2><div class="log">${ui.log.map((l) => `<div>${l}</div>`).join("")}</div>`;
+  h += `<h2>Prototype rules</h2><div class="note"><ul>
+    <li>A step is 1 hex ahead or a 60° turn on the bow; each costs 1 MP.</li>
+    <li>At least one hex ahead between turns; no sailing ahead into the wind (NW).</li>
+    <li>At most MA MPs; at least speed − 2 (you can slow by 2 a turn).</li>
+    <li>Broadsides 60–120° off the bow to range 10; chasers ±30° to range 7.</li>
+    <li>Numbers are stand-ins, not the real tables. No collisions.</li></ul></div>
+    <div class="note"><b>Keys</b> <kbd>Tab</kbd> next ship · <kbd>Space</kbd> menu · <kbd>Enter</kbd> done · <kbd>Esc</kbd> back</div>`;
+  document.getElementById("sideScroll").innerHTML = h;
+  let f = "";
+  if (ui.phase === "planning") { const left = own().filter((s) => s.status === "plan").length;
+    f = `<div class="warnline">${left ? left + (left === 1 ? " ship is" : " ships are") + " still in Plan: " + (left === 1 ? "she sails her" : "they sail their") + " default course." : ""}</div><button class="big" id="endBtn">End Planning</button>`; }
+  if (ui.phase === "moving") f = `<div class="warnline"></div><button class="big alt" disabled>Ships under way…</button>`;
+  if (ui.phase === "fire") { const left = own().filter((s) => s.status === "plan").length;
+    f = `<div class="warnline">${left ? left + (left === 1 ? " ship has" : " ships have") + " no fire orders yet: unordered guns hold fire." : ""}</div><button class="big" id="fireBtn">Fire</button>`; }
+  if (ui.phase === "result") f = `<div class="warnline"></div><button class="big" id="nextBtn">Next turn</button>`;
+  document.getElementById("sideFoot").innerHTML = f;
+  const on = (id, fn) => { const e = document.getElementById(id); if (e) e.onclick = fn; };
+  on("endBtn", endPlanning); on("fireBtn", fireAll); on("nextBtn", nextTurn);
+  for (const el of document.querySelectorAll("[data-toggle]")) el.onclick = (ev) => { ev.stopPropagation();
+    const s = byId(el.dataset.toggle); if (s.locked) return; s.status = s.status === "plan" ? "done" : "plan"; render(); };
+  for (const el of document.querySelectorAll("[data-ship]")) el.onclick = () => { const s = byId(el.dataset.ship);
+    if (s.side === 0 && (ui.phase === "planning" || ui.phase === "fire")) { ui.mode = null; openRadial(s); } else { ui.plate = s.side === 1 ? s : null; ui.sel = s.id; render(); } };
+}
+function render() { renderSvg(); renderSide(); renderRadial(); renderChips(); renderBanner(); }
+
+// ---------------------------------------------------------------- input -----
+function svgPoint(ev) { const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
+const shipAt = (h) => ships.find((s) => shipHexes(s).some((x) => key(x) === key(h)));
+svg.addEventListener("mousemove", (ev) => {
+  if (!ui.mode || ui.mode.kind !== "move") return;
+  const p = svgPoint(ev), k = key(pixelToHex(p.x, p.y));
+  if (k !== ui.hover) { ui.hover = k; renderSvg(); }
+});
+svg.addEventListener("mouseleave", () => { if (ui.hover) { ui.hover = null; renderSvg(); } });
+svg.addEventListener("click", (ev) => {
+  if (ui.phase === "moving") return;
+  const p = svgPoint(ev), h = pixelToHex(p.x, p.y), k = key(h), m = ui.mode;
+  if (m && m.kind === "move") {
+    if (m.endHex) {   // facing arrows first
+      const [cx, cy] = px(m.hexes.get(m.endHex)[0].hex);
+      for (const e of m.hexes.get(m.endHex)) { const [ux, uy] = dirVec(e.f);
+        if (Math.hypot(p.x - (cx + ux * S * 0.8), p.y - (cy + uy * S * 0.8)) < 12) { setCourse(m.ship, e, 0); return render(); } }
+    }
+    if (m.hexes.has(k)) {
+      const list = m.hexes.get(k), cur = m.ship.plan && key(m.ship.plan.hex) === k ? list.find((e) => e.f === m.ship.plan.f) : null;
+      m.endHex = k; if (!cur) setCourse(m.ship, list[0], 0); return render();
+    }
+    const s = shipAt(h); if (s === m.ship) return finishMove(false);
+    if (s && s.side === 0) { ui.mode = null; return openRadial(s); }
+    return finishMove(false);
+  }
+  if (m && m.kind === "target") {
+    const s = shipAt(h); if (s && s.side === 1 && shot(m.ship, m.fire, s)) return pickTarget(s);
+    if (ui.pending) { ui.pending = null; return render(); }
+    ui.mode = null; return openRadial(m.ship);
+  }
+  const s = shipAt(h);
+  if (s && s.side === 0 && (ui.phase === "planning" || ui.phase === "fire")) {
+    if (ui.radial && ui.radial.ship === s) return closeRadial();
+    return openRadial(s);
+  }
+  if (s && s.side === 1) { ui.radial = null; ui.plate = ui.plate === s ? null : s; return render(); }
+  ui.radial = null; ui.plate = null; ui.sel = null; render();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ui.phase === "moving") return;
+  if (ev.key === "Escape") {
+    if (ui.pending) ui.pending = null;
+    else if (ui.mode && ui.mode.kind === "move") { const s = ui.mode.ship; ui.mode = null; return openRadial(s); }
+    else if (ui.mode) { const s = ui.mode.ship; ui.mode = null; return openRadial(s); }
+    else if (ui.radial && ui.radial.ring === "orders") ui.radial.ring = "main";
+    else { ui.radial = null; ui.plate = null; }
+    return render();
+  }
+  if (ev.key === "Enter") {
+    if (ui.mode && ui.mode.kind === "move") return finishMove(true);
+    if (ui.pending) return confirmOrder();
+  }
+  if (ev.key === "Tab") {
+    ev.preventDefault(); if (ui.phase !== "planning" && ui.phase !== "fire") return;
+    const list = own().filter((s) => !s.locked || ui.phase === "fire");
+    const pref = list.filter((s) => s.status === "plan"), pool = pref.length ? pref : list;
+    const i = pool.findIndex((s) => s.id === ui.sel); ui.mode = null; ui.pending = null;
+    return openRadial(pool[(i + 1) % pool.length]);
+  }
+  if (ev.key === " ") { ev.preventDefault(); const s = byId(ui.sel); if (s && s.side === 0) openRadial(s); }
+});
+window.addEventListener("resize", render);
+render();
+</script>
+</body>
+</html>
