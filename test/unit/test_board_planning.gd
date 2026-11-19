@@ -600,3 +600,14 @@ func test_ring_hides_the_ships_pill_and_marks() -> void:
 	assert_eq(bp.badges().hidden_ship(), "b", "only the ship whose ring is open")
 	bp.close_ring()
 	assert_eq(bp.badges().hidden_ship(), "", "shown again when the ring closes")
+
+
+func test_map_click_away_from_the_composer_closes_it() -> void:
+	var gc := _controller()
+	var board: BoardPlanning = gc._board()
+	board.begin_planning(_ships([a, b]))
+	board.open_composer("a")
+	assert_eq(board.composer_ship_id(), "a")
+	gc._handle_planning_click(Vector2(5, 5))  # open sea (no ship under it)
+	assert_eq(board.composer_ship_id(), "", "a click on the map away from the box closes it")
+	assert_false(board.signal_composer().is_typing(), "and the field gives up the keys")

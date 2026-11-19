@@ -104,3 +104,33 @@ func test_close_emits_and_hides() -> void:
 	box.close()
 	assert_false(box.is_open())
 	assert_signal_emitted(box, "closed")
+
+
+func test_tab_keeps_focus_in_the_field() -> void:
+	var ui := Control.new()  # the box shares the UI tree with the side panel's buttons
+	add_child_autofree(ui)
+	box.reparent(ui)
+	var other := Button.new()
+	other.focus_mode = Control.FOCUS_ALL
+	ui.add_child(other)
+	box.open("Agamemnon", _options())
+	var f := box.field()
+	assert_eq(f.find_next_valid_focus(), f, "Tab stays in the field (not the side panel's buttons)")
+	assert_eq(f.find_prev_valid_focus(), f, "and Shift+Tab")
+
+
+func test_field_keeps_editing_after_enter_sends() -> void:
+	box.open("Agamemnon", _options())
+	box.field().grab_focus()
+	box.field().edit()
+	box.set_text("engage")
+	var sent := []
+	box.send_requested.connect(func(_a: Dictionary, t: String): sent.append(t))
+	var enter := InputEventKey.new()
+	enter.keycode = KEY_ENTER
+	enter.physical_keycode = KEY_ENTER
+	enter.pressed = true
+	get_viewport().push_input(enter)
+	assert_eq(sent, ["engage"], "Enter sends")
+	assert_true(box.field().is_editing(),
+		"still editing: the next letters go in the field, not to the board's keys (C = crew)")

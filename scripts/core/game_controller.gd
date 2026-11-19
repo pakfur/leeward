@@ -725,8 +725,10 @@ func _board_keys_live() -> bool:
 ## it (the course wins over ships); any other click leaves Move mode, and one on another own ship
 ## opens that ship's ring. Out of Move mode no click edits a course: an own ship's click opens (or
 ## closes) her ring and selects her, an enemy's shows its status plate, open sea closes the ring.
+## Any map click closes the signal box (a click on the box itself never reaches the map).
 func _handle_planning_click(screen_pos: Vector2) -> void:
 	var board := _board()
+	board.close_composer()
 	var moving := board.move_ship_id()
 	if moving != "" and _handle_course_click(_course_hex_at(screen_pos)):
 		return

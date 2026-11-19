@@ -131,9 +131,9 @@ func select_address(index: int) -> void:
 	_picker.select(index)
 
 
-func set_text(text: String) -> void:
-	_field.text = text
-	_field.text_changed.emit(text)  # as typing does
+func set_text(value: String) -> void:
+	_field.text = value
+	_field.text_changed.emit(value)  # as typing does
 
 
 func text() -> String:
@@ -270,6 +270,11 @@ func _build() -> void:
 		_update_count())
 	_field.text_submitted.connect(func(_t: String): _submit())
 	_field.gui_input.connect(_on_field_gui_input)
+	_field.focus_next = NodePath(".")  # Tab stays in the field, never on to the side panel
+	_field.focus_previous = NodePath(".")
+	# Enter sends and the field stays in edit mode: out of it, a focused field lets letters reach
+	# the game's keys (C would open the crew overlay).
+	_field.keep_editing_on_text_submit = true
 	col.add_child(_field)
 	_count = _line(&"", CrewStyle.MUTED)
 	col.add_child(_count)
