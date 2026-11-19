@@ -191,13 +191,14 @@ func _build_pill(top_row: HBoxContainer) -> void:
 
 
 ## Shows `state` (PlanChecklist.PLAN / DONE / LOCKED); "" hides the pill (no checklist running).
-func set_plan_state(state: String) -> void:
+## `text` and `tooltip` replace the state's words (the fire step's FIRE, "✓ 2 ORDERS", NO TARGET).
+func set_plan_state(state: String, text := "", tooltip := "") -> void:
 	if pill == null:
 		return
 	pill.visible = PILL_TEXT.has(state)
 	if not pill.visible:
 		return
-	pill.text = PILL_TEXT[state]
+	pill.text = text if text != "" else PILL_TEXT[state]
 	var fill := Color.TRANSPARENT
 	var edge := CrewStyle.LINE
 	var ink := CrewStyle.MUTED
@@ -215,9 +216,12 @@ func set_plan_state(state: String) -> void:
 	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_disabled_color"]:
 		pill.add_theme_color_override(c, ink)
 	pill.disabled = state == PlanChecklist.LOCKED
-	pill.tooltip_text = PlanningSailUi.movement_block_reason(ship_state) \
-		if state == PlanChecklist.LOCKED and ship_state != null \
-		else "Click to toggle Plan / Done"
+	if tooltip != "":
+		pill.tooltip_text = tooltip
+	else:
+		pill.tooltip_text = PlanningSailUi.movement_block_reason(ship_state) \
+			if state == PlanChecklist.LOCKED and ship_state != null \
+			else "Click to toggle Plan / Done"
 
 
 func _on_gui_input(event: InputEvent) -> void:
