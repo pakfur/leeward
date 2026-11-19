@@ -416,7 +416,13 @@ func plan_errors(player_id: int) -> Dictionary:
 
 ## 13.G.4a: a ship casting the lead plots at most 2 MPs.
 func _lead_error(ship: ShipState, course: Array[MovementTypes.PlotStep]) -> String:
-	if ship.casts_lead() and course.size() > 2:
+	if ship.casts_lead():
+		return _lead_course_error(course)
+	return ""
+
+
+func _lead_course_error(course: Array[MovementTypes.PlotStep]) -> String:
+	if course.size() > 2:
 		return "casting the lead needs a course of at most 2 MPs (13.G.4a)"
 	return ""
 
@@ -451,6 +457,15 @@ func _edge_error(ship: ShipState, course: Array[MovementTypes.PlotStep]) -> Stri
 ## SERVER ONLY: the player declares (or withdraws) the escape of one of their ships (V.D.2): it
 ## may then plot across an escape boundary. Returns "" or the reason it is refused.
 func player_declare_escape(player_id: int, ship_id: String, on: bool) -> String:
+	var why := _escape_error(player_id, ship_id, on)
+	if why != "":
+		return why
+	game_state.ship_controller.set_escape_declared(ship_id, on)
+	return ""
+
+
+## The checks of `player_declare_escape` (also read by `order_options`): "" or the refusal.
+func _escape_error(player_id: int, ship_id: String, on: bool) -> String:
 	if not is_server:
 		push_error("TurnPhaseController: Cannot declare escape on client")
 		return "escape is declared on the server only"
@@ -470,10 +485,7 @@ func player_declare_escape(player_id: int, ship_id: String, on: bool) -> String:
 	if ship.is_out_of_play() or not ship.is_on_map():
 		return "%s is not in play" % ship_id
 	if on:
-		var why := MapRules.declare_error(game_state.active_scenario, ship.side, game_state.current_turn)
-		if why != "":
-			return why
-	game_state.ship_controller.set_escape_declared(ship_id, on)
+		return MapRules.declare_error(game_state.active_scenario, ship.side, game_state.current_turn)
 	return ""
 
 
@@ -481,14 +493,20 @@ func player_declare_escape(player_id: int, ship_id: String, on: bool) -> String:
 ## (14.B.2): she sails her plot, does not fire or send new boarders, and strikes at MORALE_CHECK
 ## (MoraleController.resolve_surrenders). Returns "" or the reason it is refused.
 func player_surrender(player_id: int, ship_id: String, on: bool = true) -> String:
+	var why := _surrender_error(player_id, ship_id, on)
+	if why != "":
+		return why
+	game_state.ship_controller.set_surrender_ordered(ship_id, on)
+	return ""
+
+
+## The checks of `player_surrender` (also read by `order_options`): "" or the refusal.
+func _surrender_error(player_id: int, ship_id: String, on: bool) -> String:
 	var why := _surrender_request_error(player_id, ship_id, "surrenders")
 	if why != "":
 		return why
 	if on:
-		why = SurrenderRules.surrender_error(game_state.get_ship(ship_id), current_turn)
-		if why != "":
-			return why
-	game_state.ship_controller.set_surrender_ordered(ship_id, on)
+		return SurrenderRules.surrender_error(game_state.get_ship(ship_id), current_turn)
 	return ""
 
 
@@ -497,17 +515,22 @@ func player_surrender(player_id: int, ship_id: String, on: bool = true) -> Strin
 ## play with her links as they stand and plots this turn (`_after_rally`). Returns "" when the roll
 ## was made, pass or fail, else the reason it is refused.
 func player_rally(player_id: int, ship_id: String) -> String:
-	var why := _surrender_request_error(player_id, ship_id, "rallies")
+	var why := _rally_error(player_id, ship_id)
 	if why != "":
 		return why
 	var ship: ShipState = game_state.get_ship(ship_id)
-	why = SurrenderRules.rally_error(ship, current_turn)
-	if why != "":
-		return why
 	var result: Dictionary = game_state.morale_controller.rally(ship_id, current_phase)
 	if result.get("passed", false):
 		_after_rally(ship)
 	return ""
+
+
+## The checks of `player_rally` (also read by `order_options`): "" or the refusal.
+func _rally_error(player_id: int, ship_id: String) -> String:
+	var why := _surrender_request_error(player_id, ship_id, "rallies")
+	if why != "":
+		return why
+	return SurrenderRules.rally_error(game_state.get_ship(ship_id), current_turn)
 
 
 ## A rallied ship joins this turn's planning: a human-commanded one gets her default course and her
@@ -544,11 +567,16 @@ func _surrender_request_error(player_id: int, ship_id: String, verb: String) -> 
 ## SERVER ONLY: the player's order for a ship to cast the lead this turn (13.G). Same checks as
 ## course plotting. Returns "" or the reason it is refused.
 func player_set_cast_lead(player_id: int, ship_id: String, on: bool) -> String:
-	var why := _course_request_error(player_id, ship_id)
+	var why := _lead_request_error(player_id, ship_id)
 	if why != "":
 		return why
 	game_state.ship_controller.set_cast_lead(ship_id, on)
 	return ""
+
+
+## The checks of `player_set_cast_lead` (also read by `order_options`): "" or the refusal.
+func _lead_request_error(player_id: int, ship_id: String) -> String:
+	return _course_request_error(player_id, ship_id)
 
 
 ## SERVER ONLY: the player withdraws a ship's movement plot to plot it again (other plotted
@@ -1250,17 +1278,10 @@ func player_send_signal(player_id: int, from_ship: String, address: Dictionary, 
 	var reason: String = _signal_request_error(player_id)
 	if reason != "":
 		return reason
-	if not game_state.commands(player_id, from_ship):
-		return "player %d does not command %s" % [player_id, from_ship]
+	reason = _signal_ship_error(player_id, from_ship)
+	if reason != "":
+		return reason
 	var ship: ShipState = game_state.ships[from_ship]
-	if ship.is_out_of_play():
-		return "a struck or lost ship cannot signal (11.B.2b)"
-	if ship.is_dismasted():
-		return "a dismasted ship cannot signal (11.B.2b)"
-	# Only ships in play: a struck ship or a prize never has its crit fixed (11.B.2c).
-	for s in game_state.in_play_ships_of_player(player_id):
-		if s.has_critical("signal_halyards_cut"):
-			return "signal halyards are cut: %s cannot signal (11.B.2c)" % s.ship_name
 	var side: int = game_state.side_of_player(player_id)
 	var kind := str(address.get("name", ""))
 	match str(address.get("kind", "")):
@@ -1293,6 +1314,23 @@ func player_send_signal(player_id: int, from_ship: String, address: Dictionary, 
 	sig.address = {"kind": str(address["kind"]), "name": kind}
 	sig.words = words
 	game_state.signals.append(sig)
+	return ""
+
+
+## The per-ship checks of `player_send_signal` (also read by `order_options`): the player commands
+## the ship, she is in play and not dismasted, and no ship of the player has its halyards cut.
+func _signal_ship_error(player_id: int, ship_id: String) -> String:
+	if not game_state.commands(player_id, ship_id):
+		return "player %d does not command %s" % [player_id, ship_id]
+	var ship: ShipState = game_state.ships[ship_id]
+	if ship.is_out_of_play():
+		return "a struck or lost ship cannot signal (11.B.2b)"
+	if ship.is_dismasted():
+		return "a dismasted ship cannot signal (11.B.2b)"
+	# Only ships in play: a struck ship or a prize never has its crit fixed (11.B.2c).
+	for s in game_state.in_play_ships_of_player(player_id):
+		if s.has_critical("signal_halyards_cut"):
+			return "signal halyards are cut: %s cannot signal (11.B.2c)" % s.ship_name
 	return ""
 
 
@@ -1438,6 +1476,57 @@ func _pending_signal(player_id: int) -> SignalState:
 		if sig.from_player == player_id and not sig.delivered and sig.turn == game_state.current_turn:
 			return sig
 	return null
+
+
+## Read-only: which orders of the board's orders ring one ship may be given now, and why not.
+## {} for an unknown ship or one the player does not command. Each "error" is what the matching
+## request would return ("" = allowed) when the order is turned on; "on" is its present state (the
+## orders are toggles, and the error is then the one for turning it off):
+## {lead: {on, error}, escape: {shown, on, error}, surrender: {shown, on, error}, rally: {shown, error},
+##  signal: {error, pending, limit, addresses: [{kind, name, label}]}}.
+func order_options(player_id: int, ship_id: String) -> Dictionary:
+	var ship: ShipState = game_state.get_ship(ship_id)
+	if not is_server or ship == null or not game_state.commands(player_id, ship_id):
+		return {}
+	var scenario: Dictionary = game_state.active_scenario
+	var surrender_on := OptionalRules.voluntary_surrender(scenario)
+	var lead_error := _lead_request_error(player_id, ship_id)
+	if lead_error == "" and not ship.casts_lead():
+		lead_error = _lead_course_error(stored_course(ship))
+	var sig_error := _signal_request_error(player_id)
+	if sig_error == "":
+		sig_error = _signal_ship_error(player_id, ship_id)
+	var pending := pending_signal(player_id)
+	var addresses: Array = [{"kind": "fleet", "name": "", "label": "Fleet"}]
+	var side: int = game_state.side_of_player(player_id)
+	for group_name in game_state.groups.get(side, {}):
+		addresses.append({"kind": "group", "name": str(group_name), "label": str(group_name)})
+	for other in game_state.ships_on_map():
+		if other.side == side and not other.is_out_of_play():
+			addresses.append({"kind": "ship", "name": other.ship_id, "label": other.ship_name})
+	return {
+		"lead": {"on": ship.casts_lead(), "error": lead_error},
+		"escape": {
+			"shown": not MapRules.permission(scenario, ship.side).is_empty(),
+			"on": ship.escape_declared,
+			"error": _escape_error(player_id, ship_id, not ship.escape_declared),
+		},
+		"surrender": {
+			"shown": surrender_on and not ship.surrendered,
+			"on": ship.surrender_ordered,
+			"error": _surrender_error(player_id, ship_id, not ship.surrender_ordered),
+		},
+		"rally": {
+			"shown": surrender_on and ship.surrendered,
+			"error": _rally_error(player_id, ship_id),
+		},
+		"signal": {
+			"error": sig_error,
+			"pending": pending.to_dict() if pending != null else {},
+			"limit": SignalText.limit(ship, int(scenario.get("year", 0))),
+			"addresses": addresses,
+		},
+	}
 
 
 ## A copy of the player's own undelivered signal this g-t, or null.
