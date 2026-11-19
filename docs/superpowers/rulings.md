@@ -87,3 +87,11 @@ Parked: a tow astern blocking a stern chaser is refused as "no line of sight" ra
 - A refused End Planning puts the first ship it names into Move mode so the chip box shows the server's reason (the card no longer has a Course block). Cost if wrong: the camera's attention jumps to that ship.
 - Move puts a Done ship back in Plan; Esc in Move mode reopens her ring; Reset course leaves Plan/Done as it was; board keys do nothing while the crew overlay is open. Cost if wrong: small habits to relearn.
 - Parked: Reset course stays enabled on a ship anchored mid-turn by the Developer UI; a ring opened before a window resize keeps its old clamp; Esc with the Cancel confirmation open closes the ring first; in a game with several humans the ring stays live after you submit (the server refuses the edits) — piece 4.
+
+## Board planning, piece 2 (orders ring and signal composer) — 2026-11-19
+
+- Orders a scenario does not use are hidden (escape with no escape edge for her side; surrender and rally with 14.B off; rally unless surrendered); every other refusal is greyed with the server's reason. Cost if wrong: a player may not learn an order exists in a scenario that lacks it.
+- A surrendered ship's ring holds Rally and Crew & damage (read-only overlay). Cost if wrong: one icon.
+- An open ring hides its ship's pill and order marks. Cost if wrong: the state is one glance away on the card.
+- Any map click closes the signal box; Tab stays in its text field; Enter sends and keeps the field editing. Cost if wrong: small habits.
+- The signal box names the sender of a pending signal and warns that a new one (from any ship) replaces it: signals are one per player a turn. A ship is not offered herself as an address. Cost if wrong: none known.
