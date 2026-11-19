@@ -1587,7 +1587,7 @@ func _no_shot_lines(own_ships: Array) -> Array[String]:
 	var lines: Array[String] = [NO_SHOT_HEADLINE]
 	var grid: HexGrid = GameState.fire_geometry.hex_grid if GameState.fire_geometry else null
 	for ship: ShipState in own_ships:
-		lines.append(FirePanelScript.no_shot_line(ship.ship_name, FirePanelScript.ship_no_shot_reason(
+		lines.append(FirePanelScript.no_shot_line(ship.ship_name, FireOrdersModel.ship_no_shot_reason(
 			ship, GameState.get_all_ships(), GameState.gunnery_calculator, grid)))
 	return lines
 
@@ -1697,7 +1697,7 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 		return
 	hex_overlay.clear_arcs()
 	var geometry: FireGeometry = GameState.fire_geometry
-	for side in FirePanelScript.ALL_SIDES:
+	for side in FireOrdersModel.ALL_SIDES:
 		# The chosen batteries' arc is highlighted (rim); the rest of the broadside's arc is faint.
 		# A chaser's arc (sides 2 and 3) is drawn from its own end, rimmed while it fires.
 		var whole := broadside_arc(geometry, ship_state, side)
