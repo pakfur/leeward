@@ -1,29 +1,48 @@
 class_name PlanBadges
 extends Control
-## One small pill above each own ship on the map (PLAN, DONE, locked, SURRENDERED), with her
+## One small pill above each own ship on the map (PLAN, DONE, locked, SURRENDERED; in the fire step
+## FIRE, NO TARGET, "✓ n ORDERS" and NO FIRE), with her
 ## standing orders as small marks beside it (the lead, ESCAPE, SURRENDER), following the camera like
 ## IndicatorOverlay. View only; takes no mouse input. Look: prototypes/planning_radial
 ## (`badgeSvg`, `statusOf`, the `I` icons).
 
 ## The pill of a ship struck by a voluntary surrender (14.B), in place of LOCKED.
 const SURRENDERED := "surrendered"
+## The fire step's pills (FireBoard.pill): in Plan, no shot, Done with orders ("text" gives the
+## count), Done holding fire.
+const FIRE := "fire"
+const NO_TARGET := "no_target"
+const ORDERS := "orders"
+const NO_FIRE := "no_fire"
 const PILL_BG := {
 	"plan": Color("#e3b344"),
 	"done": Color("#62b47d"),
 	"locked": Color("#3a4655"),
 	SURRENDERED: Color("#3a4655"),
+	FIRE: Color("#e3b344"),
+	NO_TARGET: Color("#3a4655"),
+	ORDERS: Color("#62b47d"),
+	NO_FIRE: Color("#3a4655"),
 }
 const PILL_FG := {
 	"plan": Color("#1b1300"),
 	"done": Color("#07160c"),
 	"locked": Color("#c3ccd6"),
 	SURRENDERED: Color("#f0f0f0"),
+	FIRE: Color("#1b1300"),
+	NO_TARGET: Color("#c3ccd6"),
+	ORDERS: Color("#07160c"),
+	NO_FIRE: Color("#c3ccd6"),
 }
 const PILL_TEXT := {
 	"plan": "PLAN",
 	"done": "✓ DONE",
 	"locked": "LOCKED",
 	SURRENDERED: "SURRENDERED",
+	FIRE: "FIRE",
+	NO_TARGET: "NO TARGET",
+	ORDERS: "✓ ORDERS",
+	NO_FIRE: "NO FIRE",
 }
 ## Standing-order marks, drawn in this order right of the pill.
 const MARK_LEAD := "lead"
@@ -63,7 +82,8 @@ func setup(camera: Camera3D) -> void:
 
 
 ## `entries`: ship_id -> {"world": Vector3, "state": "plan"|"done"|"locked"|SURRENDERED,
-## "marks": Array of MARK_* (optional)}; replaces the set.
+## "marks": Array of MARK_* (optional), "text": the pill's words in place of PILL_TEXT (optional,
+## the fire step's "✓ 2 ORDERS")}; replaces the set.
 func show_for(entries: Dictionary) -> void:
 	_entries = entries.duplicate()
 	for id in _pills.keys():
@@ -78,7 +98,7 @@ func show_for(entries: Dictionary) -> void:
 			pill = _make_pill()
 			_pills[id] = pill
 			add_child(pill)
-		_style(pill, st)
+		_style(pill, st, str(_entries[id].get("text", "")))
 		_show_marks(id, _entries[id].get("marks", []))
 	_update()
 
@@ -137,8 +157,8 @@ func _make_pill() -> Label:
 	return l
 
 
-func _style(pill: Label, st: String) -> void:
-	pill.text = PILL_TEXT[st]
+func _style(pill: Label, st: String, text := "") -> void:
+	pill.text = text if text != "" else PILL_TEXT[st]
 	pill.add_theme_color_override("font_color", PILL_FG[st])
 	pill.add_theme_stylebox_override("normal", _pill_box(PILL_BG[st]))
 	pill.reset_size()

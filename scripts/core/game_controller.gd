@@ -297,6 +297,7 @@ func _board() -> BoardPlanning:
 	board_planning.rally_requested.connect(_on_rally_requested)
 	board_planning.signal_send_requested.connect(_on_signal_send_requested)
 	board_planning.signal_cancel_requested.connect(_on_signal_cancel_requested)
+	board_planning.fire_overlay_changed.connect(_on_board_fire_overlay_changed)
 	board_planning.player_id = HUMAN_PLAYER_ID
 	return board_planning
 
@@ -712,15 +713,33 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if GameState.current_phase == GameState.GamePhase.PLANNING:
 			_handle_planning_click(event.position)
+		elif _board_fire_live():
+			_handle_fire_click(event.position)
 		else:
 			_handle_ship_selection(event.position)
 		get_viewport().set_input_as_handled()
 
 ## Board planning's keys are live: PLANNING, with the crew overlay closed (its keys are its own).
 func _board_keys_live() -> bool:
+	if _board_fire_live():
+		return true
 	return board_planning != null and board_planning.is_planning() \
 		and GameState.current_phase == GameState.GamePhase.PLANNING \
 		and not (crew_client != null and crew_client.is_open)
+
+## The board's fire step is live: begun (BoardPlanning.begin_fire) in the fire declaration step,
+## with the crew overlay closed.
+func _board_fire_live() -> bool:
+	return board_planning != null and board_planning.is_firing() \
+		and GameState.current_phase == GameState.GamePhase.COMBAT_RESOLUTION \
+		and not (crew_client != null and crew_client.is_open)
+
+## A map click in the fire step: the board's (target mode, a ring); an enemy or open sea it does not
+## take shows the status plate as before.
+func _handle_fire_click(screen_pos: Vector2) -> void:
+	var view := _ship_view_under(screen_pos)
+	if not _board().fire_click(view.state_id if view else ""):
+		_handle_ship_selection(screen_pos)
 
 ## A map click in PLANNING (board planning). In Move mode a hex her course claims extends or cuts
 ## it (the course wins over ships); any other click leaves Move mode, and one on another own ship
@@ -1716,6 +1735,26 @@ func _refresh_fire_overlay(ship_id: String) -> void:
 	var target_hexes := fire_target_hexes(fire_panel.get_target_ids(ship_id))
 	hex_overlay.show_target_highlights(target_hexes)
 	_frame_fire_view(ship_state, target_hexes)
+
+
+## The board's fire step (BoardPlanning.fire_overlay_changed): in target mode the side's arc is
+## shaded (both batteries of a broadside, battery_arc; the chase arc from its end) and each enemy
+## it bears on is ringed (her two hexes); the marines shade no arc. Outside target mode nothing
+## (the order arrows are the board's own, FireMarks).
+func _on_board_fire_overlay_changed(ship_id: String, side: int) -> void:
+	if not hex_overlay:
+		return
+	hex_overlay.clear_arcs()
+	var ship_state := GameState.get_ship(ship_id)
+	if ship_state == null or not GameState.fire_geometry or board_planning == null:
+		return
+	if side in FireOrdersModel.ALL_SIDES:
+		# Both batteries of a broadside; a chase side is drawn from its own end (battery_arc).
+		hex_overlay.show_arc(broadside_arc(GameState.fire_geometry, ship_state, side), side)
+	var target_ids: Array = []
+	for t in board_planning.fire_board().targets():
+		target_ids.append(t["target_id"])
+	hex_overlay.show_target_highlights(fire_target_hexes(target_ids))
 
 
 ## The hexes to outline for the chosen fire targets: both the bow and the stern hex of each.

@@ -1,6 +1,6 @@
 class_name BoardPlanning
 extends Node
-## Planning on the board, pieces 1 and 2 (spec docs/superpowers/specs/2026-11-18-board-planning-design.md):
+## Planning on the board, pieces 1 to 3 (spec docs/superpowers/specs/2026-11-18-board-planning-design.md):
 ## the view-side coordinator GameController owns in PLANNING. It holds the local player's Plan /
 ## Done checklist, the radial menu of one own ship (her main ring, or her Orders ring), the map
 ## badges and the chip box of the Move-mode ship, builds the ring items and reads the PLANNING
@@ -8,6 +8,9 @@ extends Node
 ## `start_of_turn_course`, `order_options`), never mutates either; course, crew and order requests
 ## go through GameController (`reset_course_requested`, `crew_overlay_requested`, `order_toggled`,
 ## `rally_requested`, and the course clicks it routes while `move_ship_id()` is set).
+## Piece 3: the fire declaration step (`begin_fire` / `end_fire`): the fire ring of each own ship,
+## target mode, the option box and the order arrows over a FireBoard (fire_board.gd); the orders
+## stay in its FireOrdersModel until GameController sends them.
 
 signal crew_overlay_requested(ship_id: String)
 signal reset_course_requested(ship_id: String)
@@ -22,6 +25,9 @@ signal rally_requested(ship_id: String)
 ## The composer's Send (`address` {kind, name}, `text` as typed) and its Cancel signal.
 signal signal_send_requested(ship_id: String, address: Dictionary, text: String)
 signal signal_cancel_requested(ship_id: String)
+## The fire step's map overlay changed: target mode for `side` of `ship_id` (FireBoard.MARINES for
+## her marines), or none ("", -1). GameController redraws the arc and the target rings.
+signal fire_overlay_changed(ship_id: String, side: int)
 
 const ICONS := {
 	"move": preload("res://assets/ui/radial/move.svg"),
@@ -40,6 +46,8 @@ const ICONS := {
 ## Which ring is open: the ship's main ring or her Orders ring.
 const MAIN := "main"
 const ORDERS := "orders"
+## The fire step's ring (fire_ring_items).
+const FIRE := "fire"
 const RALLY_HINT := "One d10 against her morale rating, rolled at once."
 const RESET_OFF := "No course plotted: she sails her default course."
 ## Fallback wording for a locked ship whose lock carries no reason of its own.
@@ -63,6 +71,9 @@ var _own_ids: Array = []  # the own ships in the checklist, in card order
 var _ring_ship := ""
 var _ring_kind := MAIN
 var _move_ship := ""
+var _fire := FireBoard.new()
+var _box: FireOptionBox
+var _marks: FireMarks
 ## The local player, whose ships these are (the `order_options` query's player).
 var player_id := 0
 
@@ -87,6 +98,17 @@ func _init() -> void:
 	_composer.cancel_pending_requested.connect(func(): signal_cancel_requested.emit(_composer_ship))
 	_composer.closed.connect(func(): _composer_ship = "")
 	_checklist.changed.connect(_on_checklist_changed)
+	_box = FireOptionBox.new()
+	_box.ui_scale = CrewStyle.K
+	_box.battery_picked.connect(func(battery: String): _fire.set_box_battery(battery))
+	_box.aim_picked.connect(func(high: bool): _fire.set_box_high(high))
+	_box.ammo_picked.connect(func(dismantling: bool): _fire.set_box_dismantling(dismantling))
+	_box.reduction_stepped.connect(func(delta: int): _fire.step_box_reduction(delta))
+	_box.order_pressed.connect(_confirm_box)
+	_box.cancel_pressed.connect(func(): _fire.cancel_box())
+	_marks = FireMarks.new()
+	_fire.changed.connect(_on_fire_changed)
+	_fire.checklist.changed.connect(_on_fire_changed)
 
 
 ## `ui_parent`: where the ring, badges and chip box go (null: under this node, as in tests).
@@ -103,7 +125,10 @@ func setup(ui_parent: Node, camera: Camera3D, world_of: Callable, safe_rect: Cal
 		_badges.map_rect_provider = safe_rect
 		_chips.map_rect_provider = safe_rect
 		_composer.map_rect_provider = safe_rect
+		_box.map_rect_provider = safe_rect
 	_chips.setup(camera)
+	_box.setup(camera)
+	_marks.setup(camera)
 	_composer.setup(camera)
 	var parent: Node = ui_parent if ui_parent != null else self
 	for c in controls():
@@ -113,7 +138,7 @@ func setup(ui_parent: Node, camera: Camera3D, world_of: Callable, safe_rect: Cal
 
 ## The Controls this node puts over the map (GameController orders them under its overlays).
 func controls() -> Array[Control]:
-	return [_badges, _chips, _composer, _radial] as Array[Control]
+	return [_marks, _badges, _chips, _composer, _box, _radial] as Array[Control]
 
 
 func checklist() -> PlanChecklist:
@@ -138,6 +163,18 @@ func course_chips() -> CourseChips:
 
 func is_planning() -> bool:
 	return _planning
+
+
+func fire_board() -> FireBoard:
+	return _fire
+
+
+func option_box() -> FireOptionBox:
+	return _box
+
+
+func fire_marks() -> FireMarks:
+	return _marks
 
 
 ## PLANNING begins: every own ship that can plot is in Plan, the others Locked.
@@ -255,15 +292,15 @@ func orders_items(ship: ShipState) -> Array[RadialItem]:
 ## Opens `ship_id`'s ring (leaving Move mode: a ship is never in Move mode with her ring open).
 func open_ring(ship_id: String) -> void:
 	var ship := GameState.get_ship(ship_id)
-	if ship == null:
+	if ship == null or (is_firing() and _fire.state(ship_id) == ""):
 		return
 	leave_move()
 	close_composer()
 	if _safe_rect.is_valid() and is_inside_tree():
 		_radial.set_safe_rect(_safe_rect.call())
 	_radial.set_anchor_provider(_screen_point_of.bind(ship_id))
-	_ring_kind = MAIN
-	_radial.open(ring_items(ship), ship.ship_name, _subtitle(ship))
+	_ring_kind = FIRE if is_firing() else MAIN
+	_radial.open(_current_items(ship), ship.ship_name, _subtitle(ship))
 	_ring_ship = ship_id
 	_badges.hide_ship(ship_id)  # her pill and marks would draw over the ring's centre
 	ring_opened.emit(ship_id)
@@ -409,10 +446,215 @@ func show_course(info: Dictionary, world_end: Variant) -> void:
 	_chips.show_course(info, world_end)
 
 
+# --- the fire step (piece 3) ---------------------------------------------------------------------
+
+## The fire declaration step begins: `model` (set up for the local player's ships) holds the orders;
+## ships with a shot are in Plan with a FIRE pill and no order, the rest Done (NO TARGET). Planning's
+## ring, Move mode and signal box are closed.
+func begin_fire(model: FireOrdersModel, own_ships: Array[ShipState]) -> void:
+	close_ring()
+	close_composer()
+	leave_move()
+	var ids: Array = []
+	for ship in own_ships:
+		ids.append(ship.ship_id)
+	_fire.begin(model, ids)
+
+
+## The fire step is over (Fire accepted, a bear-off, the replay, game over, leaving): the ring, the
+## option box (its draft put back), target mode, the pills and the arrows go.
+func end_fire() -> void:
+	if not is_firing():
+		return
+	close_ring()
+	_fire.leave_target()
+	_fire.end()
+	_box.hide_box()
+	_badges.clear()
+	_marks.clear()
+	fire_overlay_changed.emit("", -1)
+
+
+func is_firing() -> bool:
+	return _fire.is_active()
+
+
+## The fire ring of an own ship (FireBoard.ring_items): Port broadside, Starboard broadside, Bow
+## chaser, Stern chaser, Marines, Hold fire / Clear orders, Done / Change orders.
+func fire_ring_items(ship_id: String) -> Array[RadialItem]:
+	return _fire.ring_items(ship_id)
+
+
+## Target mode for `side` of `ship_id` (FireBoard.MARINES: her marines): the ring closes, the arc is
+## shaded and the targets ringed; a side with one target opens its option box at once.
+func enter_target_mode(ship_id: String, side: int) -> void:
+	if not _fire.enter_target(ship_id, side):
+		return
+	close_ring()
+	var list := _fire.targets()
+	if list.size() == 1:
+		pick_target(str(list[0]["target_id"]))
+
+
+## Opens the option box on a target of the side in target mode (ignored for any other ship).
+func pick_target(target_id: String) -> void:
+	_fire.pick(target_id)
+
+
+## Leaves target mode (an open box is cancelled).
+func leave_target_mode() -> void:
+	_fire.leave_target()
+
+
+## A map click in the fire step on `ship_id` ("" open sea): in target mode a target opens its box,
+## anything else steps back (the box, else target mode to her ring, or another own ship's ring);
+## out of it an own ship's click toggles her ring. False when it was not the board's (an enemy or
+## open sea with nothing open: the caller shows the status plate as before).
+func fire_click(ship_id: String) -> bool:
+	if not is_firing():
+		return false
+	var own := ship_id != "" and _fire.state(ship_id) != ""
+	var targeting := _fire.target_ship()
+	if targeting != "":
+		if ship_id != "" and _fire.is_target(ship_id):
+			pick_target(ship_id)
+		elif _fire.box_open():
+			_fire.cancel_box()
+		else:
+			_fire.leave_target()
+			open_ring(ship_id if own else targeting)
+		return true
+	if own:
+		if ring_ship_id() == ship_id:
+			close_ring()
+		else:
+			open_ring(ship_id)
+		return true
+	close_ring()
+	return false
+
+
+func _on_fire_item(ship_id: String, item_id: String) -> void:
+	for entry in FireBoard.SIDE_ITEMS:
+		if entry[1] == item_id:
+			enter_target_mode(ship_id, entry[0])
+			return
+	match item_id:
+		"marines":
+			enter_target_mode(ship_id, FireBoard.MARINES)
+		"hold":
+			close_ring()
+			_fire.model.hold_fire(ship_id)
+			_fire.set_done(ship_id, true)
+		"done":
+			close_ring()
+			_fire.set_done(ship_id, true)
+		"undo":
+			close_ring()
+			_fire.set_done(ship_id, false)
+
+
+## ✓ Order (or Enter): the order stands, and her ring opens again (Done is one click away).
+func _confirm_box() -> void:
+	var id := _fire.confirm_box()
+	if id != "":
+		open_ring(id)
+
+
+## The fire step's keys: Tab (Shift+Tab) the next ship in Plan, Space the selected ship's ring,
+## Enter confirms the option box, else Done for the ring's ship, Esc steps back (box, target mode
+## to her ring, the ring).
+func _handle_fire_key(keycode: int, backward: bool) -> bool:
+	var checklist := _fire.checklist
+	match keycode:
+		KEY_TAB:
+			var after := _fire.target_ship() if _fire.target_ship() != "" else ring_ship_id()
+			var next := ""
+			if after == "":
+				after = _selected_id()
+				if checklist.state(after) == PlanChecklist.PLAN:
+					next = after
+			if next == "":
+				next = checklist.prev_in_plan(after) if backward else checklist.next_in_plan(after)
+			if next != "":
+				_fire.leave_target()
+				open_ring(next)
+			return true
+		KEY_SPACE:
+			var id := _selected_id()
+			if checklist.state(id) == "":
+				return false
+			_fire.leave_target()
+			if ring_ship_id() != id:
+				open_ring(id)
+			return true
+		KEY_ENTER, KEY_KP_ENTER:
+			if _fire.box_open():
+				_confirm_box()
+				return true
+			if ring_ship_id() != "":
+				var id := ring_ship_id()
+				close_ring()
+				_fire.set_done(id, true)
+				return true
+			return false
+		KEY_ESCAPE:
+			if _fire.box_open():
+				_fire.cancel_box()
+				return true
+			if _fire.target_ship() != "":
+				var id := _fire.target_ship()
+				_fire.leave_target()
+				open_ring(id)
+				return true
+			if _radial.is_open():
+				close_ring()
+				return true
+			return false
+	return false
+
+
+## Every fire-step change (an order, a Done, target mode, the box): pills, arrows, the box, the
+## open ring, then the map overlay.
+func _on_fire_changed() -> void:
+	if not is_firing():
+		return
+	_show_badges()
+	var focus := _fire.target_ship() if _fire.target_ship() != "" else ring_ship_id()
+	var grid: HexGrid = GameState.fire_geometry.hex_grid if GameState.fire_geometry else null
+	_marks.show_marks(_fire.arrows(grid, focus), _fire.range_labels(grid))
+	if _fire.box_open():
+		var target := str(_fire.box_order().get("target_id", ""))
+		_box.show_box(_fire.box_content(), _world_of.call(target) if _world_of.is_valid() else null)
+	else:
+		_box.hide_box()
+	if ring_kind() == FIRE:
+		var ship := GameState.get_ship(ring_ship_id())
+		if ship != null:
+			_radial.refresh_items(fire_ring_items(ship.ship_id), _subtitle(ship))
+	fire_overlay_changed.emit(_fire.target_ship(), _fire.target_side())
+
+
+func _show_fire_badges() -> void:
+	var entries := {}
+	for id in _fire.ship_ids():
+		var world: Variant = _world_of.call(id) if _world_of.is_valid() else null
+		if not (world is Vector3):
+			continue
+		var p := _fire.pill(id)
+		entries[id] = {"world": world, "state": p["state"], "text": p["text"]}
+	if entries.is_empty():
+		_badges.clear()
+	else:
+		_badges.show_for(entries)
+
+
 # --- keys ----------------------------------------------------------------------------------------
 
 ## Tab (Shift+Tab: backward), Space, Enter and Esc while planning; true when the key was taken.
 func handle_key(keycode: int, backward := false) -> bool:
+	if is_firing():
+		return _handle_fire_key(keycode, backward)
 	if not _planning:
 		return false
 	if keycode == KEY_ESCAPE and _composer.is_open():
@@ -476,6 +718,9 @@ func _on_item_chosen(item_id: String) -> void:
 	# A clicked ring button takes focus; let Space / Enter reach the board again.
 	if is_inside_tree():
 		get_viewport().gui_release_focus()
+	if _ring_kind == FIRE:
+		_on_fire_item(id, item_id)
+		return
 	match item_id:
 		"move":
 			enter_move(id)
@@ -522,6 +767,8 @@ func _switch_ring(kind: String) -> void:
 
 
 func _current_items(ship: ShipState) -> Array[RadialItem]:
+	if _ring_kind == FIRE:
+		return fire_ring_items(ship.ship_id)
 	return orders_items(ship) if _ring_kind == ORDERS else ring_items(ship)
 
 
@@ -541,6 +788,9 @@ func _on_checklist_changed() -> void:
 
 
 func _show_badges() -> void:
+	if is_firing():
+		_show_fire_badges()
+		return
 	var entries := {}
 	for id in _ids():
 		var st := _checklist.state(id)
@@ -581,6 +831,8 @@ func _screen_point_of(ship_id: String) -> Variant:
 
 
 func _subtitle(ship: ShipState) -> String:
+	if is_firing():
+		return _fire.subtitle(ship.ship_id)
 	if not PlanningSailUi.can_plot_movement(ship):
 		var badge := PlanningSailUi.status_badge(ship)
 		return badge.capitalize() if badge != "" else "Cannot move"

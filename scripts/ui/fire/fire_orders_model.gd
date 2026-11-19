@@ -34,6 +34,8 @@ const NO_SHOT_SURRENDERING := "surrendering"
 const NO_SHOT_SURRENDERED := "surrendered"
 const NO_SHOT_DESTROYED := "destroyed"
 const NO_SHOT_NO_ENEMY := "no enemy afloat"
+## One side (side_reason) with every enemy outside its arc.
+const NO_SHOT_SIDE_ARC := "no enemy in this arc"
 ## GunneryCalculator.preview's "Blocked by friendly ship <name>" (7.B.10), shown as it is.
 const NO_SHOT_FRIENDLY_PREFIX := "Blocked by friendly ship"
 
@@ -411,6 +413,72 @@ func setup(ship_ids: Array) -> void:
 	changed.emit()
 
 
+## Why one side of a ship has no target, in plain words ("" when it bears on one). A ship with no gun
+## shot at all gives her no_shot_reason (no crew, struck, surrendering...). Otherwise the side is
+## previewed (GunneryCalculator.preview, a pure query) against every enemy afloat, nearest first,
+## and the refusals are worded by no_shot_words; "not in the arc" for all of them reads NO_SHOT_SIDE_ARC.
+func side_reason(ship_id: String, side: int) -> String:
+	if sides(ship_id).has(side):
+		return ""
+	if not _ships.has(ship_id):
+		var whole := no_shot_reason(ship_id)
+		if whole != "":
+			return whole
+	var ship: ShipState = GameState.get_ship(ship_id)
+	var calculator: GunneryCalculator = GameState.gunnery_calculator
+	if ship == null or calculator == null:
+		return NO_SHOT_NO_ENEMY
+	var reasons: Array = []
+	for enemy in _enemies_by_range(ship):
+		if GunneryTypes.is_chase_side(side):
+			reasons.append(_no_shot_preview(calculator, ship_id, side, enemy.ship_id, GunneryTypes.BATTERY_CHASE))
+			continue
+		var reason := _no_shot_preview(calculator, ship_id, side, enemy.ship_id, GunneryTypes.BATTERY_FULL)
+		if reason.contains("needs both"):
+			for battery in [GunneryTypes.BATTERY_BOW, GunneryTypes.BATTERY_STERN]:
+				var single := _no_shot_preview(calculator, ship_id, side, enemy.ship_id, battery)
+				if not single.contains("arc") and not single.contains("line of sight"):
+					reason = single
+					break
+		reasons.append(reason)
+	var words := no_shot_words(reasons)
+	return NO_SHOT_SIDE_ARC if words == NO_SHOT_ARC else words
+
+
+## Why a ship's marines have no shot: MarineFireResolver.preview's reason against her nearest enemy
+## (the server's words), "" when they have one; NO_SHOT_NO_ENEMY with no enemy afloat.
+func marine_reason(ship_id: String) -> String:
+	if _marines.has(ship_id):
+		return ""
+	var ship: ShipState = GameState.get_ship(ship_id)
+	var marines = GameState.get("marine_fire_resolver")
+	var grid: HexGrid = GameState.fire_geometry.hex_grid if GameState.fire_geometry else null
+	var target := nearest_enemy(ship, GameState.get_all_ships(), grid) if ship != null else null
+	if target == null or marines == null:
+		return NO_SHOT_NO_ENEMY
+	var reason := str(marines.preview(ship_id, target.ship_id).get("reason", ""))
+	return reason if reason != "" else NO_SHOT_NO_ENEMY
+
+
+## A copy of a ship's choices (every side and the marines' target), for restore_ship.
+func ship_snapshot(ship_id: String) -> Dictionary:
+	var out := {}
+	if _ships.has(ship_id):
+		out["sides"] = (_ships[ship_id]["sides"] as Dictionary).duplicate(true)
+	if _marines.has(ship_id):
+		out["marines"] = str(_marines[ship_id]["target"])
+	return out
+
+
+## Puts back a ship's choices from ship_snapshot (an option box cancelled); emits changed.
+func restore_ship(ship_id: String, snapshot: Dictionary) -> void:
+	if _ships.has(ship_id) and snapshot.has("sides"):
+		_ships[ship_id]["sides"] = (snapshot["sides"] as Dictionary).duplicate(true)
+	if _marines.has(ship_id) and snapshot.has("marines"):
+		_marines[ship_id]["target"] = str(snapshot["marines"])
+	changed.emit()
+
+
 ## The listed ships: those with a gun shot (setup order), then those with only a marine shot.
 func ships_with_shots() -> Array[String]:
 	var ids := _ship_order.duplicate()
@@ -754,6 +822,24 @@ func _add_marines(ship_id: String, marine_shots: Array) -> void:
 	var default := default_marine_target(marine_shots)
 	_marines[ship_id] = {"options": marine_shots, "target": default, "default": default}
 	_marine_order.append(ship_id)
+
+
+## The enemies afloat, nearest first (footprint to footprint), ties by ship id.
+func _enemies_by_range(ship: ShipState) -> Array[ShipState]:
+	var out: Array[ShipState] = []
+	if GameState.fire_geometry == null:
+		return out
+	var ranges := {}
+	for other: ShipState in GameState.get_all_ships():
+		if other.side == ship.side or other.is_out_of_play():
+			continue
+		ranges[other.ship_id] = GameState.fire_geometry.range_between(ship.occupied_hexes(), other.occupied_hexes())
+		out.append(other)
+	out.sort_custom(func(x: ShipState, y: ShipState) -> bool:
+		if int(ranges[x.ship_id]) != int(ranges[y.ship_id]):
+			return int(ranges[x.ship_id]) < int(ranges[y.ship_id])
+		return x.ship_id < y.ship_id)
+	return out
 
 
 func _marine_target_ids(ship_id: String) -> Array[String]:
