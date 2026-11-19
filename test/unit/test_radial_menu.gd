@@ -132,6 +132,28 @@ func test_clamped_inside_safe_rect() -> void:
 		assert_true(safe.encloses(r), "item %d inside after the anchor moved (%s)" % [i, r])
 
 
+func test_caption_stays_inside_safe_rect_at_the_sides() -> void:
+	var safe := Rect2(320, 40, 1500, 1000)
+	menu.set_safe_rect(safe)
+	var long_hint := "Plot her course hex by hex on the board, then mark her done."
+	for point: Vector2 in [Vector2(330, 500), Vector2(1810, 500), Vector2(330, 1035)]:
+		var items: Array[RadialItem] = [_item("move", "", long_hint), _item("crew", "", long_hint)]
+		_open_at(items, point)
+		menu.hover_item(0)
+		# The labels' new wrap width reaches the containers' cached sizes a frame later; the menu
+		# places itself every frame.
+		await get_tree().process_frame
+		menu._process(0.016)
+		var r := menu.caption_rect()
+		assert_gt(r.size.x, 0.0, "the caption has a width")
+		assert_true(safe.encloses(r), "caption inside the safe rect at %s (%s)" % [point, r])
+		menu.close()
+	# Clear of the edges, the caption stays centred on the ring.
+	_open_at([_item("move", "", long_hint)] as Array[RadialItem], Vector2(1000, 500))
+	menu.hover_item(0)
+	assert_almost_eq(menu.caption_rect().get_center().x, menu.ring_center().x, 0.5)
+
+
 func test_follows_anchor_each_frame() -> void:
 	var point := [Vector2(900, 500)]
 	menu.set_anchor_provider(func() -> Vector2: return point[0])

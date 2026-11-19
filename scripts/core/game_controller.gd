@@ -758,7 +758,7 @@ func _refresh_courses() -> void:
 		if moving != "" and not moving_drawn:
 			board_planning.leave_move()
 
-## The card's course readout for `ship`: MP used of the allowance (the server's count), the tacking
+## The Move-mode chip box's course readout for `ship` (CourseChips): MP used of the allowance (the server's count), the tacking
 ## and steering notes, the heading note (allowance change, irons) and the warning line (a refused
 ## click, else the path's collision, then a jammed rudder, then a course too short, 5.E.4).
 func _course_info(ship: ShipState, options: Dictionary, ships: Array) -> Dictionary:

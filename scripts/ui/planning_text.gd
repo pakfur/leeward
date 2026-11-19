@@ -86,7 +86,7 @@ static func plot_note(allowance_note: String, heading_code: String, irons_excuse
 
 ## The instruction line under the ship list.
 static func instructions() -> String:
-	return "Click a ship's highlighted hexes to plot its course. Click a hex on its course to cut it back."
+	return "Click one of your ships for her orders. Choose Move to plot her course hex by hex. Tab goes to the next ship still in Plan."
 
 
 ## Hexes that currently hold another ship (its bow or stern): hex -> that ship's name.

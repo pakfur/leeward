@@ -149,6 +149,12 @@ func caption_is_reason() -> bool:
 	return item != null and not item.is_enabled()
 
 
+## Where the caption is drawn, in the menu's coordinates (tests).
+func caption_rect() -> Rect2:
+	return Rect2(_ring.position + _caption_box.position,
+			Vector2(_caption_box.size.x, _caption_box.get_combined_minimum_size().y))
+
+
 func title_text() -> String:
 	return _title_label.text
 
@@ -181,7 +187,8 @@ func hover_item(index: int) -> void:
 func focus_item(index: int) -> void:
 	if index < 0 or index >= _buttons.size():
 		return
-	_on_focus_entered(index)
+	_focused = index
+	_update_caption()
 
 
 ## Choose item `index` (a click or Enter on its button). A greyed item emits nothing.
@@ -226,15 +233,21 @@ static func _clamp_axis(value: float, low: float, high: float) -> float:
 	return clampf(value, low, high)
 
 
-## Under the ring, or above it when there is no room below inside the safe rect.
+## Under the ring, or above it when there is no room below inside the safe rect; centred on the
+## ring, but slid sideways to stay inside the safe rect (the ring's clamp is narrower than it).
 func _place_caption() -> void:
-	var width := CAPTION_WIDTH * ui_scale
-	var height := _caption_box.get_combined_minimum_size().y
+	var box := _caption_box.get_combined_minimum_size()
+	var width := maxf(box.x, _caption.custom_minimum_size.x)
+	var height := box.y
 	var below := (RADIUS + CAPTION_GAP) * ui_scale
 	var top := below
-	if _safe_rect.has_area() and _ring.position.y + below + height > _safe_rect.end.y:
-		top = -below - height
-	_caption_box.position = Vector2(-width / 2.0, top)
+	var left := -width / 2.0
+	if _safe_rect.has_area():
+		if _ring.position.y + below + height > _safe_rect.end.y:
+			top = -below - height
+		left = _clamp_axis(_ring.position.x + left, _safe_rect.position.x,
+				_safe_rect.end.x - width) - _ring.position.x
+	_caption_box.position = Vector2(left, top)
 	_caption_box.size = Vector2(width, 0.0)
 
 
@@ -347,8 +360,6 @@ func _add_button(index: int) -> void:
 		b.mouse_default_cursor_shape = CURSOR_FORBIDDEN
 	b.mouse_entered.connect(hover_item.bind(index))
 	b.mouse_exited.connect(_on_mouse_exited.bind(index))
-	b.focus_entered.connect(_on_focus_entered.bind(index))
-	b.focus_exited.connect(_on_focus_exited.bind(index))
 	b.pressed.connect(choose.bind(index))
 	_ring.add_child(b)
 	_buttons.append(b)
@@ -424,17 +435,6 @@ func _on_mouse_exited(index: int) -> void:
 		hover_item(-1)
 
 
-func _on_focus_entered(index: int) -> void:
-	_focused = index
-	_update_caption()
-
-
-func _on_focus_exited(index: int) -> void:
-	if _focused == index:
-		_focused = -1
-		_update_caption()
-
-
 func _caption_item() -> RadialItem:
 	var index := _hovered if _hovered >= 0 else _focused
 	if index < 0 or index >= _items.size():
@@ -453,7 +453,12 @@ func _update_caption() -> void:
 	_caption_detail.visible = detail != ""
 	_caption_detail.add_theme_color_override("font_color",
 			CrewStyle.MUTED if item.is_enabled() else CrewStyle.WARN)
-	_caption.custom_minimum_size.x = _caption_width()
+	var width := _caption_width()
+	_caption.custom_minimum_size.x = width
+	# The labels autowrap: give them the caption's inner width, or their minimum height is one word
+	# per line and the caption's measured height (the flip above the ring) is far too tall.
+	for l: Label in [_caption_title, _caption_detail]:
+		l.custom_minimum_size.x = maxf(width - 16.0 * ui_scale, 0.0)
 	_place_caption()
 
 

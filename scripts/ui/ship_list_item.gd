@@ -29,7 +29,6 @@ var selected_style: StyleBoxFlat
 
 ## The Plan / Done pill (board planning): plan, done or locked; hidden while no checklist runs.
 var pill: Button = null
-var _plan_state: String = ""
 
 const PILL_TEXT := {"plan": "PLAN", "done": "✓ DONE", "locked": "LOCKED"}
 
@@ -193,7 +192,6 @@ func _build_pill(top_row: HBoxContainer) -> void:
 
 ## Shows `state` (PlanChecklist.PLAN / DONE / LOCKED); "" hides the pill (no checklist running).
 func set_plan_state(state: String) -> void:
-	_plan_state = state
 	if pill == null:
 		return
 	pill.visible = PILL_TEXT.has(state)
