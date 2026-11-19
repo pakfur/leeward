@@ -191,6 +191,21 @@ func test_ship_no_shot_reason_comes_from_the_bearing_battery() -> void:
 	assert_eq(FireOrdersModel.ship_no_shot_reason(own, [own, foe], calc, grid), "out of range")
 
 
+## The shared fallback behind ship_no_shot_reason and side_reason: a full broadside that "needs
+## both" takes the bearing battery's own reason, skipping arc and line-of-sight refusals.
+func test_broadside_reason_falls_back_to_the_bearing_battery() -> void:
+	var arc := "target is not in that broadside's arc"
+	var calc := FakeCalculator.new()
+	calc.reasons = {"1:full": "only the stern battery bears: a full broadside needs both",
+		"1:bow": arc, "1:stern": "no sailor sections able to fire"}
+	assert_eq(FireOrdersModel._broadside_reason(calc, "o", 1, "f"), "no sailor sections able to fire")
+	calc.reasons["1:stern"] = "no line of sight to target"
+	assert_eq(FireOrdersModel._broadside_reason(calc, "o", 1, "f"),
+		"only the stern battery bears: a full broadside needs both", "no better reason: the full one stays")
+	calc.reasons = {1: "target is out of range (16 hexes, maximum 15)"}
+	assert_eq(FireOrdersModel._broadside_reason(calc, "o", 1, "f"), "target is out of range (16 hexes, maximum 15)")
+
+
 func test_ship_no_shot_reason_also_previews_the_chasers() -> void:
 	var own := _state("o", "HMS Phoebe", 0, Vector2i(0, 0))
 	var foe := _state("f", "Foe", 1, Vector2i(3, 0))

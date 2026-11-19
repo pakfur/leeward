@@ -333,16 +333,7 @@ static func ship_no_shot_reason(ship: ShipState, all_ships: Array, calculator, g
 	var target := nearest_enemy(ship, all_ships, grid)
 	if target and calculator:
 		for side in [ShipState.PORT, ShipState.STARBOARD]:
-			var reason := _no_shot_preview(calculator, ship.ship_id, side, target.ship_id,
-				GunneryTypes.BATTERY_FULL)
-			# Only one battery bears: its own preview gives the real reason (crew, range...).
-			if reason.contains("needs both"):
-				for battery in [GunneryTypes.BATTERY_BOW, GunneryTypes.BATTERY_STERN]:
-					var single := _no_shot_preview(calculator, ship.ship_id, side, target.ship_id, battery)
-					if not single.contains("arc") and not single.contains("line of sight"):
-						reason = single
-						break
-			reasons.append(reason)
+			reasons.append(_broadside_reason(calculator, ship.ship_id, side, target.ship_id))
 		# A chaser may be the only thing that bears (or the only refusal worth naming): an empty
 		# reason means it could fire, so it says nothing.
 		for side in GunneryTypes.CHASE_SIDES:
@@ -351,6 +342,18 @@ static func ship_no_shot_reason(ship: ShipState, all_ships: Array, calculator, g
 			if chase_reason != "":
 				reasons.append(chase_reason)
 	return no_shot_words(reasons)
+
+
+## A broadside's refusal reason against one target: the full broadside's preview, or, when only
+## one battery bears ("needs both"), that battery's own reason (crew, range...).
+static func _broadside_reason(calculator, ship_id: String, side: int, target_id: String) -> String:
+	var reason := _no_shot_preview(calculator, ship_id, side, target_id, GunneryTypes.BATTERY_FULL)
+	if reason.contains("needs both"):
+		for battery in [GunneryTypes.BATTERY_BOW, GunneryTypes.BATTERY_STERN]:
+			var single := _no_shot_preview(calculator, ship_id, side, target_id, battery)
+			if not single.contains("arc") and not single.contains("line of sight"):
+				return single
+	return reason
 
 
 static func _no_shot_preview(calculator, ship_id: String, side: int, target_id: String, battery: String) -> String:
@@ -433,14 +436,7 @@ func side_reason(ship_id: String, side: int) -> String:
 		if GunneryTypes.is_chase_side(side):
 			reasons.append(_no_shot_preview(calculator, ship_id, side, enemy.ship_id, GunneryTypes.BATTERY_CHASE))
 			continue
-		var reason := _no_shot_preview(calculator, ship_id, side, enemy.ship_id, GunneryTypes.BATTERY_FULL)
-		if reason.contains("needs both"):
-			for battery in [GunneryTypes.BATTERY_BOW, GunneryTypes.BATTERY_STERN]:
-				var single := _no_shot_preview(calculator, ship_id, side, enemy.ship_id, battery)
-				if not single.contains("arc") and not single.contains("line of sight"):
-					reason = single
-					break
-		reasons.append(reason)
+		reasons.append(_broadside_reason(calculator, ship_id, side, enemy.ship_id))
 	var words := no_shot_words(reasons)
 	return NO_SHOT_SIDE_ARC if words == NO_SHOT_ARC else words
 
