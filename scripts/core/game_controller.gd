@@ -1181,7 +1181,6 @@ func _enter_planning_phase() -> void:
 	if hex_overlay:
 		hex_overlay.clear_everything()
 	_click_refusals.clear()
-	combat_panel = null  # freed below when the planning UI takes the context panel
 	if combat_log_panel:
 		combat_log_panel.auto_expand(false)  # the map is what matters while plotting
 
