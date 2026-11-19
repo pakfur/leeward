@@ -66,9 +66,7 @@ static func _state(game_state, id: int, is_ai: bool, resolving: bool, ships: int
 			return READY if pc.is_player_ready(id) else PLANNING
 		TurnPhaseController.GamePhase.COMBAT_RESOLUTION:
 			if pc.combat_step == TurnPhaseController.CombatStep.DECLARE:
-				# The server's per-player "orders in" record, read only (no accessor exists).
-				var in_orders: bool = bool(pc._fire_ready.get(id, false))
-				return READY if (is_ai or in_orders) else DECLARING
+				return READY if (is_ai or pc.is_fire_ready(id)) else DECLARING
 			return WAITING
 		TurnPhaseController.GamePhase.POST_COMBAT:
 			# AI players are not waited on: they count as done.

@@ -54,6 +54,13 @@ func test_fire_declaration_states() -> void:
 	assert_eq(_state_of(0), "waiting")
 
 
+func test_is_fire_ready_accessor() -> void:
+	pc._fire_ready = {0: false, 1: true}
+	assert_false(pc.is_fire_ready(0))
+	assert_true(pc.is_fire_ready(1))
+	assert_false(pc.is_fire_ready(9))
+
+
 func test_local_resolving_only() -> void:
 	pc.current_phase = Phase.PLANNING
 	assert_eq(_state_of(0, true), "resolving")
