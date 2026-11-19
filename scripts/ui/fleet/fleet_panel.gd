@@ -14,6 +14,8 @@ signal ship_card_pressed(ship_id: String)
 signal crew_overlay_requested(ship_id: String)
 ## A card's Plan / Done pill (a Locked pill emits nothing: the button is disabled).
 signal pill_pressed(ship_id: String)
+## refresh_ships added, redrew or removed cards: the footer sets the pills of new cards.
+signal cards_changed()
 
 const ShipListItemScene = preload("res://scenes/ui/ship_list_item.tscn")
 const TITLE := "Your Fleet"
@@ -22,6 +24,7 @@ const SHIPS_HEADER := "Your ships"
 
 var title_label: Label = null
 var players_header: Label = null
+var ships_header: Label = null  # shown with the Players section (alone it would repeat the title)
 var roster: PlayerRoster = null
 var ship_list: VBoxContainer = null
 var footer_slot: VBoxContainer = null
@@ -51,8 +54,9 @@ func _init() -> void:
 	roster.name = "PlayerRoster"
 	roster.visible = false
 	add_child(roster)
-	var ships_header := _header(SHIPS_HEADER)
+	ships_header = _header(SHIPS_HEADER)
 	ships_header.name = "ShipsHeader"
+	ships_header.visible = false
 	add_child(ships_header)
 	var scroll := ScrollContainer.new()
 	scroll.name = "ShipScroll"
@@ -85,11 +89,13 @@ func setup(player_id: int) -> void:
 	refresh_ships(none)
 
 
-## The Players section from RosterRows.rows; no rows hides it.
+## The Players section from RosterRows.rows; no rows hides it (and the Your ships header, which
+## would then sit right under the Your Fleet title).
 func refresh_roster(rows: Array) -> void:
 	roster.show_rows(rows)
 	roster.visible = not rows.is_empty()
 	players_header.visible = roster.visible
+	ships_header.visible = roster.visible
 
 
 ## One card per ship, in this order: a new ship gets a card, a known one is redrawn from `ships`
@@ -109,36 +115,39 @@ func refresh_ships(ships: Array[ShipState]) -> void:
 				selected_ship_id = ""
 	var ordered := {}
 	for ship in ships:
-		var card: Control = cards.get(ship.ship_id)
-		if card == null:
-			card = _make_card(ship.ship_id)
-		ordered[ship.ship_id] = card
-		ship_list.move_child(card, ordered.size() - 1)
-		_draw_card(card, ship)
+		var item: Control = cards.get(ship.ship_id)
+		if item == null:
+			item = _make_card(ship.ship_id)
+		ordered[ship.ship_id] = item
+		ship_list.move_child(item, ordered.size() - 1)
+		_draw_card(item, ship)
 	cards = ordered
 	if selected_ship_id == "" and not ships.is_empty():
 		select_ship(ships[0].ship_id)
+	cards_changed.emit()
 
 
 ## Redraws every card from her ship and crew plan (a crew order, a reset, a request's result).
 func refresh_cards() -> void:
 	for id in cards:
-		var card: Control = cards[id]
-		if card.ship_state != null:
-			_draw_card(card, card.ship_state)
+		var item: Control = cards[id]
+		if item.ship_state != null:
+			_draw_card(item, item.ship_state)
 
 
 func card(ship_id: String) -> Control:
 	return cards.get(ship_id)
 
 
-## Expands `ship_id`'s card and collapses the others; emits nothing (a click emits ship_card_pressed).
+## Expands `ship_id`'s card and collapses the others, and redraws the cards (as the planning panel
+## did on every selection); emits nothing (a click emits ship_card_pressed).
 func select_ship(ship_id: String) -> void:
 	if selected_ship_id != "" and cards.has(selected_ship_id):
 		cards[selected_ship_id].set_selected_state(false)
 	selected_ship_id = ship_id if cards.has(ship_id) else ""
 	if selected_ship_id != "":
 		cards[selected_ship_id].set_selected_state(true)
+	refresh_cards()
 
 
 ## Puts `control` in the footer slot; the previous footer is freed. `null` clears the slot.

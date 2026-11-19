@@ -22,12 +22,13 @@ func test_movement_panel_says_ships_are_moving() -> void:
 	gc._show_movement_panel()
 	assert_not_null(gc.combat_panel)
 	assert_eq(gc.combat_panel.name, "MovementPanel")
+	assert_eq(gc.fleet_panel.footer(), gc.combat_panel, "the fleet panel's footer")
 	assert_has(_texts(gc.combat_panel), "Ships are moving…")
 
 
 func test_movement_panel_has_no_planning_controls() -> void:
 	gc._show_movement_panel()
-	assert_null(gc.current_planning_ui, "the planning UI is gone from the side panel")
+	assert_false(gc.fleet_panel.footer() is PlanningFooter, "the planning footer is gone from the side panel")
 	assert_eq(gc.combat_panel.find_children("*", "Button", true, false).size(), 0)
 
 

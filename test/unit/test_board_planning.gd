@@ -844,19 +844,23 @@ func _live(node: Node) -> int:
 
 # --- the fire step in the game (piece 3, Task 3) ---------------------------------------------------
 
-## A context panel that keeps what it is given (in the tree, so the fire step's cards are built).
+## A context panel that keeps what it is given (in the tree, so the fire step's cards are built) and,
+## as the real one does, frees the content it still holds when another comes.
 class StubContextPanel extends Control:
 	var contents: Array = []
+	var title := ""
 
-	func set_context_title(_t: String) -> void:
-		pass
+	func set_context_title(t: String) -> void:
+		title = t
 
 	func set_context_content(node: Control) -> void:
-		for old in contents:
-			if is_instance_valid(old) and old != node:
+		for old in get_children():
+			if old != node:
 				old.queue_free()
 		contents.append(node)
-		if node.get_parent() == null:
+		if node.get_parent() != self:
+			if node.get_parent() != null:
+				node.get_parent().remove_child(node)
 			add_child(node)
 
 
@@ -899,22 +903,23 @@ func test_fire_step_opens_on_the_board() -> void:
 	var gc: Node = setup[0]
 	var ctx: StubContextPanel = setup[1]
 	assert_true(bp.is_firing(), "the board runs the step")
-	var panel: FireStepPanel = gc.fire_step_panel
+	var fleet: FleetPanel = gc.fleet_panel
+	var panel: FireFooter = gc._fire_footer()
 	assert_not_null(panel)
-	assert_eq(ctx.contents[-1], panel, "the side panel shows the fire step")
-	assert_eq(panel.footer.get_parent(), panel.fleet.footer_slot, "the fire footer is in the fleet panel's slot")
-	assert_true(panel.footer.is_ancestor_of(panel.fire_button))
-	assert_eq(panel.item("a").get_parent(), panel.fleet.ship_list, "the cards are the fleet panel's")
-	assert_eq(panel.item("a").pill.text, "FIRE")
-	assert_eq(panel.item("b").pill.text, "NO TARGET")
-	assert_true(panel.item("b").pill.disabled, "no shot: nothing to toggle")
+	assert_eq(ctx.contents[-1], fleet, "the side panel is the fleet panel")
+	assert_eq(panel.get_parent(), fleet.footer_slot, "the fire footer is in the fleet panel's slot")
+	assert_true(panel.is_ancestor_of(panel.fire_button))
+	assert_eq(fleet.card("a").get_parent(), fleet.ship_list, "the cards are the fleet panel's")
+	assert_eq(fleet.card("a").pill.text, "FIRE")
+	assert_eq(fleet.card("b").pill.text, "NO TARGET")
+	assert_true(fleet.card("b").pill.disabled, "no shot: nothing to toggle")
 	assert_eq(panel.hold_fire_label.text, "1 ship has no fire orders: she holds fire")
 	assert_eq(panel.fire_button.text, "Hold all fire")
-	assert_eq(panel.selected_ship_id, "a", "the first ship with a shot")
-	panel.item("a").pill_pressed.emit()
+	assert_eq(fleet.selected_ship_id, "a", "the first ship with a shot")
+	fleet.card("a").pill_pressed.emit()
 	assert_eq(bp.fire_board().state("a"), PlanChecklist.DONE, "the card's pill toggles Plan / Done")
-	assert_eq(panel.item("a").pill.text, "NO FIRE")
-	panel.item("a").selected.emit()
+	assert_eq(fleet.card("a").pill.text, "NO FIRE")
+	fleet.card("a").selected.emit()
 	assert_eq(bp.ring_ship_id(), "a", "a card click opens her fire ring")
 
 
@@ -922,7 +927,7 @@ func test_fire_button_sends_model_orders() -> void:
 	var setup := _fire_step()
 	var gc: Node = setup[0]
 	var ctx: StubContextPanel = setup[1]
-	var panel: FireStepPanel = gc.fire_step_panel
+	var panel: FireFooter = gc._fire_footer()
 	bp.enter_target_mode("a", ShipState.PORT)  # one target: the box opens at once
 	bp.option_box().order_button().pressed.emit()
 	assert_eq(panel.fire_button.text, "Fire 1 broadside", "the button counts the orders")
@@ -940,25 +945,27 @@ func test_fire_button_sends_model_orders() -> void:
 	assert_eq(gc.sent[0]["marine_orders"], [])
 	assert_false(bp.is_firing(), "accepted: the step is over")
 	assert_false(bp.option_box().is_open())
-	assert_null(gc.fire_step_panel)
-	var shown: Control = ctx.contents[-1]
+	assert_null(gc._fire_footer())
+	assert_eq(ctx.contents[-1], gc.fleet_panel, "the fleet panel stays")
+	var shown: Control = gc.fleet_panel.footer()
 	assert_eq(shown.name, "CombatPanel", "while others declare")
-	assert_eq((shown.get_child(0) as Label).text, GameControllerScript.ORDERS_IN_TEXT)
-	assert_eq((shown.get_child(1) as Label).text, "Your orders: Fire 2 broadsides.")
+	var lines := shown.find_children("*", "Label", false, false)
+	assert_eq((lines[0] as Label).text, GameControllerScript.ORDERS_IN_TEXT)
+	assert_eq((lines[1] as Label).text, "Your orders: Fire 2 broadsides.")
 	_pc().combat_step = TurnPhaseController.CombatStep.NONE
 
 
 func test_refusal_keeps_the_step() -> void:
 	var setup := _fire_step()
 	var gc: Node = setup[0]
-	var panel: FireStepPanel = gc.fire_step_panel
+	var panel: FireFooter = gc._fire_footer()
 	gc.reply = "more than two targets"
 	bp.enter_target_mode("a", ShipState.PORT)
 	bp.option_box().order_button().pressed.emit()
 	panel.fire_button.pressed.emit()
 	assert_eq(gc.sent.size(), 1)
 	assert_true(bp.is_firing(), "refused: the step stays")
-	assert_eq(gc.fire_step_panel, panel)
+	assert_eq(gc._fire_footer(), panel)
 	assert_true(panel.error_label.visible)
 	assert_eq(panel.error_label.text, "more than two targets", "the reason in the footer")
 	assert_false(panel.fire_button.disabled, "Fire again")
@@ -989,7 +996,7 @@ func test_fire_step_closed_by_replay() -> void:
 	assert_null(bp.badges().pill_for("a"))
 	assert_eq(bp.fire_marks().arrow_data().size(), 0)
 	assert_eq(model.orders().size(), 0, "the unconfirmed draft is put back")
-	assert_null(gc.fire_step_panel)
+	assert_null(gc._fire_footer())
 	assert_true(ctx.contents[-1] is ResolutionPanel, "the combat replay holds the side panel")
 	gc._cancel_resolution_replay()
 	_pc().combat_step = TurnPhaseController.CombatStep.NONE
@@ -1003,7 +1010,7 @@ func test_fire_step_closed_on_leaving_and_twice() -> void:
 	gc._leave_game()
 	assert_false(bp.is_firing(), "leaving ends the step")
 	assert_false(bp.option_box().is_open())
-	assert_null(gc.fire_step_panel)
+	assert_null(gc._fire_footer())
 	gc._close_fire_step()  # as every other path does: twice is harmless
 	assert_false(bp.is_firing())
 	_pc().combat_step = TurnPhaseController.CombatStep.NONE
@@ -1020,21 +1027,211 @@ func test_fire_step_with_no_shot_passes() -> void:
 	gc._on_fire_declaration_requested()  # no enemy: no ship of ours has a shot
 	assert_eq(gc.sent.size(), 1, "empty orders sent at once")
 	assert_eq(gc.sent[0]["orders"], [])
-	assert_null(gc.fire_step_panel)
+	assert_null(gc._fire_footer())
 	assert_true(gc.board_planning == null or not gc.board_planning.is_firing())
-	assert_eq(ctx.contents[-1].name, "CombatPanel", "the no-shot lines")
+	assert_eq(ctx.contents[-1], gc.fleet_panel)
+	assert_eq(gc.fleet_panel.footer().name, "CombatPanel", "the no-shot lines")
 
 
 func test_hold_fire_text() -> void:
-	assert_eq(FireStepPanel.hold_fire_text(0), "")
-	assert_eq(FireStepPanel.hold_fire_text(1), "1 ship has no fire orders: she holds fire")
-	assert_eq(FireStepPanel.hold_fire_text(3), "3 ships have no fire orders: they hold fire")
+	assert_eq(FireFooter.hold_fire_text(0), "")
+	assert_eq(FireFooter.hold_fire_text(1), "1 ship has no fire orders: she holds fire")
+	assert_eq(FireFooter.hold_fire_text(3), "3 ships have no fire orders: they hold fire")
 
 
 ## A long Fire text ("Fire 1 broadside and 2 half broadsides and 1 chaser and muskets") wraps
 ## instead of widening the side panel.
 func test_long_fire_text_wraps() -> void:
-	var panel := FireStepPanel.new()
+	var panel := FireFooter.new()
 	add_child_autofree(panel)
 	panel.fire_button.text = "Fire 1 broadside and 2 half broadsides and 1 chaser and muskets"
 	assert_lt(panel.fire_button.get_combined_minimum_size().x, 200.0, "the button does not ask for the whole line")
+
+
+# --- one side panel for the whole turn (piece 4, Task 3) --------------------------------------------
+
+## A GameController with the side panel in a stub context panel (in the tree, so cards are drawn).
+func _side_panel() -> Array:
+	var ctx := StubContextPanel.new()
+	add_child_autofree(ctx)
+	var gc: Node = RecordingController.new()
+	autofree(gc)
+	gc.ships_container = Node3D.new()
+	autofree(gc.ships_container)
+	gc.context_panel = ctx
+	return [gc, ctx]
+
+
+func _labels(node: Node) -> Array:
+	var out := []
+	for label in node.find_children("*", "Label", true, false):
+		out.append((label as Label).text)
+	return out
+
+
+## Review Focus 1: the fleet panel stays the content; each phase swaps only its footer.
+func test_footer_per_phase() -> void:
+	var setup := _side_panel()
+	var gc: Node = setup[0]
+	var ctx: StubContextPanel = setup[1]
+	GameState.turn_log.turn = 9999  # never a stored turn: the post-combat replay reads this log
+	_pc()._enter_planning_phase()
+	gc._on_phase_changed(PLANNING)
+	var fleet: FleetPanel = gc.fleet_panel
+	assert_eq(ctx.contents[-1], fleet, "the fleet panel is the side panel")
+	assert_eq(ctx.title, "Planning Phase")
+	var planning: PlanningFooter = fleet.footer() as PlanningFooter
+	assert_not_null(planning, "PLANNING: End Planning + Cancel")
+	assert_eq(planning.end_planning_button.text, "End Planning")
+	assert_false(planning.end_planning_button.disabled)
+	assert_eq(planning.end_planning_button.focus_mode, Control.FOCUS_NONE)
+	assert_eq(planning.cancel_button.focus_mode, Control.FOCUS_NONE)
+	assert_eq(planning.still_in_plan_label.text, "2 ships still in Plan: they sail the course shown")
+	assert_eq(fleet.card("a").pill.text, "PLAN", "the cards carry the Plan pills")
+	planning.cancel_button.pressed.emit()
+	assert_true(planning.reset_dialog.visible, "Cancel asks first")
+	planning.reset_dialog.hide()
+	assert_false(gc._end_turn_available(), "Space / Enter are not End Turn while planning")
+	assert_true(fleet.roster.visible, "the Players section")
+	assert_has(_labels(fleet.roster), "planning")
+	var card_a: Control = fleet.card("a")
+
+	_pc().current_phase = TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
+	GameState.current_phase = GameState.GamePhase.MOVEMENT_RESOLUTION
+	gc._show_movement_panel()
+	assert_eq(ctx.contents[-1], fleet, "the same panel")
+	assert_eq(ctx.title, "Movement")
+	assert_eq(fleet.footer().name, "MovementPanel", "movement: a status line")
+	assert_eq(fleet.footer().find_children("*", "Button", true, false).size(), 0)
+	assert_true(planning.is_queued_for_deletion(), "the planning footer is freed")
+	assert_eq(fleet.card("a"), card_a, "the cards are kept")
+
+	_pc().current_phase = TurnPhaseController.GamePhase.POST_COMBAT
+	GameState.current_phase = GameState.GamePhase.POST_COMBAT
+	gc._on_phase_changed(GameState.GamePhase.POST_COMBAT)
+	assert_eq(ctx.contents[-1], fleet)
+	assert_eq(ctx.title, "Turn 1 complete")
+	assert_eq(fleet.footer(), gc.end_turn_panel, "POST_COMBAT: End Turn")
+	assert_eq(gc.end_turn_button.text, "End Turn")
+	assert_eq(gc.end_turn_button.focus_mode, Control.FOCUS_NONE)
+	assert_has(_labels(fleet.footer()), "Review the combat log, then end the turn.")
+	assert_true(gc._end_turn_available(), "Space / Enter end the turn")
+	assert_eq(fleet.card("a"), card_a)
+
+	_pc().current_phase = TurnPhaseController.GamePhase.END_TURN
+	GameState.current_phase = GameState.GamePhase.END_TURN
+	gc._on_phase_changed(GameState.GamePhase.END_TURN)
+	assert_null(fleet.footer(), "another phase: no footer")
+	assert_null(gc.end_turn_button)
+	assert_false(gc._end_turn_available())
+	assert_eq(ctx.contents[-1], fleet, "still the fleet panel")
+
+
+## Review Focus 3 and 5: a replay (or a prompt step) takes the side panel; the same fleet panel, its
+## cards kept, comes back when it is over, with the footer of the phase then current.
+func test_replay_hands_panel_back() -> void:
+	var setup := _side_panel()
+	var gc: Node = setup[0]
+	var ctx: StubContextPanel = setup[1]
+	_pc().current_phase = TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
+	GameState.current_phase = GameState.GamePhase.MOVEMENT_RESOLUTION
+	gc._show_movement_panel()
+	var fleet: FleetPanel = gc.fleet_panel
+	var card_a: Control = fleet.card("a")
+	# A bear-off prompt step.
+	var situation := MovementTypes.BearOffSituation.new()
+	situation.ship_id = "a"
+	situation.blocker_id = "b"
+	situation.eligible.assign(["port"])
+	gc._on_bear_off_decision_requested(0, situation)
+	assert_true(ctx.contents[-1] is ResolutionPanel, "the prompt holds the side panel")
+	assert_eq(fleet.get_parent(), gc, "the fleet panel waits, not freed")
+	assert_false(fleet.visible)
+	assert_false(fleet.is_queued_for_deletion())
+	assert_has(_labels(fleet.roster), "resolving", "the local player is resolving")
+	gc._prompt_answered(gc.resolution_replay.current_step())
+	assert_eq(ctx.contents[-1], fleet, "handed back")
+	assert_true(fleet.visible)
+	assert_eq(fleet.card("a"), card_a, "re-added, not rebuilt")
+	assert_eq(fleet.footer().name, "MovementPanel", "with the footer of the phase")
+	assert_eq(ctx.title, "Movement")
+	assert_does_not_have(_labels(fleet.roster), "resolving")
+	# A combat replay.
+	var combat_log := PhaseEvents.PhaseLog.new()
+	combat_log.turn = 9999
+	var events: Array[PhaseEvents.PhaseEvent] = [PhaseEvents.PhaseEvent.new(PhaseEvents.Type.FIRE,
+		TurnPhaseController.GamePhase.COMBAT_RESOLUTION, "a", {}, "b")]
+	combat_log.events = events
+	GameState.turn_log = combat_log
+	_pc().current_phase = TurnPhaseController.GamePhase.COMBAT_RESOLUTION
+	GameState.current_phase = GameState.GamePhase.COMBAT_RESOLUTION
+	_pc().combat_step = TurnPhaseController.CombatStep.RESOLVE
+	gc._on_combat_log_ready(combat_log)
+	assert_true(ctx.contents[-1] is ResolutionPanel, "the combat replay holds the side panel")
+	assert_eq(fleet.get_parent(), gc)
+	_pc().combat_step = TurnPhaseController.CombatStep.NONE  # the server is not told (moved on)
+	gc.resolution_replay.next()
+	assert_false(gc._replay_running())
+	assert_eq(ctx.contents[-1], fleet, "handed back after the last step")
+	assert_eq(fleet.card("a"), card_a)
+
+
+## Review Focus 4 and 3: a prize the player takes joins Your ships, one lost leaves; a struck ship's
+## card stays and a ship off the map leaves.
+func test_prize_joins_your_ships() -> void:
+	var setup := _side_panel()
+	var gc: Node = setup[0]
+	_pc().current_phase = TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
+	GameState.current_phase = GameState.GamePhase.MOVEMENT_RESOLUTION
+	gc._show_movement_panel()
+	var fleet: FleetPanel = gc.fleet_panel
+	assert_eq(fleet.cards.keys(), ["a", "b"])
+	var e := _make_ship("e", 1, Vector2i(6, 0))
+	gc._sync_all_views()
+	assert_null(fleet.card("e"), "an enemy has no card")
+	e.commander_id = 0  # taken: commanded by the captor's player
+	gc._sync_all_views()
+	assert_not_null(fleet.card("e"), "the prize joins Your ships")
+	var card_b: Control = fleet.card("b")
+	b.commander_id = 1  # lost as a prize
+	gc._sync_all_views()
+	assert_null(fleet.card("b"), "a ship lost leaves")
+	assert_true(card_b.is_queued_for_deletion())
+	a.status = ShipState.Status.STRUCK
+	gc._sync_all_views()
+	assert_not_null(fleet.card("a"), "a struck ship keeps her card")
+	a.removed_from_map = true
+	gc._sync_all_views()
+	assert_null(fleet.card("a"), "a ship off the map leaves")
+	assert_eq(fleet.cards.keys(), ["e"])
+
+
+## Review Focus 3: a reset (Developer UI) or new game starts the panel over: no stale cards or footer.
+func test_reset_rebuilds_panel() -> void:
+	var setup := _side_panel()
+	var gc: Node = setup[0]
+	var ctx: StubContextPanel = setup[1]
+	_pc()._enter_planning_phase()
+	gc._on_phase_changed(PLANNING)
+	var fleet: FleetPanel = gc.fleet_panel
+	var old_card: Control = fleet.card("a")
+	var old_footer: Control = fleet.footer()
+	gc._on_game_started({})
+	assert_eq(gc.fleet_panel, fleet, "the same panel")
+	assert_eq(ctx.contents[-1], fleet, "in the side panel")
+	assert_true(old_card.is_queued_for_deletion(), "the old game's cards are freed")
+	assert_ne(fleet.card("a"), old_card, "the new game's cards are new")
+	assert_not_null(fleet.card("a"))
+	assert_true(old_footer.is_queued_for_deletion(), "the old footer is freed")
+	assert_null(fleet.footer(), "until the phase sets one")
+	assert_eq(ctx.title, FleetPanel.TITLE)
+	# A reset while a replay holds the side panel hands the panel back.
+	var situation := MovementTypes.BearOffSituation.new()
+	situation.ship_id = "a"
+	situation.blocker_id = "b"
+	gc._on_bear_off_decision_requested(0, situation)
+	assert_true(ctx.contents[-1] is ResolutionPanel)
+	gc._on_game_started({})
+	assert_false(gc._replay_running())
+	assert_eq(ctx.contents[-1], fleet, "the reset puts the fleet panel back")
+	assert_true(fleet.visible)

@@ -387,7 +387,8 @@ func test_orders_summary_shows_while_others_declare() -> void:
 	pc.combat_step = TurnPhaseController.CombatStep.NONE
 	pc.current_phase = old_phase
 	assert_eq(ctx.contents.size(), 1)
-	assert_eq(ctx.contents[0].name, "CombatPanel")
+	assert_eq(ctx.contents[0], gc.fleet_panel)
+	assert_eq(gc.fleet_panel.footer().name, "CombatPanel")
 
 
 func test_leaving_mid_replay_reports_nothing() -> void:
@@ -558,7 +559,8 @@ func test_bear_off_prompt_is_a_replay_of_its_own() -> void:
 	pc.current_phase = TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
 	gc._prompt_answered(prompt)  # as after an accepted choice
 	assert_false(gc._replay_running(), "answered: the bear-off replay is over")
-	assert_eq((ctx.contents.back() as Node).name, "MovementPanel", "the side panel shows movement again")
+	assert_eq(ctx.contents.back(), gc.fleet_panel, "the fleet panel is handed back")
+	assert_eq(gc.fleet_panel.footer().name, "MovementPanel", "the side panel shows movement again")
 	pc.current_phase = old_phase
 
 
@@ -622,6 +624,8 @@ func test_maintenance_prompts_join_the_post_combat_replay() -> void:
 	replay.next()
 	assert_false(gc._replay_running())
 	assert_not_null(gc.end_turn_panel, "End Turn after the last step")
+	assert_eq(ctx.contents.back(), gc.fleet_panel, "the fleet panel is handed back")
+	assert_eq(gc.fleet_panel.footer(), gc.end_turn_panel, "with End Turn as its footer")
 
 	gc._clear_end_turn_ui()
 	pc.current_phase = old_phase
