@@ -604,7 +604,6 @@ func _on_game_started(_scenario: Dictionary) -> void:
 	# The fleet panel starts over: no footer, the new game's cards (none of the old ones kept).
 	_fleet().setup(HUMAN_PLAYER_ID)
 	_clear_fleet_footer()
-	_fleet_title = FleetPanel.TITLE
 	for id in ship_views.keys():
 		var old_view: Node = ship_views[id]
 		if is_instance_valid(old_view):
@@ -2281,13 +2280,17 @@ func _set_fleet_footer(title: String, footer: Control) -> void:
 	_show_fleet_panel()
 
 
-## No footer (a phase change; the fire step over; game over). The panel stays where it is.
+## No footer (a phase change; the fire step over; game over), and the neutral title, so a phase
+## with no footer of its own is not titled for the last one. The panel stays where it is.
 func _clear_fleet_footer() -> void:
 	combat_panel = null
 	end_turn_panel = null
 	end_turn_button = null
+	_fleet_title = FleetPanel.TITLE
 	if fleet_panel != null and is_instance_valid(fleet_panel):
 		fleet_panel.set_footer(null)
+	if _fleet_on_side and context_panel:
+		context_panel.set_context_title(_fleet_title)
 
 
 ## POST_COMBAT: the fleet panel's footer is End Turn (Space and Enter press it, _unhandled_input).

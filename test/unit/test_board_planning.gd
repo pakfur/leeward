@@ -1125,6 +1125,7 @@ func test_footer_per_phase() -> void:
 	assert_null(gc.end_turn_button)
 	assert_false(gc._end_turn_available())
 	assert_eq(ctx.contents[-1], fleet, "still the fleet panel")
+	assert_eq(ctx.title, FleetPanel.TITLE, "no footer: the neutral title, not the last phase's")
 
 
 ## Review Focus 3 and 5: a replay (or a prompt step) takes the side panel; the same fleet panel, its
@@ -1235,3 +1236,36 @@ func test_reset_rebuilds_panel() -> void:
 	assert_false(gc._replay_running())
 	assert_eq(ctx.contents[-1], fleet, "the reset puts the fleet panel back")
 	assert_true(fleet.visible)
+
+
+## Outside PLANNING, C opens the selected card's ship when nothing is selected on the map; a ship
+## selected on the map wins.
+func test_c_opens_the_selected_cards_ship_outside_planning() -> void:
+	var setup := _side_panel()
+	var gc: Node = setup[0]
+	gc.crew_client = CrewOverlayClient.new(GameState, 0)
+	_pc().current_phase = TurnPhaseController.GamePhase.MOVEMENT_RESOLUTION
+	GameState.current_phase = GameState.GamePhase.MOVEMENT_RESOLUTION
+	gc._show_movement_panel()
+	gc.fleet_panel.select_ship("b")
+	gc.selected_ship_id = ""
+	gc._toggle_crew_overlay()
+	assert_true(gc.crew_client.is_open)
+	assert_eq(gc.crew_client.ship_id, "b", "the selected card's ship")
+	gc._toggle_crew_overlay()
+	assert_false(gc.crew_client.is_open, "C again closes it")
+	gc.selected_ship_id = "a"
+	gc._toggle_crew_overlay()
+	assert_eq(gc.crew_client.ship_id, "a", "the map selection wins outside PLANNING")
+
+
+## The fire step's cards are the ships on the map (planning_ships), not every ship of the player.
+func test_fire_step_cards_are_the_ships_on_the_map() -> void:
+	var gone := _make_ship("gone", 0, Vector2i(12, 10))
+	gone.removed_from_map = true
+	var setup := _fire_step()
+	var gc: Node = setup[0]
+	var fleet: FleetPanel = gc.fleet_panel
+	assert_eq(fleet.cards.keys(), ["a", "b"], "no card for a ship off the map")
+	assert_null(fleet.card("gone"))
+	assert_not_null(gc._fire_footer())

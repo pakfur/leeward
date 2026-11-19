@@ -123,7 +123,7 @@ func refresh_ships(ships: Array[ShipState]) -> void:
 		_draw_card(item, ship)
 	cards = ordered
 	if selected_ship_id == "" and not ships.is_empty():
-		select_ship(ships[0].ship_id)
+		_mark_selected(ships[0].ship_id)  # every card was just drawn
 	cards_changed.emit()
 
 
@@ -142,12 +142,17 @@ func card(ship_id: String) -> Control:
 ## Expands `ship_id`'s card and collapses the others, and redraws the cards (as the planning panel
 ## did on every selection); emits nothing (a click emits ship_card_pressed).
 func select_ship(ship_id: String) -> void:
+	_mark_selected(ship_id)
+	refresh_cards()
+
+
+## Expands `ship_id`'s card (none for an unknown id) and collapses the others, with no redraw.
+func _mark_selected(ship_id: String) -> void:
 	if selected_ship_id != "" and cards.has(selected_ship_id):
 		cards[selected_ship_id].set_selected_state(false)
 	selected_ship_id = ship_id if cards.has(ship_id) else ""
 	if selected_ship_id != "":
 		cards[selected_ship_id].set_selected_state(true)
-	refresh_cards()
 
 
 ## Puts `control` in the footer slot; the previous footer is freed. `null` clears the slot.
